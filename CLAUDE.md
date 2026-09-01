@@ -42,10 +42,17 @@ data. That must not happen again.
   `onHandQty` on a variant is a cache of Shopify's number once Phase 1 lands.
 - **Components are this app's exclusive domain.** Shopify has no concept of
   them.
-- **Nothing is inventory until the finished product reaches the studio.**
-  There is no work-in-progress inventory state. Fabric at the manufacturer,
-  garments at the dye house — none of it counts. A `ProductionRun` tracks
-  where things are for *lead-time* purposes only and holds no inventory.
+- **Inventory means finished products. Nothing else.** Not fabric, not
+  work in progress, not goods at the dye house. A `ProductionRun` tracks where
+  things are for *lead-time* purposes only and holds no inventory.
+- **Fabric is bought per production run and shipped straight to the
+  manufacturer.** It never reaches the studio and is never stocked or counted.
+  Its Component row exists to carry the vendor, style number, price and lead
+  time a purchase order needs — not a stock level. Do not model fabric held at
+  a manufacturer, and do not forecast from a fabric stock count; forecast the
+  fabric a planned run will need.
+- **Studio supplies — buttons, tags, hardware, packaging — do live in the
+  studio** and are counted there. They are supplies, not inventory.
 - **`InventoryEvent` is an append-only ledger.** Never edit or delete an
   event. Corrections are new `CORRECTION` events linked via `correctsEventId`.
 - **`onHandQty` is a materialized sum of events.** It must be written in the

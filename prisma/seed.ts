@@ -34,12 +34,6 @@ async function main() {
   // ── Location ────────────────────────────────────────────────
   await up(db.location, [
     {
-      id: 'loc_empire',
-      name: 'Empire Sewing',
-      address: '910 E 61st Street, DOOR #4, Los Angeles, CA 90001',
-      isDefault: false,
-    },
-    {
       id: 'loc_studio',
       name: 'Studio',
       address: 'Cleo Couture LLC, 1667 North Main St, Los Angeles, CA 90012',
@@ -130,12 +124,12 @@ async function main() {
     { id: 'cmp_fine_rib', name: 'Fine rib cotton', category: 'MATERIAL', vendorId: 'vnd_richline',
       vendorSku: '1137', vendorDescription: 'Rib', unitOfMeasure: 'yard',
       purchaseUnit: 'roll', unitsPerPurchaseUnit: '75',
-      unitCostCents: 315, leadTimeDays: 0, locationId: 'loc_studio', active: true,
+      unitCostCents: 315, leadTimeDays: 0, locationId: null, active: true,
       notes: 'In stock at RichLine, so effectively no lead time on a PO. $3.15/yd is already the volume price. Rolls vary between 70 and 80 yards (Michael Pollack) — 75 is recorded as the planning midpoint, but an order of N rolls yields somewhere in a +/- 7% band, so never promise exact yardage.' },
     { id: 'cmp_lurex', name: 'Red yarn dye lurex stripe', category: 'MATERIAL', vendorId: 'vnd_richline',
       vendorSku: 'D1463', vendorDescription: 'Red yarn dye lurex stripe',
       spec: '58-60" wide, 220 gsm', unitOfMeasure: 'yard', purchaseUnit: 'roll',
-      unitCostCents: 495, leadTimeDays: 21, locationId: 'loc_studio', active: true,
+      unitCostCents: 495, leadTimeDays: 21, locationId: null, active: true,
       notes: 'Cosmo Stripe Tee and Cleo Underwear. Three weeks from PO. Referred to internally as "red rayon" — fiber content not formally confirmed.' },
     { id: 'cmp_buttons', name: 'Shell buttons 14l/16l', category: 'TRIM', vendorId: 'vnd_buttons',
       unitOfMeasure: 'button', unitCostCents: 49, locationId: 'loc_studio', active: true,
@@ -322,9 +316,6 @@ async function main() {
     q('aq_empire_phone', "Empire Sewing's phone number",
       'Address is on file (910 E 61st Street, DOOR #4, Los Angeles, CA 90001) but no phone.',
       'VENDOR', 'vnd_empire'),
-    q('aq_fabric_location', 'Where does fabric count as being, before production?',
-      'RichLine delivers fabric straight to Empire Sewing, so it never reaches the studio. Under the rule that nothing is inventory until it lands in the studio, fabric on hand would always read zero — which is wrong, because 2,000 yards of it exists and is paid for. Options: treat each manufacturer as its own location and hold fabric there, or treat fabric as consumed on delivery. Needs a decision before the first fabric forecast.',
-      'COMPONENT', 'cmp_fine_rib'),
     q('aq_staples_details', 'Staples — full business name, contact, lead time, pricing',
       'Manufacturer for the Scoop Neck Dress, currently in sampling. Nothing beyond the name is on file.',
       'VENDOR', 'vnd_staples'),
@@ -498,11 +489,11 @@ async function main() {
     { id: 'po_2356', poNumber: '2356', vendorId: 'vnd_richline', status: 'SENT',
       orderedAt: new Date('2026-09-01T12:00:00-07:00'),
       expectedAt: new Date('2026-09-22T12:00:00-07:00'),
-      shipToLocationId: 'loc_empire',
+      shipToLocationId: null,
       notes: 'Cosmo Stripe Tee fabric. Three week lead time. Rolls run 70-80 yd so the delivered yardage will not be exactly 1,000.' },
     { id: 'po_2357', poNumber: '2357', vendorId: 'vnd_richline', status: 'SENT',
       orderedAt: new Date('2026-09-01T12:00:00-07:00'),
-      shipToLocationId: 'loc_empire',
+      shipToLocationId: null,
       notes: 'Cleo Tee fabric. Quoted in stock, ship date to be confirmed.' },
   ])
   await up(db.purchaseOrderLine, [
