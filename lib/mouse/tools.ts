@@ -8,6 +8,19 @@ type Tool = {
 }
 
 const str = (description: string) => ({ type: 'string' as const, description })
+
+/**
+ * Inventory writing is OFF unless explicitly switched on.
+ *
+ * Paused while the studio does its first physical count — anything logged in
+ * the meantime would collide with the real numbers. Default-off rather than
+ * default-on so forgetting to set it anywhere is the safe failure, not the
+ * damaging one.
+ *
+ * While paused nothing is dropped: the movement is recorded as a todo so it can
+ * be applied once counting is done.
+ */
+export const inventoryWritesEnabled = () => process.env.INVENTORY_WRITES === 'on'
 const num = (description: string) => ({ type: 'number' as const, description })
 
 /**
@@ -91,7 +104,29 @@ export const TOOLS: Record<string, Tool> = {
         required: ['type', 'deltaQty'],
       },
     },
-    run: (i) => writeEvent(i),
+    run: async (i) => {
+      if (!inventoryWritesEnabled()) {
+        const item = await db.actionItem.create({
+          data: {
+            kind: 'TODO',
+            title: `Apply once counting is done: ${i.type.toLowerCase().replace(/_/g, ' ')} ${i.deltaQty}`,
+            detail:
+              `Studio Mouse was told about this while inventory writing was paused, so it ` +
+              `was not applied. ${JSON.stringify(i)}`,
+            source: 'CHAT',
+          },
+          select: { id: true },
+        })
+        return {
+          applied: false,
+          reason:
+            'Inventory writing is paused until the studio count is done. Recorded as a ' +
+            'todo so it can be applied afterwards — tell the user it was noted but not applied.',
+          todoId: item.id,
+        }
+      }
+      return writeEvent(i)
+    },
   },
 
   correct_inventory_event: {
@@ -110,6 +145,9 @@ export const TOOLS: Record<string, Tool> = {
       },
     },
     run: async (i) => {
+      if (!inventoryWritesEnabled()) {
+        return { applied: false, reason: 'Inventory writing is paused until the studio count is done.' }
+      }
       const orig = await db.inventoryEvent.findUniqueOrThrow({ where: { id: i.eventId } })
       const r = await writeEvent({
         componentId: orig.componentId ?? undefined,

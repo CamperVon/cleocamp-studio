@@ -354,3 +354,12 @@ model underpins the $191,556 ask, its production-cost line is worth revisiting.
 Long sleeve yardage set to UNKNOWN: the loan model's 1.80 came from the same
 source that put short sleeve at 1.50, so neither its absolute figure nor its
 1.2x ratio can be trusted.
+
+## Backlog addition
+10. **Turn inventory writing back on** (`INVENTORY_WRITES=on`) once the studio
+    count is finished and reconciled with Shopify. While off, Studio Mouse
+    records movements it is told about as todos rather than applying them, so
+    nothing is lost — those todos need working through when writing resumes.
+11. **Shopify write-through.** Chat-logged movements currently update only the
+    local number, which the next sync overwrites. `write_inventory` is granted
+    and the location id is recorded; this closes the loop.
