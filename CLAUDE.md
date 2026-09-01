@@ -80,3 +80,7 @@ data. That must not happen again.
   a requirement, not a nicety.
 - Cleo is not technical. Favor one conversational interface over forms, and
   favor asking a question over guessing.
+
+---
+
+Framework-level conventions from the Next.js scaffold live in `AGENTS.md`.

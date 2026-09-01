@@ -1,12 +1,40 @@
-node_modules/
-.next/
-out/
-build/
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+/build
+
+# misc
 .DS_Store
 *.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env — real values never committed, the template is
 .env
 .env*.local
+!.env.example
+
+# vercel
 .vercel
+
+# typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# prisma
 /prisma/*.db
+
+# prisma generated client
+/generated

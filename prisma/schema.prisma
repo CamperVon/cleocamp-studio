@@ -7,13 +7,15 @@
 //   Dates     — all boundaries computed in America/Los_Angeles, never UTC.
 
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../generated/prisma"
 }
 
+// Prisma 7 moved connection URLs out of the schema. They live in
+// prisma.config.ts: DIRECT_URL (unpooled) for migrations, DATABASE_URL
+// (pooled) for the app at runtime via a driver adapter.
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")   // pooled — every app request
-  directUrl = env("DIRECT_URL")     // unpooled — migrations only
+  provider = "postgresql"
 }
 
 // ─────────────────────────────────────────────────────────────
