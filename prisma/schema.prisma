@@ -1,0 +1,646 @@
+// Cleo Camp Studio Admin — data model
+// See SPEC.md for reasoning. See CLAUDE.md for the invariants that must hold.
+//
+// Conventions:
+//   Money     — Int, in cents. `unitCostCents = 315` is $3.15.
+//   Quantity  — Decimal(12,3). Fabric is bought in fractional yards.
+//   Dates     — all boundaries computed in America/Los_Angeles, never UTC.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")   // pooled — every app request
+  directUrl = env("DIRECT_URL")     // unpooled — migrations only
+}
+
+// ─────────────────────────────────────────────────────────────
+// People & places
+// ─────────────────────────────────────────────────────────────
+
+/// Everyone who can create a todo, log an event, or be assigned something.
+/// Auth is a single shared password, so this is attribution, not identity.
+model Person {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?  @unique
+  role      String?  // "Founder", "Project Manager — Manufacturing", etc.
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  eventsCreated    InventoryEvent[] @relation("EventCreatedBy")
+  itemsCreated     ActionItem[]     @relation("ItemCreatedBy")
+  itemsAssigned    ActionItem[]     @relation("ItemAssignedTo")
+}
+
+/// One location today: the studio. Everything is here.
+/// Exists so a 3PL in 2027 is a migration rather than a rewrite.
+model Location {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  address   String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  components Component[]
+  variants   ProductVariant[]
+}
+
+// ─────────────────────────────────────────────────────────────
+// Vendors
+// ─────────────────────────────────────────────────────────────
+
+enum VendorRole {
+  COMPONENT_SUPPLIER
+  MANUFACTURER
+  DYE_HOUSE
+  OTHER
+}
+
+model Vendor {
+  id           String     @id @default(cuid())
+  name         String
+  legalName    String?    // "Empire Sewing Inc" vs how Cleo says it, "Antonio's"
+  role         VendorRole @default(COMPONENT_SUPPLIER)
+  contactName  String?
+  contactInfo  String?
+  address      String?
+  /// How you actually place an order — email, phone, walk in, Etsy, Amazon.
+  /// Studio Mouse tells Cleo which one she's dealing with.
+  orderMethod  String?
+  paymentTerms String?    // "COD", "Net 30"
+  /// Inactive vendors are retained with their history intact, never deleted.
+  /// When a vendor is replaced, their prices and lead times become UNKNOWN on
+  /// the new vendor — never inherited. See CLAUDE.md §3.
+  active       Boolean    @default(true)
+  notes        String?
+  createdAt    DateTime   @default(now())
+
+  components     Component[]
+  productionRuns ProductionRun[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([active, role])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Products
+// ─────────────────────────────────────────────────────────────
+
+enum ProductStatus {
+  DEVELOPMENT
+  SAMPLING
+  ACTIVE
+  SUNSETTED
+}
+
+model Product {
+  id               String        @id @default(cuid())
+  name             String
+  shopifyProductId String?
+  status           ProductStatus @default(DEVELOPMENT)
+  /// CMT turnaround from "components in hand" to "finished goods ready to
+  /// sell". Separate from any single component's lead time. Null = unknown,
+  /// which blocks forecasting and must raise an ActionItem — never assume.
+  productionLeadTimeDays Int?
+  retailPriceCents Int?
+  notes            String?
+  createdAt        DateTime      @default(now())
+
+  variants       ProductVariant[]
+  colorways      Colorway[]
+  bomLines       BomLine[]        @relation("ProductBom")
+  productionRuns ProductionRun[]
+  forecasts      ForecastResult[]
+
+  @@index([status])
+}
+
+/// Colors carry two names. Customers see "Shell"; LA Dye Masters calls it
+/// "Shrinking Violet". Studio Mouse must speak both — telling Cleo to reorder
+/// "Shell" is useless when she's on the phone with Martin.
+model Colorway {
+  id            String  @id @default(cuid())
+  productId     String
+  customerName  String  // "Shell", "Hot Pink", "Sunshine"
+  dyeHouseName  String? // "Shrinking Violet", "Pastel Yellow"
+  pantone       String? // "639C"
+  /// Set when there is no dye-house name because it's matched in-house.
+  inHouseMatch  Boolean @default(false)
+  active        Boolean @default(true)
+  notes         String?
+
+  product  Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variants ProductVariant[]
+
+  @@unique([productId, customerName])
+  @@index([active])
+}
+
+model ProductVariant {
+  id               String  @id @default(cuid())
+  productId        String
+  colorwayId       String?
+  shopifyVariantId String?
+  size             String?
+  locationId       String?
+  /// Finished-goods on hand. NULL means UNKNOWN, not zero — the difference
+  /// matters. Once Phase 1 wires Shopify this becomes a write-through cache of
+  /// Shopify's number and is never edited independently. See CLAUDE.md §3.
+  onHandQty        Decimal? @db.Decimal(12, 3)
+  createdAt        DateTime @default(now())
+
+  product   Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  colorway  Colorway?        @relation(fields: [colorwayId], references: [id])
+  location  Location?        @relation(fields: [locationId], references: [id])
+  events    InventoryEvent[]
+  runLines  ProductionRunLine[]
+  snapshots SalesSnapshot[]
+
+  @@index([productId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Components
+// ─────────────────────────────────────────────────────────────
+
+enum ComponentCategory {
+  MATERIAL   // fabric, leather, denim
+  TRIM       // buttons, tags, zippers
+  HARDWARE   // studs, snaps, magnets, rivets
+  PACKAGING  // glassine bags, stickers, hang tags — consumed per SHIPMENT
+  SUBASSEMBLY // made from other components, e.g. Bateau handles
+}
+
+model Component {
+  id       String            @id @default(cuid())
+  name     String
+  category ComponentCategory @default(MATERIAL)
+  vendorId String?
+
+  /// What the vendor calls it. Cleo says "fine rib"; RichLine says "1137".
+  /// Studio Mouse must quote the vendor's own reference when reordering.
+  vendorSku         String?
+  vendorDescription String?
+  spec              String?  // "58-60\" wide, 220 gsm"
+
+  /// Consumption unit — how it's used. Fabric: "yard".
+  unitOfMeasure String
+  /// Purchase unit — how it's bought. Fabric: "roll".
+  /// "Order 200 yards" is not something a vendor can sell.
+  purchaseUnit        String?
+  unitsPerPurchaseUnit Decimal? @db.Decimal(12, 3) // ~65 yards per roll
+
+  /// NULL means unknown. Never inherit a replaced vendor's figures.
+  leadTimeDays  Int?
+  unitCostCents Int?
+
+  reorderThreshold Decimal? @db.Decimal(12, 3)
+  onHandQty        Decimal  @default(0) @db.Decimal(12, 3)
+  /// Derived from open PurchaseOrderLines — do not set directly.
+  incomingQty      Decimal  @default(0) @db.Decimal(12, 3)
+  locationId       String?
+  active           Boolean  @default(true)
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  vendor      Vendor?   @relation(fields: [vendorId], references: [id])
+  location    Location? @relation(fields: [locationId], references: [id])
+  events      InventoryEvent[]
+  usedIn      BomLine[]          @relation("BomComponent")
+  subAssembly BomLine[]          @relation("ComponentBom")
+  poLines     PurchaseOrderLine[]
+  forecasts   ForecastResult[]
+
+  @@index([active, category])
+}
+
+/// A bill-of-materials line. The parent is either a Product or another
+/// Component (Bateau handles are leather + rivets, assembled before the bag).
+/// Exactly one of parentProductId / parentComponentId is set — enforced by a
+/// check constraint added in the migration, since Prisma can't express it.
+model BomLine {
+  id                String  @id @default(cuid())
+  parentProductId   String?
+  parentComponentId String?
+  componentId       String
+  qtyPerUnit        Decimal @db.Decimal(12, 4)
+  notes             String?
+
+  parentProduct   Product?   @relation("ProductBom", fields: [parentProductId], references: [id], onDelete: Cascade)
+  parentComponent Component? @relation("ComponentBom", fields: [parentComponentId], references: [id], onDelete: Cascade)
+  component       Component  @relation("BomComponent", fields: [componentId], references: [id])
+
+  @@unique([parentProductId, componentId])
+  @@unique([parentComponentId, componentId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Inventory movement — append-only ledger
+// ─────────────────────────────────────────────────────────────
+
+enum InventoryEventType {
+  RECEIVED
+  USED
+  COUNTED
+  MANUAL_ADJUST
+  GIFTED               // out permanently, counts as demand
+  WHOLESALE_SHIPPED    // out permanently, counts as demand
+  STYLIST_PULL_OUT     // out on loan, NOT demand
+  STYLIST_PULL_RETURN
+  RETURNED
+  CORRECTION
+}
+
+enum InventoryEventSource {
+  CHAT
+  MANUAL
+  SYSTEM
+}
+
+/// APPEND ONLY. Never edit, never delete. Mistakes are corrected by a new
+/// CORRECTION event linked via correctsEventId, so the original statement
+/// survives in the audit trail. See CLAUDE.md §3.
+model InventoryEvent {
+  id               String  @id @default(cuid())
+  componentId      String?
+  productVariantId String?
+
+  /// Signed change. Always set.
+  deltaQty  Decimal @db.Decimal(12, 3)
+  /// For COUNTED only: the absolute number Cleo actually said ("I counted 40").
+  /// deltaQty carries the derived change. Storing only the delta would lose
+  /// what she told us.
+  countedQty Decimal? @db.Decimal(12, 3)
+
+  type       InventoryEventType
+  source     InventoryEventSource @default(CHAT)
+  note       String?
+  createdById String?
+  chatMessageId String?
+  correctsEventId String?
+  createdAt  DateTime @default(now())
+
+  component      Component?      @relation(fields: [componentId], references: [id])
+  productVariant ProductVariant? @relation(fields: [productVariantId], references: [id])
+  createdBy      Person?         @relation("EventCreatedBy", fields: [createdById], references: [id])
+  chatMessage    ChatMessage?    @relation(fields: [chatMessageId], references: [id])
+  corrects       InventoryEvent? @relation("Corrections", fields: [correctsEventId], references: [id])
+  correctedBy    InventoryEvent[] @relation("Corrections")
+
+  @@index([componentId, createdAt])
+  @@index([productVariantId, createdAt])
+  @@index([type, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Production — visibility and lead times only, NO inventory
+// ─────────────────────────────────────────────────────────────
+
+enum ProductionStatus {
+  PLANNED
+  COMPONENTS_ORDERED
+  IN_PRODUCTION
+  AT_DYE_HOUSE
+  FINISHING
+  READY_FOR_PICKUP
+  RECEIVED
+  CANCELLED
+}
+
+/// Tracks where a run is so Cleo can ask "where is my run?" and so lead times
+/// chain. Holds NO inventory — nothing counts until it reaches the studio.
+model ProductionRun {
+  id          String           @id @default(cuid())
+  productId   String
+  vendorId    String?          // the CMT
+  /// The manufacturer's own reference — Fashion Garcia used "Cut #12".
+  cutRef      String?
+  status      ProductionStatus @default(PLANNED)
+  startedAt   DateTime?
+  expectedReadyAt DateTime?
+  /// Null when the manufacturer hasn't confirmed a date yet. Common.
+  dateConfirmed Boolean  @default(false)
+  receivedAt  DateTime?
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+  vendor  Vendor? @relation(fields: [vendorId], references: [id])
+  lines   ProductionRunLine[]
+  costs   ProductionRunCost[]
+
+  @@index([status])
+}
+
+model ProductionRunLine {
+  id               String  @id @default(cuid())
+  runId            String
+  productVariantId String
+  qtyOrdered       Decimal @db.Decimal(12, 3)
+  qtyReceived      Decimal @default(0) @db.Decimal(12, 3)
+
+  run     ProductionRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [productVariantId], references: [id])
+}
+
+/// Runs carry flat costs as well as per-unit costs — cutting setup, transport
+/// to and from the dye house, fabric pickup. Without these, small-run economics
+/// are invisible: Fashion Garcia's flat $165 cutting charge is $1.47/unit on a
+/// 112-unit run and $0.35/unit on 1,411. That gap is why Studio Mouse can say a
+/// small run is expensive and show its working.
+model ProductionRunCost {
+  id          String  @id @default(cuid())
+  runId       String
+  description String  // "Cutting", "Transport to dye house"
+  isPerUnit   Boolean @default(false)
+  amountCents Int
+
+  run ProductionRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────
+// Purchasing
+// ─────────────────────────────────────────────────────────────
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SENT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+/// Studio Mouse generates these from remembered vendor and component detail —
+/// "build a PO for fabric for Cleo tees" should already know RichLine, Michael
+/// Pollack, style 1137, $3.15/yd, and the ship-to address, and ask only for
+/// what it genuinely doesn't have.
+/// Open lines are what `Component.incomingQty` derives from.
+model PurchaseOrder {
+  id         String              @id @default(cuid())
+  poNumber   String              @unique
+  vendorId   String
+  status     PurchaseOrderStatus @default(DRAFT)
+  orderedAt  DateTime?
+  expectedAt DateTime?
+  receivedAt DateTime?
+  shipToLocationId String?
+  notes      String?
+  createdAt  DateTime            @default(now())
+
+  vendor Vendor              @relation(fields: [vendorId], references: [id])
+  lines  PurchaseOrderLine[]
+
+  @@index([status])
+}
+
+model PurchaseOrderLine {
+  id            String  @id @default(cuid())
+  purchaseOrderId String
+  componentId   String
+  /// Quantity in the PURCHASE unit (rolls), with the conversion recorded so
+  /// incoming stock lands in the consumption unit (yards).
+  qtyOrdered    Decimal @db.Decimal(12, 3)
+  unit          String
+  unitCostCents Int?
+  qtyReceived   Decimal @default(0) @db.Decimal(12, 3)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  component     Component     @relation(fields: [componentId], references: [id])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Attention — questions, todos, alerts
+// ─────────────────────────────────────────────────────────────
+
+enum EntityType {
+  VENDOR
+  PRODUCT
+  PRODUCT_VARIANT
+  COMPONENT
+  PRODUCTION_RUN
+  PURCHASE_ORDER
+  GENERAL
+}
+
+enum ActionItemKind {
+  QUESTION // Studio Mouse needs to know something
+  TODO     // a person must do something
+}
+
+enum ActionItemSource {
+  CHAT
+  EMAIL   // Phase 2. Extracted facts are PROPOSALS, never direct writes.
+  SYSTEM
+  MANUAL
+}
+
+/// Unifies "Studio Mouse needs to know X" and "someone must do Y by Z".
+/// Both are resolved by a human and both belong in one list, so Cleo has one
+/// place to look rather than three screens.
+model ActionItem {
+  id         String           @id @default(cuid())
+  kind       ActionItemKind   @default(QUESTION)
+  entityType EntityType       @default(GENERAL)
+  entityId   String?
+  title      String
+  detail     String?
+  dueDate    DateTime?
+  /// Days before dueDate to start surfacing it.
+  remindDaysBefore Int?       @default(3)
+  createdById  String?
+  assignedToId String?
+  source     ActionItemSource @default(CHAT)
+  resolved   Boolean          @default(false)
+  resolvedAt DateTime?
+  resolutionNote String?
+  createdAt  DateTime         @default(now())
+
+  createdBy  Person? @relation("ItemCreatedBy", fields: [createdById], references: [id])
+  assignedTo Person? @relation("ItemAssignedTo", fields: [assignedToId], references: [id])
+  alerts     Alert[]
+
+  @@index([resolved, dueDate])
+  @@index([kind, resolved])
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  URGENT
+}
+
+/// System-raised and system-resolving. Kept separate from ActionItem for that
+/// reason — nobody "completes" an alert, the condition simply stops being true.
+model Alert {
+  id       String        @id @default(cuid())
+  severity AlertSeverity @default(WARNING)
+  message  String
+  /// Stable key for idempotency — the nightly job must not duplicate an alert
+  /// for a condition that is still unresolved. Unique among unresolved rows.
+  dedupeKey String
+  relatedActionItemId String?
+  resolved  Boolean  @default(false)
+  resolvedAt DateTime?
+  createdAt DateTime @default(now())
+
+  relatedActionItem ActionItem? @relation(fields: [relatedActionItemId], references: [id])
+
+  @@index([resolved, createdAt])
+}
+
+enum NoteSource {
+  CHAT
+  MANUAL
+  SYSTEM
+}
+
+model Note {
+  id         String     @id @default(cuid())
+  entityType EntityType @default(GENERAL)
+  entityId   String?
+  content    String
+  source     NoteSource @default(CHAT)
+  createdAt  DateTime   @default(now())
+
+  @@index([entityType, entityId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Chat
+// ─────────────────────────────────────────────────────────────
+
+enum ChatRole {
+  USER
+  ASSISTANT
+}
+
+/// Threads exist so "the buttons" from three days ago doesn't bleed into
+/// today's context window.
+model ChatThread {
+  id        String   @id @default(cuid())
+  title     String?
+  createdAt DateTime @default(now())
+  messages  ChatMessage[]
+}
+
+model ChatMessage {
+  id       String   @id @default(cuid())
+  threadId String
+  role     ChatRole
+  content  String
+  toolCallsJson Json?
+  /// Which model handled this turn — lets us see how often Sonnet escalates
+  /// to Opus and whether the routing is right.
+  model    String?
+  createdAt DateTime @default(now())
+
+  thread ChatThread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  events InventoryEvent[]
+
+  @@index([threadId, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Forecasting
+// ─────────────────────────────────────────────────────────────
+
+model SalesSnapshot {
+  id               String   @id @default(cuid())
+  productVariantId String
+  date             DateTime @db.Date
+  unitsSold        Int
+  source           String   @default("shopify")
+
+  variant ProductVariant @relation(fields: [productVariantId], references: [id], onDelete: Cascade)
+
+  @@unique([productVariantId, date, source])
+  @@index([date])
+}
+
+model ForecastResult {
+  id          String    @id @default(cuid())
+  productId   String?
+  componentId String?
+  projectedStockoutDate DateTime?
+  recommendedOrderDate  DateTime?
+  /// Human-readable working, so the digest can explain rather than assert.
+  note        String?
+  /// Set when the forecast could NOT be computed. Never skip silently —
+  /// name exactly what's missing. "Manufacturing lead time unknown."
+  blockedReason String?
+  computedAt  DateTime  @default(now())
+
+  product   Product?   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  component Component? @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  events    CalendarEvent[]
+
+  @@index([computedAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Calendar, links, digests
+// ─────────────────────────────────────────────────────────────
+
+enum CalendarEventType {
+  ORDER_BY
+  PRODUCTION_DUE
+  PRESS_OR_EVENT   // forecast INPUT — flagged before Cleo sizes an order
+  DELIVERY_EXPECTED
+  OTHER
+}
+
+enum CalendarEventSource {
+  STUDIO_MOUSE
+  GOOGLE
+  MANUAL
+}
+
+model CalendarEvent {
+  id               String              @id @default(cuid())
+  forecastResultId String?
+  googleEventId    String?
+  title            String
+  date             DateTime            @db.Date
+  type             CalendarEventType   @default(OTHER)
+  source           CalendarEventSource @default(STUDIO_MOUSE)
+  status           String?
+  notes            String?
+  createdAt        DateTime            @default(now())
+
+  forecastResult ForecastResult? @relation(fields: [forecastResultId], references: [id], onDelete: SetNull)
+
+  @@index([date])
+}
+
+model FileLink {
+  id        String   @id @default(cuid())
+  title     String
+  url       String
+  category  String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([category, sortOrder])
+}
+
+enum DigestKind {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+/// One row per digest actually sent. The unique constraint is what makes the
+/// nightly job safe to hit repeatedly — it cannot double-send.
+model DigestSend {
+  id         String     @id @default(cuid())
+  kind       DigestKind
+  sentForDate DateTime  @db.Date
+  recipients String
+  subject    String?
+  sentAt     DateTime   @default(now())
+
+  @@unique([kind, sentForDate])
+}
