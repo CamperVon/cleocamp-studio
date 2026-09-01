@@ -182,3 +182,60 @@ CTG record is retained as INACTIVE with the $2.80 / RIB1000 history intact.
    runs functions in US East by default and does not expose region selection.
    Fix is either (a) upgrade to Pro and set functions to US West, or
    (b) recreate the Neon project in US East. Cheapest before there is data.
+
+---
+
+# Manufacturing costs — CONFIRMED 2026-09-01
+Source: Fashion Garcia Inc invoices 324 and 325, both dated 6/26/2026
+
+Fashion Garcia Inc — 8616 Otis Ave, 2nd Floor, South Gate CA 90280
+Tel (323) 487-5054 / Cell (323) 541-2200
+NOTE: bible lists "8636 Otis St" — address differs. Low priority (vendor is
+being replaced) but the bible record is wrong somewhere.
+
+## Invoice 324 — Cut #12, 112 units
+| Line | Unit price | Total |
+|---|---|---|
+| Cleo T Shirt (sew) | $9.25 / unit | $1,036.00 |
+| Cutting | $165.00 flat | $165.00 |
+| Transport to/from dye house | $40.00 × 2 | $80.00 |
+| **Total** | | **$1,281.00** |
+
+Effective all-in: **$11.44 / unit**
+
+## Invoice 325 — Cut #13, 1,411 units
+| Line | Unit price | Total |
+|---|---|---|
+| Sewing | $8.50 / unit | $11,993.50 |
+| Cutting | $0.35 / unit | $493.85 |
+| Pick up rolls | $40.00 flat | $40.00 |
+| **Total** | | **$12,527.35** |
+
+Effective all-in: **$8.88 / unit**
+
+## What this establishes
+
+1. **A real volume break exists.** Sew+cut is $9.25 + flat cutting on a small
+   run, versus $8.85/unit combined at 1,411 units.
+2. **Small runs cost ~29% more per unit.** $11.44 vs $8.88. Most of the gap is
+   the flat $165 cutting charge amortized over 112 units ($1.47/unit) instead
+   of 1,411 ($0.35/unit). This is quantified evidence for the order-sizing
+   advisory — Studio Mouse can now say *why* a small run is expensive, from
+   real invoices rather than a guess.
+3. **Production runs carry flat costs, not just per-unit costs.** Cutting
+   setup ($165) and transport ($40 each leg, dye house and fabric pickup).
+   SCHEMA IMPLICATION: `ProductionRun` needs flat/setup cost lines separate
+   from per-unit costs, or small-run economics stay invisible.
+4. Run sizes vary widely: 112 and 1,411 units in the same month. Partially
+   answers intake question 27.
+5. The loan model's $9.25/tee C&S is the **small-run** rate. At volume the
+   real figure is $8.85, so that model is slightly conservative.
+6. Runs are identified by **Cut # / PO** (#12, #13). Use as ProductionRun ref.
+
+## Antonio's = EMPIRE SEWING INC
+- Legal name: **Empire Sewing Inc**, contact Antonio
+- **Matches Fashion Garcia's current pricing**
+- **Shorter turnaround** than Fashion Garcia — figure pending
+- ?? Does "match current pricing" mean the full structure including the volume
+   break and flat cutting charge, or just the headline per-unit rate?
+- ?? Address, phone, exact turnaround still pending
