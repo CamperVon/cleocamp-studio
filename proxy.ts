@@ -12,7 +12,14 @@ const COOKIE = 'cleo_session'
  */
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
-  if (pathname.startsWith('/login') || pathname.startsWith('/api/cron')) {
+  // Two routes cannot hold a session cookie and authenticate their own way:
+  // the cron route with CRON_SECRET, and the inbound-email webhook with a
+  // Svix signature from Resend.
+  if (
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/api/cron') ||
+    pathname.startsWith('/api/inbound')
+  ) {
     return NextResponse.next()
   }
 

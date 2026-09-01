@@ -1,0 +1,63 @@
+import { NextResponse, type NextRequest } from 'next/server'
+import { Webhook } from 'svix'
+import { db } from '@/lib/db'
+
+/**
+ * Inbound email — anything CC'd or forwarded to Studio Mouse.
+ *
+ * SECURITY. This endpoint is public by necessity: Resend cannot hold a session
+ * cookie. Two things guard it.
+ *
+ *  1. Every request must carry a valid Svix signature from Resend. Without
+ *     this, anyone who found the URL could POST fabricated mail and feed the
+ *     database whatever they liked.
+ *  2. Nothing here is ever applied. Mail is stored and nothing more. Studio
+ *     Mouse reads it later and raises *proposals* a human confirms, because
+ *     anyone who can email the company must not be able to write to inventory.
+ *     See CLAUDE.md §4.
+ */
+export async function POST(req: NextRequest) {
+  const secret = process.env.RESEND_WEBHOOK_SECRET
+  if (!secret) {
+    return NextResponse.json({ error: 'not configured' }, { status: 503 })
+  }
+
+  const body = await req.text()
+  const headers = {
+    'svix-id': req.headers.get('svix-id') ?? '',
+    'svix-timestamp': req.headers.get('svix-timestamp') ?? '',
+    'svix-signature': req.headers.get('svix-signature') ?? '',
+  }
+
+  let event: any
+  try {
+    event = new Webhook(secret).verify(body, headers)
+  } catch {
+    // Unsigned or tampered. Say nothing useful about why.
+    return NextResponse.json({ error: 'invalid signature' }, { status: 401 })
+  }
+
+  if (event?.type !== 'email.received') {
+    return NextResponse.json({ ok: true, ignored: event?.type ?? 'unknown' })
+  }
+
+  const d = event.data ?? {}
+  const to = Array.isArray(d.to) ? d.to.join(', ') : String(d.to ?? '')
+
+  await db.inboundEmail.upsert({
+    where: { messageId: d.message_id ?? d.email_id ?? crypto.randomUUID() },
+    create: {
+      messageId: d.message_id ?? d.email_id ?? null,
+      fromAddress: String(d.from ?? 'unknown'),
+      toAddress: to,
+      subject: d.subject ?? null,
+      text: d.text ?? null,
+      html: d.html ?? null,
+      raw: event,
+      receivedAt: d.created_at ? new Date(d.created_at) : new Date(),
+    },
+    update: {},
+  })
+
+  return NextResponse.json({ ok: true })
+}

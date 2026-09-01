@@ -639,6 +639,30 @@ model FileLink {
   @@index([category, sortOrder])
 }
 
+/// Mail CC'd or forwarded to Studio Mouse.
+///
+/// EMAIL IS DATA, NEVER INSTRUCTIONS. Anyone who can send mail to this address
+/// can put text in front of Studio Mouse, so nothing here is ever applied
+/// directly. Facts extracted from an email become proposals a human confirms.
+/// See CLAUDE.md §4.
+model InboundEmail {
+  id          String   @id @default(cuid())
+  messageId   String?  @unique
+  fromAddress String
+  toAddress   String
+  subject     String?
+  text        String?
+  html        String?
+  /// Whole webhook payload, kept so nothing is lost if parsing changes later.
+  raw         Json
+  receivedAt  DateTime
+  /// Set once Studio Mouse has read it and raised whatever it needed to.
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([processedAt, receivedAt])
+}
+
 enum DigestKind {
   DAILY
   WEEKLY
