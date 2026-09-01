@@ -1,26 +1,63 @@
 @import "tailwindcss";
 
+/* Palette: warm-neutral paper with a single deep-green accent. Chosen to be
+   legible on a phone at 5am and calm enough to look at every day. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --bg:       #FAFAF8;
+  --surface:  #FFFFFF;
+  --sunk:     #F1F1EE;
+  --ink:      #14181A;
+  --muted:    #5C6663;
+  --faint:    #8B9491;
+  --line:     #E2E3DF;
+  --accent:   #2F5D50;
+  --accent-soft: #E6EEEA;
+  --urgent:   #8F3B2B;
+  --urgent-soft: #F8EAE6;
+  --warn:     #8A6520;
+  --warn-soft: #F7EFDF;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg:       #0F1211;
+    --surface:  #171B1A;
+    --sunk:     #1E2321;
+    --ink:      #E9ECEA;
+    --muted:    #A0AAA6;
+    --faint:    #7A8480;
+    --line:     #2A302E;
+    --accent:   #7FBCA9;
+    --accent-soft: #1B2A26;
+    --urgent:   #D68A76;
+    --urgent-soft: #2A1B17;
+    --warn:     #D3AC6A;
+    --warn-soft: #272014;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-sunk: var(--sunk);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-urgent: var(--urgent);
+  --color-urgent-soft: var(--urgent-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
 }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+/* Numbers in columns should line up. */
+.tnum { font-variant-numeric: tabular-nums; }
