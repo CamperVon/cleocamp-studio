@@ -21,6 +21,19 @@ export default async function Inbox() {
       title="Inbox"
       lede="Mail copied to Studio Mouse. It reads these and raises questions — it never acts on them directly."
     >
+      {!process.env.RESEND_WEBHOOK_SECRET ? (
+        <div className="rounded-xl border border-warn bg-warn-soft px-4 py-3 text-sm text-warn sm:px-5">
+          <p className="font-medium">Not receiving yet.</p>
+          <p className="mt-1">
+            RESEND_WEBHOOK_SECRET is not set, so the inbound route turns Resend away and
+            nothing is stored. Add a webhook in Resend pointing at
+            {' '}<code className="font-mono text-xs">/api/inbound/email</code>{' '}
+            for the <code className="font-mono text-xs">email.received</code> event, then put
+            its signing secret in the environment.
+          </p>
+        </div>
+      ) : null}
+
       <Card title={`Received (${mail.length})`}>
         {mail.length === 0 ? (
           <Empty>
