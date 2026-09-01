@@ -112,3 +112,107 @@ export function isConfigured() {
     return false
   }
 }
+
+// ─────────────────────────────────────────────────────────────
+// Reads
+// ─────────────────────────────────────────────────────────────
+
+export type ShopifyVariant = {
+  id: string
+  title: string
+  sku: string | null
+  price: string
+  inventoryQuantity: number | null
+  selectedOptions: Array<{ name: string; value: string }>
+  product: { id: string; title: string; handle: string; status: string }
+}
+
+/** Every variant in the store, paged. */
+export async function fetchAllVariants(): Promise<ShopifyVariant[]> {
+  const out: ShopifyVariant[] = []
+  let cursor: string | null = null
+  do {
+    const d: any = await shopifyGraphQL(
+      `query($cursor: String) {
+        productVariants(first: 200, after: $cursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            id title sku price inventoryQuantity
+            selectedOptions { name value }
+            product { id title handle status }
+          }
+        }
+      }`,
+      { cursor },
+    )
+    out.push(...d.productVariants.nodes)
+    cursor = d.productVariants.pageInfo.hasNextPage ? d.productVariants.pageInfo.endCursor : null
+  } while (cursor)
+  return out
+}
+
+export async function fetchLocations() {
+  const d = await shopifyGraphQL<{
+    locations: { nodes: Array<{ id: string; name: string; isActive: boolean }> }
+  }>(`{ locations(first: 20) { nodes { id name isActive } } }`)
+  return d.locations.nodes
+}
+
+export type SoldLine = { date: string; variantId: string; quantity: number }
+
+/**
+ * Sales history, flattened to one row per variant per day.
+ *
+ * Dates are bucketed in America/Los_Angeles, not UTC — a sale at 6pm Pacific
+ * belongs to that day, not tomorrow. Getting this wrong shifts a whole day of
+ * demand and quietly skews every forecast.
+ */
+export async function fetchSoldLines(sinceISO: string): Promise<SoldLine[]> {
+  const out: SoldLine[] = []
+  let cursor: string | null = null
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  })
+
+  do {
+    const d: any = await withRetry(() =>
+      shopifyGraphQL(
+        `query($cursor: String, $q: String!) {
+          orders(first: 40, after: $cursor, query: $q, sortKey: CREATED_AT) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              createdAt cancelledAt
+              lineItems(first: 50) { nodes { quantity variant { id } } }
+            }
+          }
+        }`,
+        { cursor, q: `created_at:>=${sinceISO}` },
+      ),
+    )
+    for (const o of d.orders.nodes) {
+      if (o.cancelledAt) continue
+      const date = fmt.format(new Date(o.createdAt))
+      for (const li of o.lineItems.nodes) {
+        if (!li.variant?.id) continue // deleted product, or a custom line
+        out.push({ date, variantId: li.variant.id, quantity: li.quantity })
+      }
+    }
+    cursor = d.orders.pageInfo.hasNextPage ? d.orders.pageInfo.endCursor : null
+  } while (cursor)
+
+  return out
+}
+
+/** Shopify throttles on a cost budget; back off rather than failing the sync. */
+async function withRetry<T>(fn: () => Promise<T>, tries = 5): Promise<T> {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn()
+    } catch (e) {
+      const msg = (e as Error).message
+      if (i >= tries - 1 || !/throttl|exceeded/i.test(msg)) throw e
+      await new Promise((r) => setTimeout(r, 2000 * (i + 1)))
+    }
+  }
+}

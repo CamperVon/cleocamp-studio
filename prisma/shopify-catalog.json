@@ -584,6 +584,62 @@
         ]
       ],
       "priceCents": 4500
+    },
+    {
+      "handle": "ruby-red-tee",
+      "productId": "prd_cleo_tee",
+      "priceCents": 8800,
+      "colorways": {
+        "Red": "clr_tee_ruby"
+      },
+      "variants": [
+        [
+          "Red",
+          "1",
+          47163670102269,
+          8800
+        ],
+        [
+          "Red",
+          "2",
+          47164248228093,
+          8800
+        ],
+        [
+          "Red",
+          "3",
+          47164248260861,
+          8800
+        ]
+      ]
+    },
+    {
+      "handle": "cleo-tee-blackberry",
+      "productId": "prd_cleo_tee",
+      "priceCents": 8800,
+      "colorways": {
+        "Blackberry": "clr_tee_black_berry"
+      },
+      "variants": [
+        [
+          "Blackberry",
+          "1",
+          47343816540413,
+          8800
+        ],
+        [
+          "Blackberry",
+          "2",
+          47343818244349,
+          8800
+        ],
+        [
+          "Blackberry",
+          "3",
+          47343818277117,
+          8800
+        ]
+      ]
     }
   ]
 }

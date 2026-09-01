@@ -43,6 +43,8 @@ model Location {
   id        String   @id @default(cuid())
   name      String   @unique
   address   String?
+  /// Shopify adjusts stock per location, so the write-through needs this.
+  shopifyLocationId String?
   isDefault Boolean  @default(false)
   createdAt DateTime @default(now())
 

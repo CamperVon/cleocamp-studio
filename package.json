@@ -10,7 +10,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts",
+    "sync:shopify": "tsx scripts/sync-shopify.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
