@@ -44,6 +44,20 @@ export async function POST(req: NextRequest) {
   const d = event.data ?? {}
   const to = Array.isArray(d.to) ? d.to.join(', ') : String(d.to ?? '')
 
+  // The MX record makes the whole subdomain a catch-all, so every address at
+  // send.cleocamp.com reaches us — including whatever spam finds it later.
+  // Only store mail addressed to a mailbox we actually use. Unknown addresses
+  // get a 200 so Resend stops retrying, but nothing is written.
+  const allowed = (process.env.INBOUND_ALLOWED_MAILBOXES ??
+    'mouse,studio,wholesale,billing,support,po,orders')
+    .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+
+  const mailboxes = to.toLowerCase().split(',')
+    .map((a) => a.trim().replace(/^.*</, '').replace(/>.*$/, '').split('@')[0])
+  if (!mailboxes.some((m) => allowed.includes(m))) {
+    return NextResponse.json({ ok: true, ignored: 'address not in use' })
+  }
+
   await db.inboundEmail.upsert({
     where: { messageId: d.message_id ?? d.email_id ?? crypto.randomUUID() },
     create: {
