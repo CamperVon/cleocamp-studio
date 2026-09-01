@@ -663,6 +663,16 @@ model InboundEmail {
   @@index([processedAt, receivedAt])
 }
 
+/// Mouse's Corner — one short assessment a day, generated on first view and
+/// kept, so it does not change every time the page is refreshed.
+model DailyBrief {
+  id        String   @id @default(cuid())
+  forDate   DateTime @unique @db.Date
+  text      String
+  model     String?
+  createdAt DateTime @default(now())
+}
+
 enum DigestKind {
   DAILY
   WEEKLY

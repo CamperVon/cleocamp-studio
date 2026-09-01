@@ -290,7 +290,11 @@ async function main() {
       url: 'https://docs.google.com/document/d/1JpjjR01t6UZDqI2zAcSgm_elUDUasT8gPt6naEu7smc/edit' },
     { id: 'lnk_business', title: 'Business docs — line sheet, deck, pricing', category: 'Reference', sortOrder: 3,
       url: 'https://drive.google.com/drive/folders/1K2Vuq__gzqlx0n91BHaqPm2nonIeJjKg' },
-    { id: 'lnk_shop', title: 'cleocamp.com', category: 'Shop', sortOrder: 4, url: 'https://cleocamp.com' },
+    { id: 'lnk_shop', title: 'cleocamp.com', category: 'Shop', sortOrder: 6, url: 'https://cleocamp.com' },
+    { id: 'lnk_shopify', title: 'Shopify admin', category: 'Shop', sortOrder: 5,
+      url: 'https://admin.shopify.com/store/cleocamp' },
+    { id: 'lnk_drive', title: 'Google Drive — Cleo', category: 'Reference', sortOrder: 4,
+      url: 'https://drive.google.com/drive/folders/1XWdnqEvzhEbS0f8Q_3T0O7xNoaTmBS7_' },
   ])
 
   // ── Open questions — what Studio Mouse knows it doesn't know ─

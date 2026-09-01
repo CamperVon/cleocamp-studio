@@ -2,18 +2,14 @@ import Link from 'next/link'
 import { db } from '@/lib/db'
 import { Page, Card, Empty, Chip, Value, Stat } from '@/app/ui/primitives'
 import { Chat } from '@/app/ui/chat'
+import { Mouse } from '@/app/ui/mouse'
+import { laMidnight, laDay } from '@/lib/dates'
+import { quoteOfTheDay } from '@/lib/quotes'
+import { getDailyBrief } from '@/lib/mouse/brief'
 
 export const dynamic = 'force-dynamic'
 
-/** Date boundaries are Pacific. Computing them in UTC shifts a whole day. */
-function laDaysAgo(n: number) {
-  const la = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }))
-  la.setHours(0, 0, 0, 0)
-  la.setDate(la.getDate() - n)
-  return la
-}
-const day = (d: Date) =>
-  d.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', month: 'short', day: 'numeric' })
+const day = laDay
 
 export default async function Today() {
   const [items, alerts, links, components, variants, sales24, sales7, pos, runs, events] =
@@ -30,8 +26,8 @@ export default async function Today() {
         include: { vendor: { select: { name: true } } },
       }),
       db.productVariant.aggregate({ _count: true, _sum: { onHandQty: true } }),
-      db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laDaysAgo(1) } } }),
-      db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laDaysAgo(7) } } }),
+      db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(1) } } }),
+      db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(7) } } }),
       db.purchaseOrder.findMany({
         where: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } },
         include: { vendor: true, lines: { include: { component: true } } },
@@ -43,13 +39,20 @@ export default async function Today() {
         orderBy: { expectedReadyAt: 'asc' },
       }),
       db.calendarEvent.findMany({
-        where: { date: { gte: laDaysAgo(0) } },
+        where: { date: { gte: laMidnight(0) } },
         orderBy: { date: 'asc' },
         take: 8,
       }),
     ])
 
-  const dueSoon = items.filter((i) => i.dueDate && i.dueDate <= laDaysAgo(-7))
+  const dueSoon = items.filter((i) => i.dueDate && i.dueDate <= laMidnight(-7))
+  const quote = quoteOfTheDay()
+  const brief = await getDailyBrief().catch((e) => {
+    // Never let the day's note take the whole page down with it, but do not
+    // swallow it either — a silent null looks identical to "not written yet".
+    console.error("Mouse's Corner failed:", e)
+    return null
+  })
   const attention = alerts.length + items.length
 
   return (
@@ -68,6 +71,16 @@ export default async function Today() {
         />
         <Stat label="To tend to" value={attention} sub="questions and todos" />
       </div>
+
+      {brief ? (
+        <section className="overflow-hidden rounded-xl border border-line bg-surface">
+          <div className="flex items-center gap-2 border-b border-line px-4 py-3 sm:px-5">
+            <Mouse size={26} className="text-ink/70" />
+            <h2 className="text-sm font-semibold">Mouse&rsquo;s Corner</h2>
+          </div>
+          <p className="px-4 py-3.5 text-sm leading-relaxed sm:px-5">{brief.text}</p>
+        </section>
+      ) : null}
 
       {/* What is out of the building and when it comes back. */}
       <details className="group overflow-hidden rounded-xl border border-line bg-surface" open>
@@ -124,7 +137,19 @@ export default async function Today() {
         </div>
       </details>
 
-      <Card title="Coming up">
+      <Card
+        title="Coming up"
+        action={
+          process.env.CALENDAR_FEED_URL ? (
+            <a
+              href={process.env.CALENDAR_FEED_URL}
+              className="rounded border border-line px-2 py-1 text-xs text-muted hover:bg-sunk"
+            >
+              Subscribe in Calendar
+            </a>
+          ) : null
+        }
+      >
         {events.length + dueSoon.length === 0 ? (
           <Empty>Nothing on the calendar.</Empty>
         ) : (
@@ -218,6 +243,13 @@ export default async function Today() {
       <p className="text-center text-xs text-faint">
         <Link href="/items" className="underline underline-offset-2">Everything Studio Mouse is waiting on</Link>
       </p>
+
+      <figure className="border-t border-line pt-5 text-center">
+        <blockquote className="font-serif text-base italic text-muted">
+          &ldquo;{quote.text}&rdquo;
+        </blockquote>
+        <figcaption className="mt-1 text-xs tracking-wide text-faint">{quote.who}</figcaption>
+      </figure>
     </Page>
   )
 }
