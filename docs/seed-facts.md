@@ -239,3 +239,42 @@ Effective all-in: **$8.88 / unit**
 - ?? Does "match current pricing" mean the full structure including the volume
    break and flat cutting charge, or just the headline per-unit rate?
 - ?? Address, phone, exact turnaround still pending
+
+---
+
+# RichLine pricing — CONFIRMED 2026-09-01
+Source: Michael Pollack, RichLine, direct quote
+
+| Fabric | Style | Spec | Price | Used for |
+|---|---|---|---|---|
+| Rib | **1137** | — | **$3.15 / yd** (volume price) | Cleo Tee, Long Sleeve Tee |
+| Red yarn dye lurex stripe | **D1463** | 58–60" wide, 220 gsm | **$4.95 / yd** | Cosmo Stripe Tee, Underwear |
+
+## Impact
+
+- Rib goes from CTG's $2.80 → RichLine's **$3.15**, a **12.5% increase**
+  (+$0.35/yd). At 1.50 yds/tee that is **+$0.53 per tee**.
+- Fabric cost per Cleo Tee: 1.50 × $3.15 = **$4.73** (was $4.20).
+- $3.15 is already Michael's volume price — "the best I can do."
+
+### Estimated all-in unit cost, Cleo Tee at volume
+| Line | Cost |
+|---|---|
+| Fabric (1.50 yd × $3.15) | $4.73 |
+| Sew + cut (Empire matching FG volume rate) | $8.85 |
+| Buttons + tag | $1.00–1.36 (unresolved — see intake Q17) |
+| Flat costs amortized at volume | ~$0.05 |
+| **Total** | **~$14.65–15.00** |
+
+Retail $88.
+
+## Open points
+
+- Brandon described the Cosmo fabric as "red rayon"; Michael calls it
+  "red yarn dye lurex stripe" (lurex = metallic thread). Likely the same
+  fabric described two ways, but the fiber content is not actually confirmed.
+- **Yards per Cosmo tee is NOT established.** The 1.50 yd figure was measured
+  on the rib. D1463 is 58–60" wide at 220 gsm; if that differs from the rib's
+  width, yield per yard differs and 1.50 will be wrong. Needs confirming before
+  any Cosmo tee forecast.
+- CTG record retained as INACTIVE with $2.80 / RIB1000 history.
