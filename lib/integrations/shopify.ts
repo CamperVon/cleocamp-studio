@@ -216,3 +216,11 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 5): Promise<T> {
     }
   }
 }
+
+/** Orders paid for but not yet shipped — the pile waiting on the packing table. */
+export async function fetchToShipCount(): Promise<number> {
+  const d = await shopifyGraphQL<{ ordersCount: { count: number } }>(
+    `{ ordersCount(query: "fulfillment_status:unfulfilled AND status:open") { count } }`,
+  )
+  return d.ordersCount.count
+}

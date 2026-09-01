@@ -6,6 +6,7 @@ import { Mouse } from '@/app/ui/mouse'
 import { laMidnight, laDay } from '@/lib/dates'
 import { quoteOfTheDay } from '@/lib/quotes'
 import { getDailyBrief } from '@/lib/mouse/brief'
+import { fetchToShipCount, isConfigured } from '@/lib/integrations/shopify'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,6 +48,9 @@ export default async function Today() {
 
   const dueSoon = items.filter((i) => i.dueDate && i.dueDate <= laMidnight(-7))
   const quote = quoteOfTheDay()
+  // Live from Shopify. Null rather than 0 if it cannot be reached — an
+  // unreachable API must not read as an empty packing table.
+  const toShip = isConfigured() ? await fetchToShipCount().catch(() => null) : null
   const brief = await getDailyBrief().catch((e) => {
     // Never let the day's note take the whole page down with it, but do not
     // swallow it either — a silent null looks identical to "not written yet".
@@ -65,6 +69,11 @@ export default async function Today() {
         <Stat label="Sold yesterday" value={sales24._sum.unitsSold ?? 0} sub="units, from Shopify" />
         <Stat label="Sold this week" value={sales7._sum.unitsSold ?? 0} sub="last 7 days" />
         <Stat
+          label="To ship"
+          value={toShip === null ? <span className="text-faint italic">unknown</span> : toShip}
+          sub={toShip === null ? 'Shopify unreachable' : 'unfulfilled orders'}
+        />
+        <Stat
           label="Finished goods"
           value={Number(variants._sum.onHandQty ?? 0)}
           sub={`across ${variants._count} variants`}
@@ -78,7 +87,11 @@ export default async function Today() {
             <Mouse size={26} className="text-ink/70" />
             <h2 className="text-sm font-semibold">Mouse&rsquo;s Corner</h2>
           </div>
-          <p className="px-4 py-3.5 text-sm leading-relaxed sm:px-5">{brief.text}</p>
+          <div className="flex flex-col gap-3 px-4 py-3.5 text-sm leading-relaxed sm:px-5">
+            {brief.text.split(/\n\s*\n/).map((para, i) => (
+              <p key={i}>{para.trim()}</p>
+            ))}
+          </div>
         </section>
       ) : null}
 

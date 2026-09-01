@@ -56,11 +56,11 @@ export function Chat() {
 
   return (
     <div className="flex flex-col">
-      <div className="max-h-[26rem] min-h-[9rem] overflow-y-auto px-4 py-4 sm:px-5">
+      <div className="max-h-[22rem] overflow-y-auto px-4 py-3 sm:px-5">
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 py-6 text-center">
-            <Mouse size={44} className="text-faint" />
-            <p className="max-w-xs text-sm text-muted">
+          <div className="flex items-center gap-3 py-1">
+            <Mouse size={30} className="shrink-0 text-faint" />
+            <p className="text-sm text-muted">
               Tell me what happened and I&rsquo;ll keep track. &ldquo;Shipped 5 large pinks to
               Caf&eacute; Forgot&rdquo;, or ask what&rsquo;s running low.
             </p>
