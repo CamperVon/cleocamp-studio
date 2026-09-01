@@ -12,6 +12,7 @@
  * Ids are readable and deterministic so this is safe to re-run.
  */
 import 'dotenv/config'
+import { readFileSync } from 'node:fs'
 import { PrismaClient } from '../generated/prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
@@ -367,6 +368,103 @@ async function main() {
       content: 'Two vendor changes are in progress: fabric from California Textile Group to RichLine, and manufacturing from Fashion Garcia to Empire Sewing. The old records are retained as inactive with their history, but none of their prices or lead times carry forward to the new vendors.' },
   ])
 
+
+  // ── Products that only existed on Shopify ───────────────────
+  await up(db.product, [
+    { id: 'prd_boy_belt', name: 'Boy Belt', status: 'ACTIVE',
+      notes: 'Found on Shopify, absent from the brand bible. The loan model references an imported leather belt at roughly EUR 40. Sourcing unknown.' },
+    { id: 'prd_photobook', name: 'Splash Photo Book', status: 'ACTIVE',
+      notes: 'Found on Shopify, absent from the brand bible. Not a manufactured garment — no BOM.' },
+  ])
+
+  // ── Colorways discovered from the Shopify catalog ────────────
+  await up(db.colorway, [
+    { id: 'clr_story_red',       productId: 'prd_story_dress',   customerName: 'Red (Wiltshire)',  active: true },
+    { id: 'clr_story_green',     productId: 'prd_story_dress',   customerName: 'Green (Betsey)',   active: true },
+    { id: 'clr_bean_champagne',  productId: 'prd_bean_bag',      customerName: 'Champagne',        active: true },
+    { id: 'clr_bean_black',      productId: 'prd_bean_bag',      customerName: 'Black',            active: true },
+    { id: 'clr_bean_silver',     productId: 'prd_bean_bag',      customerName: 'Silver',           active: true },
+    { id: 'clr_bat_silver',      productId: 'prd_bateau',        customerName: 'Silver',           active: true, notes: 'Handle colour.' },
+    { id: 'clr_bat_gold',        productId: 'prd_bateau',        customerName: 'Gold',             active: true, notes: 'Handle colour.' },
+    { id: 'clr_bat_mara',        productId: 'prd_bateau',        customerName: 'Maraschino',       active: true, notes: 'Handle colour.' },
+    { id: 'clr_bat_verd',        productId: 'prd_bateau',        customerName: 'Verdant',          active: true, notes: 'Handle colour.' },
+    { id: 'clr_bat_casp',        productId: 'prd_bateau',        customerName: 'Caspian',          active: true, notes: 'Handle colour.' },
+    { id: 'clr_bat_choc',        productId: 'prd_bateau',        customerName: 'Chocolate',        active: true, notes: 'Handle colour. Matches the Tennessee chocolate suede in the bible.' },
+    { id: 'clr_pbat_gold',       productId: 'prd_petite_bateau', customerName: 'Gold',             active: true },
+    { id: 'clr_pbat_silver',     productId: 'prd_petite_bateau', customerName: 'Silver',           active: true },
+    { id: 'clr_pbat_mara',       productId: 'prd_petite_bateau', customerName: 'Maraschino',       active: true },
+    { id: 'clr_pbat_verd',       productId: 'prd_petite_bateau', customerName: 'Verdant',          active: true },
+    { id: 'clr_pbat_casp',       productId: 'prd_petite_bateau', customerName: 'Caspian',          active: true },
+    { id: 'clr_cbd_blue',        productId: 'prd_cleo_bag_denim',customerName: 'Baby Blue',        active: true, notes: 'Bow colour.' },
+    { id: 'clr_cbd_pink',        productId: 'prd_cleo_bag_denim',customerName: 'Pink',             active: true, notes: 'Bow colour.' },
+    { id: 'clr_cb_leather',      productId: 'prd_cleo_bag',      customerName: 'Leather',          active: true },
+    { id: 'clr_cb_silver',       productId: 'prd_cleo_bag',      customerName: 'Silver',           active: true },
+    { id: 'clr_cb_black',        productId: 'prd_cleo_bag',      customerName: 'Black Leather',    active: true },
+    { id: 'clr_ls_black',        productId: 'prd_little_sister', customerName: 'Black',            active: false },
+  ])
+
+  // ── Variants, straight from the Shopify catalog ──────────────
+  // Sizes and variant ids come from Shopify because Shopify is the master for
+  // finished goods. Asking Cleo for something Shopify already knows would be
+  // exactly the kind of unnecessary question Studio Mouse must not ask.
+  const catalog = JSON.parse(
+    readFileSync(new URL('./shopify-catalog.json', import.meta.url), 'utf8'),
+  ) as { products: Array<{ productId: string; colorways: Record<string,string>;
+        variants: Array<[string|null, string|null, number]> }> }
+
+  const variantRows = catalog.products.flatMap((p) =>
+    p.variants.map(([colorName, size, shopifyVariantId]) => ({
+      id: 'var_' + shopifyVariantId,
+      productId: p.productId,
+      colorwayId: colorName ? (p.colorways[colorName] ?? null) : null,
+      shopifyVariantId: String(shopifyVariantId),
+      size,
+      locationId: 'loc_studio',
+      // NULL, not zero. Nothing has been counted yet — see aq_onhand.
+      onHandQty: null,
+    })),
+  )
+  await up(db.productVariant, variantRows)
+
+  // ── Cosmo tee: same pattern as the Cleo Tee, so same yardage ──
+  await up(db.bomLine, [
+    { id: 'bom_cosmo_fabric', parentProductId: 'prd_cosmo_tee', componentId: 'cmp_lurex',
+      qtyPerUnit: '1.5',
+      notes: 'Confirmed by Brandon: the Cosmo Stripe Tee uses the exact same pattern as the Cleo Tee, so yardage carries over at 1.50 yd/unit.' },
+  ])
+
+  // ── Questions Shopify and Brandon have now answered ──────────
+  const resolve = (id: string, resolutionNote: string) =>
+    db.actionItem.updateMany({
+      where: { id },
+      data: { resolved: true, resolvedAt: new Date(), resolutionNote },
+    })
+
+  await Promise.all([
+    resolve('aq_sizes',
+      'Answered from the Shopify catalog. Tees and the You Dress run sizes 1/2/3; the Story Dress runs 0/1/2/3; the Boy Belt runs XS/S/M/L; the Bean Bag runs Petite/Medium. Bags other than the Bean Bag vary by colour rather than size.'),
+    resolve('aq_neverworns',
+      'Resolved from the Shopify catalog. "Splash" is the colourway of the Cleo Tee - Neverworns Edition. "Splish" is a separate Cleo Tee colourway with its own listing. They are different products, as Brandon confirmed.'),
+    resolve('aq_cosmo_yardage',
+      'Answered by Brandon: the Cosmo Stripe Tee uses the exact same pattern as the Cleo Tee, so 1.50 yd/unit applies.'),
+  ])
+
+  // ── What the storefront could not tell us ───────────────────
+  await up(db.actionItem, [
+    { id: 'aq_shopify_admin', kind: 'QUESTION', entityType: 'GENERAL', entityId: null,
+      title: 'Connect the Shopify Admin API',
+      detail: 'The public storefront gave us the catalogue and variant ids, but not inventory levels or order history. A Shopify custom app with read_products, read_inventory and read_orders would supply the on-hand counts and the sales history the forecast runs on. write_inventory follows in Phase 1 for the write-through.',
+      source: 'SYSTEM', resolved: false, remindDaysBefore: null },
+    { id: 'aq_cleo_bag_split', kind: 'QUESTION', entityType: 'PRODUCT', entityId: 'prd_cleo_bag',
+      title: 'The Cleo Bag is four separate listings on Shopify',
+      detail: 'Shopify carries cleo-bag, cleo-bag-silver, cleo-bag-black-leather and cleo-bag-denim as four distinct products. They are modelled here as one Cleo Bag with colourways plus a separate denim product. Confirm that grouping is how you think about them, or say how you would rather see it.',
+      source: 'SYSTEM', resolved: false, remindDaysBefore: null },
+    { id: 'aq_boy_belt', kind: 'QUESTION', entityType: 'PRODUCT', entityId: 'prd_boy_belt',
+      title: 'Boy Belt and Splash Photo Book are not in the brand bible',
+      detail: 'Both are live on Shopify. The Boy Belt runs XS to L and the loan model mentions an imported leather belt at about EUR 40. Who supplies them, and should Studio Mouse track their components at all?',
+      source: 'SYSTEM', resolved: false, remindDaysBefore: null },
+  ])
+
   const counts = {
     people: await db.person.count(),
     vendors: await db.vendor.count(),
@@ -377,6 +475,8 @@ async function main() {
     openQuestions: await db.actionItem.count({ where: { resolved: false } }),
     notes: await db.note.count(),
     links: await db.fileLink.count(),
+    variants: await db.productVariant.count(),
+    resolvedQuestions: await db.actionItem.count({ where: { resolved: true } }),
   }
   console.log('Seeded:', counts)
 }
