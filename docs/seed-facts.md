@@ -278,3 +278,18 @@ Retail $88.
   width, yield per yard differs and 1.50 will be wrong. Needs confirming before
   any Cosmo tee forecast.
 - CTG record retained as INACTIVE with $2.80 / RIB1000 history.
+
+---
+
+# Company & purchasing details — CONFIRMED 2026-09-01
+
+- **Legal entity:** Cleo Couture LLC (matches the QuickBooks P&L header)
+- **Studio / ship-to address:** 1667 North Main St, Los Angeles, CA 90012
+  (city/state inferred from the 90012 ZIP — confirm if wrong)
+- **PO numbering:** starts at **2356**, increments by 1
+- **PO delivery, Phase 0:** generate a PDF; Brandon sends it himself.
+
+## Backlog addition
+9. **Studio Mouse sends POs directly.** After Phase 0, SM may email a PO to the
+   vendor — but only after an explicit confirmation step, and it must always
+   CC Cleo and Brandon. No PO leaves the building unconfirmed.
