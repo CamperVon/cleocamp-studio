@@ -294,7 +294,7 @@ async function main() {
 
   // ── Open questions — what Studio Mouse knows it doesn't know ─
   const q = (
-    id: string, title: string, detail: string,
+    id: string, title: string, detail: string = '',
     entityType: string = 'GENERAL', entityId: string | null = null,
   ) => ({ id, kind: 'QUESTION' as const, entityType, entityId, title, detail,
           source: 'SYSTEM' as const, resolved: false, remindDaysBefore: null })
