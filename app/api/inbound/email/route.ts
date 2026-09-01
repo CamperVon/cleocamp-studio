@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
   }
 
   const d = event.data ?? {}
-  const to = Array.isArray(d.to) ? d.to.join(', ') : String(d.to ?? '')
+  const to: string = Array.isArray(d.to) ? d.to.join(', ') : String(d.to ?? '')
 
   // The MX record makes the whole subdomain a catch-all, so every address at
   // send.cleocamp.com reaches us — including whatever spam finds it later.
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
   // get a 200 so Resend stops retrying, but nothing is written.
   const allowed = (process.env.INBOUND_ALLOWED_MAILBOXES ??
     'mouse,studio,wholesale,billing,support,po,orders')
-    .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+    .split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean)
 
   const mailboxes = to.toLowerCase().split(',')
     .map((a) => a.trim().replace(/^.*</, '').replace(/>.*$/, '').split('@')[0])
