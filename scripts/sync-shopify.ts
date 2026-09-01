@@ -10,7 +10,7 @@
 import 'dotenv/config'
 import { PrismaClient } from '../generated/prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
-import { fetchAllVariants, fetchLocations, fetchSoldLines } from '../lib/integrations/shopify.ts'
+import { fetchAllVariants, fetchLocations, fetchSoldLines } from '../lib/integrations/shopify'
 
 const db = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DIRECT_URL }),

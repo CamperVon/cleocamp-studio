@@ -303,3 +303,25 @@ Michael Pollack: rolls vary **70–80 yards**.
   the resulting range rather than promising an exact figure.
 - ?? Confirmed for the rib (1137). Whether D1463 rolls run the same is not
   stated — worth asking, since the Cosmo order is being placed now.
+
+---
+
+# Yardage conflict — UNRESOLVED 2026-09-01
+
+Brandon: **903 yards of cotton → roughly 1,296 tees** = **0.70 yd/tee**.
+Loan model (marked "confirmed"): **1.50 yd/tee**.
+
+These differ by a factor of 2.15 and cannot both be right.
+
+| Yards per tee | 1,000 yd ordered yields |
+|---|---|
+| 1.50 (current BOM) | ~667 tees |
+| 0.70 (Brandon's figure) | ~1,435 tees |
+
+Real production output normally beats a spreadsheet estimate, and 0.70 yd is
+plausible for a fitted women's rib tee on wide goods. But the BOM has NOT been
+changed — this drives fabric cost, reorder quantity and margin on every tee,
+and is exactly the kind of number that must not be guessed at.
+
+Also recorded: Empire Sewing hours 7:30am–4pm, Mon–Fri (now on the PO delivery
+block). Phone number still outstanding.
