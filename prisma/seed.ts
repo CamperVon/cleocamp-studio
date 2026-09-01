@@ -409,22 +409,34 @@ async function main() {
   // exactly the kind of unnecessary question Studio Mouse must not ask.
   const catalog = JSON.parse(
     readFileSync(new URL('./shopify-catalog.json', import.meta.url), 'utf8'),
-  ) as { products: Array<{ productId: string; colorways: Record<string,string>;
-        variants: Array<[string|null, string|null, number]> }> }
+  ) as { products: Array<{ productId: string; priceCents: number | null;
+        colorways: Record<string,string>;
+        variants: Array<[string|null, string|null, number, number|null]> }> }
 
   const variantRows = catalog.products.flatMap((p) =>
-    p.variants.map(([colorName, size, shopifyVariantId]) => ({
+    p.variants.map(([colorName, size, shopifyVariantId, priceCents]) => ({
       id: 'var_' + shopifyVariantId,
       productId: p.productId,
       colorwayId: colorName ? (p.colorways[colorName] ?? null) : null,
       shopifyVariantId: String(shopifyVariantId),
       size,
+      retailPriceCents: priceCents,
       locationId: 'loc_studio',
       // NULL, not zero. Nothing has been counted yet — see aq_onhand.
       onHandQty: null,
     })),
   )
   await up(db.productVariant, variantRows)
+
+  // Retail prices come from Shopify — it is the master for what things sell
+  // for, just as it is for finished-goods counts. Asking Cleo would be asking
+  // for something the system already knows.
+  await Promise.all(
+    [...new Map(catalog.products.filter((p) => p.priceCents)
+      .map((p) => [p.productId, p.priceCents])).entries()]
+      .map(([productId, priceCents]) =>
+        db.product.update({ where: { id: productId }, data: { retailPriceCents: priceCents } })),
+  )
 
   // ── Cosmo tee: same pattern as the Cleo Tee, so same yardage ──
   await up(db.bomLine, [

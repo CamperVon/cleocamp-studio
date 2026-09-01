@@ -147,6 +147,9 @@ model ProductVariant {
   colorwayId       String?
   shopifyVariantId String?
   size             String?
+  /// Overrides the product price where a variant is priced differently — the
+  /// Bean Bag is $368 in Petite and $398 in Medium.
+  retailPriceCents Int?
   locationId       String?
   /// Finished-goods on hand. NULL means UNKNOWN, not zero — the difference
   /// matters. Once Phase 1 wires Shopify this becomes a write-through cache of

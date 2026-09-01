@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { signOut } from '@/app/login/actions'
+import { Wordmark } from './wordmark'
 
 const LINKS = [
   { href: '/', label: 'Today' },
@@ -13,8 +14,8 @@ export function Nav() {
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-bg/85 backdrop-blur">
       <div className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-3 sm:px-6">
-        <Link href="/" className="font-semibold tracking-tight">
-          Studio Mouse
+        <Link href="/" className="shrink-0">
+          <Wordmark />
         </Link>
         {/* Horizontal scroll rather than a hamburger — five links fit, and a
             tap target beats a menu you have to open first. */}

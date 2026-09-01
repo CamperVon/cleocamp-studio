@@ -2,6 +2,7 @@
 import { useActionState } from 'react'
 import { use } from 'react'
 import { signIn } from './actions'
+import { Wordmark } from '@/app/ui/wordmark'
 
 export default function LoginPage({
   searchParams,
@@ -14,9 +15,9 @@ export default function LoginPage({
   return (
     <main className="flex min-h-dvh items-center justify-center px-6 py-16">
       <div className="w-full max-w-sm">
-        <div className="mb-8">
-          <h1 className="text-3xl font-semibold tracking-tight">Studio Mouse</h1>
-          <p className="mt-1.5 text-sm text-muted">Cleo Camp studio admin</p>
+        <div className="mb-9">
+          <h1><Wordmark size="lg" /></h1>
+          <p className="mt-3 text-sm tracking-wide text-muted">Cleo Camp Studio Admin</p>
         </div>
 
         <form action={action} className="flex flex-col gap-4">
