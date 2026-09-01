@@ -34,6 +34,12 @@ async function main() {
   // ── Location ────────────────────────────────────────────────
   await up(db.location, [
     {
+      id: 'loc_empire',
+      name: 'Empire Sewing',
+      address: '910 E 61st Street, DOOR #4, Los Angeles, CA 90001',
+      isDefault: false,
+    },
+    {
       id: 'loc_studio',
       name: 'Studio',
       address: 'Cleo Couture LLC, 1667 North Main St, Los Angeles, CA 90012',
@@ -54,9 +60,10 @@ async function main() {
       notes: 'INACTIVE — replaced by RichLine. Historical: style RIB1000, 1x1 baby rib 100% combed cotton PFD, $2.80/yd, ~65 yd rolls. Do not carry these figures forward.' },
 
     // Manufacturing — Empire Sewing replaces Fashion Garcia for the Cleo Tee
-    { id: 'vnd_empire', name: "Antonio's", legalName: 'Empire Sewing Inc', role: 'MANUFACTURER',
+    { id: 'vnd_empire', name: "Antonio's", legalName: 'Empire Sewing, Inc', role: 'MANUFACTURER',
+      address: '910 E 61st Street, DOOR #4, Los Angeles, CA 90001',
       contactName: 'Antonio', active: true,
-      notes: 'New Cleo Tee manufacturer. Matches Fashion Garcia pricing with a shorter turnaround. Address, phone, exact turnaround and per-unit price still pending.' },
+      notes: 'New Cleo Tee manufacturer, and the delivery address for fabric — RichLine ships direct to them, so fabric never passes through the studio. Phone, turnaround and per-unit price still pending.' },
     { id: 'vnd_garcia', name: 'Fashion Garcia', legalName: 'Fashion Garcia Inc', role: 'MANUFACTURER',
       address: '8616 Otis Ave, 2nd Floor, South Gate, CA 90280',
       contactName: 'Jeremias', contactInfo: '(323) 487-5054 / cell (323) 541-2200', active: false,
@@ -312,7 +319,12 @@ async function main() {
     q('aq_empire_price', "Empire Sewing's per-unit price and turnaround",
       'Antonio has said he will match Fashion Garcia pricing with a shorter turnaround, but neither figure is confirmed. Worth clarifying whether "match" includes the volume break and the flat cutting charge — at 112 units those are very different deals.',
       'VENDOR', 'vnd_empire'),
-    q('aq_empire_details', "Empire Sewing's address and phone", 'Not yet recorded.', 'VENDOR', 'vnd_empire'),
+    q('aq_empire_phone', "Empire Sewing's phone number",
+      'Address is on file (910 E 61st Street, DOOR #4, Los Angeles, CA 90001) but no phone.',
+      'VENDOR', 'vnd_empire'),
+    q('aq_fabric_location', 'Where does fabric count as being, before production?',
+      'RichLine delivers fabric straight to Empire Sewing, so it never reaches the studio. Under the rule that nothing is inventory until it lands in the studio, fabric on hand would always read zero — which is wrong, because 2,000 yards of it exists and is paid for. Options: treat each manufacturer as its own location and hold fabric there, or treat fabric as consumed on delivery. Needs a decision before the first fabric forecast.',
+      'COMPONENT', 'cmp_fine_rib'),
     q('aq_staples_details', 'Staples — full business name, contact, lead time, pricing',
       'Manufacturer for the Scoop Neck Dress, currently in sampling. Nothing beyond the name is on file.',
       'VENDOR', 'vnd_staples'),
@@ -479,6 +491,35 @@ async function main() {
       source: 'SYSTEM', resolved: false, remindDaysBefore: null },
   ])
 
+  // ── Live purchase orders ────────────────────────────────────
+  // Fabric is delivered to Empire Sewing, not the studio. Component.incomingQty
+  // derives from open lines like these.
+  await up(db.purchaseOrder, [
+    { id: 'po_2356', poNumber: '2356', vendorId: 'vnd_richline', status: 'SENT',
+      orderedAt: new Date('2026-09-01T12:00:00-07:00'),
+      expectedAt: new Date('2026-09-22T12:00:00-07:00'),
+      shipToLocationId: 'loc_empire',
+      notes: 'Cosmo Stripe Tee fabric. Three week lead time. Rolls run 70-80 yd so the delivered yardage will not be exactly 1,000.' },
+    { id: 'po_2357', poNumber: '2357', vendorId: 'vnd_richline', status: 'SENT',
+      orderedAt: new Date('2026-09-01T12:00:00-07:00'),
+      shipToLocationId: 'loc_empire',
+      notes: 'Cleo Tee fabric. Quoted in stock, ship date to be confirmed.' },
+  ])
+  await up(db.purchaseOrderLine, [
+    { id: 'pol_2356_1', purchaseOrderId: 'po_2356', componentId: 'cmp_lurex',
+      qtyOrdered: '1000', unit: 'yards', unitCostCents: 495, qtyReceived: '0' },
+    { id: 'pol_2357_1', purchaseOrderId: 'po_2357', componentId: 'cmp_fine_rib',
+      qtyOrdered: '1000', unit: 'yards', unitCostCents: 315, qtyReceived: '0' },
+  ])
+  // incomingQty is derived, never set by hand
+  for (const [componentId] of [['cmp_lurex'], ['cmp_fine_rib']]) {
+    const open = await db.purchaseOrderLine.findMany({
+      where: { componentId, purchaseOrder: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } } },
+    })
+    const incoming = open.reduce((s, l) => s + Number(l.qtyOrdered) - Number(l.qtyReceived), 0)
+    await db.component.update({ where: { id: componentId }, data: { incomingQty: String(incoming) } })
+  }
+
   const counts = {
     people: await db.person.count(),
     vendors: await db.vendor.count(),
@@ -491,6 +532,7 @@ async function main() {
     links: await db.fileLink.count(),
     variants: await db.productVariant.count(),
     resolvedQuestions: await db.actionItem.count({ where: { resolved: true } }),
+    purchaseOrders: await db.purchaseOrder.count(),
   }
   console.log('Seeded:', counts)
 }

@@ -214,6 +214,31 @@ Wednesday." Recipients: `team@cleocamp.com`.
 Idempotent by construction — a partial unique index on unresolved Alerts, and
 a DigestSend row keyed by date so repeated hits cannot double-send.
 
+## 8b. Purchase orders — the house template
+
+`scripts/po.mjs` renders a PO spec to HTML and prints it with headless Chrome.
+Studio Mouse generates POs through this same code path, so the layout and the
+arithmetic live in one place rather than in a template someone retypes.
+
+The template, as agreed with Brandon:
+
+- **Letterhead** — the Cleo wordmark in italic serif, `Cleo Couture LLC` beneath
+- **Three address blocks: Vendor, Deliver to, Bill to.** These are genuinely
+  three different places. Fabric is delivered to the *manufacturer*, not the
+  studio — RichLine ships straight to Empire Sewing — while the bill goes to
+  Cleo Couture LLC at 1667 North Main St.
+- **PO numbers** run sequentially from 2356.
+- **Line items** carry the vendor's own style number, because that is what the
+  vendor recognises. "Style 1137 — Rib", not "fine rib cotton".
+- **Notes** state what needs confirming rather than assuming it: the quoted
+  price, the lead time, and the roll count where a yardage will not divide
+  evenly into whole rolls.
+- **Contact** — Brandon Camp · brandon@cleocamp.com · 310-622-3898
+
+Phase 0 generates a PDF that Brandon sends. Studio Mouse sending it directly is
+on the backlog, and when it lands it requires an explicit confirmation step and
+always copies Cleo and Brandon.
+
 ## 9. Integrations — seams only in Phase 0
 
 - `lib/integrations/shopify.ts` — `fetchRecentOrders`, `adjustInventory`,
