@@ -246,15 +246,15 @@ async function main() {
   // ── Bills of materials — only what is actually known ─────────
   await up(db.bomLine, [
     // Cleo Tee — 1.50 yd confirmed in the loan model; two buttons is the signature
-    { id: 'bom_tee_fabric',  parentProductId: 'prd_cleo_tee', componentId: 'cmp_fine_rib', qtyPerUnit: '1.5',
-      notes: 'Confirmed in the loan model. Measured on the CTG rib — reconfirm against RichLine 1137 if the spec differs.' },
+    { id: 'bom_tee_fabric',  parentProductId: 'prd_cleo_tee', componentId: 'cmp_fine_rib', qtyPerUnit: '0.7',
+      notes: 'From the manufacturer, off a real run: 903 yards yielded roughly 1,296 tees = 0.70 yd/unit. Supersedes the loan model figure of 1.50, which was an estimate and overstated fabric by more than double.' },
     { id: 'bom_tee_buttons', parentProductId: 'prd_cleo_tee', componentId: 'cmp_buttons',  qtyPerUnit: '2',
       notes: 'Signature two, per Brandon.' },
     { id: 'bom_tee_tag',     parentProductId: 'prd_cleo_tee', componentId: 'cmp_tags',     qtyPerUnit: '1' },
 
     // Long sleeve — 1.80 yd from the loan model, marked an estimate there
-    { id: 'bom_ls_fabric',  parentProductId: 'prd_ls_tee', componentId: 'cmp_fine_rib', qtyPerUnit: '1.8',
-      notes: 'Loan model estimate, not measured.' },
+    { id: 'bom_ls_fabric',  parentProductId: 'prd_ls_tee', componentId: 'cmp_fine_rib', qtyPerUnit: '0',
+      notes: 'UNKNOWN. The loan model said 1.80, but that came from the same estimate that put the short sleeve at 1.50 when the real figure is 0.70. Its ratio cannot be trusted either. Ask the manufacturer once a long sleeve run happens.' },
     { id: 'bom_ls_buttons', parentProductId: 'prd_ls_tee', componentId: 'cmp_buttons',  qtyPerUnit: '2' },
     { id: 'bom_ls_tag',     parentProductId: 'prd_ls_tee', componentId: 'cmp_tags',     qtyPerUnit: '1' },
 
@@ -444,8 +444,8 @@ async function main() {
   // ── Cosmo tee: same pattern as the Cleo Tee, so same yardage ──
   await up(db.bomLine, [
     { id: 'bom_cosmo_fabric', parentProductId: 'prd_cosmo_tee', componentId: 'cmp_lurex',
-      qtyPerUnit: '1.5',
-      notes: 'Confirmed by Brandon: the Cosmo Stripe Tee uses the exact same pattern as the Cleo Tee, so yardage carries over at 1.50 yd/unit.' },
+      qtyPerUnit: '0.7',
+      notes: 'Same pattern as the Cleo Tee, so it carries the corrected 0.70 yd/unit. The stripe is 58-60\" wide; if that differs from the rib the yield will move, so reconfirm after the first Cosmo run.' },
   ])
 
   // ── Questions Shopify and Brandon have now answered ──────────
@@ -476,9 +476,9 @@ async function main() {
       title: 'The Cleo Bag is four separate listings on Shopify',
       detail: 'Shopify carries cleo-bag, cleo-bag-silver, cleo-bag-black-leather and cleo-bag-denim as four distinct products. They are modelled here as one Cleo Bag with colourways plus a separate denim product. Confirm that grouping is how you think about them, or say how you would rather see it.',
       source: 'SYSTEM', resolved: false, remindDaysBefore: null },
-    { id: 'aq_yards_per_tee', kind: 'QUESTION', entityType: 'PRODUCT', entityId: 'prd_cleo_tee',
-      title: 'Yards per tee: is it 1.50 or 0.70?',
-      detail: 'Brandon reports 903 yards of cotton yielding roughly 1,296 tees, which works out at 0.70 yd per tee. The bill of materials currently says 1.50 yd, taken from the loan model where it was marked confirmed. Both cannot be right, and they differ by more than a factor of two. The 1,000 yards just ordered is either 667 tees or 1,435 tees depending on which governs. Real production output should beat a spreadsheet estimate, but this needs confirming before the BOM is changed — it drives every fabric cost, every reorder quantity and every margin figure.',
+    { id: 'aq_ls_yardage', kind: 'QUESTION', entityType: 'PRODUCT', entityId: 'prd_ls_tee',
+      title: 'Yards per long sleeve tee',
+      detail: 'Set to unknown rather than carried over. The loan model said 1.80 for long sleeve against 1.50 for short sleeve, but the real short sleeve figure is 0.70, so that source is unreliable in absolute terms and its 1.2x ratio cannot be trusted either. Ask Antonio when a long sleeve run is planned.',
       source: 'SYSTEM', resolved: false, remindDaysBefore: null },
     { id: 'aq_empire_phone_po', kind: 'QUESTION', entityType: 'VENDOR', entityId: 'vnd_empire',
       title: "Empire Sewing's phone number for the purchase orders",

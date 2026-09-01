@@ -325,3 +325,32 @@ and is exactly the kind of number that must not be guessed at.
 
 Also recorded: Empire Sewing hours 7:30am–4pm, Mon–Fri (now on the PO delivery
 block). Phone number still outstanding.
+
+## RESOLVED — yards per tee is 0.70
+
+Source: **the manufacturer**, off a real run — 903 yards yielded roughly
+1,296 tees. Supersedes the loan model's 1.50, which was an estimate.
+
+| | 1.50 (old estimate) | 0.70 (actual) |
+|---|---|---|
+| Fabric per Cleo Tee | $4.73 | **$2.21** |
+| 1,000 yd of rib yields | ~667 tees | **~1,435 tees** |
+| Fabric per Cosmo Tee | $7.43 | **$3.46** |
+
+### Revised Cleo Tee unit cost, at volume
+| Line | Cost |
+|---|---|
+| Fabric (0.70 yd x $3.15) | $2.21 |
+| Sew + cut | $8.85 |
+| Buttons + tag | $1.00–1.36 |
+| Flat costs amortized | ~$0.05 |
+| **Total** | **~$12.11–12.47** |
+
+Retail $88 — roughly an 86% gross margin.
+
+**The loan model overstated tee fabric cost by more than double.** Since that
+model underpins the $191,556 ask, its production-cost line is worth revisiting.
+
+Long sleeve yardage set to UNKNOWN: the loan model's 1.80 came from the same
+source that put short sleeve at 1.50, so neither its absolute figure nor its
+1.2x ratio can be trusted.
