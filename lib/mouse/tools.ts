@@ -276,6 +276,15 @@ export const TOOLS: Record<string, Tool> = {
           vendorId: str('New vendor id'),
           vendorSku: str("The vendor's own style number"),
           reorderThreshold: num('Level at which to reorder'),
+          stockedInStudio: {
+            type: 'boolean' as const,
+            description:
+              'True if it physically sits in the studio and gets counted (buttons, tags, ' +
+              'hardware, packaging). False if it is bought per production run and shipped ' +
+              'straight to the manufacturer (all fabric, leather, denim, canvas).',
+          },
+          purchaseUnit: str('How it is bought, e.g. roll or hide'),
+          unitsPerPurchaseUnit: num('How many consumption units per purchase unit'),
           notes: str('Replaces the existing note'),
         },
         required: ['id'],
@@ -285,6 +294,7 @@ export const TOOLS: Record<string, Tool> = {
       const data: any = {}
       for (const [k, v] of Object.entries(rest)) if (v !== undefined && v !== null) data[k] = v
       if (data.reorderThreshold !== undefined) data.reorderThreshold = String(data.reorderThreshold)
+      if (data.unitsPerPurchaseUnit !== undefined) data.unitsPerPurchaseUnit = String(data.unitsPerPurchaseUnit)
       return db.component.update({ where: { id }, data, select: { id: true, name: true } })
     },
   },
@@ -341,6 +351,149 @@ export const TOOLS: Record<string, Tool> = {
         ? db.bomLine.update({ where: { id: existing.id }, data, select: { id: true } })
         : db.bomLine.create({ data, select: { id: true } })
     },
+  },
+
+  update_vendor: {
+    def: {
+      name: 'update_vendor',
+      description:
+        'Change a vendor: address, contact, phone, ordering method, payment terms, ' +
+        'turnaround. Use this rather than writing a note — a note cannot be forecast from.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          id: str('Vendor id'),
+          legalName: str('Registered business name'),
+          contactName: str('Who you deal with'),
+          contactInfo: str('Phone or email'),
+          address: str('Street address'),
+          orderMethod: str('How orders are placed'),
+          paymentTerms: str('e.g. COD, Net 30'),
+          leadTimeDays: num('Turnaround in days. For a range, record the longer end.'),
+          active: { type: 'boolean' as const, description: 'False when replaced' },
+          notes: str('Replaces the existing note'),
+        },
+        required: ['id'],
+      },
+    },
+    run: async ({ id, ...rest }) => {
+      const data: any = {}
+      for (const [k, v] of Object.entries(rest)) if (v !== undefined && v !== null) data[k] = v
+      return db.vendor.update({ where: { id }, data, select: { id: true, name: true } })
+    },
+  },
+
+  create_vendor: {
+    def: {
+      name: 'create_vendor',
+      description:
+        'Add a supplier, manufacturer or dye house. When one replaces another, create the ' +
+        'new one and mark the old inactive — never copy the old prices or lead times across. ' +
+        'They are unknown until someone says otherwise.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          name: str('What Cleo calls them'),
+          role: { type: 'string' as const, enum: ['COMPONENT_SUPPLIER', 'MANUFACTURER', 'DYE_HOUSE', 'OTHER'] },
+          legalName: str('Registered name'), contactName: str('Contact'),
+          contactInfo: str('Phone or email'), address: str('Address'),
+          orderMethod: str('How to order'), leadTimeDays: num('Turnaround in days'),
+          notes: str('Anything else'),
+        },
+        required: ['name', 'role'],
+      },
+    },
+    run: async (i) => db.vendor.create({ data: i, select: { id: true, name: true } }),
+  },
+
+  create_component: {
+    def: {
+      name: 'create_component',
+      description: 'Add a material, trim, hardware item or packaging supply.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          name: str('What Cleo calls it'),
+          category: { type: 'string' as const, enum: ['MATERIAL', 'TRIM', 'HARDWARE', 'PACKAGING', 'SUBASSEMBLY'] },
+          unitOfMeasure: str('How it is used, e.g. yard, button, tag'),
+          stockedInStudio: { type: 'boolean' as const, description: 'False for anything shipped straight to the manufacturer' },
+          vendorId: str('Supplier'), vendorSku: str("Vendor's style number"),
+          unitCostCents: num('Price in cents'), leadTimeDays: num('Days to arrive'),
+          purchaseUnit: str('How it is bought'), notes: str('Anything else'),
+        },
+        required: ['name', 'category', 'unitOfMeasure'],
+      },
+    },
+    run: async (i) => db.component.create({ data: i, select: { id: true, name: true } }),
+  },
+
+  create_product: {
+    def: {
+      name: 'create_product',
+      description:
+        'Add a product. Afterwards, raise questions for whatever is still missing — ' +
+        'components and quantities, manufacturer, dye house, lead times, colourways, sizes, ' +
+        'retail price. Ask over time rather than all at once.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          name: str('Product name'),
+          status: { type: 'string' as const, enum: ['DEVELOPMENT', 'SAMPLING', 'ACTIVE', 'SUNSETTED'] },
+          retailPriceCents: num('Retail price in cents'),
+          productionLeadTimeDays: num('Cut-and-sew turnaround in days'),
+          notes: str('Anything else'),
+        },
+        required: ['name'],
+      },
+    },
+    run: async (i) => db.product.create({ data: i, select: { id: true, name: true } }),
+  },
+
+  create_colorway: {
+    def: {
+      name: 'create_colorway',
+      description:
+        'Add a colour. Record both names where they differ — customers see "Shell", the dye ' +
+        'house calls it "Shrinking Violet", and using the wrong one with Martin wastes a call.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          productId: str('Product id'),
+          customerName: str('What customers see'),
+          dyeHouseName: str('What the dye house calls it'),
+          pantone: str('Pantone reference'),
+          inHouseMatch: { type: 'boolean' as const, description: 'True when matched in-house with no dye house name' },
+        },
+        required: ['productId', 'customerName'],
+      },
+    },
+    run: async (i) => db.colorway.create({ data: i, select: { id: true, customerName: true } }),
+  },
+
+  create_production_run: {
+    def: {
+      name: 'create_production_run',
+      description:
+        'Record a production run. Holds no inventory — it exists to track where things are ' +
+        'and to chain lead times. Set dateConfirmed false when the maker has not confirmed.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          productId: str('Product id'), vendorId: str('The manufacturer'),
+          cutRef: str("The maker's own reference, e.g. Cut #14"),
+          status: { type: 'string' as const, enum: ['PLANNED','COMPONENTS_ORDERED','IN_PRODUCTION','AT_DYE_HOUSE','FINISHING','READY_FOR_PICKUP'] },
+          expectedReadyAt: str('ISO date'),
+          dateConfirmed: { type: 'boolean' as const, description: 'Has the maker confirmed it' },
+          notes: str('Anything else'),
+        },
+        required: ['productId'],
+      },
+    },
+    run: async (i) =>
+      db.productionRun.create({
+        data: { ...i, expectedReadyAt: i.expectedReadyAt ? new Date(i.expectedReadyAt + 'T12:00:00-07:00') : null },
+        select: { id: true },
+      }),
   },
 
   query_status: {

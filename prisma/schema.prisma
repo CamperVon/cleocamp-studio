@@ -75,6 +75,9 @@ model Vendor {
   /// Studio Mouse tells Cleo which one she's dealing with.
   orderMethod  String?
   paymentTerms String?    // "COD", "Net 30"
+  /// Turnaround in days. On a manufacturer this is cut-and-sew time; on a dye
+  /// house it is dyeing time, which is a separate stage that adds to it.
+  leadTimeDays Int?
   /// Inactive vendors are retained with their history intact, never deleted.
   /// When a vendor is replaced, their prices and lead times become UNKNOWN on
   /// the new vendor — never inherited. See CLAUDE.md §3.
