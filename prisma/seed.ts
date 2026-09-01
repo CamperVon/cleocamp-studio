@@ -425,11 +425,19 @@ async function main() {
       size,
       retailPriceCents: priceCents,
       locationId: 'loc_studio',
-      // NULL, not zero. Nothing has been counted yet — see aq_onhand.
-      onHandQty: null,
     })),
   )
-  await up(db.productVariant, variantRows)
+
+  // onHandQty is deliberately absent from the update path. Shopify is the
+  // master for finished-goods counts, and a reseed must never clobber what the
+  // sync pulled — it would silently turn 50 units into "unknown".
+  for (const r of variantRows) {
+    await db.productVariant.upsert({
+      where: { id: r.id },
+      create: { ...r, onHandQty: null },
+      update: r,
+    })
+  }
 
   // Retail prices come from Shopify — it is the master for what things sell
   // for, just as it is for finished-goods counts. Asking Cleo would be asking

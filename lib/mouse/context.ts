@@ -1,0 +1,100 @@
+import { db } from '@/lib/db'
+
+/**
+ * Everything Studio Mouse knows, rendered for the system prompt.
+ *
+ * The whole catalogue goes in every turn rather than being retrieved. At this
+ * scale it is a few thousand tokens, and it beats fuzzy matching — which fails
+ * silently when "the pink one" doesn't substring-match a colourway called
+ * "Rose". A miss is worse than the retrieval it replaces, because Claude then
+ * answers without context it could have had.
+ *
+ * This block is cached, so it costs a tenth of the input rate after the first
+ * turn. Keep it deterministic: no timestamps, stable ordering.
+ */
+export async function buildCatalog(): Promise<string> {
+  const [products, components, vendors, items, pos, sales] = await Promise.all([
+    db.product.findMany({
+      orderBy: { name: 'asc' },
+      include: {
+        colorways: { orderBy: { customerName: 'asc' } },
+        variants: { orderBy: [{ size: 'asc' }], include: { colorway: true } },
+        bomLines: { include: { component: true } },
+      },
+    }),
+    db.component.findMany({ orderBy: { name: 'asc' }, include: { vendor: true } }),
+    db.vendor.findMany({ orderBy: { name: 'asc' } }),
+    db.actionItem.findMany({ where: { resolved: false }, orderBy: { createdAt: 'asc' } }),
+    db.purchaseOrder.findMany({
+      where: { status: { in: ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'] } },
+      include: { vendor: true, lines: { include: { component: true } } },
+    }),
+    db.salesSnapshot.groupBy({
+      by: ['productVariantId'],
+      _sum: { unitsSold: true },
+      where: { date: { gte: new Date(Date.now() - 56 * 864e5) } },
+    }),
+  ])
+
+  const sold = new Map(sales.map((s) => [s.productVariantId, s._sum.unitsSold ?? 0]))
+  const money = (c: number | null) => (c === null ? 'unknown' : `$${(c / 100).toFixed(2)}`)
+  const L: string[] = []
+
+  L.push('## Products')
+  for (const p of products) {
+    L.push(`\n### ${p.name} [${p.id}] — ${p.status.toLowerCase()}, retail ${money(p.retailPriceCents)}`)
+    L.push(`production lead time: ${p.productionLeadTimeDays ?? 'UNKNOWN'}`)
+    if (p.notes) L.push(`note: ${p.notes}`)
+    if (p.colorways.length) {
+      L.push('colourways (what customers see / what the dye house calls it):')
+      for (const c of p.colorways) {
+        L.push(`  - ${c.customerName}${c.dyeHouseName ? ` / ${c.dyeHouseName}` : c.inHouseMatch ? ' / IN-HOUSE MATCH, no dye house name' : ''}${c.active ? '' : ' (INACTIVE)'} [${c.id}]`)
+      }
+    }
+    if (p.bomLines.length) {
+      L.push('per unit:')
+      for (const b of p.bomLines) {
+        const q = Number(b.qtyPerUnit)
+        L.push(`  - ${b.component.name}: ${q === 0 ? 'UNKNOWN' : q} ${b.component.unitOfMeasure}`)
+      }
+    }
+    if (p.variants.length) {
+      L.push('variants (on hand / sold last 8 weeks):')
+      for (const v of p.variants) {
+        const name = [v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'default'
+        const oh = v.onHandQty === null ? 'UNKNOWN' : String(v.onHandQty)
+        L.push(`  - ${name}: ${oh} on hand, ${sold.get(v.id) ?? 0} sold [${v.id}]`)
+      }
+    }
+  }
+
+  L.push('\n## Components')
+  L.push('Fabric is bought per production run and shipped straight to the manufacturer.')
+  L.push('It is never stocked or counted, so it has no on-hand figure by design.')
+  for (const c of components) {
+    const stock = c.stockedInStudio ? `${c.onHandQty} in studio` : 'not stocked — bought per run'
+    L.push(`- ${c.name} [${c.id}] · ${c.category} · ${c.vendor?.name ?? 'no vendor'}${c.vendorSku ? ` · style ${c.vendorSku}` : ''} · ${money(c.unitCostCents)}/${c.unitOfMeasure} · lead time ${c.leadTimeDays === null ? 'UNKNOWN' : c.leadTimeDays + 'd'} · ${stock}${Number(c.incomingQty) > 0 ? `, ${c.incomingQty} incoming` : ''}`)
+  }
+
+  L.push('\n## Vendors')
+  for (const v of vendors) {
+    L.push(`- ${v.name}${v.legalName ? ` (${v.legalName})` : ''} [${v.id}] · ${v.role}${v.active ? '' : ' · INACTIVE, replaced'}${v.contactName ? ` · ${v.contactName}` : ''}${v.orderMethod ? ` · order by ${v.orderMethod}` : ''}`)
+  }
+
+  if (pos.length) {
+    L.push('\n## Open purchase orders')
+    for (const p of pos) {
+      const lines = p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')
+      L.push(`- PO ${p.poNumber} to ${p.vendor.name}: ${lines} · ${p.status}`)
+    }
+  }
+
+  L.push('\n## Open questions and todos')
+  L.push('These are things you already know you do not know. Do not re-ask them')
+  L.push('unless the conversation touches them; if the user answers one, resolve it.')
+  for (const i of items) {
+    L.push(`- [${i.id}] ${i.kind}: ${i.title}`)
+  }
+
+  return L.join('\n')
+}

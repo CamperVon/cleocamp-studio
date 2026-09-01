@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
   // Only store mail addressed to a mailbox we actually use. Unknown addresses
   // get a 200 so Resend stops retrying, but nothing is written.
   const allowed = (process.env.INBOUND_ALLOWED_MAILBOXES ??
-    'mouse,studio,wholesale,billing,support,po,orders')
+    'mouse,team,studio,wholesale,billing,support,po,orders')
     .split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean)
 
   const mailboxes = to.toLowerCase().split(',')

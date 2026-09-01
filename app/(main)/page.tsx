@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { db } from '@/lib/db'
 import { Page, Card, Empty, Chip, Value } from '@/app/ui/primitives'
+import { Chat } from '@/app/ui/chat'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,13 +29,8 @@ export default async function Today() {
 
   return (
     <Page title="Today" lede="What needs attention, and what Studio Mouse is still waiting to learn.">
-      {/* Studio Mouse chat lands here next. */}
       <Card title="Studio Mouse">
-        <div className="px-4 py-8 text-center sm:px-5">
-          <p className="text-sm text-muted">
-            The chat goes here. Until then, everything below is read-only.
-          </p>
-        </div>
+        <Chat />
       </Card>
 
       <Card title={`Things to tend to (${alerts.length + items.length})`}>
