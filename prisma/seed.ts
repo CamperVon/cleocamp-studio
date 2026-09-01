@@ -121,12 +121,12 @@ async function main() {
   // ── Components ──────────────────────────────────────────────
   // unitCostCents / leadTimeDays are null wherever genuinely unknown.
   await up(db.component, [
-    { id: 'cmp_fine_rib', name: 'Fine rib cotton', category: 'MATERIAL', vendorId: 'vnd_richline',
+    { id: 'cmp_fine_rib', stockedInStudio: false, name: 'Fine rib cotton', category: 'MATERIAL', vendorId: 'vnd_richline',
       vendorSku: '1137', vendorDescription: 'Rib', unitOfMeasure: 'yard',
       purchaseUnit: 'roll', unitsPerPurchaseUnit: '75',
       unitCostCents: 315, leadTimeDays: 0, locationId: null, active: true,
       notes: 'In stock at RichLine, so effectively no lead time on a PO. $3.15/yd is already the volume price. Rolls vary between 70 and 80 yards (Michael Pollack) — 75 is recorded as the planning midpoint, but an order of N rolls yields somewhere in a +/- 7% band, so never promise exact yardage.' },
-    { id: 'cmp_lurex', name: 'Red yarn dye lurex stripe', category: 'MATERIAL', vendorId: 'vnd_richline',
+    { id: 'cmp_lurex', stockedInStudio: false, name: 'Red yarn dye lurex stripe', category: 'MATERIAL', vendorId: 'vnd_richline',
       vendorSku: 'D1463', vendorDescription: 'Red yarn dye lurex stripe',
       spec: '58-60" wide, 220 gsm', unitOfMeasure: 'yard', purchaseUnit: 'roll',
       unitCostCents: 495, leadTimeDays: 21, locationId: null, active: true,
@@ -475,6 +475,10 @@ async function main() {
     { id: 'aq_cleo_bag_split', kind: 'QUESTION', entityType: 'PRODUCT', entityId: 'prd_cleo_bag',
       title: 'The Cleo Bag is four separate listings on Shopify',
       detail: 'Shopify carries cleo-bag, cleo-bag-silver, cleo-bag-black-leather and cleo-bag-denim as four distinct products. They are modelled here as one Cleo Bag with colourways plus a separate denim product. Confirm that grouping is how you think about them, or say how you would rather see it.',
+      source: 'SYSTEM', resolved: false, remindDaysBefore: null },
+    { id: 'aq_which_materials_stocked', kind: 'QUESTION', entityType: 'GENERAL', entityId: null,
+      title: 'Do leather, denim and canvas behave like fabric, or like studio supplies?',
+      detail: 'Rib and the lurex stripe are bought per run and shipped straight to Empire Sewing, so they carry no stock level. Leather hide, denim, canvas, Liberty print and the Tibetan lining are currently marked as stocked in the studio, which may be wrong — if they also go direct to Lorena and Santos or Novelty Fashion, they should be treated the same way as the tee fabric and stop showing a count.',
       source: 'SYSTEM', resolved: false, remindDaysBefore: null },
     { id: 'aq_ls_yardage', kind: 'QUESTION', entityType: 'PRODUCT', entityId: 'prd_ls_tee',
       title: 'Yards per long sleeve tee',

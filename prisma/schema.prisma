@@ -205,6 +205,12 @@ model Component {
   unitCostCents Int?
 
   reorderThreshold Decimal? @db.Decimal(12, 3)
+  /// Does this physically sit in the studio and get counted?
+  /// True for buttons, tags, hardware and packaging. False for fabric, which
+  /// is bought per production run and shipped straight to the manufacturer —
+  /// it has no stock level by design, so onHandQty is meaningless for it and
+  /// must not be displayed as though it were a count of zero.
+  stockedInStudio  Boolean  @default(true)
   onHandQty        Decimal  @default(0) @db.Decimal(12, 3)
   /// Derived from open PurchaseOrderLines — do not set directly.
   incomingQty      Decimal  @default(0) @db.Decimal(12, 3)
