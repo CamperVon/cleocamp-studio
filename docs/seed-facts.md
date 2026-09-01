@@ -293,3 +293,13 @@ Retail $88.
 9. **Studio Mouse sends POs directly.** After Phase 0, SM may email a PO to the
    vendor — but only after an explicit confirmation step, and it must always
    CC Cleo and Brandon. No PO leaves the building unconfirmed.
+
+## RichLine roll size — CONFIRMED 2026-09-01
+Michael Pollack: rolls vary **70–80 yards**.
+
+- Recorded as 75 yd as the planning midpoint, with the variance noted.
+- Consequence: you order **rolls**, not yards, and the delivered yardage lands
+  in a roughly ±7% band. Studio Mouse must express reorders in rolls and state
+  the resulting range rather than promising an exact figure.
+- ?? Confirmed for the rib (1137). Whether D1463 rolls run the same is not
+  stated — worth asking, since the Cosmo order is being placed now.

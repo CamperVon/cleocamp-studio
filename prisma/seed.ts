@@ -122,9 +122,9 @@ async function main() {
   await up(db.component, [
     { id: 'cmp_fine_rib', name: 'Fine rib cotton', category: 'MATERIAL', vendorId: 'vnd_richline',
       vendorSku: '1137', vendorDescription: 'Rib', unitOfMeasure: 'yard',
-      purchaseUnit: 'roll', unitsPerPurchaseUnit: null,
+      purchaseUnit: 'roll', unitsPerPurchaseUnit: '75',
       unitCostCents: 315, leadTimeDays: 0, locationId: 'loc_studio', active: true,
-      notes: 'In stock at RichLine, so effectively no lead time on a PO. $3.15/yd is already the volume price. Roll size not yet confirmed — CTG rolls averaged ~65 yd but RichLine may differ.' },
+      notes: 'In stock at RichLine, so effectively no lead time on a PO. $3.15/yd is already the volume price. Rolls vary between 70 and 80 yards (Michael Pollack) — 75 is recorded as the planning midpoint, but an order of N rolls yields somewhere in a +/- 7% band, so never promise exact yardage.' },
     { id: 'cmp_lurex', name: 'Red yarn dye lurex stripe', category: 'MATERIAL', vendorId: 'vnd_richline',
       vendorSku: 'D1463', vendorDescription: 'Red yarn dye lurex stripe',
       spec: '58-60" wide, 220 gsm', unitOfMeasure: 'yard', purchaseUnit: 'roll',
@@ -441,6 +441,8 @@ async function main() {
     })
 
   await Promise.all([
+    resolve('aq_richline_rib_roll',
+      'Answered by Michael Pollack: rolls vary between 70 and 80 yards. Recorded as 75 for planning, with the variance noted — ordering N rolls yields a range, not an exact yardage.'),
     resolve('aq_sizes',
       'Answered from the Shopify catalog. Tees and the You Dress run sizes 1/2/3; the Story Dress runs 0/1/2/3; the Boy Belt runs XS/S/M/L; the Bean Bag runs Petite/Medium. Bags other than the Bean Bag vary by colour rather than size.'),
     resolve('aq_neverworns',
