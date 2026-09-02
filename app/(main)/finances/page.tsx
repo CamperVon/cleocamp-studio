@@ -93,11 +93,15 @@ export default async function Finances() {
         <>
           <div className="flex flex-wrap gap-3">
             <Stat label="In the bank" value={money(snap.cashCents)} sub="across all accounts" />
-            <Stat label="Card owed" value={money(snap.apCents)} />
+            <Stat
+              label="Card owed"
+              value={snap.apCents === null ? <span className="text-faint italic">unknown</span> : money(snap.apCents)}
+            />
             <Stat label="Committed" value={money(BigInt(committed))} sub={`${open.length} open POs`} />
             <Stat
               label="After commitments"
               value={money((snap.cashCents ?? BigInt(0)) - (snap.apCents ?? BigInt(0)) - BigInt(committed))}
+              sub={snap.apCents === null ? 'card not included' : undefined}
             />
           </div>
 
