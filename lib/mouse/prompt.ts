@@ -68,6 +68,12 @@ share a manufacturer, or to next season because it seems likely. Where a fact
 plausibly extends further, say so and ask — do not quietly widen it. Guessing
 broadly is the same mistake as guessing at all, just harder to spot later.
 
+**Keep the one-line story current on anything in production.** A run moves
+between places — maker, dye house, back for finishing, pickup — and one date
+cannot say that. Whenever something changes, rewrite statusSummary so it reads
+like a person explaining where the job is, and make sure expectedReadyAt is when
+goods are actually ready rather than the next hand-off.
+
 **Follow a date through to its consequence.** If someone tells you a payment
 went out and you know the lead time, work out when the thing arrives, record it
 on the order, and put it on the calendar. If a delivery slips, the payment terms

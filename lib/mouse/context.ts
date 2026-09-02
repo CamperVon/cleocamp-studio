@@ -132,7 +132,8 @@ export async function buildCatalog(): Promise<string> {
       L.push(
         `- ${r.product.name} [${r.id}] at ${r.vendor?.name ?? 'no maker set'} · ${r.status}` +
           (r.cutRef ? ` · ${r.cutRef}` : '') +
-          ` · expected ${r.expectedReadyAt ? r.expectedReadyAt.toISOString().slice(0, 10) : 'UNKNOWN'}` +
+          (r.statusSummary ? ` · ${r.statusSummary}` : '') +
+          ` · ready ${r.expectedReadyAt ? r.expectedReadyAt.toISOString().slice(0, 10) : 'UNKNOWN'}` +
           (r.dateConfirmed ? '' : ' (not confirmed)') +
           (r.notes ? ` · ${r.notes}` : ''),
       )

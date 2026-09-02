@@ -28,7 +28,9 @@ export function InFlightRow({
         <summary className="flex cursor-pointer items-start justify-between gap-3 px-4 py-3 hover:bg-sunk sm:px-5">
           <div className="min-w-0">
             <p className="text-sm font-medium">{title}</p>
-            <p className="truncate text-xs text-muted">{subtitle}</p>
+            {/* Wraps rather than truncating — the journey is the useful part
+                and a phone cuts it off at exactly the wrong word. */}
+            <p className="text-xs leading-snug text-muted">{subtitle}</p>
           </div>
           <p className="shrink-0 text-right text-xs">
             <span className="text-muted">{right}</span>

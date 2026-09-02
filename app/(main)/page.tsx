@@ -133,8 +133,11 @@ export default async function Today() {
                   kind="run"
                   id={r.id}
                   title={r.product.name}
-                  subtitle={`${r.vendor?.name ?? 'no maker set'} · ${r.status.toLowerCase().replace(/_/g, ' ')}`}
-                  right={r.expectedReadyAt ? day(r.expectedReadyAt) : 'no date'}
+                  subtitle={
+                    r.statusSummary ??
+                    `${r.vendor?.name ?? 'no maker set'} · ${r.status.toLowerCase().replace(/_/g, ' ')}`
+                  }
+                  right={r.expectedReadyAt ? `ready ${day(r.expectedReadyAt)}` : 'no date'}
                   rightNote={r.expectedReadyAt && !r.dateConfirmed ? 'not confirmed' : null}
                   history={notes.filter((n) => n.entityId === r.id).map((n) => n.content)}
                 />

@@ -482,8 +482,14 @@ export const TOOLS: Record<string, Tool> = {
           productId: str('Product id'), vendorId: str('The manufacturer'),
           cutRef: str("The maker's own reference, e.g. Cut #14"),
           status: { type: 'string' as const, enum: ['PLANNED','COMPONENTS_ORDERED','IN_PRODUCTION','AT_DYE_HOUSE','FINISHING','READY_FOR_PICKUP'] },
-          expectedReadyAt: str('ISO date'),
+          expectedReadyAt: str('ISO date the finished goods are ready, NOT the next hand-off'),
           dateConfirmed: { type: 'boolean' as const, description: 'Has the maker confirmed it' },
+          statusSummary: str(
+            'The journey in one short line, as a person would say it: ' +
+            '"at Fashion Garcia, to dye house 10 Sep, ~2wk dyeing, then back for buttons". ' +
+            'Name each stage and when it happens. Keep it under about 90 characters. ' +
+            'Update it whenever anything moves — it is what people read first.',
+          ),
           notes: str('Anything else'),
         },
         required: ['productId'],
@@ -778,8 +784,14 @@ export const TOOLS: Record<string, Tool> = {
           status: { type: 'string', enum: ['PLANNED','COMPONENTS_ORDERED','IN_PRODUCTION','AT_DYE_HOUSE','FINISHING','READY_FOR_PICKUP','RECEIVED','CANCELLED'] },
           vendorId: str('The manufacturer'),
           cutRef: str("The maker's own reference"),
-          expectedReadyAt: str('ISO date'),
+          expectedReadyAt: str('ISO date the finished goods are actually ready, NOT the next hand-off'),
           dateConfirmed: { type: 'boolean' as const, description: 'Has the maker confirmed it' },
+          statusSummary: str(
+            'The journey in one short line, as a person would say it: ' +
+            '"at Fashion Garcia, to dye house 10 Sep, ~2wk dyeing, then back for buttons". ' +
+            'Name each stage and when it happens. Keep it under about 90 characters. ' +
+            'Update it whenever anything moves — it is what people read first.',
+          ),
           notes: str('Replaces the existing note'),
         },
         required: ['id'],

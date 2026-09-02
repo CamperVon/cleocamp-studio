@@ -340,6 +340,11 @@ model ProductionRun {
   expectedReadyAt DateTime?
   /// Null when the manufacturer hasn't confirmed a date yet. Common.
   dateConfirmed Boolean  @default(false)
+  /// The journey in one line — "at Fashion Garcia, to dye house 10 Sep, ~2wk
+  /// dyeing, then back for buttons". A single date cannot express a job that
+  /// moves between three places, and the date alone reads as completion when
+  /// it is often only the next hand-off.
+  statusSummary String?
   receivedAt  DateTime?
   notes       String?
   createdAt   DateTime @default(now())
