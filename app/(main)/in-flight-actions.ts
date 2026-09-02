@@ -50,6 +50,11 @@ export async function addInFlightUpdate(
     effort: 'medium',
   })
 
-  revalidatePath('/')
-  revalidatePath('/finances')
+  // Only meaningful inside a request; called directly from a script it throws.
+  try {
+    revalidatePath('/')
+    revalidatePath('/finances')
+  } catch {
+    // The work is already done either way.
+  }
 }
