@@ -66,6 +66,15 @@ export default async function Finances() {
           : 'Nothing recorded yet.'
       }
     >
+      <a
+        href="https://qbo.intuit.com/app/homepage"
+        target="_blank"
+        rel="noreferrer"
+        className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface px-4 py-3 hover:bg-sunk sm:px-5"
+      >
+        <span className="text-sm font-medium">Open QuickBooks</span>
+        <span className="text-xs text-faint">qbo.intuit.com &nearr;</span>
+      </a>
       {conn?.lastError ? (
         <div className="rounded-xl border border-urgent bg-urgent-soft px-4 py-3 text-sm text-urgent sm:px-5">
           <p className="font-medium">The last refresh failed.</p>

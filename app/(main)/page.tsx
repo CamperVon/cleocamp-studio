@@ -75,7 +75,7 @@ export default async function Today() {
   const attention = alerts.length + items.length
 
   return (
-    <Page title="Today" lede="What needs attention, and what Studio Mouse is still waiting to learn.">
+    <Page title="Home" lede="What needs attention, and what Studio Mouse is still waiting to learn.">
       <Card title="Studio Mouse">
         <Chat />
       </Card>

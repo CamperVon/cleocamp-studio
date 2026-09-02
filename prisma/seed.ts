@@ -291,6 +291,8 @@ async function main() {
     { id: 'lnk_business', title: 'Business docs — line sheet, deck, pricing', category: 'Reference', sortOrder: 3,
       url: 'https://drive.google.com/drive/folders/1K2Vuq__gzqlx0n91BHaqPm2nonIeJjKg' },
     { id: 'lnk_shop', title: 'cleocamp.com', category: 'Shop', sortOrder: 6, url: 'https://cleocamp.com' },
+    { id: 'lnk_qbo', title: 'QuickBooks', category: 'Finance', sortOrder: 7,
+      url: 'https://qbo.intuit.com/app/homepage' },
     { id: 'lnk_shopify', title: 'Shopify admin', category: 'Shop', sortOrder: 5,
       url: 'https://admin.shopify.com/store/cleocamp' },
     { id: 'lnk_drive', title: 'Google Drive — Cleo', category: 'Reference', sortOrder: 4,

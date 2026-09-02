@@ -3,7 +3,7 @@ import { signOut } from '@/app/login/actions'
 import { Wordmark } from './wordmark'
 
 const LINKS = [
-  { href: '/', label: 'Today' },
+  { href: '/', label: 'Home' },
   { href: '/products', label: 'Products' },
   { href: '/components', label: 'Components' },
   { href: '/vendors', label: 'Vendors' },
