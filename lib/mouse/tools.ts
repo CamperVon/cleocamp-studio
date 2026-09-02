@@ -546,6 +546,81 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  update_purchase_order: {
+    def: {
+      name: 'update_purchase_order',
+      description:
+        'Record what has happened to an order: when the deposit was paid, when it is ' +
+        'expected, when it arrived, or a status change. ' +
+        'IMPORTANT: when you are told a payment date and you know the lead time, work out ' +
+        'the expected arrival and set it — a three week lead time paid on 3 September ' +
+        'arrives about 24 September. Then put it on the calendar so it is not only in ' +
+        'your head.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          poNumber: str('The PO number, e.g. 2356'),
+          depositPaidAt: str('ISO date the deposit went out'),
+          orderedAt: str('ISO date the order was placed'),
+          expectedAt: str('ISO date it should arrive'),
+          receivedAt: str('ISO date it actually arrived'),
+          status: { type: 'string', enum: ['DRAFT','SENT','PARTIALLY_RECEIVED','RECEIVED','CANCELLED'] },
+          paymentTerms: str('Terms in plain words'),
+          depositPercent: num('Percent due at order'),
+          netDaysAfterDelivery: num('Days after delivery the balance is due'),
+          notes: str('Anything else'),
+        },
+        required: ['poNumber'],
+      },
+    },
+    run: async ({ poNumber, ...rest }) => {
+      const po = await db.purchaseOrder.findFirst({ where: { poNumber: String(poNumber) } })
+      if (!po) return { error: `No purchase order ${poNumber}` }
+      const data: any = {}
+      for (const [k, v] of Object.entries(rest)) {
+        if (v === undefined || v === null) continue
+        data[k] = /At$/.test(k) ? new Date(String(v) + 'T12:00:00-07:00') : v
+      }
+      const updated = await db.purchaseOrder.update({
+        where: { id: po.id }, data,
+        select: { poNumber: true, status: true, expectedAt: true, depositPaidAt: true },
+      })
+      return updated
+    },
+  },
+
+  create_calendar_event: {
+    def: {
+      name: 'create_calendar_event',
+      description:
+        'Put something on the calendar — a delivery, a payment falling due, a deadline. ' +
+        'Use it whenever you work out a date that someone will need to remember. The ' +
+        'subscribed studio calendar is read-only, so events you add live here.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          title: str('Short, plain. "Rayon arrives from RichLine"'),
+          date: str('ISO date, e.g. 2026-09-24'),
+          type: { type: 'string', enum: ['ORDER_BY','PRODUCTION_DUE','DELIVERY_EXPECTED','PRESS_OR_EVENT','OTHER'] },
+          notes: str('What it is and where the date came from'),
+        },
+        required: ['title', 'date'],
+      },
+    },
+    run: async (i) => {
+      const date = new Date(i.date + 'T12:00:00-07:00')
+      const existing = await db.calendarEvent.findFirst({
+        where: { title: i.title, date, source: 'STUDIO_MOUSE' },
+      })
+      if (existing) return { id: existing.id, alreadyThere: true }
+      return db.calendarEvent.create({
+        data: { title: i.title, date, type: (i.type ?? 'OTHER') as never,
+                source: 'STUDIO_MOUSE', notes: i.notes ?? null },
+        select: { id: true, title: true, date: true },
+      })
+    },
+  },
+
   query_status: {
     def: {
       name: 'query_status',

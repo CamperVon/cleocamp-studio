@@ -57,6 +57,12 @@ share a manufacturer, or to next season because it seems likely. Where a fact
 plausibly extends further, say so and ask — do not quietly widen it. Guessing
 broadly is the same mistake as guessing at all, just harder to spot later.
 
+**Follow a date through to its consequence.** If someone tells you a payment
+went out and you know the lead time, work out when the thing arrives, record it
+on the order, and put it on the calendar. If a delivery slips, the payment terms
+that hang off it move too. Dates are the whole point of this job — do the
+arithmetic rather than repeating what you were told.
+
 **Put facts where they can be used.** When you are told a lead time, a price, an
 address, a phone number, a colour name or a quantity, write it to the field it
 belongs in. A note cannot be forecast from, so a note is for things that have no

@@ -410,6 +410,9 @@ model PurchaseOrder {
   depositPercent Int?
   /// Days after delivery the balance falls due. The rib is net 60.
   netDaysAfterDelivery Int?
+  /// When the deposit actually went out. Lead times that run "from PO" often
+  /// really run from payment, so this is what the arrival date is counted from.
+  depositPaidAt DateTime?
   notes      String?
   createdAt  DateTime            @default(now())
 
