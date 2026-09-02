@@ -9,24 +9,30 @@ const money = (c: bigint | null | undefined) =>
     ? '—'
     : (Number(c) / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 
-export default async function Cash() {
+export default async function Finances() {
   const [conn, snap, pos] = await Promise.all([
     db.quickBooksConnection.findUnique({ where: { id: 'singleton' } }),
     db.financialSnapshot.findFirst({ orderBy: { forDate: 'desc' } }),
     db.purchaseOrder.findMany({
-      where: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } },
-      include: { vendor: true, lines: true },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      include: { vendor: true, lines: { include: { component: true } } },
     }),
   ])
+  const open = pos.filter((p) => p.status === 'SENT' || p.status === 'PARTIALLY_RECEIVED')
+  const invoices = ((snap?.raw as any)?.invoices ?? []) as Array<{
+    number: string; customer: string; date: string; total: number; balance: number
+  }>
 
-  const committed = pos.reduce(
-    (n, p) => n + p.lines.reduce((m, l) => m + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0), 0)
+  const committed = pos
+    .filter((p) => p.status === 'SENT' || p.status === 'PARTIALLY_RECEIVED')
+    .reduce((n, p) => n + p.lines.reduce((m, l) => m + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0), 0)
 
   // Figures can arrive by hand long before the Intuit connection exists — the
   // page should show what it has rather than insisting on OAuth first.
   if (!conn && !snap) {
     return (
-      <Page title="Cash" lede="Balances, receivables and revenue from QuickBooks.">
+      <Page title="Finances" lede="Where the money is, what is committed, and what is owed.">
         <Card title="Nothing recorded yet">
           <div className="flex flex-col gap-3 px-4 py-5 sm:px-5">
             <p className="text-sm text-muted">
@@ -56,8 +62,8 @@ export default async function Cash() {
       title="Cash"
       lede={
         snap
-          ? `As of ${snap.forDate.toISOString().slice(0, 10)}${conn ? ', from QuickBooks.' : ', entered by hand.'}`
-          : 'Connected. Waiting for the first pull.'
+          ? `Balances as of ${snap.forDate.toISOString().slice(0, 10)}. They do not refresh on their own — ask Studio Mouse or Claude to update them.`
+          : 'Nothing recorded yet.'
       }
     >
       {conn?.lastError ? (
@@ -82,11 +88,63 @@ export default async function Cash() {
             />
           </div>
 
-          <div className="rounded-xl border border-warn bg-warn-soft px-4 py-3 text-sm text-warn sm:px-5">
-            Bank feed balances, not the accounting ledger. While the books are being
-            reconciled the two disagree materially &mdash; the ledger has had Main-cleocamp
-            at &minus;$27,954 against a real balance of $12,974. These are the ones to trust.
-          </div>
+
+
+          <Card title="Purchase orders">
+            {pos.length === 0 ? (
+              <Empty>None yet.</Empty>
+            ) : (
+              <ul className="divide-y divide-line">
+                {pos.map((p) => {
+                  const total = p.lines.reduce((m, l) => m + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
+                  return (
+                    <li key={p.id} className="flex items-start justify-between gap-3 px-4 py-3 sm:px-5">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">PO {p.poNumber} &middot; {p.vendor.name}</p>
+                        <p className="truncate text-xs text-muted">
+                          {p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="tnum text-sm">{money(BigInt(total))}</p>
+                        <p className="text-xs text-faint">{p.status.toLowerCase().replace(/_/g, ' ')}</p>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </Card>
+
+          <Card title="Invoices">
+            {invoices.length === 0 ? (
+              <Empty>
+                None recorded. Wholesale is not currently invoiced through QuickBooks &mdash;
+                that is why receivables read zero.
+              </Empty>
+            ) : (
+              <ul className="divide-y divide-line">
+                {invoices.map((v, i) => (
+                  <li key={i} className="flex items-start justify-between gap-3 px-4 py-3 sm:px-5">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{v.customer}</p>
+                      <p className="text-xs text-muted">#{v.number} &middot; {v.date}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="tnum text-sm">
+                        {v.total.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                      </p>
+                      <p className={'text-xs ' + (v.balance > 0 ? 'text-warn' : 'text-faint')}>
+                        {v.balance > 0
+                          ? v.balance.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) + ' due'
+                          : 'paid'}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
 
           {Array.isArray((snap.raw as any)?.accounts) ? (
             <Card title="Accounts">

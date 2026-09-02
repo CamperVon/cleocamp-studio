@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     // Pull once immediately so there is something to look at rather than an
     // empty panel until the first nightly run.
     await snapshotPosition().catch(() => null)
-    return NextResponse.redirect(new URL('/cash', url.origin))
+    return NextResponse.redirect(new URL('/finances', url.origin))
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 })
   }
