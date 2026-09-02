@@ -520,10 +520,14 @@ async function main() {
       orderedAt: new Date('2026-09-01T12:00:00-07:00'),
       expectedAt: new Date('2026-09-22T12:00:00-07:00'),
       shipToLocationId: null,
+      paymentTerms: '50% on order, 50% on delivery',
+      depositPercent: 50,
       notes: 'Cosmo Stripe Tee fabric. Three week lead time. Rolls run 70-80 yd so the delivered yardage will not be exactly 1,000.' },
     { id: 'po_2357', poNumber: '2357', vendorId: 'vnd_richline', status: 'SENT',
       orderedAt: new Date('2026-09-01T12:00:00-07:00'),
       shipToLocationId: null,
+      paymentTerms: 'Net 60 from delivery',
+      netDaysAfterDelivery: 60,
       notes: 'Cleo Tee fabric. Quoted in stock, ship date to be confirmed.' },
   ])
   await up(db.purchaseOrderLine, [

@@ -403,6 +403,13 @@ model PurchaseOrder {
   expectedAt DateTime?
   receivedAt DateTime?
   shipToLocationId String?
+  /// Payment terms as agreed, in plain words for the PO document.
+  paymentTerms String?
+  /// Percentage due at order rather than on delivery. RichLine take 50% up
+  /// front on the lurex stripe.
+  depositPercent Int?
+  /// Days after delivery the balance falls due. The rib is net 60.
+  netDaysAfterDelivery Int?
   notes      String?
   createdAt  DateTime            @default(now())
 

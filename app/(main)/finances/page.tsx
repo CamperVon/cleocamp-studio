@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { Page, Card, Empty, Stat } from '@/app/ui/primitives'
 import { isConfigured } from '@/lib/integrations/quickbooks'
+import { paymentStages } from '@/lib/payments'
 
 export const dynamic = 'force-dynamic'
 
@@ -91,25 +92,39 @@ export default async function Finances() {
 
 
 
-          <Card title="Purchase orders">
-            {pos.length === 0 ? (
-              <Empty>None yet.</Empty>
+          <Card title={`Open purchase orders (${open.length})`}>
+            {open.length === 0 ? (
+              <Empty>Nothing outstanding.</Empty>
             ) : (
               <ul className="divide-y divide-line">
-                {pos.map((p) => {
+                {open.map((p) => {
                   const total = p.lines.reduce((m, l) => m + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
+                  const stages = paymentStages(p, total)
                   return (
-                    <li key={p.id} className="flex items-start justify-between gap-3 px-4 py-3 sm:px-5">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium">PO {p.poNumber} &middot; {p.vendor.name}</p>
-                        <p className="truncate text-xs text-muted">
-                          {p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')}
-                        </p>
+                    <li key={p.id} className="px-4 py-3.5 sm:px-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">PO {p.poNumber} &middot; {p.vendor.name}</p>
+                          <p className="truncate text-xs text-muted">
+                            {p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')}
+                          </p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="tnum text-sm">{money(BigInt(total))}</p>
+                          <p className="text-xs text-faint">{p.paymentTerms ?? 'terms not recorded'}</p>
+                        </div>
                       </div>
-                      <div className="shrink-0 text-right">
-                        <p className="tnum text-sm">{money(BigInt(total))}</p>
-                        <p className="text-xs text-faint">{p.status.toLowerCase().replace(/_/g, ' ')}</p>
-                      </div>
+                      <ul className="mt-2 flex flex-col gap-1 border-t border-line pt-2">
+                        {stages.map((s, i) => (
+                          <li key={i} className="flex justify-between gap-3 text-xs">
+                            <span className="text-muted">{s.label}</span>
+                            <span className="shrink-0">
+                              <span className="tnum">{money(BigInt(s.amountCents))}</span>
+                              <span className={s.overdue ? ' text-urgent' : ' text-faint'}> &middot; {s.due}</span>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
                     </li>
                   )
                 })}
