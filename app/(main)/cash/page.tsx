@@ -73,21 +73,19 @@ export default async function Cash() {
       {snap ? (
         <>
           <div className="flex flex-wrap gap-3">
-            <Stat label="In the bank" value={money(snap.cashCents)} />
-            <Stat label="Owed to you" value={money(snap.arCents)} sub="receivables" />
-            <Stat label="You owe" value={money(snap.apCents)} sub="payables" />
+            <Stat label="In the bank" value={money(snap.cashCents)} sub="across accounts" />
+            <Stat label="Card owed" value={money(snap.apCents)} />
             <Stat label="Committed" value={money(BigInt(committed))} sub="open purchase orders" />
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <Stat label="Revenue this month" value={money(snap.revenueMtdCents)} />
-            <Stat label="Revenue this year" value={money(snap.revenueYtdCents)} />
-            <Stat label="Expenses this month" value={money(snap.expensesMtdCents)} />
+            <Stat
+              label="After commitments"
+              value={money((snap.cashCents ?? 0n) - (snap.apCents ?? 0n) - BigInt(committed))}
+            />
           </div>
 
           <div className="rounded-xl border border-warn bg-warn-soft px-4 py-3 text-sm text-warn sm:px-5">
-            {conn
-              ? 'Straight from QuickBooks, which was still being reconciled — treat as indicative until the bookkeeper signs off. In August QuickBooks reported no income at all while Shopify reported $67,745.'
-              : 'Entered by hand, so only as current as the date above. Studio Mouse will not carry these forward or estimate between updates.'}
+            Bank feed balances, not the accounting ledger. While the books are being
+            reconciled the two disagree materially &mdash; the ledger has had Main-cleocamp
+            at &minus;$27,954 against a real balance of $12,974. These are the ones to trust.
           </div>
 
           {Array.isArray((snap.raw as any)?.accounts) ? (
