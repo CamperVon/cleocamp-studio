@@ -33,8 +33,17 @@ export async function answerItem(id: string, answer: string) {
       data: { resolved: true, resolvedAt: new Date(), resolutionNote: answer.trim() },
     })
   }
-  revalidatePath('/')
-  revalidatePath('/items')
+  refresh()
+}
+
+/** Only meaningful inside a request; called directly from a script it throws. */
+function refresh() {
+  try {
+    revalidatePath('/')
+    revalidatePath('/items')
+  } catch {
+    // Not in a request context — the work is already done either way.
+  }
 }
 
 export async function dismissItem(id: string) {
@@ -46,6 +55,5 @@ export async function dismissItem(id: string) {
       resolutionNote: 'Dismissed — already handled or not needed.',
     },
   })
-  revalidatePath('/')
-  revalidatePath('/items')
+  refresh()
 }
