@@ -63,6 +63,9 @@ export default async function PurchaseOrderDoc({
           <div className="mt-2 tabular-nums">
             <span className="text-[#6A736F]">No. </span>{po.poNumber}
           </div>
+          {po.forProduct ? (
+            <div><span className="text-[#6A736F]">For </span>{po.forProduct.name}</div>
+          ) : null}
           <div><span className="text-[#6A736F]">Date </span>{date}</div>
           {po.expectedAt ? (
             <div>
