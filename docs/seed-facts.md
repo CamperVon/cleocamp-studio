@@ -365,7 +365,13 @@ source that put short sleeve at 1.50, so neither its absolute figure nor its
     and the location id is recorded; this closes the loop.
 
 ## Backlog addition
-12. **QuickBooks invoicing.** Read access ships first (balances, receivables,
+12. **QuickBooks — PAUSED 2026-09-01.** The integration is built and dormant:
+    OAuth routes, nightly snapshot, and a Cash page all exist, and it wakes up
+    the moment QBO_CLIENT_ID and QBO_CLIENT_SECRET are set. Brandon is supplying
+    quarterly figures by hand for now. Two things to settle before switching it
+    on: the bookkeeper signing off, and Intuit production keys (development keys
+    only ever reach a sandbox company).
+13. **QuickBooks invoicing.** Read access ships first (balances, receivables,
     payables, revenue). Writing invoices needs the same OAuth connection plus a
     confirmation step — Cleo ships wholesale, Studio Mouse drafts the invoice in
     QuickBooks, a human approves before it sends.
