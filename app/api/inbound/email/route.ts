@@ -48,8 +48,10 @@ export async function POST(req: NextRequest) {
   // send.cleocamp.com reaches us — including whatever spam finds it later.
   // Only store mail addressed to a mailbox we actually use. Unknown addresses
   // get a 200 so Resend stops retrying, but nothing is written.
-  const allowed = (process.env.INBOUND_ALLOWED_MAILBOXES ??
-    'mouse,team,studio,wholesale,billing,support,po,orders')
+  // `??` only catches null/undefined — an env var set to an empty string would
+  // leave the list empty and silently reject every message. Treat blank as unset.
+  const configured = (process.env.INBOUND_ALLOWED_MAILBOXES ?? '').trim()
+  const allowed = (configured || 'mouse,team,studio,wholesale,billing,support,po,orders')
     .split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean)
 
   const mailboxes = to.toLowerCase().split(',')
