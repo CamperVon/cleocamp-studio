@@ -489,11 +489,27 @@ export const TOOLS: Record<string, Tool> = {
         required: ['productId'],
       },
     },
-    run: async (i) =>
-      db.productionRun.create({
+    run: async (i) => {
+      // Guard against a second run for a job that is already tracked. Being
+      // told the same thing twice should correct the record, not clone it.
+      const existing = await db.productionRun.findFirst({
+        where: { productId: i.productId, status: { notIn: ['RECEIVED', 'CANCELLED'] } },
+        select: { id: true, status: true, expectedReadyAt: true },
+      })
+      if (existing) {
+        return {
+          created: false,
+          existingRun: existing,
+          message:
+            'A run for this product is already in flight. Use update_production_run on ' +
+            'that id instead of creating another.',
+        }
+      }
+      return db.productionRun.create({
         data: { ...i, expectedReadyAt: i.expectedReadyAt ? new Date(i.expectedReadyAt + 'T12:00:00-07:00') : null },
         select: { id: true },
-      }),
+      })
+    },
   },
 
   record_financials: {
@@ -617,6 +633,40 @@ export const TOOLS: Record<string, Tool> = {
         data: { title: i.title, date, type: (i.type ?? 'OTHER') as never,
                 source: 'STUDIO_MOUSE', notes: i.notes ?? null },
         select: { id: true, title: true, date: true },
+      })
+    },
+  },
+
+  update_production_run: {
+    def: {
+      name: 'update_production_run',
+      description:
+        'Change an existing run — its stage, expected date, maker, or reference. ' +
+        'Always prefer this to creating a second run for the same job. The runs in ' +
+        'flight are listed in your context with their ids.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          id: str('The run id from your context'),
+          status: { type: 'string', enum: ['PLANNED','COMPONENTS_ORDERED','IN_PRODUCTION','AT_DYE_HOUSE','FINISHING','READY_FOR_PICKUP','RECEIVED','CANCELLED'] },
+          vendorId: str('The manufacturer'),
+          cutRef: str("The maker's own reference"),
+          expectedReadyAt: str('ISO date'),
+          dateConfirmed: { type: 'boolean' as const, description: 'Has the maker confirmed it' },
+          notes: str('Replaces the existing note'),
+        },
+        required: ['id'],
+      },
+    },
+    run: async ({ id, ...rest }) => {
+      const data: any = {}
+      for (const [k, v] of Object.entries(rest)) {
+        if (v === undefined || v === null) continue
+        data[k] = k === 'expectedReadyAt' ? new Date(String(v) + 'T12:00:00-07:00') : v
+      }
+      return db.productionRun.update({
+        where: { id }, data,
+        select: { id: true, status: true, expectedReadyAt: true },
       })
     },
   },

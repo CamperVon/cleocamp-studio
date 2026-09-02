@@ -13,7 +13,7 @@ import { db } from '@/lib/db'
  * turn. Keep it deterministic: no timestamps, stable ordering.
  */
 export async function buildCatalog(): Promise<string> {
-  const [products, components, vendors, items, pos, sales] = await Promise.all([
+  const [products, components, vendors, items, pos, runs, sales] = await Promise.all([
     db.product.findMany({
       orderBy: { name: 'asc' },
       include: {
@@ -28,6 +28,11 @@ export async function buildCatalog(): Promise<string> {
     db.purchaseOrder.findMany({
       where: { status: { in: ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'] } },
       include: { vendor: true, lines: { include: { component: true } } },
+    }),
+    db.productionRun.findMany({
+      where: { status: { notIn: ['RECEIVED', 'CANCELLED'] } },
+      include: { product: true, vendor: true },
+      orderBy: { expectedReadyAt: 'asc' },
     }),
     db.salesSnapshot.groupBy({
       by: ['productVariantId'],
@@ -90,6 +95,25 @@ export async function buildCatalog(): Promise<string> {
   L.push('\n## Vendors')
   for (const v of vendors) {
     L.push(`- ${v.name}${v.legalName ? ` (${v.legalName})` : ''} [${v.id}] · ${v.role}${v.active ? '' : ' · INACTIVE, replaced'}${v.contactName ? ` · ${v.contactName}` : ''}${v.orderMethod ? ` · order by ${v.orderMethod}` : ''}`)
+  }
+
+  // Without this it cannot see its own production runs, and creates a fresh
+  // one every time it is told about the same job.
+  L.push('\n## Production runs in flight')
+  if (!runs.length) {
+    L.push('(none)')
+  } else {
+    for (const r of runs) {
+      L.push(
+        `- ${r.product.name} [${r.id}] at ${r.vendor?.name ?? 'no maker set'} · ${r.status}` +
+          (r.cutRef ? ` · ${r.cutRef}` : '') +
+          ` · expected ${r.expectedReadyAt ? r.expectedReadyAt.toISOString().slice(0, 10) : 'UNKNOWN'}` +
+          (r.dateConfirmed ? '' : ' (not confirmed)') +
+          (r.notes ? ` · ${r.notes}` : ''),
+      )
+    }
+    L.push('Before creating a run, check this list. If one already exists for the')
+    L.push('same product and job, UPDATE it rather than adding another.')
   }
 
   if (pos.length) {
