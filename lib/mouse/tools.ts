@@ -671,6 +671,37 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  sync_shopify: {
+    def: {
+      name: 'sync_shopify',
+      description:
+        'Pull fresh variant counts, prices and sales history from Shopify. Read-only — ' +
+        'it never changes anything in Shopify. Use it when someone asks whether the ' +
+        'numbers are current, or before answering a question where a stale count would ' +
+        'mislead. It takes a few seconds, so do not run it for casual questions.',
+      input_schema: { type: 'object', properties: {} },
+    },
+    run: async () => {
+      const { fetchAllVariants } = await import('@/lib/integrations/shopify')
+      const variants = await fetchAllVariants()
+      let updated = 0
+      for (const v of variants) {
+        const id = v.id.split('/').pop()
+        const existing = await db.productVariant.findFirst({ where: { shopifyVariantId: id } })
+        if (!existing) continue
+        await db.productVariant.update({
+          where: { id: existing.id },
+          data: {
+            onHandQty: v.inventoryQuantity === null ? null : String(v.inventoryQuantity),
+            retailPriceCents: Math.round(parseFloat(v.price) * 100),
+          },
+        })
+        updated++
+      }
+      return { updated, seenInShopify: variants.length }
+    },
+  },
+
   query_status: {
     def: {
       name: 'query_status',

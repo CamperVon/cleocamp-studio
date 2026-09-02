@@ -13,7 +13,7 @@ import { db } from '@/lib/db'
  * turn. Keep it deterministic: no timestamps, stable ordering.
  */
 export async function buildCatalog(): Promise<string> {
-  const [products, components, vendors, items, pos, runs, sales] = await Promise.all([
+  const [products, components, vendors, items, pos, runs, lastSale, sales] = await Promise.all([
     db.product.findMany({
       orderBy: { name: 'asc' },
       include: {
@@ -34,6 +34,7 @@ export async function buildCatalog(): Promise<string> {
       include: { product: true, vendor: true },
       orderBy: { expectedReadyAt: 'asc' },
     }),
+    db.salesSnapshot.aggregate({ _max: { date: true } }),
     db.salesSnapshot.groupBy({
       by: ['productVariantId'],
       _sum: { unitsSold: true },
@@ -55,6 +56,21 @@ export async function buildCatalog(): Promise<string> {
     timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(new Date())
   L.push(`## Today\n${today} (${iso}), Los Angeles time.\n`)
+
+  // It could see the numbers but not where they came from, so asked whether
+  // Shopify was connected while reading Shopify's own figures.
+  L.push('## Where these numbers come from')
+  L.push('Shopify is connected and is the master for finished goods. Variant counts,')
+  L.push('retail prices and sales history are pulled from it and refreshed by the')
+  L.push('nightly job. You can pull a fresh copy yourself with sync_shopify.')
+  L.push(
+    `Sales history currently runs to ${
+      lastSale._max.date ? lastSale._max.date.toISOString().slice(0, 10) : 'no sales recorded'
+    }.`,
+  )
+  L.push('WRITING BACK TO SHOPIFY IS NOT SWITCHED ON. You can read it; you cannot')
+  L.push('change it. Say so plainly if asked to.')
+  L.push('')
 
   L.push('## Products')
   for (const p of products) {
