@@ -562,6 +562,89 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  create_purchase_order: {
+    def: {
+      name: 'create_purchase_order',
+      description:
+        'Draft a purchase order. It is created as a DRAFT — nothing is sent to anyone, ' +
+        'and a person generates and sends the document. Numbers run sequentially from ' +
+        'the last one used. Say the number back so it can be found again.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          vendorId: str('Who it is going to'),
+          lines: {
+            type: 'array' as const,
+            description: 'What is being ordered',
+            items: {
+              type: 'object' as const,
+              properties: {
+                componentId: str('Component id'),
+                qty: num('Quantity in the purchase unit'),
+                unit: str('e.g. yards, rolls, buttons'),
+                unitCostCents: num('Price per unit in cents; omit to use the component cost'),
+              },
+              required: ['componentId', 'qty', 'unit'],
+            },
+          },
+          deliverTo: str('Where it physically goes — usually the manufacturer, not the studio. Include hours if known.'),
+          expectedAt: str('ISO date it should arrive, if known'),
+          paymentTerms: str('e.g. 50% on order, 50% on delivery'),
+          depositPercent: num('Percent due at order'),
+          netDaysAfterDelivery: num('Days after delivery the balance is due'),
+          notes: str('Anything the vendor should know'),
+        },
+        required: ['vendorId', 'lines'],
+      },
+    },
+    run: async (i) => {
+      // Numbers run on from the highest used. Cleo Camp started at 2356.
+      const last = await db.purchaseOrder.findMany({ select: { poNumber: true } })
+      const highest = last.reduce((n, p) => Math.max(n, Number(p.poNumber) || 0), 2355)
+      const poNumber = String(highest + 1)
+
+      const lines = await Promise.all(
+        (i.lines as any[]).map(async (l) => {
+          const c = await db.component.findUnique({ where: { id: l.componentId } })
+          return {
+            componentId: l.componentId,
+            qtyOrdered: String(l.qty),
+            unit: l.unit,
+            unitCostCents: l.unitCostCents ?? c?.unitCostCents ?? null,
+          }
+        }),
+      )
+
+      const po = await db.purchaseOrder.create({
+        data: {
+          poNumber,
+          vendorId: i.vendorId,
+          status: 'DRAFT',
+          expectedAt: i.expectedAt ? new Date(i.expectedAt + 'T12:00:00-07:00') : null,
+          deliverTo: i.deliverTo ?? null,
+          paymentTerms: i.paymentTerms ?? null,
+          depositPercent: i.depositPercent ?? null,
+          netDaysAfterDelivery: i.netDaysAfterDelivery ?? null,
+          notes: i.notes ?? null,
+          lines: { create: lines },
+        },
+        include: { vendor: true, lines: { include: { component: true } } },
+      })
+      const total = po.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
+      return {
+        poNumber: po.poNumber,
+        vendor: po.vendor.name,
+        status: 'DRAFT — not sent',
+        totalDollars: (total / 100).toFixed(2),
+        lines: po.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`),
+        document: `/po/${po.poNumber}`,
+        tellTheUser:
+          `Drafted as PO ${po.poNumber}. It is not sent — open /po/${po.poNumber} to ` +
+          `review and print it.`,
+      }
+    },
+  },
+
   update_purchase_order: {
     def: {
       name: 'update_purchase_order',

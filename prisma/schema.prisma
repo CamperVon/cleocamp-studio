@@ -403,6 +403,9 @@ model PurchaseOrder {
   expectedAt DateTime?
   receivedAt DateTime?
   shipToLocationId String?
+  /// Where it physically goes, for the PO document. Fabric ships to the
+  /// manufacturer, not the studio, so this is rarely Cleo's address.
+  deliverTo  String?
   /// Payment terms as agreed, in plain words for the PO document.
   paymentTerms String?
   /// Percentage due at order rather than on delivery. RichLine take 50% up

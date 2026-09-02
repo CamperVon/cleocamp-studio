@@ -104,7 +104,11 @@ export default async function Finances() {
                     <li key={p.id} className="px-4 py-3.5 sm:px-5">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-sm font-medium">PO {p.poNumber} &middot; {p.vendor.name}</p>
+                          <p className="text-sm font-medium">
+                            <a href={`/po/${p.poNumber}`} target="_blank" rel="noreferrer" className="hover:underline">
+                              PO {p.poNumber} &middot; {p.vendor.name} &nearr;
+                            </a>
+                          </p>
                           <p className="truncate text-xs text-muted">
                             {p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')}
                           </p>

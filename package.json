@@ -12,7 +12,8 @@
     "db:studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
     "sync:shopify": "tsx scripts/sync-shopify.ts",
-    "sync:calendar": "tsx scripts/sync-calendar.ts"
+    "sync:calendar": "tsx scripts/sync-calendar.ts",
+    "audit:sight": "tsx scripts/audit-sight.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
