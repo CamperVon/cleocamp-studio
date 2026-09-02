@@ -162,6 +162,13 @@ export async function GET(req: NextRequest) {
     if (laDow === 1) kinds.push('WEEKLY')
     if (laDom === 1) kinds.push('MONTHLY')
 
+    // A digest that silently never sends because a recipient list is blank is
+    // exactly the failure nobody notices for a fortnight.
+    const recipients = (process.env.DIGEST_RECIPIENTS ?? '').split(',').map((r) => r.trim()).filter(Boolean)
+    if (!recipients.length) {
+      return { error: 'DIGEST_RECIPIENTS is empty — nothing was sent to anyone.' }
+    }
+
     const sent: string[] = []
     for (const kind of kinds) {
       const forDate = laMidnight(0)
