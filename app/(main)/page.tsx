@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { Page, Card, Empty, Chip, Value, Stat } from '@/app/ui/primitives'
 import { Chat } from '@/app/ui/chat'
 import { ItemRow } from '@/app/ui/item-row'
+import { InFlightRow } from '@/app/ui/in-flight-row'
 import { Mouse } from '@/app/ui/mouse'
 import { laMidnight, laDay } from '@/lib/dates'
 import { quoteOfTheDay } from '@/lib/quotes'
@@ -15,7 +16,7 @@ export const dynamic = 'force-dynamic'
 const day = laDay
 
 export default async function Today() {
-  const [items, alerts, links, components, variants, sales24, sales7, pos, runs, events] =
+  const [items, alerts, links, components, variants, sales24, sales7, pos, runs, notes, events] =
     await Promise.all([
       db.actionItem.findMany({
         where: { resolved: false },
@@ -40,6 +41,10 @@ export default async function Today() {
         where: { status: { notIn: ['RECEIVED', 'CANCELLED'] } },
         include: { product: true, vendor: true },
         orderBy: { expectedReadyAt: 'asc' },
+      }),
+      db.note.findMany({
+        where: { entityType: { in: ['PRODUCTION_RUN', 'PURCHASE_ORDER'] } },
+        orderBy: { createdAt: 'desc' },
       }),
       db.calendarEvent.findMany({
         where: { date: { gte: laMidnight(0) } },
@@ -123,43 +128,27 @@ export default async function Today() {
           ) : (
             <ul className="divide-y divide-line">
               {runs.map((r) => (
-                <li key={r.id} className="flex items-start justify-between gap-3 px-4 py-3 sm:px-5">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{r.product.name}</p>
-                    <p className="text-xs text-muted">
-                      {r.vendor?.name ?? 'no maker set'} · {r.status.toLowerCase().replace(/_/g, ' ')}
-                    </p>
-                  </div>
-                  <p className="shrink-0 text-right text-xs">
-                    {r.expectedReadyAt ? (
-                      <>
-                        <span className="text-muted">{day(r.expectedReadyAt)}</span>
-                        {!r.dateConfirmed ? <span className="block text-warn">not confirmed</span> : null}
-                      </>
-                    ) : (
-                      <span className="text-faint italic">no date</span>
-                    )}
-                  </p>
-                </li>
+                <InFlightRow
+                  key={r.id}
+                  kind="run"
+                  id={r.id}
+                  title={r.product.name}
+                  subtitle={`${r.vendor?.name ?? 'no maker set'} · ${r.status.toLowerCase().replace(/_/g, ' ')}`}
+                  right={r.expectedReadyAt ? day(r.expectedReadyAt) : 'no date'}
+                  rightNote={r.expectedReadyAt && !r.dateConfirmed ? 'not confirmed' : null}
+                  history={notes.filter((n) => n.entityId === r.id).map((n) => n.content)}
+                />
               ))}
               {pos.map((p) => (
-                <li key={p.id} className="flex items-start justify-between gap-3 px-4 py-3 sm:px-5">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">
-                      PO {p.poNumber} · {p.vendor.name}
-                    </p>
-                    <p className="truncate text-xs text-muted">
-                      {p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')}
-                    </p>
-                  </div>
-                  <p className="shrink-0 text-right text-xs">
-                    {p.expectedAt ? (
-                      <span className="text-muted">{day(p.expectedAt)}</span>
-                    ) : (
-                      <span className="text-faint italic">ETA unconfirmed</span>
-                    )}
-                  </p>
-                </li>
+                <InFlightRow
+                  key={p.id}
+                  kind="po"
+                  id={p.id}
+                  title={`PO ${p.poNumber} · ${p.vendor.name}`}
+                  subtitle={p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')}
+                  right={p.expectedAt ? day(p.expectedAt) : 'ETA unconfirmed'}
+                  history={notes.filter((n) => n.entityId === p.id).map((n) => n.content)}
+                />
               ))}
             </ul>
           )}
