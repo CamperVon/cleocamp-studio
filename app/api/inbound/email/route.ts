@@ -29,12 +29,21 @@ export async function POST(req: NextRequest) {
     'svix-signature': req.headers.get('svix-signature') ?? '',
   }
 
-  let event: any
   try {
-    event = new Webhook(secret).verify(body, headers)
+    new Webhook(secret).verify(body, headers)
   } catch {
     // Unsigned or tampered. Say nothing useful about why.
     return NextResponse.json({ error: 'invalid signature' }, { status: 401 })
+  }
+
+  // Parse the body ourselves rather than trusting verify() to hand back the
+  // payload — it does not reliably, and taking its return value silently turned
+  // every message into "unknown type" and dropped it with a 200.
+  let event: any
+  try {
+    event = JSON.parse(body)
+  } catch {
+    return NextResponse.json({ error: 'unparseable body' }, { status: 400 })
   }
 
   if (event?.type !== 'email.received') {
