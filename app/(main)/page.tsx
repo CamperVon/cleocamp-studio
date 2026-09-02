@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { db } from '@/lib/db'
 import { Page, Card, Empty, Chip, Value, Stat } from '@/app/ui/primitives'
 import { Chat } from '@/app/ui/chat'
+import { ItemRow } from '@/app/ui/item-row'
 import { Mouse } from '@/app/ui/mouse'
 import { laMidnight, laDay } from '@/lib/dates'
 import { quoteOfTheDay } from '@/lib/quotes'
@@ -221,21 +222,7 @@ export default async function Today() {
               </li>
             ))}
             {items.map((i) => (
-              <li key={i.id}>
-                <details className="group">
-                  <summary className="flex cursor-pointer items-center gap-2.5 px-4 py-2 hover:bg-sunk sm:px-5">
-                    <Chip tone={i.kind === 'TODO' ? 'accent' : 'neutral'}>
-                      {i.kind === 'TODO' ? 'do' : 'ask'}
-                    </Chip>
-                    <p className="min-w-0 flex-1 truncate text-sm">{i.title}</p>
-                  </summary>
-                  {i.detail ? (
-                    <p className="px-4 pb-3 pl-[3.6rem] text-sm text-muted sm:px-5 sm:pl-[4.1rem]">
-                      {i.detail}
-                    </p>
-                  ) : null}
-                </details>
-              </li>
+              <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} />
             ))}
           </ul>
         )}
