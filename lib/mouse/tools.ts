@@ -566,9 +566,11 @@ export const TOOLS: Record<string, Tool> = {
     def: {
       name: 'create_purchase_order',
       description:
-        'Draft a purchase order. It is created as a DRAFT — nothing is sent to anyone, ' +
-        'and a person generates and sends the document. Numbers run sequentially from ' +
-        'the last one used. Say the number back so it can be found again.',
+        'Draft a purchase order. Created as a DRAFT — nothing is sent to anyone, and a ' +
+        'person reviews and sends the document. Numbers run on from the last used. ' +
+        'Terms, delivery address and expected date are carried over from the last order ' +
+        'to that vendor when you do not pass them, so give only what is new or changed — ' +
+        'and always tell the user what was carried over, so a stale term can be corrected.',
       input_schema: {
         type: 'object',
         properties: {
@@ -615,16 +617,50 @@ export const TOOLS: Record<string, Tool> = {
         }),
       )
 
+      // Inherit from the last order to this vendor. Terms and delivery address
+      // do not change per order, and re-asking for them every time is how a
+      // system stops being worth talking to.
+      const previous = await db.purchaseOrder.findFirst({
+        where: { vendorId: i.vendorId },
+        orderBy: { createdAt: 'desc' },
+      })
+      const inherited: string[] = []
+      const take = <T,>(given: T | undefined | null, prior: T | null, label: string): T | null => {
+        if (given !== undefined && given !== null) return given
+        if (prior !== null && prior !== undefined) { inherited.push(label); return prior }
+        return null
+      }
+
+      const deliverTo = take(i.deliverTo, previous?.deliverTo ?? null, 'delivery address')
+      const paymentTerms = take(i.paymentTerms, previous?.paymentTerms ?? null, 'payment terms')
+      const depositPercent = take(i.depositPercent, previous?.depositPercent ?? null, 'deposit percentage')
+      const netDays = take(i.netDaysAfterDelivery, previous?.netDaysAfterDelivery ?? null, 'net terms')
+
+      // If no date was given, work one out from the longest lead time on the
+      // order rather than leaving it blank.
+      let expectedAt: Date | null = i.expectedAt ? new Date(i.expectedAt + 'T12:00:00-07:00') : null
+      if (!expectedAt) {
+        const leads = await db.component.findMany({
+          where: { id: { in: (i.lines as any[]).map((l) => l.componentId) } },
+          select: { leadTimeDays: true },
+        })
+        const days = leads.map((l) => l.leadTimeDays).filter((d): d is number => d !== null)
+        if (days.length === leads.length && days.length) {
+          expectedAt = new Date(Date.now() + Math.max(...days) * 864e5)
+          inherited.push(`expected date from a ${Math.max(...days)}-day lead time`)
+        }
+      }
+
       const po = await db.purchaseOrder.create({
         data: {
           poNumber,
           vendorId: i.vendorId,
           status: 'DRAFT',
-          expectedAt: i.expectedAt ? new Date(i.expectedAt + 'T12:00:00-07:00') : null,
-          deliverTo: i.deliverTo ?? null,
-          paymentTerms: i.paymentTerms ?? null,
-          depositPercent: i.depositPercent ?? null,
-          netDaysAfterDelivery: i.netDaysAfterDelivery ?? null,
+          expectedAt,
+          deliverTo,
+          paymentTerms,
+          depositPercent,
+          netDaysAfterDelivery: netDays,
           notes: i.notes ?? null,
           lines: { create: lines },
         },
@@ -638,9 +674,12 @@ export const TOOLS: Record<string, Tool> = {
         totalDollars: (total / 100).toFixed(2),
         lines: po.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`),
         document: `/po/${po.poNumber}`,
+        carriedOverFromLastOrder: inherited.length ? inherited : 'nothing — this is a first order for this vendor',
         tellTheUser:
-          `Drafted as PO ${po.poNumber}. It is not sent — open /po/${po.poNumber} to ` +
-          `review and print it.`,
+          `Drafted as PO ${po.poNumber}. Not sent — open /po/${po.poNumber} to review and print. ` +
+          (inherited.length
+            ? `Carried over from the last ${po.vendor.name} order: ${inherited.join(', ')}. Say if any of that has changed.`
+            : `First order for ${po.vendor.name}, so terms and delivery address are blank — tell me and I will remember them.`),
       }
     },
   },

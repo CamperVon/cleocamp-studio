@@ -145,7 +145,12 @@ export async function buildCatalog(): Promise<string> {
     L.push('\n## Open purchase orders')
     for (const p of pos) {
       const lines = p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')
-      L.push(`- PO ${p.poNumber} to ${p.vendor.name}: ${lines} · ${p.status}`)
+      L.push(
+        `- PO ${p.poNumber} to ${p.vendor.name}: ${lines} · ${p.status}` +
+          (p.paymentTerms ? ` · ${p.paymentTerms}` : '') +
+          (p.expectedAt ? ` · due ${p.expectedAt.toISOString().slice(0, 10)}` : ' · no date confirmed') +
+          (p.deliverTo ? ` · delivers to ${p.deliverTo.split('\n')[0]}` : ''),
+      )
     }
   }
 
