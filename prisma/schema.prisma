@@ -756,6 +756,24 @@ model FinancialSnapshot {
   createdAt      DateTime @default(now())
 }
 
+/// Every message Studio Mouse has sent on the company's behalf.
+///
+/// Outward-facing actions need a record independent of the conversation that
+/// caused them — "what did we tell Michael, and when" must be answerable
+/// months later without scrolling a chat log.
+model SentEmail {
+  id        String   @id @default(cuid())
+  toAddress String
+  ccAddress String?
+  subject   String
+  body      String
+  sentBy    String?  // who asked for it
+  resendId  String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 enum DigestKind {
   DAILY
   WEEKLY

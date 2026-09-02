@@ -42,7 +42,13 @@ export type AgentResult = {
   escalated: string | null
 }
 
-/** Tools that only look, or that raise something for a human to confirm. */
+/**
+ * Tools that only look, or that raise something for a human to confirm.
+ *
+ * send_email is deliberately absent. The nightly pass reads mail from anyone
+ * who can reach the inbox, and a run with both "read untrusted text" and "send
+ * mail as the company" is one crafted email away from being a problem.
+ */
 export const PROPOSAL_TOOLS = [
   'query_status',
   'raise_question',

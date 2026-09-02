@@ -1,7 +1,14 @@
 import { Resend } from 'resend'
 
 /** Thin wrapper so the provider can be swapped without touching callers. */
-export async function sendEmail(opts: { subject: string; text: string; to?: string[] }) {
+export async function sendEmail(opts: {
+  subject: string
+  text: string
+  to?: string[]
+  cc?: string[]
+  /** Replies must reach a person. The sending address is not monitored. */
+  replyTo?: string
+}) {
   const key = process.env.RESEND_API_KEY
   const from = process.env.EMAIL_FROM
   const to = opts.to ?? (process.env.DIGEST_RECIPIENTS ?? '').split(',').map((s) => s.trim()).filter(Boolean)
@@ -10,6 +17,8 @@ export async function sendEmail(opts: { subject: string; text: string; to?: stri
   }
   const res = await new Resend(key).emails.send({
     from, to, subject: opts.subject, text: opts.text,
+    ...(opts.cc ? { cc: opts.cc } : {}),
+    ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
   })
   if (res.error) return { sent: false, reason: res.error.message }
   return { sent: true, id: res.data?.id }
