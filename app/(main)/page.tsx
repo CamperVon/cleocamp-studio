@@ -5,6 +5,7 @@ import { Chat } from '@/app/ui/chat'
 import { Mouse } from '@/app/ui/mouse'
 import { laMidnight, laDay } from '@/lib/dates'
 import { quoteOfTheDay } from '@/lib/quotes'
+import { MonthGrid } from '@/app/ui/month'
 import { getDailyBrief } from '@/lib/mouse/brief'
 import { fetchToShipCount, isConfigured } from '@/lib/integrations/shopify'
 
@@ -46,8 +47,22 @@ export default async function Today() {
       }),
     ])
 
+  const dueSoonAll = items.filter((i) => i.dueDate)
   const dueSoon = items.filter((i) => i.dueDate && i.dueDate <= laMidnight(-7))
   const quote = quoteOfTheDay()
+
+  // The month grid needs a Pacific "today" so the ringed day is Cleo's day.
+  const laParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date())
+  const laNum = (t: string) => Number(laParts.find((p) => p.type === t)!.value)
+  const today = { year: laNum('year'), month: laNum('month') - 1, day: laNum('day') }
+  const inThisMonth = (d: Date) =>
+    d.getUTCFullYear() === today.year && d.getUTCMonth() === today.month
+  const marked = [
+    ...events.filter((e) => inThisMonth(e.date)).map((e) => ({ day: e.date.getUTCDate(), kind: 'event' as const })),
+    ...dueSoonAll.filter((t) => inThisMonth(t.dueDate!)).map((t) => ({ day: t.dueDate!.getUTCDate(), kind: 'due' as const })),
+  ]
   // Live from Shopify. Null rather than 0 if it cannot be reached — an
   // unreachable API must not read as an empty packing table.
   const toShip = isConfigured() ? await fetchToShipCount().catch(() => null) : null
@@ -163,6 +178,8 @@ export default async function Today() {
           ) : null
         }
       >
+        <div className="grid gap-0 sm:grid-cols-[1fr_15rem]">
+        <div className="min-w-0">
         {events.length + dueSoon.length === 0 ? (
           <Empty>Nothing on the calendar.</Empty>
         ) : (
@@ -184,6 +201,11 @@ export default async function Today() {
             ))}
           </ul>
         )}
+        </div>
+        <div className="border-t border-line px-4 py-3.5 sm:border-l sm:border-t-0 sm:px-4">
+          <MonthGrid marked={marked} today={today} />
+        </div>
+        </div>
       </Card>
 
       {/* Titles only — the detail is a tap away rather than a wall of text. */}
