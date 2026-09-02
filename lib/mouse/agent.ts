@@ -19,6 +19,19 @@ import { TOOLS, TOOL_DEFS } from '@/lib/mouse/tools'
 const CHAT_MODEL = 'claude-sonnet-5'
 const DEEP_MODEL = 'claude-opus-5'
 
+/** A file attached to the current turn — an invoice, an old PO, a packing slip. */
+export type AgentAttachment = { mediaType: string; base64: string; filename?: string }
+
+function attachmentBlock(a: AgentAttachment): Anthropic.ImageBlockParam | Anthropic.DocumentBlockParam {
+  if (a.mediaType === 'application/pdf') {
+    return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: a.base64 } }
+  }
+  return {
+    type: 'image',
+    source: { type: 'base64', media_type: a.mediaType as 'image/jpeg' | 'image/png' | 'image/webp', data: a.base64 },
+  }
+}
+
 export type AgentWrite = { tool: string; summary: string }
 
 export type AgentResult = {
@@ -44,6 +57,8 @@ export async function runAgent(opts: {
   instruction: string
   /** Prior turns, for chat. Omit for one-shot runs. */
   history?: Anthropic.MessageParam[]
+  /** Files attached to this turn only — not replayed on later turns. */
+  attachments?: AgentAttachment[]
   /** Restrict what it may do. Defaults to everything. */
   allowedTools?: string[]
   /** Extra rules for this run, appended to the standing ones. */
@@ -71,9 +86,16 @@ export async function runAgent(opts: {
     })
   }
 
+  // Attachments ride along only on the turn they were sent — by the time it
+  // matters again there is a written record (a PO field, a note, a todo) to
+  // point at instead of the raw bytes, and history is replayed as text only.
+  const instructionContent: Anthropic.MessageParam['content'] = opts.attachments?.length
+    ? [...opts.attachments.map(attachmentBlock), { type: 'text', text: opts.instruction }]
+    : opts.instruction
+
   const messages: Anthropic.MessageParam[] = [
     ...(opts.history ?? []),
-    { role: 'user', content: opts.instruction },
+    { role: 'user', content: instructionContent },
   ]
 
   const writes: AgentWrite[] = []
@@ -145,16 +167,25 @@ export async function runAgent(opts: {
   return { text, writes, toolCalls, model, escalated }
 }
 
-/** Convenience for chat, which persists its turns. */
-export async function chatTurn(threadId: string, message: string) {
-  const history = await db.chatMessage.findMany({
+/**
+ * Convenience for chat, which persists its turns.
+ *
+ * The route saves the user's message before calling this, so it's already the
+ * newest row in the thread — drop it from history rather than sending it
+ * twice (plain text from the row, then again as `instruction`, this time with
+ * whatever was attached).
+ */
+export async function chatTurn(threadId: string, message: string, attachments?: AgentAttachment[]) {
+  const rows = await db.chatMessage.findMany({
     where: { threadId },
     orderBy: { createdAt: 'desc' },
-    take: 20,
+    take: 21,
   })
+  const history = rows.reverse().slice(0, -1)
   return runAgent({
     instruction: message,
-    history: history.reverse().map((m) => ({
+    attachments,
+    history: history.map((m) => ({
       role: m.role === 'USER' ? 'user' : 'assistant',
       content: m.content,
     })),

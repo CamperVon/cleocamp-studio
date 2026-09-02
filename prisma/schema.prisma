@@ -563,10 +563,31 @@ model ChatMessage {
   model    String?
   createdAt DateTime @default(now())
 
-  thread ChatThread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  events InventoryEvent[]
+  thread      ChatThread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  events      InventoryEvent[]
+  attachments ChatAttachment[]
 
   @@index([threadId, createdAt])
+}
+
+/// A file Cleo (or Brandon or Jane) dropped into chat for Studio Mouse to
+/// read — an invoice, an old PO, a packing slip. No blob store here: this
+/// project keeps its own storage, so bytes live in Postgres like inbound
+/// email bodies already do. Small documents only, by design — see the size
+/// guard in the chat route.
+model ChatAttachment {
+  id            String   @id @default(cuid())
+  chatMessageId String
+  filename      String
+  mediaType     String
+  /// Base64-encoded file bytes.
+  data          String
+  sizeBytes     Int
+  createdAt     DateTime @default(now())
+
+  message ChatMessage @relation(fields: [chatMessageId], references: [id], onDelete: Cascade)
+
+  @@index([chatMessageId])
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -7,7 +7,10 @@ type Msg = {
   text: string
   writes?: Array<{ tool: string; summary: string }>
   model?: string
+  attachments?: Array<{ filename: string }>
 }
+
+type PendingFile = { filename: string; mediaType: string; base64: string }
 
 const LABEL: Record<string, string> = {
   log_inventory_event: 'logged', correct_inventory_event: 'corrected',
@@ -17,37 +20,100 @@ const LABEL: Record<string, string> = {
   upsert_bom_line: 'set per-unit',
 }
 
+// Claude reads images natively and PDFs as documents — nothing else.
+const ACCEPTED_TYPES = 'application/pdf,image/jpeg,image/png,image/webp'
+const MAX_FILES = 3
+const MAX_BYTES = 4 * 1024 * 1024
+
 export function Chat() {
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [pending, setPending] = useState<string | null>(null)
   const [threadId, setThreadId] = useState<string | undefined>()
+  const [files, setFiles] = useState<PendingFile[]>([])
+  const [fileError, setFileError] = useState<string | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, pending])
+
+  async function onFilesChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const chosen = Array.from(e.target.files ?? [])
+    e.target.value = '' // let picking the same file twice re-fire onChange
+    if (!chosen.length) return
+    setFileError(null)
+
+    if (files.length + chosen.length > MAX_FILES) {
+      setFileError(`Up to ${MAX_FILES} files at a time.`)
+      return
+    }
+    for (const f of chosen) {
+      if (!ACCEPTED_TYPES.split(',').includes(f.type)) {
+        setFileError(`${f.name}: send a PDF, JPG, PNG or WEBP.`)
+        return
+      }
+      if (f.size > MAX_BYTES) {
+        setFileError(`${f.name} is too big — keep it under 4MB.`)
+        return
+      }
+    }
+
+    const read = (f: File) =>
+      new Promise<PendingFile>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const result = reader.result as string
+          resolve({ filename: f.name, mediaType: f.type, base64: result.split(',')[1] ?? '' })
+        }
+        reader.onerror = () => reject(reader.error)
+        reader.readAsDataURL(f)
+      })
+
+    try {
+      const read1 = await Promise.all(chosen.map(read))
+      setFiles((prev) => [...prev, ...read1])
+    } catch {
+      setFileError("Couldn't read that file — try again.")
+    }
+  }
+
+  function removeFile(i: number) {
+    setFiles((prev) => prev.filter((_, j) => j !== i))
+  }
 
   async function send(e: React.FormEvent) {
     e.preventDefault()
     const text = input.trim()
-    if (!text || pending) return
+    if ((!text && files.length === 0) || pending) return
     setInput('')
-    setMessages((m) => [...m, { role: 'user', text }])
-    setPending('Thinking')
+    const attached = files
+    setFiles([])
+    setMessages((m) => [
+      ...m,
+      { role: 'user', text: text || "Here's a document — take a look.", attachments: attached },
+    ])
+    setPending(attached.length ? 'Reading' : 'Thinking')
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId, message: text }),
+        body: JSON.stringify({ threadId, message: text, attachments: attached }),
       })
-      if (!res.ok) throw new Error(`${res.status}`)
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        throw new Error(body?.error || `${res.status}`)
+      }
       const d = await res.json()
       setThreadId(d.threadId)
       setMessages((m) => [...m, { role: 'assistant', text: d.reply, writes: d.writes, model: d.model }])
-    } catch {
+    } catch (err) {
       setMessages((m) => [...m, {
         role: 'assistant',
-        text: "Something went wrong reaching me just then. Nothing was saved — try again.",
+        text:
+          err instanceof Error && err.message && !/^\d+$/.test(err.message)
+            ? err.message
+            : "Something went wrong reaching me just then. Nothing was saved — try again.",
       }])
     } finally {
       setPending(null)
@@ -56,13 +122,14 @@ export function Chat() {
 
   return (
     <div className="flex flex-col">
-      <div className="max-h-[22rem] overflow-y-auto px-4 py-3 sm:px-5">
+      <div className="max-h-[65vh] min-h-[20rem] overflow-y-auto px-4 py-3 sm:max-h-[36rem] sm:px-5">
         {messages.length === 0 ? (
           <div className="flex items-center gap-3 py-1">
             <Mouse size={30} className="shrink-0 text-faint" />
             <p className="text-sm text-muted">
               Tell me what happened and I&rsquo;ll keep track. &ldquo;Shipped 5 large pinks to
-              Caf&eacute; Forgot&rdquo;, or ask what&rsquo;s running low.
+              Caf&eacute; Forgot&rdquo;, ask what&rsquo;s running low, or attach an invoice or old
+              PO for me to read.
             </p>
           </div>
         ) : (
@@ -79,6 +146,15 @@ export function Chat() {
                   >
                     {m.text}
                   </p>
+                  {m.attachments?.length ? (
+                    <ul className="mt-1.5 flex flex-wrap justify-end gap-1.5">
+                      {m.attachments.map((a, j) => (
+                        <li key={j} className="rounded bg-sunk px-1.5 py-0.5 text-[11px] text-muted">
+                          📎 {a.filename}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                   {m.writes?.length ? (
                     <ul className="mt-2 flex flex-wrap gap-1.5">
                       {m.writes.map((w, j) => (
@@ -108,23 +184,69 @@ export function Chat() {
         <div ref={endRef} />
       </div>
 
-      <form onSubmit={send} className="flex gap-2 border-t border-line p-3 sm:px-5">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="What happened?"
-          disabled={!!pending}
-          className="min-w-0 flex-1 rounded-lg border border-line bg-bg px-3.5 py-2.5 text-base
-                     outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/25"
-        />
-        <button
-          type="submit"
-          disabled={!!pending || !input.trim()}
-          className="shrink-0 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white
-                     disabled:opacity-40 dark:text-[#0F1211]"
-        >
-          Send
-        </button>
+      <form onSubmit={send} className="border-t border-line p-3 sm:px-5">
+        {files.length ? (
+          <ul className="mb-2 flex flex-wrap gap-1.5">
+            {files.map((f, i) => (
+              <li
+                key={i}
+                className="flex items-center gap-1.5 rounded bg-sunk px-2 py-1 text-xs text-muted"
+              >
+                📎 <span className="max-w-[10rem] truncate">{f.filename}</span>
+                <button
+                  type="button"
+                  onClick={() => removeFile(i)}
+                  aria-label={`Remove ${f.filename}`}
+                  className="text-faint hover:text-ink"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {fileError ? <p className="mb-2 text-xs text-warn">{fileError}</p> : null}
+
+        <div className="flex gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPTED_TYPES}
+            multiple
+            onChange={onFilesChosen}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!!pending}
+            aria-label="Attach a file"
+            title="Attach an invoice or old PO"
+            className="shrink-0 rounded-lg border border-line px-3.5 py-2.5 text-muted
+                       hover:bg-sunk disabled:opacity-40"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21.44 11.05l-9.19 9.19a5 5 0 01-7.07-7.07l9.19-9.19a3.5 3.5 0 014.95 4.95l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="What happened?"
+            disabled={!!pending}
+            className="min-w-0 flex-1 rounded-lg border border-line bg-bg px-3.5 py-2.5 text-base
+                       outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/25"
+          />
+          <button
+            type="submit"
+            disabled={!!pending || (!input.trim() && files.length === 0)}
+            className="shrink-0 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white
+                       disabled:opacity-40 dark:text-[#0F1211]"
+          >
+            Send
+          </button>
+        </div>
       </form>
     </div>
   )
