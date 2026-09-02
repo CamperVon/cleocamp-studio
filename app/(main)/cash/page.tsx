@@ -78,7 +78,7 @@ export default async function Cash() {
             <Stat label="Committed" value={money(BigInt(committed))} sub="open purchase orders" />
             <Stat
               label="After commitments"
-              value={money((snap.cashCents ?? 0n) - (snap.apCents ?? 0n) - BigInt(committed))}
+              value={money((snap.cashCents ?? BigInt(0)) - (snap.apCents ?? BigInt(0)) - BigInt(committed))}
             />
           </div>
 
