@@ -60,11 +60,8 @@ export default async function Finances() {
   return (
     <Page
       title="Cash"
-      lede={
-        snap
-          ? `Balances as of ${snap.forDate.toISOString().slice(0, 10)}. They do not refresh on their own — ask Studio Mouse or Claude to update them.`
-          : 'Nothing recorded yet.'
-      }
+      lede="What is committed and what is owed. Bank balances live in QuickBooks until the books are reconciled."
+
     >
       <a
         href="https://qbo.intuit.com/app/homepage"
@@ -88,13 +85,8 @@ export default async function Finances() {
       {snap ? (
         <>
           <div className="flex flex-wrap gap-3">
-            <Stat label="In the bank" value={money(snap.cashCents)} sub="across accounts" />
-            <Stat label="Card owed" value={money(snap.apCents)} />
             <Stat label="Committed" value={money(BigInt(committed))} sub="open purchase orders" />
-            <Stat
-              label="After commitments"
-              value={money((snap.cashCents ?? BigInt(0)) - (snap.apCents ?? BigInt(0)) - BigInt(committed))}
-            />
+            <Stat label="Open POs" value={open.length} sub="awaiting delivery" />
           </div>
 
 
@@ -155,23 +147,6 @@ export default async function Finances() {
             )}
           </Card>
 
-          {Array.isArray((snap.raw as any)?.accounts) ? (
-            <Card title="Accounts">
-              <ul className="divide-y divide-line">
-                {((snap.raw as any).accounts as Array<{ name: string; type: string; balance: number }>).map((a, i) => (
-                  <li key={i} className="flex items-center justify-between gap-3 px-4 py-2.5 sm:px-5">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm">{a.name}</p>
-                      <p className="text-xs text-faint">{a.type}</p>
-                    </div>
-                    <p className="tnum shrink-0 text-sm">
-                      {a.balance.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ) : null}
         </>
       ) : (
         <Empty>Connected, but nothing pulled yet. The nightly job will fetch it.</Empty>
