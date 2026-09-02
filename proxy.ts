@@ -18,7 +18,8 @@ export async function proxy(req: NextRequest) {
   if (
     pathname.startsWith('/login') ||
     pathname.startsWith('/api/cron') ||
-    pathname.startsWith('/api/inbound')
+    pathname.startsWith('/api/inbound') ||
+    pathname.startsWith('/api/finances')
   ) {
     return NextResponse.next()
   }
