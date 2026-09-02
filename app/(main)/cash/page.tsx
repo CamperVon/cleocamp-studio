@@ -22,11 +22,18 @@ export default async function Cash() {
   const committed = pos.reduce(
     (n, p) => n + p.lines.reduce((m, l) => m + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0), 0)
 
-  if (!conn) {
+  // Figures can arrive by hand long before the Intuit connection exists — the
+  // page should show what it has rather than insisting on OAuth first.
+  if (!conn && !snap) {
     return (
       <Page title="Cash" lede="Balances, receivables and revenue from QuickBooks.">
-        <Card title="Not connected">
+        <Card title="Nothing recorded yet">
           <div className="flex flex-col gap-3 px-4 py-5 sm:px-5">
+            <p className="text-sm text-muted">
+              Tell Studio Mouse where things stand and it will keep track &mdash;
+              &ldquo;as of today we have $40,000 in the bank and $12,000 outstanding&rdquo;,
+              or paste a QuickBooks summary. No setup needed.
+            </p>
             <p className="text-sm text-muted">
               {isConfigured()
                 ? 'Ready to connect. You will be sent to Intuit to authorise, once.'
@@ -47,12 +54,16 @@ export default async function Cash() {
   return (
     <Page
       title="Cash"
-      lede={snap ? `As of ${snap.forDate.toISOString().slice(0, 10)}, from QuickBooks.` : 'Connected. Waiting for the first pull.'}
+      lede={
+        snap
+          ? `As of ${snap.forDate.toISOString().slice(0, 10)}${conn ? ', from QuickBooks.' : ', entered by hand.'}`
+          : 'Connected. Waiting for the first pull.'
+      }
     >
-      {conn.lastError ? (
+      {conn?.lastError ? (
         <div className="rounded-xl border border-urgent bg-urgent-soft px-4 py-3 text-sm text-urgent sm:px-5">
           <p className="font-medium">The last refresh failed.</p>
-          <p className="mt-1">{conn.lastError}</p>
+          <p className="mt-1">{conn?.lastError}</p>
           <p className="mt-1">
             If this persists, reconnect — Intuit refresh tokens die after 100 days unused.
           </p>
@@ -74,9 +85,9 @@ export default async function Cash() {
           </div>
 
           <div className="rounded-xl border border-warn bg-warn-soft px-4 py-3 text-sm text-warn sm:px-5">
-            These come straight from QuickBooks, which was still being reconciled. Treat them
-            as indicative until the bookkeeper signs off — in August QuickBooks reported no
-            income at all while Shopify reported $67,745.
+            {conn
+              ? 'Straight from QuickBooks, which was still being reconciled — treat as indicative until the bookkeeper signs off. In August QuickBooks reported no income at all while Shopify reported $67,745.'
+              : 'Entered by hand, so only as current as the date above. Studio Mouse will not carry these forward or estimate between updates.'}
           </div>
 
           {Array.isArray((snap.raw as any)?.accounts) ? (

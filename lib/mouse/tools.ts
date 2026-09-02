@@ -496,6 +496,56 @@ export const TOOLS: Record<string, Tool> = {
       }),
   },
 
+  record_financials: {
+    def: {
+      name: 'record_financials',
+      description:
+        'Record where the money stands, from figures a person gives you or from a ' +
+        'QuickBooks report they paste in. Only record what you were actually told — ' +
+        'leave anything you were not given unset rather than carrying yesterday forward. ' +
+        'Amounts in dollars; they are stored as cents.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          asOfDate: str('ISO date the figures are as of, e.g. 2026-09-01'),
+          cash: num('Total in the bank'),
+          receivables: num('Owed to Cleo Camp'),
+          payables: num('Owed by Cleo Camp'),
+          revenueMonthToDate: num('Revenue so far this month'),
+          revenueYearToDate: num('Revenue so far this year'),
+          expensesMonthToDate: num('Expenses so far this month'),
+          note: str('Anything worth remembering about where these came from'),
+        },
+        required: ['asOfDate'],
+      },
+    },
+    run: async (i) => {
+      const forDate = new Date(i.asOfDate + 'T00:00:00Z')
+      const cents = (n: number | undefined) =>
+        n === undefined || n === null ? null : BigInt(Math.round(n * 100))
+      const data = {
+        cashCents: cents(i.cash),
+        arCents: cents(i.receivables),
+        apCents: cents(i.payables),
+        revenueMtdCents: cents(i.revenueMonthToDate),
+        revenueYtdCents: cents(i.revenueYearToDate),
+        expensesMtdCents: cents(i.expensesMonthToDate),
+        raw: { enteredBy: 'chat', note: i.note ?? null } as never,
+      }
+      // Only overwrite the fields actually supplied — a partial update must not
+      // blank out figures given earlier.
+      const clean = Object.fromEntries(
+        Object.entries(data).filter(([, v]) => v !== null),
+      ) as typeof data
+      await db.financialSnapshot.upsert({
+        where: { forDate },
+        create: { forDate, ...clean },
+        update: clean,
+      })
+      return { recorded: i.asOfDate, fields: Object.keys(clean).length }
+    },
+  },
+
   query_status: {
     def: {
       name: 'query_status',
