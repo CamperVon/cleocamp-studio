@@ -6,7 +6,8 @@ export async function sendEmail(opts: {
   text: string
   to?: string[]
   cc?: string[]
-  /** Replies must reach a person. The sending address is not monitored. */
+  /** Rarely needed: the From address (mouse@) is on the inbound allowlist,
+   *  so replies come back into the system and get read on the nightly pass. */
   replyTo?: string
 }) {
   const key = process.env.RESEND_API_KEY
