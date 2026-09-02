@@ -69,6 +69,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, ignored: 'address not in use' })
   }
 
+  // The webhook carries metadata only — no body. Fetch the content so Studio
+  // Mouse has something to read.
+  let text: string | null = d.text ?? null
+  let html: string | null = d.html ?? null
+  if (!text && !html && d.email_id && process.env.RESEND_API_KEY) {
+    try {
+      const r = await fetch(`https://api.resend.com/emails/receiving/${d.email_id}`, {
+        headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
+      })
+      if (r.ok) {
+        const full = (await r.json()) as { text?: string; html?: string }
+        text = full.text ?? null
+        html = full.html ?? null
+      }
+    } catch {
+      // Metadata is still worth keeping; the body can be fetched again later.
+    }
+  }
+
   await db.inboundEmail.upsert({
     where: { messageId: d.message_id ?? d.email_id ?? crypto.randomUUID() },
     create: {
@@ -76,8 +95,8 @@ export async function POST(req: NextRequest) {
       fromAddress: String(d.from ?? 'unknown'),
       toAddress: to,
       subject: d.subject ?? null,
-      text: d.text ?? null,
-      html: d.html ?? null,
+      text,
+      html,
       raw: event,
       receivedAt: d.created_at ? new Date(d.created_at) : new Date(),
     },
