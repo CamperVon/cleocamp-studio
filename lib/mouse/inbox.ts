@@ -47,11 +47,18 @@ function extractBalances(text: string): {
     const raw = j.accounts ?? j.balances ?? j.bankAccounts
     if (!Array.isArray(raw) || !raw.length) return null
     const accounts = raw
-      .map((a: any) => ({
-        name: String(a.name ?? a.account ?? '').trim(),
-        type: a.type ?? (/credit/i.test(String(a.name ?? '')) ? 'Credit Card' : 'Bank'),
-        balance: Number(a.balance ?? a.amount ?? a.value),
-      }))
+      .map((a: any) => {
+        const name = String(a.name ?? a.account ?? '').trim()
+        // Types arrive in whatever shape the sender used — "credit_card",
+        // "Credit Card", or nothing at all. Normalise rather than match exactly.
+        const rawType = String(a.type ?? '').toLowerCase().replace(/[^a-z]/g, '')
+        const isCard = rawType.includes('credit') || /credit/i.test(name)
+        return {
+          name,
+          type: isCard ? 'Credit Card' : 'Bank',
+          balance: Number(a.balance ?? a.amount ?? a.value),
+        }
+      })
       .filter((a: any) => a.name && Number.isFinite(a.balance))
     return accounts.length ? { accounts } : null
   } catch {
@@ -64,8 +71,10 @@ async function recordBalances(
   from: string,
   when: Date,
 ) {
+  // Sum every bank account, negatives included — dropping them would overstate
+  // the position, and an overdrawn account is exactly what you want to see.
   const cash = accounts
-    .filter((a) => (a.type ?? 'Bank') === 'Bank' && a.balance > 0)
+    .filter((a) => (a.type ?? 'Bank') === 'Bank')
     .reduce((n, a) => n + a.balance, 0)
   const card = Math.abs(
     accounts.filter((a) => a.type === 'Credit Card').reduce((n, a) => n + a.balance, 0),
