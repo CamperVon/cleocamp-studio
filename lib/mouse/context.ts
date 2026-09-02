@@ -13,7 +13,7 @@ import { db } from '@/lib/db'
  * turn. Keep it deterministic: no timestamps, stable ordering.
  */
 export async function buildCatalog(): Promise<string> {
-  const [products, components, vendors, items, pos, runs, lastSale, sales] = await Promise.all([
+  const [products, components, vendors, items, pos, runs, lastSale, notes, events, forecasts, alerts, people, finances, sales] = await Promise.all([
     db.product.findMany({
       orderBy: { name: 'asc' },
       include: {
@@ -35,6 +35,15 @@ export async function buildCatalog(): Promise<string> {
       orderBy: { expectedReadyAt: 'asc' },
     }),
     db.salesSnapshot.aggregate({ _max: { date: true } }),
+    db.note.findMany({ orderBy: { createdAt: 'desc' }, take: 40 }),
+    db.calendarEvent.findMany({
+      where: { date: { gte: new Date(Date.now() - 864e5) } },
+      orderBy: { date: 'asc' }, take: 25,
+    }),
+    db.forecastResult.findMany({ include: { product: true, component: true } }),
+    db.alert.findMany({ where: { resolved: false }, orderBy: { createdAt: 'desc' } }),
+    db.person.findMany({ where: { active: true } }),
+    db.financialSnapshot.findFirst({ orderBy: { forDate: 'desc' } }),
     db.salesSnapshot.groupBy({
       by: ['productVariantId'],
       _sum: { unitsSold: true },
@@ -138,6 +147,49 @@ export async function buildCatalog(): Promise<string> {
       const lines = p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')
       L.push(`- PO ${p.poNumber} to ${p.vendor.name}: ${lines} · ${p.status}`)
     }
+  }
+
+  if (forecasts.length) {
+    L.push('\n## Your own forecasts, from the last nightly run')
+    for (const f of forecasts) {
+      const who = f.product?.name ?? f.component?.name ?? '?'
+      L.push(
+        `- ${who}: ${f.blockedReason ? 'BLOCKED — ' + f.blockedReason : f.note}` +
+          (f.recommendedOrderDate ? ` Order by ${f.recommendedOrderDate.toISOString().slice(0, 10)}.` : ''),
+      )
+    }
+  }
+
+  if (alerts.length) {
+    L.push('\n## Alerts you have raised, still open')
+    for (const a of alerts) L.push(`- ${a.severity}: ${a.message}`)
+  }
+
+  if (events.length) {
+    L.push('\n## Calendar, from today onward')
+    for (const e of events) {
+      L.push(`- ${e.date.toISOString().slice(0, 10)} ${e.title}${e.source === 'GOOGLE' ? ' (studio calendar)' : ''}`)
+    }
+  }
+
+  if (notes.length) {
+    L.push('\n## Notes you have written')
+    for (const n of notes) L.push(`- ${n.content.replace(/\s+/g, ' ').slice(0, 260)}`)
+  }
+
+  if (people.length) {
+    L.push('\n## People')
+    for (const p of people) L.push(`- ${p.name}${p.role ? ` — ${p.role}` : ''}`)
+  }
+
+  if (finances) {
+    L.push('\n## Money, as last recorded')
+    L.push(
+      `As of ${finances.forDate.toISOString().slice(0, 10)}: ` +
+        `${finances.cashCents === null ? 'cash unknown' : '$' + (Number(finances.cashCents) / 100).toLocaleString()} in the bank, ` +
+        `${finances.apCents === null ? 'card unknown' : '$' + (Number(finances.apCents) / 100).toLocaleString()} owed on the card. ` +
+        `These do not refresh on their own.`,
+    )
   }
 
   L.push('\n## Open questions and todos')
