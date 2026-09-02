@@ -40,6 +40,17 @@ export async function buildCatalog(): Promise<string> {
   const money = (c: number | null) => (c === null ? 'unknown' : `$${(c / 100).toFixed(2)}`)
   const L: string[] = []
 
+  // Without this it cannot reason about lead times, due dates or "as of today",
+  // and correctly refuses to guess — which means asking Cleo what day it is.
+  const today = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  }).format(new Date())
+  const iso = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date())
+  L.push(`## Today\n${today} (${iso}), Los Angeles time.\n`)
+
   L.push('## Products')
   for (const p of products) {
     L.push(`\n### ${p.name} [${p.id}] — ${p.status.toLowerCase()}, retail ${money(p.retailPriceCents)}`)
