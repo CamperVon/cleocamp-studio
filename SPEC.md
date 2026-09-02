@@ -209,7 +209,8 @@ negative quantities → upsert calendar events → compose and send the digest.
 
 The digest is **narrated, not a table dump**: "Pink Cleo Tee is projected to
 sell out in about four weeks. Buttons have a two-week lead time, so order by
-Wednesday." Recipients: `team@cleocamp.com`.
+Wednesday." Recipients: `brandon@cleocamp.com` and `cleo@cleocamp.com`. Not team@ — that is a
+group address that cannot receive external mail, so digests sent there bounce.
 
 Idempotent by construction — a partial unique index on unresolved Alerts, and
 a DigestSend row keyed by date so repeated hits cannot double-send.
