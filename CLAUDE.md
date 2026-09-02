@@ -91,3 +91,27 @@ data. That must not happen again.
 ---
 
 Framework-level conventions from the Next.js scaffold live in `AGENTS.md`.
+
+---
+
+## 6. Things that have already caught us out
+
+- **Restart the dev server after `prisma migrate`.** It holds a stale client and
+  returns the *old* shape without erroring. This produced four wrong diagnoses
+  in one day.
+- **Vercel marks Production variables sensitive by default, and sensitive
+  variables cannot be read back.** `vercel env pull` returns an empty string for
+  them. Empty does not mean unset — check with `--no-sensitive` before
+  concluding a value is missing, and never delete one on that basis.
+- **Watch for success that does nothing.** Every real bug here has had the same
+  shape: the seed wiped Shopify counts while reporting success; the inbound
+  webhook returned 200 on every message and stored none; the balance parser
+  matched no accounts and recorded zero. Nothing threw. When something looks
+  empty, verify the write actually happened rather than trusting the status.
+- **Studio Mouse must be told the date.** Without it in context it cannot reason
+  about lead times or due dates, and correctly refuses to guess — which means
+  asking Cleo what day it is.
+- **QuickBooks reaches this project through a claude.ai connector, which does
+  not reach Claude Code sessions.** The Intuit OAuth code in
+  `lib/integrations/quickbooks.ts` is built and dormant for when live sync is
+  wanted; until then figures arrive by hand or via the scheduled routine.
