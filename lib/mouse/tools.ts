@@ -575,6 +575,10 @@ export const TOOLS: Record<string, Tool> = {
         type: 'object',
         properties: {
           vendorId: str('Who it is going to'),
+          forProductId: str(
+            'Which product the order is for. Always set this — it goes on the document, ' +
+            'so the vendor can catch a wrong material before it ships.',
+          ),
           lines: {
             type: 'array' as const,
             description: 'What is being ordered',
@@ -596,7 +600,7 @@ export const TOOLS: Record<string, Tool> = {
           netDaysAfterDelivery: num('Days after delivery the balance is due'),
           notes: str('Anything the vendor should know'),
         },
-        required: ['vendorId', 'lines'],
+        required: ['vendorId', 'forProductId', 'lines'],
       },
     },
     run: async (i) => {
@@ -655,6 +659,7 @@ export const TOOLS: Record<string, Tool> = {
         data: {
           poNumber,
           vendorId: i.vendorId,
+          forProductId: i.forProductId ?? null,
           status: 'DRAFT',
           expectedAt,
           deliverTo,

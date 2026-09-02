@@ -516,14 +516,14 @@ async function main() {
   // Fabric is delivered to Empire Sewing, not the studio. Component.incomingQty
   // derives from open lines like these.
   await up(db.purchaseOrder, [
-    { id: 'po_2356', poNumber: '2356', deliverTo: 'Empire Sewing, Inc\n910 E 61st Street, DOOR #4\nLos Angeles, CA 90001\nHours: 7:30am-4pm, Mon-Fri', vendorId: 'vnd_richline', status: 'SENT',
+    { id: 'po_2356', poNumber: '2356', forProductId: 'prd_cosmo_tee', deliverTo: 'Empire Sewing, Inc\n910 E 61st Street, DOOR #4\nLos Angeles, CA 90001\nHours: 7:30am-4pm, Mon-Fri', vendorId: 'vnd_richline', status: 'SENT',
       orderedAt: new Date('2026-09-01T12:00:00-07:00'),
       expectedAt: new Date('2026-09-22T12:00:00-07:00'),
       shipToLocationId: null,
       paymentTerms: '50% on order, 50% on delivery',
       depositPercent: 50,
       notes: 'Cosmo Stripe Tee fabric. Three week lead time. Rolls run 70-80 yd so the delivered yardage will not be exactly 1,000.' },
-    { id: 'po_2357', poNumber: '2357', deliverTo: 'Empire Sewing, Inc\n910 E 61st Street, DOOR #4\nLos Angeles, CA 90001\nHours: 7:30am-4pm, Mon-Fri', vendorId: 'vnd_richline', status: 'SENT',
+    { id: 'po_2357', poNumber: '2357', forProductId: 'prd_cleo_tee', deliverTo: 'Empire Sewing, Inc\n910 E 61st Street, DOOR #4\nLos Angeles, CA 90001\nHours: 7:30am-4pm, Mon-Fri', vendorId: 'vnd_richline', status: 'SENT',
       orderedAt: new Date('2026-09-01T12:00:00-07:00'),
       shipToLocationId: null,
       paymentTerms: 'Net 60 from delivery',

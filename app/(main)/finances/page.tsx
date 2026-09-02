@@ -17,7 +17,7 @@ export default async function Finances() {
     db.purchaseOrder.findMany({
       orderBy: { createdAt: 'desc' },
       take: 10,
-      include: { vendor: true, lines: { include: { component: true } } },
+      include: { vendor: true, forProduct: true, lines: { include: { component: true } } },
     }),
   ])
   const open = pos.filter((p) => p.status === 'SENT' || p.status === 'PARTIALLY_RECEIVED')
@@ -117,6 +117,7 @@ export default async function Finances() {
                           </p>
                           <p className="truncate text-xs text-muted">
                             {p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')}
+                            {p.forProduct ? ` · for the ${p.forProduct.name}` : ''}
                           </p>
                         </div>
                         <div className="shrink-0 text-right">

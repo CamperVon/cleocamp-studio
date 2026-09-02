@@ -27,7 +27,7 @@ export async function buildCatalog(): Promise<string> {
     db.actionItem.findMany({ where: { resolved: false }, orderBy: { createdAt: 'asc' } }),
     db.purchaseOrder.findMany({
       where: { status: { in: ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'] } },
-      include: { vendor: true, lines: { include: { component: true } } },
+      include: { vendor: true, forProduct: true, lines: { include: { component: true } } },
     }),
     db.productionRun.findMany({
       where: { status: { notIn: ['RECEIVED', 'CANCELLED'] } },
@@ -146,7 +146,9 @@ export async function buildCatalog(): Promise<string> {
     for (const p of pos) {
       const lines = p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')
       L.push(
-        `- PO ${p.poNumber} to ${p.vendor.name}: ${lines} · ${p.status}` +
+        `- PO ${p.poNumber} to ${p.vendor.name}: ${lines}` +
+          (p.forProduct ? ` for the ${p.forProduct.name}` : '') +
+          ` · ${p.status}` +
           (p.paymentTerms ? ` · ${p.paymentTerms}` : '') +
           (p.expectedAt ? ` · due ${p.expectedAt.toISOString().slice(0, 10)}` : ' · no date confirmed') +
           (p.deliverTo ? ` · delivers to ${p.deliverTo.split('\n')[0]}` : ''),

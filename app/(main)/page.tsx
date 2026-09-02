@@ -34,7 +34,7 @@ export default async function Today() {
       db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(7) } } }),
       db.purchaseOrder.findMany({
         where: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } },
-        include: { vendor: true, lines: { include: { component: true } } },
+        include: { vendor: true, forProduct: true, lines: { include: { component: true } } },
         orderBy: { expectedAt: 'asc' },
       }),
       db.productionRun.findMany({
@@ -145,7 +145,10 @@ export default async function Today() {
                   kind="po"
                   id={p.id}
                   title={`PO ${p.poNumber} · ${p.vendor.name}`}
-                  subtitle={p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')}
+                  subtitle={
+                    p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ') +
+                    (p.forProduct ? ` · for the ${p.forProduct.name}` : '')
+                  }
                   right={p.expectedAt ? day(p.expectedAt) : 'ETA unconfirmed'}
                   history={notes.filter((n) => n.entityId === p.id).map((n) => n.content)}
                 />

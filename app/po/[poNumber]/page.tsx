@@ -22,7 +22,7 @@ export default async function PurchaseOrderDoc({
   const { poNumber } = await params
   const po = await db.purchaseOrder.findFirst({
     where: { poNumber },
-    include: { vendor: true, lines: { include: { component: true } } },
+    include: { vendor: true, forProduct: true, lines: { include: { component: true } } },
   })
   if (!po) notFound()
 
