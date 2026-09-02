@@ -37,7 +37,11 @@ async function main() {
       where: { shopifyVariantId: v.id.split('/').pop() },
     })
     if (!existing) {
-      unknown.push(`${v.product.title} / ${v.title}`)
+      // Shopify holds a DRAFT duplicate of the Cleo Tee carrying 245 phantom
+      // units. Confirmed with Brandon as incorrect, so it is never imported —
+      // saying why here stops someone importing it in six months.
+      const why = v.product.status === 'DRAFT' ? ' [draft — ignored]' : ''
+      unknown.push(`${v.product.title} / ${v.title}${why}`)
       continue
     }
     await db.productVariant.update({
@@ -50,7 +54,7 @@ async function main() {
     matched++
   }
   console.log(`variants: ${matched} updated from Shopify, ${unknown.length} not in our records`)
-  if (unknown.length) unknown.forEach((u) => console.log(`  new: ${u}`))
+  if (unknown.length) unknown.forEach((u) => console.log(`  not imported: ${u}`))
 
   // ── sales history ───────────────────────────────────────────
   // Shopify went live in April 2026; read_all_orders lets us take the lot.
