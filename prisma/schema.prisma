@@ -676,6 +676,41 @@ model DailyBrief {
   createdAt DateTime @default(now())
 }
 
+/// The QuickBooks connection.
+///
+/// Intuit's refresh token ROTATES on every use — each refresh returns a new one
+/// and kills the old immediately — so it cannot live in an environment
+/// variable. It lives here and is rewritten each time. If nothing refreshes it
+/// for 100 days it dies and someone has to re-authorise in a browser, which is
+/// why the nightly job touches it whether or not anyone asked for figures.
+model QuickBooksConnection {
+  id                String   @id @default("singleton")
+  realmId           String
+  accessToken       String
+  refreshToken      String
+  accessExpiresAt   DateTime
+  refreshExpiresAt  DateTime
+  lastRefreshedAt   DateTime?
+  lastError         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+/// A snapshot of the financial position, so the app is not calling Intuit on
+/// every page load and so trends can be seen over time.
+model FinancialSnapshot {
+  id             String   @id @default(cuid())
+  forDate        DateTime @unique @db.Date
+  cashCents      BigInt?
+  arCents        BigInt?
+  apCents        BigInt?
+  revenueMtdCents BigInt?
+  revenueYtdCents BigInt?
+  expensesMtdCents BigInt?
+  raw            Json?
+  createdAt      DateTime @default(now())
+}
+
 enum DigestKind {
   DAILY
   WEEKLY

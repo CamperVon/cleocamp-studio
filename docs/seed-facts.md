@@ -363,3 +363,9 @@ source that put short sleeve at 1.50, so neither its absolute figure nor its
 11. **Shopify write-through.** Chat-logged movements currently update only the
     local number, which the next sync overwrites. `write_inventory` is granted
     and the location id is recorded; this closes the loop.
+
+## Backlog addition
+12. **QuickBooks invoicing.** Read access ships first (balances, receivables,
+    payables, revenue). Writing invoices needs the same OAuth connection plus a
+    confirmation step — Cleo ships wholesale, Studio Mouse drafts the invoice in
+    QuickBooks, a human approves before it sends.

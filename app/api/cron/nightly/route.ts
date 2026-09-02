@@ -8,6 +8,7 @@ import { getDailyBrief } from '@/lib/mouse/brief'
 import { sendEmail } from '@/lib/email'
 import { fetchFeed } from '@/lib/integrations/calendar'
 import { composeDigest } from '@/lib/mouse/digest'
+import { snapshotPosition } from '@/lib/integrations/quickbooks'
 
 export const maxDuration = 300
 
@@ -58,6 +59,13 @@ export async function GET(req: NextRequest) {
   })
 
   await step('inbox', () => processInbox())
+
+  // Also keeps the Intuit connection alive. Refresh tokens die after 100 days
+  // unused, so this runs whether or not anyone asked for the figures.
+  await step('quickbooks', async () => {
+    const p = await snapshotPosition()
+    return { asOf: p.asOf, cash: Number(p.cashCents) / 100, ar: Number(p.arCents) / 100 }
+  })
 
   // ── 2. Work out where things stand ───────────────────────
   await step('forecast', async () => {
