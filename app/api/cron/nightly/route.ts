@@ -118,6 +118,34 @@ export async function GET(req: NextRequest) {
     return { raised }
   })
 
+  // Money does not refresh itself while QuickBooks is on a manual path, so the
+  // job's job is to notice when it has gone stale rather than let an old number
+  // sit there looking current.
+  await step('financeAge', async () => {
+    const snap = await db.financialSnapshot.findFirst({ orderBy: { forDate: 'desc' } })
+    if (!snap) {
+      await db.alert.create({
+        data: { dedupeKey: 'finance:none', severity: 'INFO',
+          message: 'No cash figures recorded yet. Ask Claude to pull them from QuickBooks.' },
+      }).catch(() => null)
+      return { state: 'none' }
+    }
+    const days = Math.floor((Date.now() - snap.forDate.getTime()) / 864e5)
+    if (days >= 7) {
+      await db.alert.create({
+        data: { dedupeKey: 'finance:stale', severity: 'WARNING',
+          message: `Cash figures are ${days} days old. Ask Claude to refresh them from QuickBooks.` },
+      }).catch(() => null)
+    } else {
+      // Resolve it once someone has refreshed, so the alert clears itself.
+      await db.alert.updateMany({
+        where: { dedupeKey: 'finance:stale', resolved: false },
+        data: { resolved: true, resolvedAt: new Date() },
+      })
+    }
+    return { daysOld: days }
+  })
+
   // ── 4. Calendar entries for the dates that matter ────────
   await step('calendarEvents', async () => {
     const due = await db.forecastResult.findMany({
