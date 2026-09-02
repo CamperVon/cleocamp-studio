@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { laMidnight } from '@/lib/dates'
 import { recomputeForecasts } from '@/lib/forecast'
 import { processInbox } from '@/lib/mouse/inbox'
-import { getDailyBrief } from '@/lib/mouse/brief'
+import { nightlyPass } from '@/lib/mouse/nightly-pass'
 import { sendEmail } from '@/lib/email'
 import { fetchFeed } from '@/lib/integrations/calendar'
 import { composeDigest } from '@/lib/mouse/digest'
@@ -58,7 +58,24 @@ export async function GET(req: NextRequest) {
     return { synced: events.length }
   })
 
-  await step('inbox', () => processInbox())
+  // First the structured intake — the routine's balances email is data, not
+  // correspondence, and should not be reasoned about.
+  await step('balances', () => processInbox())
+
+  // Then one pass over everything else, with the same brain the chat uses.
+  await step('think', async () => {
+    const r = await nightlyPass()
+    if (r.summary) {
+      // This is what appears as Mouse's Corner in the morning.
+      const forDate = laMidnight(0)
+      await db.dailyBrief.upsert({
+        where: { forDate },
+        create: { forDate, text: r.summary, model: r.model },
+        update: { text: r.summary, model: r.model },
+      })
+    }
+    return { read: r.read, raised: r.raised, model: r.model }
+  })
 
   // Also keeps the Intuit connection alive. Refresh tokens die after 100 days
   // unused, so this runs whether or not anyone asked for the figures.
@@ -169,12 +186,6 @@ export async function GET(req: NextRequest) {
       made++
     }
     return { made }
-  })
-
-  // ── 5. Write the day's note before anyone is awake ───────
-  await step('brief', async () => {
-    const b = await getDailyBrief()
-    return { written: b?.fresh ?? false }
   })
 
   // ── 6. Send what is due today ────────────────────────────
