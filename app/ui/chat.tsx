@@ -25,17 +25,55 @@ const ACCEPTED_TYPES = 'application/pdf,image/jpeg,image/png,image/webp'
 const MAX_FILES = 3
 const MAX_BYTES = 4 * 1024 * 1024
 
+// Every turn is already saved server-side; this just remembers which thread
+// belongs to this browser so leaving the page (or refreshing it) doesn't
+// throw the conversation away — a resume, not a second copy of the data.
+const THREAD_KEY = 'studio-mouse:thread-id'
+
 export function Chat() {
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [pending, setPending] = useState<string | null>(null)
   const [threadId, setThreadId] = useState<string | undefined>()
+  const [restoring, setRestoring] = useState(true)
   const [files, setFiles] = useState<PendingFile[]>([])
   const [fileError, setFileError] = useState<string | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, pending])
+
+  // Resume the last conversation this browser had, once, on mount.
+  useEffect(() => {
+    let cancelled = false
+    async function restore() {
+      let saved: string | null = null
+      try { saved = localStorage.getItem(THREAD_KEY) } catch { /* private window, etc. */ }
+      if (!saved) { setRestoring(false); return }
+      try {
+        const res = await fetch(`/api/chat?threadId=${encodeURIComponent(saved)}`)
+        if (!res.ok) throw new Error('gone')
+        const d = await res.json()
+        if (cancelled) return
+        setMessages(d.messages)
+        setThreadId(d.threadId)
+      } catch {
+        // Thread no longer exists, or couldn't be reached — start fresh
+        // rather than getting stuck unable to send anything.
+        try { localStorage.removeItem(THREAD_KEY) } catch { /* ignore */ }
+      } finally {
+        if (!cancelled) setRestoring(false)
+      }
+    }
+    restore()
+    return () => { cancelled = true }
+  }, [])
+
+  function rememberThread(id: string) {
+    setThreadId(id)
+    try { localStorage.setItem(THREAD_KEY, id) } catch { /* ignore */ }
+  }
 
   async function onFilesChosen(e: React.ChangeEvent<HTMLInputElement>) {
     const chosen = Array.from(e.target.files ?? [])
@@ -81,11 +119,14 @@ export function Chat() {
     setFiles((prev) => prev.filter((_, j) => j !== i))
   }
 
-  async function send(e: React.FormEvent) {
+  async function send(e: { preventDefault: () => void }) {
     e.preventDefault()
     const text = input.trim()
     if ((!text && files.length === 0) || pending) return
     setInput('')
+    // Enter alone sent this, but the box had grown for a multi-line draft —
+    // collapse it back rather than leaving a tall empty box behind.
+    if (inputRef.current) inputRef.current.style.height = 'auto'
     const attached = files
     setFiles([])
     setMessages((m) => [
@@ -105,7 +146,7 @@ export function Chat() {
         throw new Error(body?.error || `${res.status}`)
       }
       const d = await res.json()
-      setThreadId(d.threadId)
+      rememberThread(d.threadId)
       setMessages((m) => [...m, { role: 'assistant', text: d.reply, writes: d.writes, model: d.model }])
     } catch (err) {
       setMessages((m) => [...m, {
@@ -123,7 +164,7 @@ export function Chat() {
   return (
     <div className="flex flex-col">
       <div className="max-h-[65vh] min-h-[20rem] overflow-y-auto px-4 py-3 sm:max-h-[36rem] sm:px-5">
-        {messages.length === 0 ? (
+        {restoring ? null : messages.length === 0 ? (
           <div className="flex items-center gap-3 py-1">
             <Mouse size={30} className="shrink-0 text-faint" />
             <p className="text-sm text-muted">
@@ -230,13 +271,30 @@ export function Chat() {
               <path d="M21.44 11.05l-9.19 9.19a5 5 0 01-7.07-7.07l9.19-9.19a3.5 3.5 0 014.95 4.95l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
             </svg>
           </button>
-          <input
+          <textarea
+            ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value)
+              const el = e.target
+              el.style.height = 'auto'
+              el.style.height = `${Math.min(el.scrollHeight, 128)}px`
+            }}
+            onKeyDown={(e) => {
+              // Enter sends; shift+enter writes a line the way it does
+              // everywhere else. Still typing a word (IME composition)
+              // shouldn't count as either.
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                send(e)
+              }
+            }}
             placeholder="What happened?"
             disabled={!!pending}
-            className="min-w-0 flex-1 rounded-lg border border-line bg-bg px-3.5 py-2.5 text-base
-                       outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/25"
+            rows={1}
+            className="min-w-0 flex-1 resize-none rounded-lg border border-line bg-bg px-3.5 py-2.5
+                       text-base leading-snug outline-none focus-visible:border-accent
+                       focus-visible:ring-2 focus-visible:ring-accent/25"
           />
           <button
             type="submit"

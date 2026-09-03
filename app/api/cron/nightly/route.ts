@@ -262,5 +262,70 @@ export async function GET(req: NextRequest) {
     return { sent }
   })
 
+  // ── 7. Chip away at the open-questions list ──────────────
+  // Brandon, 3 Sept 2026: two questions a day from "Things to tend to" for
+  // two weeks, explained nicely, because the list is long and Cleo is busy.
+  // Mouse itself has no clock — this cron is that clock. Delete this block
+  // (and the migration that added askedViaEmailAt, if unwanted elsewhere)
+  // once the two weeks are up or the list runs dry, whichever is first.
+  await step('chipAway', async () => {
+    // Same representation laMidnight uses — UTC midnight standing in for the
+    // LA calendar date — so subtracting it from `today` below is comparing
+    // like with like. A wall-clock offset here (-07:00) would have been off
+    // by that many hours against laMidnight and misfired near the boundary.
+    const START = new Date(Date.UTC(2026, 8, 3)) // 3 Sept 2026, LA date
+    const DAYS = 14
+    const PER_DAY = 2
+
+    const today = laMidnight(0)
+    const dayIndex = Math.floor((today.getTime() - START.getTime()) / 864e5)
+    if (dayIndex < 0 || dayIndex >= DAYS) return { skipped: 'outside the two-week window' }
+
+    // Reruns of the same cron day (a retry, a manual poke) must not send twice.
+    const sentToday = await db.actionItem.count({ where: { askedViaEmailAt: { gte: today } } })
+    if (sentToday > 0) return { skipped: "already sent today's pair" }
+
+    const openWhere = { resolved: false, kind: 'QUESTION' as const, askedViaEmailAt: null }
+    const next = await db.actionItem.findMany({
+      where: openWhere,
+      orderBy: [{ dueDate: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
+      take: PER_DAY,
+    })
+    if (!next.length) return { skipped: 'nothing left on the list' }
+    const remainingAfter = (await db.actionItem.count({ where: openWhere })) - next.length
+
+    const body = [
+      "Chipping away at the open-questions list, a couple a day rather than dumping " +
+        'the whole thing on you at once. Whenever you get a moment:',
+      ...next.map((q, i) => `${i + 1}) ${q.title}${q.detail ? `\n${q.detail}` : ''}`),
+      remainingAfter > 0
+        ? `${remainingAfter} left after these — more tomorrow, no rush on any of it.`
+        : "That's the last of them for now.",
+      '— Studio Mouse',
+    ].join('\n\n')
+
+    if (dryRun) return { wouldSend: next.map((q) => q.title), remainingAfter }
+
+    const res = await sendEmail({
+      to: ['studio@cleocamp.com'], cc: ['brandon@cleocamp.com'],
+      subject: 'A couple of things — Studio Mouse', text: body,
+    })
+    if (!res.sent) return { error: res.reason }
+
+    const askedAt = new Date()
+    await db.actionItem.updateMany({
+      where: { id: { in: next.map((q) => q.id) } },
+      data: { askedViaEmailAt: askedAt },
+    })
+    await db.sentEmail.create({
+      data: {
+        toAddress: 'studio@cleocamp.com', ccAddress: 'brandon@cleocamp.com',
+        subject: 'A couple of things — Studio Mouse', body,
+        resendId: (res as { id?: string }).id ?? null, sentBy: 'nightly cron (chip away)',
+      },
+    })
+    return { sent: next.map((q) => q.title), remainingAfter }
+  })
+
   return NextResponse.json({ ok: true, ranAt: new Date().toISOString(), ...log })
 }

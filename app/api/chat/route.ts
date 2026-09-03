@@ -14,6 +14,44 @@ const ALLOWED_TYPES = /^(application\/pdf|image\/(jpeg|png|webp))$/
 const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024
 const MAX_ATTACHMENTS = 3
 
+// Lets the client pick a conversation back up after navigating away or
+// refreshing — every turn is already persisted, the UI just never reloaded
+// it. Returns messages in the same shape the client renders, oldest first.
+export async function GET(req: NextRequest) {
+  const threadId = req.nextUrl.searchParams.get('threadId')
+  if (!threadId) return NextResponse.json({ error: 'threadId required' }, { status: 400 })
+
+  const thread = await db.chatThread.findUnique({
+    where: { id: threadId },
+    include: {
+      messages: {
+        orderBy: { createdAt: 'asc' },
+        include: { attachments: { select: { filename: true } } },
+      },
+    },
+  })
+  if (!thread) return NextResponse.json({ error: 'no such thread' }, { status: 404 })
+
+  return NextResponse.json({
+    threadId: thread.id,
+    messages: thread.messages.map((m) => ({
+      role: m.role === 'USER' ? 'user' : 'assistant',
+      text: m.content,
+      model: m.model ?? undefined,
+      attachments: m.attachments.length ? m.attachments : undefined,
+      // toolCallsJson is every call made that turn, {name, input}[]. The
+      // "write" badges only ever show the ones chatTurn itself treats as a
+      // write — the same two lookup tools excluded there. No summary is
+      // stored, but the badge never showed it, only the tool name.
+      writes: Array.isArray(m.toolCallsJson)
+        ? (m.toolCallsJson as Array<{ name: string }>)
+            .filter((c) => c.name !== 'query_status' && c.name !== 'request_deep_analysis')
+            .map((c) => ({ tool: c.name, summary: '' }))
+        : undefined,
+    })),
+  })
+}
+
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as {
     threadId?: string

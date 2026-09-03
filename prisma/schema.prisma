@@ -496,6 +496,10 @@ model ActionItem {
   resolved   Boolean          @default(false)
   resolvedAt DateTime?
   resolutionNote String?
+  /// Set once this has gone out in the "chip away" drip email, so the next
+  /// day's pair never repeats it. Null just means never sent that way —
+  /// unrelated to resolved, which is a person answering it.
+  askedViaEmailAt DateTime?
   createdAt  DateTime         @default(now())
 
   createdBy  Person? @relation("ItemCreatedBy", fields: [createdById], references: [id])
