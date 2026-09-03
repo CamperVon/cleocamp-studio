@@ -75,6 +75,15 @@ export function Chat() {
     try { localStorage.setItem(THREAD_KEY, id) } catch { /* ignore */ }
   }
 
+  // Clears the screen only. The old thread and every message in it stay in
+  // the database exactly as they are — this just stops pointing at it, so
+  // the next message starts a new one instead of picking the old one back up.
+  function startNewConversation() {
+    setMessages([])
+    setThreadId(undefined)
+    try { localStorage.removeItem(THREAD_KEY) } catch { /* ignore */ }
+  }
+
   async function onFilesChosen(e: React.ChangeEvent<HTMLInputElement>) {
     const chosen = Array.from(e.target.files ?? [])
     e.target.value = '' // let picking the same file twice re-fire onChange
@@ -163,6 +172,17 @@ export function Chat() {
 
   return (
     <div className="flex flex-col">
+      {messages.length > 0 ? (
+        <div className="flex justify-end border-b border-line px-4 py-1.5 sm:px-5">
+          <button
+            type="button"
+            onClick={startNewConversation}
+            className="text-xs text-faint hover:text-ink"
+          >
+            New conversation
+          </button>
+        </div>
+      ) : null}
       <div className="max-h-[65vh] min-h-[20rem] overflow-y-auto px-4 py-3 sm:max-h-[36rem] sm:px-5">
         {restoring ? null : messages.length === 0 ? (
           <div className="flex items-center gap-3 py-1">
