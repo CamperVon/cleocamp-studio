@@ -9,6 +9,8 @@ import { sendEmail } from '@/lib/email'
 import { fetchFeed } from '@/lib/integrations/calendar'
 import { composeDigest } from '@/lib/mouse/digest'
 import { snapshotPosition, isConfigured as qboConfigured } from '@/lib/integrations/quickbooks'
+import { isConfigured as shopifyConfigured } from '@/lib/integrations/shopify'
+import { syncShopify } from '@/lib/integrations/shopify-sync'
 
 export const maxDuration = 300
 
@@ -56,6 +58,22 @@ export async function GET(req: NextRequest) {
       else await db.calendarEvent.create({ data })
     }
     return { synced: events.length }
+  })
+
+  // Shopify is the master for finished goods, so the forecast below is only
+  // as current as this. A trailing window, not the full order history —
+  // that would keep growing and this needs to stay well inside the Hobby
+  // cron's 300s ceiling. A day with no rows here reads as unknown downstream,
+  // never as zero sold — a gap is not the same fact as a quiet day.
+  await step('shopify', async () => {
+    if (!shopifyConfigured()) return { skipped: 'not connected' }
+    const since = new Date(Date.now() - 21 * 864e5).toISOString().slice(0, 10)
+    const r = await syncShopify(db, since)
+    return {
+      variantsUpdated: r.variantsUpdated, variantsUnknown: r.variantsUnknown.length,
+      salesWritten: r.salesWritten, unitsSold: r.unitsSold,
+      onHand: `${r.onHandCounted}/${r.onHandTotal}`,
+    }
   })
 
   // First the structured intake — the routine's balances email is data, not
@@ -189,7 +207,15 @@ export async function GET(req: NextRequest) {
   })
 
   // ── 6. Send what is due today ────────────────────────────
+  // Paused 3 Sept 2026 at Brandon's request: composeDigest re-summarises the
+  // same figures from scratch and reads less accurate than Mouse's Corner,
+  // which comes from the 'think' step above and already reasons over this
+  // data plus tonight's mail. Flip this back to true to resume sending.
+  const DIGEST_EMAIL_ENABLED = false
+
   await step('digests', async () => {
+    if (!DIGEST_EMAIL_ENABLED) return { skipped: 'digest paused' }
+
     // laMidnight already carries the Pacific calendar date, so day-of-week and
     // day-of-month come straight off it. Asking Intl for a numeric weekday is
     // not a thing it does.
