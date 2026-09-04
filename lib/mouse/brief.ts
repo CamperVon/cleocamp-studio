@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
+import { poLineLabel } from '@/lib/po'
 import { laMidnight } from '@/lib/dates'
 
 const VOICE = `You are Studio Mouse. You live in a Los Angeles fashion studio. You are
@@ -45,7 +46,7 @@ export async function getDailyBrief(): Promise<{ text: string; fresh: boolean } 
     db.actionItem.findMany({ where: { resolved: false }, take: 30, orderBy: { createdAt: 'asc' } }),
     db.purchaseOrder.findMany({
       where: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } },
-      include: { vendor: true, lines: { include: { component: true } } },
+      include: { vendor: true, lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
     }),
     db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(7) } } }),
     db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(1) } } }),
@@ -64,7 +65,7 @@ export async function getDailyBrief(): Promise<{ text: string; fresh: boolean } 
     ...pos.map(
       (p) =>
         `- PO ${p.poNumber} from ${p.vendor.name}: ${p.lines
-          .map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`)
+          .map((l) => `${l.qtyOrdered} ${l.unit} ${poLineLabel(l)}`)
           .join(', ')}${p.expectedAt ? `, due ${p.expectedAt.toISOString().slice(0, 10)}` : ', no date confirmed'}`,
     ),
     '',

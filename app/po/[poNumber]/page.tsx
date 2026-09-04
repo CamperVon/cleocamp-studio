@@ -22,7 +22,10 @@ export default async function PurchaseOrderDoc({
   const { poNumber } = await params
   const po = await db.purchaseOrder.findFirst({
     where: { poNumber },
-    include: { vendor: true, forProduct: true, lines: { include: { component: true } } },
+    include: {
+      vendor: true, forProduct: true,
+      lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } },
+    },
   })
   if (!po) notFound()
 
@@ -35,7 +38,9 @@ export default async function PurchaseOrderDoc({
   if (po.notes) notes.push(po.notes)
   if (po.paymentTerms) notes.push(`Payment terms: ${po.paymentTerms}.`)
   for (const l of po.lines) {
-    if (l.component.purchaseUnit && l.component.unitsPerPurchaseUnit) {
+    // Only a component line has a purchase/consumption unit split to flag —
+    // a cut-and-sew line is already in finished pieces.
+    if (l.component?.purchaseUnit && l.component.unitsPerPurchaseUnit) {
       notes.push(
         `${l.component.name} is supplied by the ${l.component.purchaseUnit} ` +
           `(about ${l.component.unitsPerPurchaseUnit} ${l.component.unitOfMeasure} each). ` +
@@ -43,7 +48,13 @@ export default async function PurchaseOrderDoc({
       )
     }
     if (l.unitCostCents) {
-      notes.push(`Please confirm pricing at ${money(l.unitCostCents)}/${l.component.unitOfMeasure} as quoted.`)
+      notes.push(`Please confirm pricing at ${money(l.unitCostCents)}/${l.unit} as quoted.`)
+    } else if (l.productVariant) {
+      notes.push(
+        `No confirmed price on file for ${l.productVariant.product.name}` +
+          `${l.productVariant.colorway ? ` / ${l.productVariant.colorway.customerName}` : ''}` +
+          `${l.productVariant.size ? ` / ${l.productVariant.size}` : ''} — please quote.`,
+      )
     }
   }
 
@@ -110,13 +121,24 @@ export default async function PurchaseOrderDoc({
           {po.lines.map((l) => (
             <tr key={l.id} className="border-b border-[#DEDFDB] align-top">
               <td className="py-2.5 pr-2">
-                <div>
-                  {l.component.vendorSku ? `Style ${l.component.vendorSku} — ` : ''}
-                  {l.component.vendorDescription ?? l.component.name}
-                </div>
-                {l.component.spec ? (
-                  <div className="text-[9.5pt] text-[#5C6663]">{l.component.spec}</div>
-                ) : null}
+                {l.component ? (
+                  <>
+                    <div>
+                      {l.component.vendorSku ? `Style ${l.component.vendorSku} — ` : ''}
+                      {l.component.vendorDescription ?? l.component.name}
+                    </div>
+                    {l.component.spec ? (
+                      <div className="text-[9.5pt] text-[#5C6663]">{l.component.spec}</div>
+                    ) : null}
+                  </>
+                ) : (
+                  <div>
+                    {l.productVariant!.sku ? `Style ${l.productVariant!.sku} — ` : ''}
+                    {l.productVariant!.product.name}
+                    {l.productVariant!.colorway ? ` — ${l.productVariant!.colorway.customerName}` : ''}
+                    {l.productVariant!.size ? ` / ${l.productVariant!.size}` : ''}
+                  </div>
+                )}
               </td>
               <td className="py-2.5 pr-2 text-right tabular-nums">{Number(l.qtyOrdered).toLocaleString()}</td>
               <td className="py-2.5 pr-2 text-right">{l.unit}</td>

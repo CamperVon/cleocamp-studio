@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
+import { poLineLabel } from '@/lib/po'
 import { laMidnight } from '@/lib/dates'
 
 const DIGEST_VOICE = `You are Studio Mouse, writing an email to the Cleo Camp team.
@@ -24,7 +25,7 @@ export async function composeDigest(kind: 'DAILY' | 'WEEKLY' | 'MONTHLY'): Promi
     db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(days) } } }),
     db.purchaseOrder.findMany({
       where: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } },
-      include: { vendor: true, lines: { include: { component: true } } },
+      include: { vendor: true, lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
     }),
   ])
 
@@ -40,7 +41,7 @@ export async function composeDigest(kind: 'DAILY' | 'WEEKLY' | 'MONTHLY'): Promi
     ...alerts.map((a) => `- ${a.severity}: ${a.message}`),
     '',
     'On order:',
-    ...pos.map((p) => `- PO ${p.poNumber} from ${p.vendor.name}: ${p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')}${p.expectedAt ? `, due ${p.expectedAt.toISOString().slice(0, 10)}` : ', no date confirmed'}`),
+    ...pos.map((p) => `- PO ${p.poNumber} from ${p.vendor.name}: ${p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${poLineLabel(l)}`).join(', ')}${p.expectedAt ? `, due ${p.expectedAt.toISOString().slice(0, 10)}` : ', no date confirmed'}`),
     '',
     `Waiting on answers (${items.length}):`,
     ...items.map((i) => `- ${i.title}`),

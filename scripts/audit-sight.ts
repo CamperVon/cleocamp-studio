@@ -20,6 +20,7 @@ const EXPECTED_ABSENT: Record<string, string> = {
   InventoryEvent: 'reachable on demand via query_status',
   InboundEmail: 'reachable on demand via query_status, and read by the nightly pass',
   DigestSend: 'bookkeeping for the cron, not something to reason about',
+  SentEmail: 'a record of what already went out, not something to reason about',
   DailyBrief: "its own writing; including it would be a hall of mirrors",
   QuickBooksConnection: 'credentials, never in a prompt',
   Location: 'one location; surfaces through components and variants',

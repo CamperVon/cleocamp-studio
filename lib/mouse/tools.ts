@@ -576,7 +576,11 @@ export const TOOLS: Record<string, Tool> = {
         'person reviews and sends the document. Numbers run on from the last used. ' +
         'Terms, delivery address and expected date are carried over from the last order ' +
         'to that vendor when you do not pass them, so give only what is new or changed — ' +
-        'and always tell the user what was carried over, so a stale term can be corrected.',
+        'and always tell the user what was carried over, so a stale term can be corrected. ' +
+        'Works for two kinds of order on the same template: fabric/trim from a supplier ' +
+        '(componentId lines) and a cut-and-sew production order to a manufacturer, ' +
+        'ordering finished units by colour and size (productVariantId lines). A single ' +
+        'order does not mix the two.',
       input_schema: {
         type: 'object',
         properties: {
@@ -587,16 +591,21 @@ export const TOOLS: Record<string, Tool> = {
           ),
           lines: {
             type: 'array' as const,
-            description: 'What is being ordered',
+            description: 'What is being ordered — exactly one of componentId or productVariantId per line',
             items: {
               type: 'object' as const,
               properties: {
-                componentId: str('Component id'),
+                componentId: str('Component id — for fabric or trim'),
+                productVariantId: str('Product variant id — for finished units on a cut-and-sew order'),
                 qty: num('Quantity in the purchase unit'),
-                unit: str('e.g. yards, rolls, buttons'),
-                unitCostCents: num('Price per unit in cents; omit to use the component cost'),
+                unit: str('e.g. yards, rolls, buttons, pcs'),
+                unitCostCents: num(
+                  'Price per unit in cents. For a component, omit to use its cost on file. ' +
+                  'For a variant there is no cost on file to fall back to — give the quoted ' +
+                  'price, or leave it out and it prints as unconfirmed rather than free.',
+                ),
               },
-              required: ['componentId', 'qty', 'unit'],
+              required: ['qty', 'unit'],
             },
           },
           deliverTo: str('Where it physically goes — usually the manufacturer, not the studio. Include hours if known.'),
@@ -610,19 +619,36 @@ export const TOOLS: Record<string, Tool> = {
       },
     },
     run: async (i) => {
+      const rawLines = i.lines as any[]
+      for (const l of rawLines) {
+        if (!!l.componentId === !!l.productVariantId) {
+          return { error: 'Each line needs exactly one of componentId or productVariantId, not both or neither.' }
+        }
+      }
+
       // Numbers run on from the highest used. Cleo Camp started at 2356.
       const last = await db.purchaseOrder.findMany({ select: { poNumber: true } })
       const highest = last.reduce((n, p) => Math.max(n, Number(p.poNumber) || 0), 2355)
       const poNumber = String(highest + 1)
 
       const lines = await Promise.all(
-        (i.lines as any[]).map(async (l) => {
-          const c = await db.component.findUnique({ where: { id: l.componentId } })
+        rawLines.map(async (l) => {
+          if (l.componentId) {
+            const c = await db.component.findUnique({ where: { id: l.componentId } })
+            return {
+              componentId: l.componentId,
+              qtyOrdered: String(l.qty),
+              unit: l.unit,
+              unitCostCents: l.unitCostCents ?? c?.unitCostCents ?? null,
+            }
+          }
           return {
-            componentId: l.componentId,
+            productVariantId: l.productVariantId,
             qtyOrdered: String(l.qty),
             unit: l.unit,
-            unitCostCents: l.unitCostCents ?? c?.unitCostCents ?? null,
+            // No component-style fallback cost exists for a finished unit —
+            // give it or it prints as unconfirmed. Never guessed.
+            unitCostCents: l.unitCostCents ?? null,
           }
         }),
       )
@@ -647,17 +673,33 @@ export const TOOLS: Record<string, Tool> = {
       const netDays = take(i.netDaysAfterDelivery, previous?.netDaysAfterDelivery ?? null, 'net terms')
 
       // If no date was given, work one out from the longest lead time on the
-      // order rather than leaving it blank.
+      // order rather than leaving it blank. Component lines look up the
+      // component's own lead time; variant lines (a manufacturer) use the
+      // vendor's cut-and-sew lead time instead — there's nothing per-variant
+      // to ask. Only computed when every line involved actually has one on
+      // file; a mix with something unknown stays blank rather than guessing.
       let expectedAt: Date | null = i.expectedAt ? new Date(i.expectedAt + 'T12:00:00-07:00') : null
       if (!expectedAt) {
-        const leads = await db.component.findMany({
-          where: { id: { in: (i.lines as any[]).map((l) => l.componentId) } },
-          select: { leadTimeDays: true },
-        })
-        const days = leads.map((l) => l.leadTimeDays).filter((d): d is number => d !== null)
-        if (days.length === leads.length && days.length) {
-          expectedAt = new Date(Date.now() + Math.max(...days) * 864e5)
-          inherited.push(`expected date from a ${Math.max(...days)}-day lead time`)
+        const componentIds = rawLines.filter((l) => l.componentId).map((l) => l.componentId)
+        const hasVariantLines = rawLines.some((l) => l.productVariantId)
+        const [componentLeads, vendor] = await Promise.all([
+          componentIds.length
+            ? db.component.findMany({ where: { id: { in: componentIds } }, select: { leadTimeDays: true } })
+            : Promise.resolve([]),
+          hasVariantLines ? db.vendor.findUnique({ where: { id: i.vendorId }, select: { leadTimeDays: true } }) : null,
+        ])
+        const componentDays = componentLeads.map((c) => c.leadTimeDays)
+        const allKnown =
+          componentDays.length === componentIds.length &&
+          componentDays.every((d) => d !== null) &&
+          (!hasVariantLines || vendor?.leadTimeDays != null)
+        if (allKnown) {
+          const days = [...componentDays, hasVariantLines ? vendor!.leadTimeDays : null]
+            .filter((d): d is number => d !== null)
+          if (days.length) {
+            expectedAt = new Date(Date.now() + Math.max(...days) * 864e5)
+            inherited.push(`expected date from a ${Math.max(...days)}-day lead time`)
+          }
         }
       }
 
@@ -675,22 +717,42 @@ export const TOOLS: Record<string, Tool> = {
           notes: i.notes ?? null,
           lines: { create: lines },
         },
-        include: { vendor: true, lines: { include: { component: true } } },
+        include: {
+          vendor: true,
+          lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } },
+        },
       })
       const total = po.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
+      const lineName = (l: (typeof po.lines)[number]) =>
+        l.component
+          ? l.component.name
+          : [l.productVariant!.product.name, l.productVariant!.colorway?.customerName, l.productVariant!.size]
+              .filter(Boolean).join(' / ')
       return {
         poNumber: po.poNumber,
         vendor: po.vendor.name,
         status: 'DRAFT — not sent',
         totalDollars: (total / 100).toFixed(2),
-        lines: po.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`),
+        lines: po.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${lineName(l)}`),
         document: `/po/${po.poNumber}`,
         carriedOverFromLastOrder: inherited.length ? inherited : 'nothing — this is a first order for this vendor',
         tellTheUser:
           `Drafted as PO ${po.poNumber}. Not sent — open /po/${po.poNumber} to review and print. ` +
           (inherited.length
             ? `Carried over from the last ${po.vendor.name} order: ${inherited.join(', ')}. Say if any of that has changed.`
-            : `First order for ${po.vendor.name}, so terms and delivery address are blank — tell me and I will remember them.`),
+            : (() => {
+                // First order for this vendor. Only claim something is blank
+                // if it actually still is — this call may well have supplied
+                // it directly, and saying it's missing when it isn't sends
+                // Cleo looking for information she already gave.
+                const stillBlank = [
+                  !po.deliverTo && 'delivery address',
+                  !po.paymentTerms && 'payment terms',
+                ].filter((s): s is string => !!s)
+                return stillBlank.length
+                  ? `First order for ${po.vendor.name} — ${stillBlank.join(' and ')} not on file yet. Tell me and I will remember them for next time.`
+                  : `First order for ${po.vendor.name}.`
+              })()),
       }
     },
   },

@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { db } from '@/lib/db'
+import { poLineLabel } from '@/lib/po'
 import { Page, Card, Empty, Chip, Value, Stat } from '@/app/ui/primitives'
 import { Chat } from '@/app/ui/chat'
 import { ItemRow } from '@/app/ui/item-row'
@@ -34,7 +35,7 @@ export default async function Today() {
       db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(7) } } }),
       db.purchaseOrder.findMany({
         where: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } },
-        include: { vendor: true, forProduct: true, lines: { include: { component: true } } },
+        include: { vendor: true, forProduct: true, lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
         orderBy: { expectedAt: 'asc' },
       }),
       db.productionRun.findMany({
@@ -149,7 +150,7 @@ export default async function Today() {
                   id={p.id}
                   title={`PO ${p.poNumber} · ${p.vendor.name}`}
                   subtitle={
-                    p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ') +
+                    p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${poLineLabel(l)}`).join(', ') +
                     (p.forProduct ? ` · for the ${p.forProduct.name}` : '')
                   }
                   right={p.expectedAt ? day(p.expectedAt) : 'ETA unconfirmed'}

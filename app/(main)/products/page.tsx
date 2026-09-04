@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { poLineLabel } from '@/lib/po'
 import { Page, Card, Chip, Value, Money } from '@/app/ui/primitives'
 import { laDay, laMidnight } from '@/lib/dates'
 
@@ -19,7 +20,7 @@ export default async function Products() {
     }),
     db.purchaseOrder.findMany({
       where: { status: { in: ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'] } },
-      include: { vendor: true, lines: { include: { component: true } } },
+      include: { vendor: true, lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
     }),
     db.productionRun.findMany({
       where: { status: { notIn: ['RECEIVED', 'CANCELLED'] } },
@@ -37,10 +38,16 @@ export default async function Products() {
   const rows = products.map((p) => {
     const componentIds = new Set(p.bomLines.map((b) => b.componentId))
     // A purchase order belongs to a product when it carries a component that
-    // product is made of. That is what makes the fabric orders show up under
-    // the Cleo Tee rather than sitting off on their own.
+    // product is made of, or — for a cut-and-sew order — a variant of the
+    // product itself. That is what makes both the fabric orders and the
+    // production orders show up under the Cleo Tee rather than sitting off
+    // on their own.
     const relatedPos = pos
-      .map((po) => ({ po, lines: po.lines.filter((l) => componentIds.has(l.componentId)) }))
+      .map((po) => ({
+        po,
+        lines: po.lines.filter((l) =>
+          (l.componentId && componentIds.has(l.componentId)) || l.productVariant?.productId === p.id),
+      }))
       .filter((x) => x.lines.length)
     const relatedRuns = runs.filter((r) => r.productId === p.id)
 
@@ -117,7 +124,7 @@ export default async function Products() {
                 {relatedPos.map(({ po, lines }) => (
                   <li key={po.id} className="flex justify-between gap-3 text-sm">
                     <span>
-                      PO {po.poNumber} · {lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')} from {po.vendor.name}
+                      PO {po.poNumber} · {lines.map((l) => `${l.qtyOrdered} ${l.unit} ${poLineLabel(l)}`).join(', ')} from {po.vendor.name}
                     </span>
                     <span className="shrink-0 text-muted">
                       {po.expectedAt ? laDay(po.expectedAt) : 'ETA unconfirmed'}

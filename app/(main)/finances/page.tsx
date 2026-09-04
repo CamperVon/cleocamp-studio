@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { poLineLabel } from '@/lib/po'
 import { Page, Card, Empty, Stat } from '@/app/ui/primitives'
 import { isConfigured } from '@/lib/integrations/quickbooks'
 import { paymentStages } from '@/lib/payments'
@@ -17,7 +18,7 @@ export default async function Finances() {
     db.purchaseOrder.findMany({
       orderBy: { createdAt: 'desc' },
       take: 10,
-      include: { vendor: true, forProduct: true, lines: { include: { component: true } } },
+      include: { vendor: true, forProduct: true, lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
     }),
   ])
   const open = pos.filter((p) => p.status === 'SENT' || p.status === 'PARTIALLY_RECEIVED')
@@ -116,7 +117,7 @@ export default async function Finances() {
                             </a>
                           </p>
                           <p className="truncate text-xs text-muted">
-                            {p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')}
+                            {p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${poLineLabel(l)}`).join(', ')}
                             {p.forProduct ? ` · for the ${p.forProduct.name}` : ''}
                           </p>
                         </div>

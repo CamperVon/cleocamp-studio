@@ -1,6 +1,7 @@
 'use server'
 import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
+import { poLineLabel } from '@/lib/po'
 import { runAgent } from '@/lib/mouse/agent'
 
 /**
@@ -30,12 +31,12 @@ export async function addInFlightUpdate(
   } else {
     const p = await db.purchaseOrder.findUnique({
       where: { id },
-      include: { vendor: true, lines: { include: { component: true } } },
+      include: { vendor: true, lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
     })
     if (!p) return
     subject =
       `Purchase order ${p.poNumber} to ${p.vendor.name} — ` +
-      `${p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')}, ` +
+      `${p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${poLineLabel(l)}`).join(', ')}, ` +
       `${p.status}, expected ${p.expectedAt?.toISOString().slice(0, 10) ?? 'unconfirmed'}.`
   }
 

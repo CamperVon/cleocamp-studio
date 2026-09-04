@@ -153,6 +153,10 @@ model ProductVariant {
   colorwayId       String?
   shopifyVariantId String?
   size             String?
+  /// The manufacturer-facing style code, e.g. "CCSS26COT-SHL01" — what goes
+  /// on a cut-and-sew purchase order line, not Shopify's own variant id.
+  /// Null means never given one, not blank on purpose.
+  sku              String?
   /// Overrides the product price where a variant is priced differently — the
   /// Bean Bag is $368 in Petite and $398 in Medium.
   retailPriceCents Int?
@@ -169,6 +173,7 @@ model ProductVariant {
   events    InventoryEvent[]
   runLines  ProductionRunLine[]
   snapshots SalesSnapshot[]
+  poLines   PurchaseOrderLine[]
 
   @@index([productId])
 }
@@ -436,19 +441,27 @@ model PurchaseOrder {
   @@index([status])
 }
 
+/// A line is either a component (fabric, trim — a purchase order to a
+/// supplier) or a product variant (finished units — a cut-and-sew order to a
+/// manufacturer like Empire Sewing). Exactly one of componentId /
+/// productVariantId is set; nothing in the schema forces that, so every
+/// writer must, the same convention InventoryEvent already uses.
 model PurchaseOrderLine {
   id            String  @id @default(cuid())
   purchaseOrderId String
-  componentId   String
-  /// Quantity in the PURCHASE unit (rolls), with the conversion recorded so
-  /// incoming stock lands in the consumption unit (yards).
+  componentId   String?
+  productVariantId String?
+  /// Quantity in the PURCHASE unit (rolls, or finished pieces for a
+  /// cut-and-sew line), with the conversion recorded so incoming stock lands
+  /// in the consumption unit (yards).
   qtyOrdered    Decimal @db.Decimal(12, 3)
   unit          String
   unitCostCents Int?
   qtyReceived   Decimal @default(0) @db.Decimal(12, 3)
 
-  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  component     Component     @relation(fields: [componentId], references: [id])
+  purchaseOrder  PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  component      Component?      @relation(fields: [componentId], references: [id])
+  productVariant ProductVariant? @relation(fields: [productVariantId], references: [id])
 }
 
 // ─────────────────────────────────────────────────────────────

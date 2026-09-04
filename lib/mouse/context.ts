@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { poLineLabel } from '@/lib/po'
 
 /**
  * Everything Studio Mouse knows, rendered for the system prompt.
@@ -27,7 +28,7 @@ export async function buildCatalog(): Promise<string> {
     db.actionItem.findMany({ where: { resolved: false }, orderBy: { createdAt: 'asc' } }),
     db.purchaseOrder.findMany({
       where: { status: { in: ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'] } },
-      include: { vendor: true, forProduct: true, lines: { include: { component: true } } },
+      include: { vendor: true, forProduct: true, lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
     }),
     db.productionRun.findMany({
       where: { status: { notIn: ['RECEIVED', 'CANCELLED'] } },
@@ -145,7 +146,7 @@ export async function buildCatalog(): Promise<string> {
   if (pos.length) {
     L.push('\n## Open purchase orders')
     for (const p of pos) {
-      const lines = p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${l.component.name}`).join(', ')
+      const lines = p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${poLineLabel(l)}`).join(', ')
       L.push(
         `- PO ${p.poNumber} to ${p.vendor.name}: ${lines}` +
           (p.forProduct ? ` for the ${p.forProduct.name}` : '') +
