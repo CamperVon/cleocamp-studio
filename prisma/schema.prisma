@@ -74,6 +74,11 @@ model Vendor {
   /// number instead, so send_purchase_order reads this, never contactInfo.
   /// Null means ask, never guess or parse a number out of contactInfo.
   email        String?
+  /// Standing extra recipients for every PO sent to this vendor — a
+  /// production manager, a second contact. Comma-separated; send_purchase_order
+  /// always cc's these, on top of Cleo and Brandon. Not the same as a one-off
+  /// cc on a single email — this is "always", every time, until changed.
+  ccEmails     String?
   address      String?
   /// How you actually place an order — email, phone, walk in, Etsy, Amazon.
   /// Studio Mouse tells Cleo which one she's dealing with.

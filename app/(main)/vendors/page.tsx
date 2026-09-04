@@ -38,6 +38,12 @@ export default async function Vendors() {
             {v.email ?? 'none on file — send_purchase_order will ask for one'}
           </dd>
         </div>
+        {v.ccEmails ? (
+          <div className="flex gap-2">
+            <dt className="shrink-0 text-faint">Always cc</dt>
+            <dd>{v.ccEmails}</dd>
+          </div>
+        ) : null}
         {v.address ? (
           <div className="flex gap-2">
             <dt className="shrink-0 text-faint">Address</dt>
