@@ -21,9 +21,14 @@ export function Nav() {
         <Link href="/" className="shrink-0">
           <Wordmark />
         </Link>
-        {/* Horizontal scroll rather than a hamburger — five links fit, and a
-            tap target beats a menu you have to open first. */}
-        <nav className="-mx-1 flex flex-1 gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {/* Horizontal scroll rather than a hamburger — a tap target beats a
+            menu you have to open first, and there are enough links now
+            (nine, past the five this was written for) that it won't all fit
+            on a phone regardless. min-w-0 is load-bearing: a flex child
+            defaults to refusing to shrink below its content's width, so
+            without it this pushed Sign out off the edge of the screen
+            instead of actually scrolling — this is what was cut off. */}
+        <nav className="-mx-1 flex min-w-0 flex-1 gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {LINKS.map((l) => (
             <Link
               key={l.href}

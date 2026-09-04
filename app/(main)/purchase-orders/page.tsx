@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
+import { paymentStages } from '@/lib/payments'
 import { Page, Card, Chip, Empty, Money } from '@/app/ui/primitives'
 
 export const dynamic = 'force-dynamic'
@@ -9,6 +10,13 @@ export const dynamic = 'force-dynamic'
  * Brandon looking for a "Purchase Orders" tab that didn't exist (3 Sept
  * 2026). Home and Finances deliberately only show SENT/PARTIALLY_RECEIVED —
  * this is the one place a DRAFT you made yesterday is still where you left it.
+ *
+ * RECEIVED is deliberately about goods only, not "Completed" — asked for
+ * once, and PO 2357 is exactly why not: delivered 3 Sept, but it's Net 60
+ * with the balance genuinely not due till 2 Nov. Calling that "Completed"
+ * would have been wrong on the very order used to ask for it. Goods status
+ * and payment status are shown as two separate facts instead, reusing the
+ * same paymentStages() the Finances page already trusts.
  */
 const STATUS: Record<string, { label: string; tone: 'neutral' | 'accent' | 'warn' | 'urgent' }> = {
   DRAFT: { label: 'Draft — not sent', tone: 'warn' },
@@ -39,6 +47,8 @@ export default async function PurchaseOrders() {
 
   const row = (p: (typeof pos)[number]) => {
     const total = p.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
+    // Cancelled and never-sent orders have nothing to owe on yet.
+    const stages = p.status === 'CANCELLED' || p.status === 'DRAFT' ? [] : paymentStages(p, total)
     return (
       <li key={p.id} className="px-4 py-3.5 sm:px-5">
         <a href={`/po/${p.poNumber}`} target="_blank" rel="noreferrer" className="block hover:underline">
@@ -60,6 +70,19 @@ export default async function PurchaseOrders() {
             ? ` · expected ${p.expectedAt.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' })}`
             : ''}
         </p>
+        {stages.length ? (
+          <p className="mt-0.5 text-xs">
+            {stages.map((s, i) => (
+              <span key={i}>
+                {i > 0 ? '  ·  ' : ''}
+                <span className="text-faint">{s.label} </span>
+                <span className={s.paid ? 'text-muted' : s.overdue ? 'text-urgent' : 'text-faint'}>
+                  {s.paid ? `paid` : s.due}
+                </span>
+              </span>
+            ))}
+          </p>
+        ) : null}
       </li>
     )
   }
