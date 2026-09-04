@@ -88,7 +88,11 @@ export default async function PurchaseOrderDoc({
           // letterhead. legalName is exactly what a formal document needs;
           // fall back to name only if it was never given one.
           ['Vendor', [po.vendor.legalName ?? po.vendor.name, po.vendor.contactName ? `Attn: ${po.vendor.contactName}` : '', po.vendor.address ?? '']],
-          ['Deliver to', (po.deliverTo ?? '').split('\n')],
+          // Brandon, 4 Sept 2026: "Deliver to" read as confusing when it's
+          // the same address as the vendor block — a cut-and-sew order's
+          // finished goods often go right back to the maker's own address,
+          // and the two side by side looked like a mistake, not a fact.
+          ['Address', (po.deliverTo ?? '').split('\n')],
           ['Bill to', ['Cleo Couture LLC', '1667 North Main St', 'Los Angeles, CA 90012']],
         ].map(([label, lines]) => (
           <div key={label as string} className="flex-1">

@@ -133,7 +133,7 @@ function PurchaseOrderDoc({ po }: { po: PoForPdf }) {
             {po.vendor.address ? <Text style={styles.addrLine}>{po.vendor.address}</Text> : null}
           </View>
           <View style={styles.addrBlock}>
-            <Text style={styles.addrLabel}>DELIVER TO</Text>
+            <Text style={styles.addrLabel}>ADDRESS</Text>
             {(po.deliverTo ?? '').split('\n').filter(Boolean).map((l, i) => <Text key={i} style={styles.addrLine}>{l}</Text>)}
           </View>
           <View style={styles.addrBlock}>
