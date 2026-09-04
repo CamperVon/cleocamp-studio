@@ -11,6 +11,7 @@ import { composeDigest } from '@/lib/mouse/digest'
 import { snapshotPosition, isConfigured as qboConfigured } from '@/lib/integrations/quickbooks'
 import { isConfigured as shopifyConfigured } from '@/lib/integrations/shopify'
 import { syncShopify } from '@/lib/integrations/shopify-sync'
+import { cleanupStorage } from '@/lib/mouse/storage-cleanup'
 
 export const maxDuration = 300
 
@@ -326,6 +327,12 @@ export async function GET(req: NextRequest) {
     })
     return { sent: next.map((q) => q.title), remainingAfter }
   })
+
+  // ── 8. Clear old content nobody needs kept ────────────────
+  // A cheap no-op most nights — see lib/mouse/storage-cleanup.ts for the
+  // ~60-day gate. dryRun previews counts without touching anything, same as
+  // every other side-effecting step here.
+  await step('storageCleanup', () => cleanupStorage({ dryRun }))
 
   return NextResponse.json({ ok: true, ranAt: new Date().toISOString(), ...log })
 }

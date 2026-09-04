@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { Mouse } from './mouse'
 
 type Msg = {
@@ -11,6 +11,42 @@ type Msg = {
 }
 
 type PendingFile = { filename: string; mediaType: string; base64: string }
+
+// Mouse writes in plain prose but reaches for **bold** and bare paths like
+// /po/2359 when something is worth pointing at directly. Rendered as inert
+// text those are just asterisks and dead words — this turns the two into a
+// real <strong> and a real clickable link, without pulling in a markdown
+// library for what amounts to two patterns.
+const INLINE = /(\*\*[^*]+\*\*)|(https?:\/\/[^\s)]+)|(\/(?:po|products|components|vendors|finances|inbox|items)(?:\/[A-Za-z0-9._-]+)*)/g
+
+// A link at the end of a sentence pulls the full stop in with it otherwise —
+// "see /po/2359." would point at "/po/2359." and 404.
+const TRAILING_PUNCT = /[.,;:!?)\]]+$/
+
+function renderMouseText(text: string) {
+  const nodes: ReactNode[] = []
+  let last = 0
+  let key = 0
+  for (const m of text.matchAll(INLINE)) {
+    const start = m.index ?? 0
+    if (start > last) nodes.push(text.slice(last, start))
+    const [whole, bold, url, path] = m
+    if (bold) {
+      nodes.push(<strong key={key++}>{bold.slice(2, -2)}</strong>)
+    } else {
+      const raw = (url ?? path)!
+      const trail = raw.match(TRAILING_PUNCT)?.[0] ?? ''
+      const href = trail ? raw.slice(0, -trail.length) : raw
+      nodes.push(
+        <a key={key++} href={href} target="_blank" rel="noreferrer" className="underline">{href}</a>,
+      )
+      if (trail) nodes.push(trail)
+    }
+    last = start + whole.length
+  }
+  if (last < text.length) nodes.push(text.slice(last))
+  return nodes
+}
 
 const LABEL: Record<string, string> = {
   log_inventory_event: 'logged', correct_inventory_event: 'corrected',
@@ -205,7 +241,7 @@ export function Chat() {
                         : 'whitespace-pre-wrap text-sm leading-relaxed'
                     }
                   >
-                    {m.text}
+                    {m.role === 'assistant' ? renderMouseText(m.text) : m.text}
                   </p>
                   {m.attachments?.length ? (
                     <ul className="mt-1.5 flex flex-wrap justify-end gap-1.5">

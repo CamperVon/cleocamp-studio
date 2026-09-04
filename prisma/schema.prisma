@@ -611,14 +611,31 @@ model ChatAttachment {
   chatMessageId String
   filename      String
   mediaType     String
-  /// Base64-encoded file bytes.
-  data          String
+  /// Base64-encoded file bytes. Null means the periodic cleanup cleared it —
+  /// see StorageCleanup — after Studio Mouse had already read it. filename,
+  /// mediaType and sizeBytes stay, so the chat history still shows what was
+  /// attached, just not the bytes themselves.
+  data          String?
   sizeBytes     Int
   createdAt     DateTime @default(now())
 
   message ChatMessage @relation(fields: [chatMessageId], references: [id], onDelete: Cascade)
 
   @@index([chatMessageId])
+}
+
+/// One row, id "singleton". Bookkeeping for the every-~60-days storage
+/// cleanup in lib/mouse/storage-cleanup.ts — Brandon, 4 Sept 2026: emails and
+/// attachments don't need to be kept once Studio Mouse has taken what it
+/// needs from them, so their heavy content is cleared on an age cutoff.
+/// Never runs the same content twice; runs off this timestamp, not a cron
+/// schedule, since "every two months" doesn't fit a daily job otherwise.
+model StorageCleanup {
+  id           String    @id @default("singleton")
+  lastRunAt    DateTime?
+  /// Running totals, not per-run — how much has ever been cleared.
+  emailsPurged Int       @default(0)
+  filesPurged  Int       @default(0)
 }
 
 // ─────────────────────────────────────────────────────────────
