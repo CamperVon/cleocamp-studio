@@ -41,8 +41,5 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  // Font files added so the PO PDF route (server-side, no cookie to send)
-  // can fetch them from our own /public — see lib/po-pdf.tsx. Static assets
-  // only; no route or data is exempted here.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ttf|woff|woff2)$).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 }

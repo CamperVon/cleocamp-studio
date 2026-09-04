@@ -803,6 +803,75 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  update_purchase_order_lines: {
+    def: {
+      name: 'update_purchase_order_lines',
+      description:
+        'Change the quantity, unit or price of one or more existing lines on a DRAFT — a ' +
+        'corrected price, a quantity that changed, a tier rate applying to the whole order. ' +
+        'Edits the draft in place: no new PO number, nothing to cancel. Each line is matched ' +
+        'by its componentId or productVariantId (whichever the order already uses) — give ' +
+        'only the field(s) that changed, the rest of that line is untouched. Only works on a ' +
+        'DRAFT; a sent order is a real document already in someone else\'s hands.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          poNumber: str('The PO number, e.g. 2359'),
+          lines: {
+            type: 'array' as const,
+            description: 'One entry per line being changed',
+            items: {
+              type: 'object' as const,
+              properties: {
+                componentId: str('Matches an existing component line'),
+                productVariantId: str('Matches an existing variant line'),
+                qty: num('New quantity, if it changed'),
+                unit: str('New unit, if it changed'),
+                unitCostCents: num('New price per unit in cents, if it changed'),
+              },
+            },
+          },
+        },
+        required: ['poNumber', 'lines'],
+      },
+    },
+    run: async (i) => {
+      const po = await db.purchaseOrder.findFirst({
+        where: { poNumber: String(i.poNumber) },
+        include: { lines: true },
+      })
+      if (!po) return { error: `No purchase order ${i.poNumber}` }
+      if (po.status !== 'DRAFT') {
+        return { error: `PO ${po.poNumber} is ${po.status}, not DRAFT — a sent order can't be edited in place.` }
+      }
+
+      const results: string[] = []
+      for (const l of i.lines as any[]) {
+        const existing = po.lines.find((x) =>
+          (l.componentId && x.componentId === l.componentId) ||
+          (l.productVariantId && x.productVariantId === l.productVariantId))
+        if (!existing) {
+          results.push(`no matching line for ${l.componentId ?? l.productVariantId} — nothing changed for it`)
+          continue
+        }
+        const data: any = {}
+        if (l.qty !== undefined) data.qtyOrdered = String(l.qty)
+        if (l.unit !== undefined) data.unit = l.unit
+        if (l.unitCostCents !== undefined) data.unitCostCents = l.unitCostCents
+        if (Object.keys(data).length === 0) continue
+        await db.purchaseOrderLine.update({ where: { id: existing.id }, data })
+        results.push(`updated ${l.componentId ?? l.productVariantId}`)
+      }
+
+      const updated = await db.purchaseOrder.findFirst({
+        where: { id: po.id },
+        include: { lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
+      })
+      const total = updated!.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
+      return { poNumber: po.poNumber, results, newTotalDollars: (total / 100).toFixed(2) }
+    },
+  },
+
   send_purchase_order: {
     def: {
       name: 'send_purchase_order',

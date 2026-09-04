@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { Document, Page, Text, View, Image, Font, StyleSheet, renderToBuffer } from '@react-pdf/renderer'
 import { db } from '@/lib/db'
 
@@ -17,19 +18,24 @@ import { db } from '@/lib/db'
  * react-pdf and render as blank glyphs in real viewers (Chrome, poppler) —
  * only pdftotext's text-extraction made it look like they worked. Found by
  * actually opening a generated PDF rather than trusting a clean build.
- * Registering a real embedded font (served from our own /public, same as
- * any other static asset) is what actually draws visible text.
+ *
+ * Registering a real font fixes that, but the first fix (fetching it from
+ * our own deployment over HTTP) 500'd in production only: Vercel's own
+ * deployment-protection blocks a request to a deployment's canonical URL,
+ * even the deployment's own function calling itself. Reading the file
+ * straight off disk sidesteps that layer entirely — see the
+ * outputFileTracingIncludes entry in next.config.ts, which is what gets
+ * these bytes into the deployed function in the first place.
  */
-const FONT_BASE =
-  process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : (process.env.APP_URL ?? 'http://localhost:3000')
+const FONT_DIR = path.join(process.cwd(), 'assets', 'fonts')
 
 Font.register({
   family: 'PTSerif',
   fonts: [
-    { src: `${FONT_BASE}/fonts/PTSerif-Regular.ttf` },
-    { src: `${FONT_BASE}/fonts/PTSerif-Bold.ttf`, fontWeight: 'bold' },
-    { src: `${FONT_BASE}/fonts/PTSerif-Italic.ttf`, fontStyle: 'italic' },
-    { src: `${FONT_BASE}/fonts/PTSerif-BoldItalic.ttf`, fontWeight: 'bold', fontStyle: 'italic' },
+    { src: path.join(FONT_DIR, 'PTSerif-Regular.ttf') },
+    { src: path.join(FONT_DIR, 'PTSerif-Bold.ttf'), fontWeight: 'bold' },
+    { src: path.join(FONT_DIR, 'PTSerif-Italic.ttf'), fontStyle: 'italic' },
+    { src: path.join(FONT_DIR, 'PTSerif-BoldItalic.ttf'), fontWeight: 'bold', fontStyle: 'italic' },
   ],
 })
 
