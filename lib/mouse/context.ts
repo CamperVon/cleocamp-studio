@@ -15,7 +15,7 @@ import { inventoryWritesEnabled } from './tools'
  * turn. Keep it deterministic: no timestamps, stable ordering.
  */
 export async function buildCatalog(): Promise<string> {
-  const [products, components, vendors, items, pos, runs, lastSale, notes, events, forecasts, alerts, people, finances, sales, wholesale] = await Promise.all([
+  const [products, components, vendors, items, pos, runs, lastSale, notes, events, forecasts, alerts, people, finances, sales, wholesale, shopifySync] = await Promise.all([
     db.product.findMany({
       orderBy: { name: 'asc' },
       include: {
@@ -55,6 +55,7 @@ export async function buildCatalog(): Promise<string> {
       where: { active: true },
       include: { shipments: { include: { lines: true }, orderBy: { sentAt: 'desc' } } },
     }),
+    db.shopifySyncStatus.findUnique({ where: { id: 'singleton' } }),
   ])
 
   const sold = new Map(sales.map((s) => [s.productVariantId, s._sum.unitsSold ?? 0]))
@@ -77,7 +78,13 @@ export async function buildCatalog(): Promise<string> {
   L.push('## Where these numbers come from')
   L.push('Shopify is connected and is the master for finished goods. Variant counts,')
   L.push('retail prices and sales history are pulled from it and refreshed by the')
-  L.push('nightly job. You can pull a fresh copy yourself with sync_shopify.')
+  L.push('nightly job, and again each morning before the 8am report. You can pull a')
+  L.push('fresh copy yourself with sync_shopify.')
+  L.push(
+    shopifySync
+      ? `Last actually synced: ${shopifySync.lastSyncedAt.toISOString()} (${shopifySync.variantsUpdated} variants).`
+      : 'Never actually synced — the numbers below have not come from Shopify yet.',
+  )
   L.push(
     `Sales history currently runs to ${
       lastSale._max.date ? lastSale._max.date.toISOString().slice(0, 10) : 'no sales recorded'

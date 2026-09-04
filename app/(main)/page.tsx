@@ -16,8 +16,19 @@ export const dynamic = 'force-dynamic'
 
 const day = laDay
 
+/** "3 hours ago", "yesterday" — for the Shopify sync line. */
+function sinceLabel(d: Date): string {
+  const mins = Math.round((Date.now() - d.getTime()) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`
+  const hours = Math.round(mins / 60)
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
+  const days = Math.round(hours / 24)
+  return days === 1 ? 'yesterday' : `${days} days ago`
+}
+
 export default async function Today() {
-  const [items, alerts, links, components, variants, sales24, sales7, pos, runs, notes, events] =
+  const [items, alerts, links, components, variants, sales24, sales7, pos, runs, notes, events, shopifySync] =
     await Promise.all([
       db.actionItem.findMany({
         where: { resolved: false },
@@ -52,6 +63,7 @@ export default async function Today() {
         orderBy: { date: 'asc' },
         take: 8,
       }),
+      db.shopifySyncStatus.findUnique({ where: { id: 'singleton' } }),
     ])
 
   const dueSoonAll = items.filter((i) => i.dueDate)
@@ -102,6 +114,11 @@ export default async function Today() {
         />
         <Stat label="To tend to" value={attention} sub="questions and todos" />
       </div>
+      <p className="-mt-4 text-xs text-faint">
+        {shopifySync
+          ? `Shopify counts synced ${sinceLabel(shopifySync.lastSyncedAt)} — automatically overnight and each morning, or ask Mouse to refresh anytime.`
+          : 'Shopify counts have never synced — ask Mouse to run sync_shopify.'}
+      </p>
 
       {brief ? (
         <section className="overflow-hidden rounded-xl border border-line bg-surface">

@@ -39,6 +39,12 @@ Font.register({
   ],
 })
 
+// Brandon, 4 Sept 2026: the address column split "Los Angeles" as
+// "Los Ange-les" across two lines. That's react-pdf's own default
+// hyphenation kicking in on a narrow column — this turns it off entirely,
+// so a word that doesn't fit wraps whole onto the next line instead.
+Font.registerHyphenationCallback((word) => [word])
+
 const money = (c: number) =>
   '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -180,6 +186,7 @@ function PurchaseOrderDoc({ po }: { po: PoForPdf }) {
 
         <Text style={styles.footer}>
           Please confirm receipt and expected ship date.{'\n'}
+          Studio Mouse · mouse@send.cleocamp.com{'\n'}
           Brandon Camp · brandon@cleocamp.com · 310-622-3898
         </Text>
       </Page>

@@ -108,6 +108,14 @@ export async function syncShopify(db: PrismaClient, sinceISO: string): Promise<S
   const onHandCounted = await db.productVariant.count({ where: { onHandQty: { not: null } } })
   const onHandTotal = await db.productVariant.count()
 
+  // A real timestamp, not a claimed cadence — shown on Home so "how current
+  // is this" answers itself instead of being asked and guessed at.
+  await db.shopifySyncStatus.upsert({
+    where: { id: 'singleton' },
+    create: { id: 'singleton', lastSyncedAt: new Date(), variantsUpdated },
+    update: { lastSyncedAt: new Date(), variantsUpdated },
+  })
+
   return {
     location, variantsUpdated, variantsUnknown,
     salesWritten, salesSkipped, unitsSold,

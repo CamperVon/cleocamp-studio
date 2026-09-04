@@ -655,6 +655,16 @@ model StorageCleanup {
   filesPurged  Int       @default(0)
 }
 
+/// One row, id "singleton". Set at the end of every real syncShopify() call
+/// — the nightly cron, the 8am report, or sync_shopify asked for in chat —
+/// so "how current is this" is a real timestamp, not a claimed cadence that
+/// silently goes wrong the day a sync fails quietly.
+model ShopifySyncStatus {
+  id              String   @id @default("singleton")
+  lastSyncedAt    DateTime
+  variantsUpdated Int
+}
+
 // ─────────────────────────────────────────────────────────────
 // Forecasting
 // ─────────────────────────────────────────────────────────────

@@ -179,6 +179,7 @@ export default async function PurchaseOrderDoc({
 
       <div className="mt-7 text-[9pt] text-[#8B9491]">
         Please confirm receipt and expected ship date.<br />
+        Studio Mouse &middot; mouse@send.cleocamp.com<br />
         Brandon Camp &middot; brandon@cleocamp.com &middot; 310-622-3898
       </div>
 
