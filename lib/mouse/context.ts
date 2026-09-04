@@ -15,7 +15,7 @@ import { inventoryWritesEnabled } from './tools'
  * turn. Keep it deterministic: no timestamps, stable ordering.
  */
 export async function buildCatalog(): Promise<string> {
-  const [products, components, vendors, items, pos, runs, lastSale, notes, events, forecasts, alerts, people, finances, sales, wholesale, shopifySync] = await Promise.all([
+  const [products, components, vendors, items, pos, runs, lastSale, notes, events, forecasts, alerts, people, finances, sales, wholesale, shopifySync, docDefaults] = await Promise.all([
     db.product.findMany({
       orderBy: { name: 'asc' },
       include: {
@@ -56,6 +56,7 @@ export async function buildCatalog(): Promise<string> {
       include: { shipments: { include: { lines: true }, orderBy: { sentAt: 'desc' } } },
     }),
     db.shopifySyncStatus.findUnique({ where: { id: 'singleton' } }),
+    db.documentDefaults.findUnique({ where: { id: 'singleton' } }),
   ])
 
   const sold = new Map(sales.map((s) => [s.productVariantId, s._sum.unitsSold ?? 0]))
@@ -243,6 +244,18 @@ export async function buildCatalog(): Promise<string> {
         `${finances.apCents === null ? 'card unknown' : '$' + (Number(finances.apCents) / 100).toLocaleString()} owed on the card. ` +
         `These do not refresh on their own.`,
     )
+  }
+
+  if (docDefaults) {
+    // Needed to append rather than blindly replace: update_document_defaults
+    // overwrites what it is given, so knowing the current value is the
+    // difference between "add Nicki" and "delete everyone but Nicki".
+    L.push('\n## What every printed document currently says')
+    L.push('Editable with update_document_defaults (all documents) or')
+    L.push("update_purchase_order's contactLines (one order). Layout is not editable.")
+    L.push(`- Bill to: ${docDefaults.billToLines.replace(/\n/g, ' / ')}`)
+    L.push(`- Confirm line: ${docDefaults.confirmLine}`)
+    L.push(`- Confirm with: ${docDefaults.contactLines.replace(/\n/g, ' / ')}`)
   }
 
   L.push('\n## Open questions and todos')

@@ -86,7 +86,9 @@ async function loadPo(poNumber: string) {
   })
 }
 
-function PurchaseOrderDoc({ po }: { po: PoForPdf }) {
+type DocContent = { billTo: string[]; confirmLine: string; contactLines: string[] }
+
+function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocContent }) {
   const total = po.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
   const date = (po.orderedAt ?? po.createdAt).toLocaleDateString('en-US', {
     timeZone: 'America/Los_Angeles', month: 'long', day: 'numeric', year: 'numeric',
@@ -144,9 +146,7 @@ function PurchaseOrderDoc({ po }: { po: PoForPdf }) {
           </View>
           <View style={styles.addrBlock}>
             <Text style={styles.addrLabel}>BILL TO</Text>
-            <Text style={styles.addrLine}>Cleo Couture LLC</Text>
-            <Text style={styles.addrLine}>1667 North Main St</Text>
-            <Text style={styles.addrLine}>Los Angeles, CA 90012</Text>
+            {content.billTo.map((l, i) => <Text key={i} style={styles.addrLine}>{l}</Text>)}
           </View>
         </View>
 
@@ -185,9 +185,7 @@ function PurchaseOrderDoc({ po }: { po: PoForPdf }) {
         ) : null}
 
         <Text style={styles.footer}>
-          Please confirm receipt and expected ship date.{'\n'}
-          Studio Mouse · mouse@send.cleocamp.com{'\n'}
-          Brandon Camp · brandon@cleocamp.com · 310-622-3898
+          {[content.confirmLine, ...content.contactLines].filter(Boolean).join('\n')}
         </Text>
       </Page>
     </Document>
@@ -196,7 +194,16 @@ function PurchaseOrderDoc({ po }: { po: PoForPdf }) {
 
 /** Null if the PO doesn't exist. */
 export async function renderPurchaseOrderPdf(poNumber: string): Promise<Buffer | null> {
-  const po = await loadPo(poNumber)
+  const [po, defaults] = await Promise.all([
+    loadPo(poNumber),
+    db.documentDefaults.findUnique({ where: { id: 'singleton' } }),
+  ])
   if (!po) return null
-  return renderToBuffer(<PurchaseOrderDoc po={po} />)
+  const content: DocContent = {
+    billTo: (defaults?.billToLines ?? '').split('\n').filter(Boolean),
+    confirmLine: defaults?.confirmLine ?? '',
+    // A per-order override wins; almost nothing sets one.
+    contactLines: (po.contactLines ?? defaults?.contactLines ?? '').split('\n').filter(Boolean),
+  }
+  return renderToBuffer(<PurchaseOrderDoc po={po} content={content} />)
 }

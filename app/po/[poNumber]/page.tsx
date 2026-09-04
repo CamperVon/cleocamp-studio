@@ -34,6 +34,13 @@ export default async function PurchaseOrderDoc({
     timeZone: 'America/Los_Angeles', month: 'long', day: 'numeric', year: 'numeric',
   })
 
+  // Content, not layout — editable by anyone talking to Studio Mouse. See
+  // DocumentDefaults in schema.prisma for why this stopped being hardcoded.
+  const defaults = await db.documentDefaults.findUnique({ where: { id: 'singleton' } })
+  const billTo = (defaults?.billToLines ?? '').split('\n').filter(Boolean)
+  const confirmLine = defaults?.confirmLine ?? ''
+  const contactLines = (po.contactLines ?? defaults?.contactLines ?? '').split('\n').filter(Boolean)
+
   // Brandon, 4 Sept 2026: "notes at the end of pdf should only be notes i
   // sent, not an endless list of things SM puts there." A generic per-line
   // "please confirm pricing" made sense for a handful of fabric lines with
@@ -93,7 +100,7 @@ export default async function PurchaseOrderDoc({
           // finished goods often go right back to the maker's own address,
           // and the two side by side looked like a mistake, not a fact.
           ['Address', (po.deliverTo ?? '').split('\n')],
-          ['Bill to', ['Cleo Couture LLC', '1667 North Main St', 'Los Angeles, CA 90012']],
+          ['Bill to', billTo],
         ].map(([label, lines]) => (
           <div key={label as string} className="flex-1">
             <h2 className="mb-1.5 font-sans text-[8.5pt] uppercase tracking-[0.11em] text-[#6A736F]">
@@ -178,9 +185,8 @@ export default async function PurchaseOrderDoc({
       ) : null}
 
       <div className="mt-7 text-[9pt] text-[#8B9491]">
-        Please confirm receipt and expected ship date.<br />
-        Studio Mouse &middot; mouse@send.cleocamp.com<br />
-        Brandon Camp &middot; brandon@cleocamp.com &middot; 310-622-3898
+        {confirmLine ? <>{confirmLine}<br /></> : null}
+        {contactLines.map((l, i) => <span key={i}>{l}<br /></span>)}
       </div>
 
       <div className="no-print mt-10 flex items-center gap-3 border-t border-[#DEDFDB] pt-4 text-[9pt] text-[#8B9491]">

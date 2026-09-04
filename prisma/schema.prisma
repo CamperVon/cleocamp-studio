@@ -440,6 +440,12 @@ model PurchaseOrder {
   forProductId String?
   /// Payment terms as agreed, in plain words for the PO document.
   paymentTerms String?
+  /// Who the vendor should confirm receipt with, one per line, for this
+  /// order only. Null falls back to DocumentDefaults — which is the usual
+  /// case. Here because a draft gets edited: "put Nicki on this one" is a
+  /// content change, not a template change, and nobody should have to know
+  /// the difference to make it.
+  contactLines String?
   /// Percentage due at order rather than on delivery. RichLine take 50% up
   /// front on the lurex stripe.
   depositPercent Int?
@@ -653,6 +659,29 @@ model StorageCleanup {
   /// Running totals, not per-run — how much has ever been cleared.
   emailsPurged Int       @default(0)
   filesPurged  Int       @default(0)
+}
+
+/// One row, id "singleton". The parts of a printed document that are
+/// content rather than layout — who to confirm receipt with, who it's
+/// billed to, the standing line above the signature.
+///
+/// These were hardcoded into the two PO templates until 4 Sept 2026, which
+/// meant changing a name on a document needed a code edit and a deploy.
+/// Brandon, rightly: "I need to be able to tell SM to make changes like
+/// this and it will. It's a draft. Meaning there might be changes." The
+/// line that matters is content vs. presentation — content lives here and
+/// Studio Mouse can edit it; typography, columns and page layout stay in
+/// the template where they belong.
+model DocumentDefaults {
+  id           String   @id @default("singleton")
+  /// Newline-separated, same convention as PurchaseOrder.deliverTo.
+  billToLines  String
+  /// The standing sentence above the contact block.
+  confirmLine  String
+  /// Who to confirm with, newline-separated. A PO can override this for
+  /// itself; most never do.
+  contactLines String
+  updatedAt    DateTime @updatedAt
 }
 
 /// One row, id "singleton". Set at the end of every real syncShopify() call

@@ -855,6 +855,11 @@ export const TOOLS: Record<string, Tool> = {
           paymentTerms: str('Terms in plain words'),
           depositPercent: num('Percent due at order'),
           netDaysAfterDelivery: num('Days after delivery the balance is due'),
+          contactLines: str(
+            'Who the vendor should confirm receipt with on THIS order\'s document, one per ' +
+            'line — "put Nicki on this one". Changes only this order. To change it for every ' +
+            'document from now on, use update_document_defaults instead.',
+          ),
           notes: str('Anything else'),
         },
         required: ['poNumber'],
@@ -1201,6 +1206,49 @@ export const TOOLS: Record<string, Tool> = {
         note: known
           ? 'Replies come back to mouse@send.cleocamp.com, so you will read them.'
           : `That address is not one held for any vendor or person on file — say so, in case it is wrong.`,
+      }
+    },
+  },
+
+  update_document_defaults: {
+    def: {
+      name: 'update_document_defaults',
+      description:
+        'Change what appears on every printed document from now on — who to confirm ' +
+        'receipt with, the line above it, the bill-to block. This is document CONTENT and ' +
+        'you can change it: "add Studio Mouse before Brandon", "bill to the new address". ' +
+        'What you cannot change is layout — typography, column widths, how text wraps. If ' +
+        'someone asks for one of those, say plainly it needs Brandon, do not guess at it. ' +
+        'For one order only, use update_purchase_order\'s contactLines instead of this.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          billToLines: str('The bill-to block, one line per line. Replaces what is there.'),
+          confirmLine: str('The standing sentence above the contacts, e.g. "Please confirm receipt and expected ship date."'),
+          contactLines: str('Who to confirm with, one per line — name · email · phone. Replaces what is there, so include everyone who should stay.'),
+        },
+      },
+    },
+    run: async (i) => {
+      const data: any = {}
+      for (const k of ['billToLines', 'confirmLine', 'contactLines'] as const) {
+        if (i[k] !== undefined && i[k] !== null) data[k] = i[k]
+      }
+      if (!Object.keys(data).length) return { error: 'Nothing given to change.' }
+      const row = await db.documentDefaults.upsert({
+        where: { id: 'singleton' },
+        create: {
+          id: 'singleton',
+          billToLines: data.billToLines ?? '',
+          confirmLine: data.confirmLine ?? '',
+          contactLines: data.contactLines ?? '',
+        },
+        update: data,
+      })
+      return {
+        changed: Object.keys(data),
+        nowReads: { billTo: row.billToLines, confirmLine: row.confirmLine, contacts: row.contactLines },
+        tellTheUser: 'Changed on every document from now on, including ones already drafted — they render fresh each time.',
       }
     },
   },
