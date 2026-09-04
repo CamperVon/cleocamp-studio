@@ -132,11 +132,24 @@ export default async function PurchaseOrderDoc({
                     ) : null}
                   </>
                 ) : (
-                  <div>
-                    {l.productVariant!.sku ? `Style ${l.productVariant!.sku} — ` : ''}
-                    {l.productVariant!.product.name}
-                    {l.productVariant!.colorway ? ` — ${l.productVariant!.colorway.customerName}` : ''}
-                    {l.productVariant!.size ? ` / ${l.productVariant!.size}` : ''}
+                  <div className="flex items-start gap-2.5">
+                    {l.productVariant!.imageUrl ? (
+                      // Plain img, not next/image — this page is rendered to a
+                      // PDF (screenshot or print), where next/image's runtime
+                      // optimisation endpoint has nothing to serve from.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={l.productVariant!.imageUrl}
+                        alt=""
+                        className="h-9 w-9 shrink-0 rounded object-cover"
+                      />
+                    ) : null}
+                    <div>
+                      {l.productVariant!.sku ? `Style ${l.productVariant!.sku} — ` : ''}
+                      {l.productVariant!.product.name}
+                      {l.productVariant!.colorway ? ` — ${l.productVariant!.colorway.customerName}` : ''}
+                      {l.productVariant!.size ? ` / ${l.productVariant!.size}` : ''}
+                    </div>
                   </div>
                 )}
               </td>
@@ -172,8 +185,14 @@ export default async function PurchaseOrderDoc({
         Brandon Camp &middot; brandon@cleocamp.com &middot; 310-622-3898
       </div>
 
-      <div className="no-print mt-10 border-t border-[#DEDFDB] pt-4 text-[9pt] text-[#8B9491]">
-        Print to PDF from your browser to send this.
+      <div className="no-print mt-10 flex items-center gap-3 border-t border-[#DEDFDB] pt-4 text-[9pt] text-[#8B9491]">
+        <a
+          href={`/po/${po.poNumber}/pdf`}
+          className="rounded border border-[#14181A]/20 px-3 py-1.5 font-sans text-[9pt] text-[#14181A] no-underline hover:bg-black/5"
+        >
+          Download PDF
+        </a>
+        <span>or print this page from your browser.</span>
       </div>
     </main>
   )

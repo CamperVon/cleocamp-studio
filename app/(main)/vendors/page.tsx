@@ -30,6 +30,14 @@ export default async function Vendors() {
             <dd>{[v.contactName, v.contactInfo].filter(Boolean).join(' · ')}</dd>
           </div>
         ) : null}
+        <div className="flex gap-2">
+          <dt className="shrink-0 text-faint">Email</dt>
+          {/* Not just a nicety — "send it" reads this field, and only this
+              field, so a blank here means a PO to them can't be sent yet. */}
+          <dd className={v.email ? undefined : 'text-faint italic'}>
+            {v.email ?? 'none on file — send_purchase_order will ask for one'}
+          </dd>
+        </div>
         {v.address ? (
           <div className="flex gap-2">
             <dt className="shrink-0 text-faint">Address</dt>

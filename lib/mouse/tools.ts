@@ -365,7 +365,8 @@ export const TOOLS: Record<string, Tool> = {
           id: str('Vendor id'),
           legalName: str('Registered business name'),
           contactName: str('Who you deal with'),
-          contactInfo: str('Phone or email'),
+          contactInfo: str('Phone number, or other contact notes — not an email, use the email field for that'),
+          email: str('A real email for this contact — what send_purchase_order sends to. Never guessed or parsed from a phone number.'),
           address: str('Street address'),
           orderMethod: str('How orders are placed'),
           paymentTerms: str('e.g. COD, Net 30'),
@@ -396,7 +397,9 @@ export const TOOLS: Record<string, Tool> = {
           name: str('What Cleo calls them'),
           role: { type: 'string' as const, enum: ['COMPONENT_SUPPLIER', 'MANUFACTURER', 'DYE_HOUSE', 'OTHER'] },
           legalName: str('Registered name'), contactName: str('Contact'),
-          contactInfo: str('Phone or email'), address: str('Address'),
+          contactInfo: str('Phone number, or other contact notes — not an email, use the email field'),
+          email: str('A real email for this contact — what send_purchase_order sends to. Never guessed.'),
+          address: str('Address'),
           orderMethod: str('How to order'), leadTimeDays: num('Turnaround in days'),
           notes: str('Anything else'),
         },
@@ -800,6 +803,79 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  send_purchase_order: {
+    def: {
+      name: 'send_purchase_order',
+      description:
+        'Email a purchase order to the vendor as a real PDF attachment — a vendor has no ' +
+        'login for this app, so a link to it is a dead end for them. Brandon, 4 Sept 2026: ' +
+        '"when we say send it, it sends via email to the contact person and cc\'s Cleo and ' +
+        'Brandon" — that is exactly what this does, always, not something to ask about each ' +
+        'time. Only when a person in the chat has said to send it. Moves the order to SENT.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          poNumber: str('The PO number, e.g. 2359'),
+          message: str('Optional extra line for the vendor. A sensible default covers most orders.'),
+        },
+        required: ['poNumber'],
+      },
+    },
+    run: async (i) => {
+      const po = await db.purchaseOrder.findFirst({
+        where: { poNumber: String(i.poNumber) },
+        include: { vendor: true },
+      })
+      if (!po) return { error: `No purchase order ${i.poNumber}` }
+      if (!po.vendor.email) {
+        return {
+          sent: false,
+          reason:
+            `No email on file for ${po.vendor.name} — ask for one rather than guessing. ` +
+            `Once given, set it with update_vendor and try again.`,
+        }
+      }
+
+      const { renderPurchaseOrderPdf } = await import('@/lib/po-pdf')
+      const pdf = await renderPurchaseOrderPdf(po.poNumber)
+      if (!pdf) return { sent: false, reason: 'could not generate the PDF' }
+
+      const body =
+        (i.message ? `${i.message}\n\n` : '') +
+        `Please see the attached purchase order (No. ${po.poNumber}). Please confirm receipt ` +
+        `and expected date.\n\nBrandon Camp\nbrandon@cleocamp.com · 310-622-3898`
+
+      const cc = ['studio@cleocamp.com', 'brandon@cleocamp.com']
+      const { sendEmail } = await import('@/lib/email')
+      const res = await sendEmail({
+        to: [po.vendor.email], cc,
+        subject: `Purchase Order ${po.poNumber} — Cleo Couture LLC`,
+        text: body,
+        attachments: [{ filename: `PO-${po.poNumber}.pdf`, content: pdf }],
+      })
+      if (!res.sent) return { sent: false, reason: res.reason }
+
+      await db.$transaction([
+        db.purchaseOrder.update({
+          where: { id: po.id },
+          data: { status: 'SENT', orderedAt: po.orderedAt ?? new Date() },
+        }),
+        db.sentEmail.create({
+          data: {
+            toAddress: po.vendor.email, ccAddress: cc.join(', '),
+            subject: `Purchase Order ${po.poNumber} — Cleo Couture LLC`, body,
+            resendId: (res as { id?: string }).id ?? null, sentBy: 'chat (send_purchase_order)',
+          },
+        }),
+      ])
+
+      return {
+        sent: true, to: po.vendor.email, cc,
+        tellTheUser: `Sent PO ${po.poNumber} to ${po.vendor.name} (${po.vendor.email}), cc Cleo and Brandon. Marked SENT.`,
+      }
+    },
+  },
+
   create_calendar_event: {
     def: {
       name: 'create_calendar_event',
@@ -883,23 +959,16 @@ export const TOOLS: Record<string, Tool> = {
       input_schema: { type: 'object', properties: {} },
     },
     run: async () => {
-      const { fetchAllVariants } = await import('@/lib/integrations/shopify')
-      const variants = await fetchAllVariants()
-      let updated = 0
-      for (const v of variants) {
-        const id = v.id.split('/').pop()
-        const existing = await db.productVariant.findFirst({ where: { shopifyVariantId: id } })
-        if (!existing) continue
-        await db.productVariant.update({
-          where: { id: existing.id },
-          data: {
-            onHandQty: v.inventoryQuantity === null ? null : String(v.inventoryQuantity),
-            retailPriceCents: Math.round(parseFloat(v.price) * 100),
-          },
-        })
-        updated++
+      // Same pull the nightly cron runs — one implementation, not two that
+      // can quietly drift apart. A 21-day window is plenty for a spot check;
+      // the full order history is a deliberate once-only script, not this.
+      const { syncShopify } = await import('@/lib/integrations/shopify-sync')
+      const since = new Date(Date.now() - 21 * 864e5).toISOString().slice(0, 10)
+      const r = await syncShopify(db, since)
+      return {
+        updated: r.variantsUpdated, seenInShopify: r.variantsUpdated + r.variantsUnknown.length,
+        salesWritten: r.salesWritten, onHand: `${r.onHandCounted}/${r.onHandTotal}`,
       }
-      return { updated, seenInShopify: variants.length }
     },
   },
 

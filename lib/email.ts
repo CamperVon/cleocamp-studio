@@ -9,6 +9,9 @@ export async function sendEmail(opts: {
   /** Rarely needed: the From address (mouse@) is on the inbound allowlist,
    *  so replies come back into the system and get read on the nightly pass. */
   replyTo?: string
+  /** A vendor has no login for this app, so a linked document is a dead
+   *  end for them — the bytes have to actually go in the email. */
+  attachments?: Array<{ filename: string; content: Buffer }>
 }) {
   const key = process.env.RESEND_API_KEY
   const from = process.env.EMAIL_FROM
@@ -20,6 +23,7 @@ export async function sendEmail(opts: {
     from, to, subject: opts.subject, text: opts.text,
     ...(opts.cc ? { cc: opts.cc } : {}),
     ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
+    ...(opts.attachments ? { attachments: opts.attachments } : {}),
   })
   if (res.error) return { sent: false, reason: res.error.message }
   return { sent: true, id: res.data?.id }

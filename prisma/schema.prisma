@@ -70,6 +70,10 @@ model Vendor {
   role         VendorRole @default(COMPONENT_SUPPLIER)
   contactName  String?
   contactInfo  String?
+  /// A real, structured email — contactInfo is freeform and often a phone
+  /// number instead, so send_purchase_order reads this, never contactInfo.
+  /// Null means ask, never guess or parse a number out of contactInfo.
+  email        String?
   address      String?
   /// How you actually place an order — email, phone, walk in, Etsy, Amazon.
   /// Studio Mouse tells Cleo which one she's dealing with.
@@ -157,6 +161,11 @@ model ProductVariant {
   /// on a cut-and-sew purchase order line, not Shopify's own variant id.
   /// Null means never given one, not blank on purpose.
   sku              String?
+  /// The product photo, pulled from Shopify (the variant's own image, or the
+  /// product's featured image as a fallback) — refreshed on every sync, same
+  /// as onHandQty. Used on a cut-and-sew PO so the maker sees what they're
+  /// cutting, the way the reference orders from Shopify already do.
+  imageUrl         String?
   /// Overrides the product price where a variant is priced differently — the
   /// Bean Bag is $368 in Petite and $398 in Medium.
   retailPriceCents Int?

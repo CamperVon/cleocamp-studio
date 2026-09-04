@@ -123,8 +123,9 @@ export type ShopifyVariant = {
   sku: string | null
   price: string
   inventoryQuantity: number | null
+  image: { url: string } | null
   selectedOptions: Array<{ name: string; value: string }>
-  product: { id: string; title: string; handle: string; status: string }
+  product: { id: string; title: string; handle: string; status: string; featuredImage: { url: string } | null }
 }
 
 /** Every variant in the store, paged. */
@@ -138,8 +139,9 @@ export async function fetchAllVariants(): Promise<ShopifyVariant[]> {
           pageInfo { hasNextPage endCursor }
           nodes {
             id title sku price inventoryQuantity
+            image { url }
             selectedOptions { name value }
-            product { id title handle status }
+            product { id title handle status featuredImage { url } }
           }
         }
       }`,
