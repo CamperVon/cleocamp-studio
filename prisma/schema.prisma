@@ -161,6 +161,9 @@ model ProductVariant {
   productId        String
   colorwayId       String?
   shopifyVariantId String?
+  /// The InventoryItem gid — what Shopify's inventory API actually adjusts
+  /// against, distinct from the variant id. Write-through needs this.
+  shopifyInventoryItemId String?
   size             String?
   /// The manufacturer-facing style code, e.g. "CCSS26COT-SHL01" — what goes
   /// on a cut-and-sew purchase order line, not Shopify's own variant id.

@@ -124,6 +124,7 @@ export type ShopifyVariant = {
   price: string
   inventoryQuantity: number | null
   image: { url: string } | null
+  inventoryItem: { id: string }
   selectedOptions: Array<{ name: string; value: string }>
   product: { id: string; title: string; handle: string; status: string; featuredImage: { url: string } | null }
 }
@@ -140,6 +141,7 @@ export async function fetchAllVariants(): Promise<ShopifyVariant[]> {
           nodes {
             id title sku price inventoryQuantity
             image { url }
+            inventoryItem { id }
             selectedOptions { name value }
             product { id title handle status featuredImage { url } }
           }
@@ -217,6 +219,57 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 5): Promise<T> {
       await new Promise((r) => setTimeout(r, 2000 * (i + 1)))
     }
   }
+}
+
+/**
+ * Push a stock change to Shopify — the other half of "Shopify is master."
+ * Delta-based (inventoryAdjustQuantities), never absolute
+ * (inventorySetQuantities): Shopify's own docs say the set mutation is only
+ * for a system that IS the source of truth, which this app deliberately is
+ * not. idempotencyKey should be the InventoryEvent's own id, so a retried
+ * request can never apply the same change twice.
+ *
+ * changeFromQuantity is required as of this API version (found by testing
+ * against the real API, not the docs — a version bump between when this was
+ * researched and when it was built made it mandatory). It buys real
+ * protection along with the requirement: Shopify rejects the write if the
+ * count there has moved since changeFromQuantity was read — a real sale
+ * landing mid-write, say — rather than silently applying a delta against a
+ * number that's no longer true.
+ */
+export async function adjustInventory(args: {
+  inventoryItemId: string
+  locationId: string
+  delta: number
+  changeFromQuantity: number
+  idempotencyKey: string
+  reason?: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const d: any = await withRetry(() =>
+    shopifyGraphQL(
+      `mutation adjust($input: InventoryAdjustQuantitiesInput!, $idempotencyKey: String!) {
+        inventoryAdjustQuantities(input: $input) @idempotent(key: $idempotencyKey) {
+          userErrors { field message }
+        }
+      }`,
+      {
+        idempotencyKey: args.idempotencyKey,
+        input: {
+          reason: args.reason ?? 'correction',
+          name: 'available',
+          changes: [{
+            delta: args.delta,
+            changeFromQuantity: args.changeFromQuantity,
+            inventoryItemId: args.inventoryItemId,
+            locationId: args.locationId,
+          }],
+        },
+      },
+    ),
+  )
+  const errors = d.inventoryAdjustQuantities?.userErrors ?? []
+  if (errors.length) return { ok: false, error: errors.map((e: any) => e.message).join('; ') }
+  return { ok: true }
 }
 
 /** Orders paid for but not yet shipped — the pile waiting on the packing table. */

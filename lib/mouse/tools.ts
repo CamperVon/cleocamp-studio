@@ -36,45 +36,113 @@ async function writeEvent(args: {
   type: string
   note?: string
 }) {
-  return db.$transaction(async (tx) => {
-    const event = await tx.inventoryEvent.create({
-      data: {
-        componentId: args.componentId ?? null,
-        productVariantId: args.productVariantId ?? null,
-        deltaQty: String(args.deltaQty),
-        countedQty: args.countedQty === undefined ? null : String(args.countedQty),
-        type: args.type as never,
-        source: 'CHAT',
-        note: args.note ?? null,
-      },
-    })
-
-    if (args.componentId) {
-      const c = await tx.component.findUniqueOrThrow({ where: { id: args.componentId } })
-      const next = args.countedQty ?? Number(c.onHandQty) + args.deltaQty
-      await tx.component.update({
-        where: { id: args.componentId },
-        data: { onHandQty: String(next) },
+  if (args.componentId) {
+    // Components have no Shopify concept of themselves — CLAUDE.md §3.
+    // Nothing here ever calls out.
+    return db.$transaction(async (tx) => {
+      const event = await tx.inventoryEvent.create({
+        data: {
+          componentId: args.componentId, deltaQty: String(args.deltaQty),
+          countedQty: args.countedQty === undefined ? null : String(args.countedQty),
+          type: args.type as never, source: 'CHAT', note: args.note ?? null,
+        },
       })
+      const c = await tx.component.findUniqueOrThrow({ where: { id: args.componentId! } })
+      const next = args.countedQty ?? Number(c.onHandQty) + args.deltaQty
+      await tx.component.update({ where: { id: args.componentId! }, data: { onHandQty: String(next) } })
       return { eventId: event.id, name: c.name, newQty: next }
-    }
+    })
+  }
 
-    const v = await tx.productVariant.findUniqueOrThrow({
-      where: { id: args.productVariantId! },
-      include: { product: true, colorway: true },
-    })
-    // Null means unknown, not zero. A delta against an unknown count leaves it
-    // unknown rather than inventing a number from nowhere.
-    const next =
-      args.countedQty ??
-      (v.onHandQty === null ? null : Number(v.onHandQty) + args.deltaQty)
-    await tx.productVariant.update({
-      where: { id: v.id },
-      data: { onHandQty: next === null ? null : String(next) },
-    })
-    const name = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
-    return { eventId: event.id, name, newQty: next ?? 'still unknown' }
+  // Finished goods: Shopify is master, so its count has to move with ours or
+  // the two silently disagree — the exact "wrote it, nobody downstream
+  // looked" shape every real bug tonight has had. Pushed BEFORE the local
+  // write commits: if Shopify refuses it, nothing changes here either,
+  // rather than the two drifting apart. See lib/integrations/shopify.ts —
+  // delta-based, never inventorySetQuantities, because Shopify remains the
+  // source of truth and this is a correction to it, not a replacement of it.
+  const v = await db.productVariant.findUniqueOrThrow({
+    where: { id: args.productVariantId! },
+    include: { product: true, colorway: true },
   })
+  // Null means unknown, not zero. A delta against an unknown count leaves it
+  // unknown rather than inventing a number from nowhere.
+  const next =
+    args.countedQty ??
+    (v.onHandQty === null ? null : Number(v.onHandQty) + args.deltaQty)
+  const name = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
+
+  let shopifyNote: string
+  // A pre-generated id, not Prisma's own @default(cuid()) — needed as the
+  // idempotency key before the event row exists, so a retry of this exact
+  // write (a timeout, a re-run) can never double-apply on Shopify's side.
+  const eventId = crypto.randomUUID()
+
+  if (inventoryWritesEnabled() && v.shopifyInventoryItemId) {
+    // The baseline doubles as changeFromQuantity — Shopify's own
+    // compare-and-swap guard, so a stale local number fails loudly against
+    // Shopify's real one rather than applying a delta that no longer holds.
+    const baseline = v.onHandQty === null ? null : Number(v.onHandQty)
+    const delta = baseline === null ? null : (args.countedQty !== undefined ? args.countedQty - baseline : args.deltaQty)
+    if (baseline === null || delta === null) {
+      shopifyNote = 'not pushed — our own count was unknown, so there was no baseline to compute a delta from. Sync from Shopify first.'
+    } else if (delta === 0) {
+      shopifyNote = 'no change to push'
+    } else {
+      const studio = await db.location.findFirst({ where: { isDefault: true }, select: { shopifyLocationId: true } })
+      if (!studio?.shopifyLocationId) {
+        return { eventId: null, applied: false, error: 'No Shopify location on file for the studio — cannot push. Run sync_shopify first.' }
+      }
+      const { adjustInventory } = await import('@/lib/integrations/shopify')
+      const res = await adjustInventory({
+        inventoryItemId: v.shopifyInventoryItemId, locationId: studio.shopifyLocationId,
+        delta, changeFromQuantity: baseline, idempotencyKey: eventId,
+        reason: args.type === 'CORRECTION' ? 'correction' : undefined,
+      })
+      if (!res.ok) {
+        return {
+          eventId: null, applied: false,
+          error: `Shopify rejected the write: ${res.error}. Nothing changed locally either — say so, rather than let the two disagree.`,
+        }
+      }
+      shopifyNote = `pushed ${delta > 0 ? '+' : ''}${delta} to Shopify`
+    }
+  } else if (!v.shopifyInventoryItemId) {
+    shopifyNote = 'not pushed — this variant has no Shopify link on file'
+  } else {
+    shopifyNote = 'writing paused (INVENTORY_WRITES off)'
+  }
+
+  try {
+    return await db.$transaction(async (tx) => {
+      const event = await tx.inventoryEvent.create({
+        data: {
+          id: eventId, productVariantId: args.productVariantId, deltaQty: String(args.deltaQty),
+          countedQty: args.countedQty === undefined ? null : String(args.countedQty),
+          type: args.type as never, source: 'CHAT', note: args.note ?? null,
+        },
+      })
+      await tx.productVariant.update({
+        where: { id: v.id },
+        data: { onHandQty: next === null ? null : String(next) },
+      })
+      return { eventId: event.id, name, newQty: next ?? 'still unknown', shopify: shopifyNote }
+    })
+  } catch (e) {
+    // Shopify may already have this delta (shopifyNote says so above if it
+    // does) and our own record of it just failed to save — a Postgres blip,
+    // not a Shopify one. The dangerous move here is treating this like any
+    // other failure and trying again: that would double-apply on Shopify's
+    // side, since a retry mints a fresh idempotency key. Say so loudly
+    // instead of leaving that to be discovered later.
+    const shopifyApplied = shopifyNote.startsWith('pushed')
+    return {
+      eventId: null, applied: false,
+      error:
+        `Local save failed after ${shopifyApplied ? 'Shopify already accepted this change' : 'nothing reached Shopify'}: ` +
+        `${(e as Error).message}. ${shopifyApplied ? 'Do NOT log this again — it is already applied on Shopify\'s side. Tell Brandon directly and reconcile by hand.' : 'Safe to try again.'}`,
+    }
+  }
 }
 
 export const TOOLS: Record<string, Tool> = {
@@ -85,7 +153,10 @@ export const TOOLS: Record<string, Tool> = {
         'Record a change in stock. Use for receiving goods, shipping wholesale, gifting, ' +
         'returns, stylist pulls, or a physical count. Exactly one of componentId or ' +
         'productVariantId. For COUNTED give countedQty (the absolute number stated) — ' +
-        'deltaQty is then ignored.',
+        'deltaQty is then ignored. For a finished-goods variant this also pushes the same ' +
+        'change to Shopify, which stays master — check the result\'s "shopify" field. If it ' +
+        'ever says the local save failed after Shopify had already taken the change, do not ' +
+        'call this again for the same movement — say so plainly and get a person to reconcile.',
       input_schema: {
         type: 'object',
         properties: {

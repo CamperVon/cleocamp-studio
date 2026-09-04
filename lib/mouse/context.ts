@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
+import { inventoryWritesEnabled } from './tools'
 
 /**
  * Everything Studio Mouse knows, rendered for the system prompt.
@@ -82,8 +83,14 @@ export async function buildCatalog(): Promise<string> {
       lastSale._max.date ? lastSale._max.date.toISOString().slice(0, 10) : 'no sales recorded'
     }.`,
   )
-  L.push('WRITING BACK TO SHOPIFY IS NOT SWITCHED ON. You can read it; you cannot')
-  L.push('change it. Say so plainly if asked to.')
+  L.push(
+    inventoryWritesEnabled()
+      ? 'Writing back to Shopify IS switched on: log_inventory_event and correct_inventory_event ' +
+        'push the same change to Shopify for any variant with a Shopify link on file. Its own ' +
+        'result tells you whether that push actually happened — read it, do not assume.'
+      : 'Writing back to Shopify is NOT switched on. You can read it; you cannot change it. ' +
+        'Say so plainly if asked to.',
+  )
   L.push('')
 
   L.push('## Products')

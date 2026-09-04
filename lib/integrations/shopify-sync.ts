@@ -64,6 +64,7 @@ export async function syncShopify(db: PrismaClient, sinceISO: string): Promise<S
         onHandQty: v.inventoryQuantity === null ? null : String(v.inventoryQuantity),
         retailPriceCents: Math.round(parseFloat(v.price) * 100),
         imageUrl: v.image?.url ?? v.product.featuredImage?.url ?? null,
+        shopifyInventoryItemId: v.inventoryItem.id,
       },
     })
     variantsUpdated++
