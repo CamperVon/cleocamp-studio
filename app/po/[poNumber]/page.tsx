@@ -34,29 +34,15 @@ export default async function PurchaseOrderDoc({
     timeZone: 'America/Los_Angeles', month: 'long', day: 'numeric', year: 'numeric',
   })
 
-  const notes: string[] = []
-  if (po.notes) notes.push(po.notes)
-  if (po.paymentTerms) notes.push(`Payment terms: ${po.paymentTerms}.`)
-  for (const l of po.lines) {
-    // Only a component line has a purchase/consumption unit split to flag —
-    // a cut-and-sew line is already in finished pieces.
-    if (l.component?.purchaseUnit && l.component.unitsPerPurchaseUnit) {
-      notes.push(
-        `${l.component.name} is supplied by the ${l.component.purchaseUnit} ` +
-          `(about ${l.component.unitsPerPurchaseUnit} ${l.component.unitOfMeasure} each). ` +
-          `Please confirm the count and the actual quantity shipped.`,
-      )
-    }
-    if (l.unitCostCents) {
-      notes.push(`Please confirm pricing at ${money(l.unitCostCents)}/${l.unit} as quoted.`)
-    } else if (l.productVariant) {
-      notes.push(
-        `No confirmed price on file for ${l.productVariant.product.name}` +
-          `${l.productVariant.colorway ? ` / ${l.productVariant.colorway.customerName}` : ''}` +
-          `${l.productVariant.size ? ` / ${l.productVariant.size}` : ''} — please quote.`,
-      )
-    }
-  }
+  // Brandon, 4 Sept 2026: "notes at the end of pdf should only be notes i
+  // sent, not an endless list of things SM puts there." A generic per-line
+  // "please confirm pricing" made sense for a handful of fabric lines with
+  // different prices; on an 18-line uniform-price cut-and-sew order it was
+  // the same sentence eighteen times, drowning the one real note. Notes is
+  // now exactly what was actually written — nothing synthesized. Payment
+  // terms is a real fact still worth printing, so it moved to the header,
+  // its own line, not folded into "notes".
+  const notes: string[] = po.notes ? [po.notes] : []
 
   return (
     <main className="mx-auto max-w-[8.5in] bg-white px-10 py-12 font-serif text-[11pt] leading-relaxed text-[#14181A] print:px-0 print:py-0">
@@ -84,6 +70,9 @@ export default async function PurchaseOrderDoc({
               {po.expectedAt.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', day: 'numeric', year: 'numeric' })}
             </div>
           ) : null}
+          {po.paymentTerms ? (
+            <div><span className="text-[#6A736F]">Terms </span>{po.paymentTerms}</div>
+          ) : null}
           {po.status === 'DRAFT' ? (
             <div className="mt-1 text-[9pt] uppercase tracking-wider text-[#8C3A2B]">Draft — not sent</div>
           ) : null}
@@ -94,7 +83,11 @@ export default async function PurchaseOrderDoc({
 
       <div className="flex justify-between gap-7">
         {[
-          ['Vendor', [po.vendor.name, po.vendor.contactName ? `Attn: ${po.vendor.contactName}` : '', po.vendor.address ?? '']],
+          // The registered name, not Cleo's own name for them — this goes
+          // to the vendor, and "Antonio's" means nothing on Antonio's own
+          // letterhead. legalName is exactly what a formal document needs;
+          // fall back to name only if it was never given one.
+          ['Vendor', [po.vendor.legalName ?? po.vendor.name, po.vendor.contactName ? `Attn: ${po.vendor.contactName}` : '', po.vendor.address ?? '']],
           ['Deliver to', (po.deliverTo ?? '').split('\n')],
           ['Bill to', ['Cleo Couture LLC', '1667 North Main St', 'Los Angeles, CA 90012']],
         ].map(([label, lines]) => (

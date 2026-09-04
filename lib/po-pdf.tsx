@@ -86,27 +86,9 @@ function PurchaseOrderDoc({ po }: { po: PoForPdf }) {
     timeZone: 'America/Los_Angeles', month: 'long', day: 'numeric', year: 'numeric',
   })
 
-  const notes: string[] = []
-  if (po.notes) notes.push(po.notes)
-  if (po.paymentTerms) notes.push(`Payment terms: ${po.paymentTerms}.`)
-  for (const l of po.lines) {
-    if (l.component?.purchaseUnit && l.component.unitsPerPurchaseUnit) {
-      notes.push(
-        `${l.component.name} is supplied by the ${l.component.purchaseUnit} ` +
-          `(about ${l.component.unitsPerPurchaseUnit} ${l.component.unitOfMeasure} each). ` +
-          `Please confirm the count and the actual quantity shipped.`,
-      )
-    }
-    if (l.unitCostCents) {
-      notes.push(`Please confirm pricing at ${money(l.unitCostCents)}/${l.unit} as quoted.`)
-    } else if (l.productVariant) {
-      notes.push(
-        `No confirmed price on file for ${l.productVariant.product.name}` +
-          `${l.productVariant.colorway ? ` / ${l.productVariant.colorway.customerName}` : ''}` +
-          `${l.productVariant.size ? ` / ${l.productVariant.size}` : ''} — please quote.`,
-      )
-    }
-  }
+  // See the same fix, and why, in app/po/[poNumber]/page.tsx: notes is
+  // exactly what was actually written, nothing synthesized per line.
+  const notes: string[] = po.notes ? [po.notes] : []
 
   const lineLabel = (l: (typeof po.lines)[number]) =>
     l.component
@@ -134,6 +116,7 @@ function PurchaseOrderDoc({ po }: { po: PoForPdf }) {
                 {po.expectedAt.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', day: 'numeric', year: 'numeric' })}
               </Text>
             ) : null}
+            {po.paymentTerms ? <Text><Text style={styles.muted}>Terms </Text>{po.paymentTerms}</Text> : null}
             {po.status === 'DRAFT' ? <Text style={{ marginTop: 3, fontSize: 8, color: '#8C3A2B' }}>DRAFT — NOT SENT</Text> : null}
           </View>
         </View>
@@ -143,7 +126,9 @@ function PurchaseOrderDoc({ po }: { po: PoForPdf }) {
         <View style={styles.row}>
           <View style={styles.addrBlock}>
             <Text style={styles.addrLabel}>VENDOR</Text>
-            <Text style={styles.addrLine}>{po.vendor.name}</Text>
+            {/* Registered name, not Cleo's own name for them — see the same
+                fix in app/po/[poNumber]/page.tsx. */}
+            <Text style={styles.addrLine}>{po.vendor.legalName ?? po.vendor.name}</Text>
             {po.vendor.contactName ? <Text style={styles.addrLine}>Attn: {po.vendor.contactName}</Text> : null}
             {po.vendor.address ? <Text style={styles.addrLine}>{po.vendor.address}</Text> : null}
           </View>
