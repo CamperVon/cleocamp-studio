@@ -29,6 +29,8 @@ const EXPECTED_ABSENT: Record<string, string> = {
   ProductionRunLine: 'included with its run',
   ProductionRunCost: 'included with its run',
   PurchaseOrderLine: 'included with its order',
+  WholesaleShipment: 'included with its account',
+  WholesaleShipmentLine: 'included with its shipment',
   BomLine: 'included with its product',
   Colorway: 'included with its product',
   ProductVariant: 'included with its product',

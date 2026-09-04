@@ -1134,6 +1134,134 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  create_wholesale_account: {
+    def: {
+      name: 'create_wholesale_account',
+      description:
+        'Add a wholesale or consignment account — a store carrying Cleo Camp. Wholesale is ' +
+        'owed regardless of whether it sells; consignment is only owed on what actually ' +
+        'sells, at the split given. A store can have both at once as two separate accounts ' +
+        '(same name, different arrangement) if that is genuinely how it works there.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          name: str('What Cleo calls them'),
+          type: { type: 'string' as const, enum: ['WHOLESALE', 'CONSIGNMENT'] },
+          commissionSplit: str('e.g. "60/40" — only meaningful for CONSIGNMENT. Never assume the standard 70/30; ask.'),
+          contactName: str('Who you deal with'),
+          email: str('A real email — never guessed'),
+          address: str('Street address'),
+          notes: str('Anything else'),
+        },
+        required: ['name', 'type'],
+      },
+    },
+    run: async (i) => db.wholesaleAccount.create({ data: i, select: { id: true, name: true } }),
+  },
+
+  log_wholesale_shipment: {
+    def: {
+      name: 'log_wholesale_shipment',
+      description:
+        'Record what went out to a wholesale or consignment account, and when. This is a ' +
+        'financial and shipping record only — it never changes a count anywhere. Shopify ' +
+        'stays the master for on-hand; this just tracks what shipped and what is owed for it.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          accountId: str('Wholesale account id'),
+          sentAt: str('ISO date it went out'),
+          lines: {
+            type: 'array' as const,
+            description: 'What was sent',
+            items: {
+              type: 'object' as const,
+              properties: {
+                item: str('Plain description — "Cleo Tee / White / 1"'),
+                qty: num('How many'),
+                wholesaleCents: num('Line total in cents, if known. Omit for consignment until it sells, or if genuinely unknown — never guessed.'),
+              },
+              required: ['item', 'qty'],
+            },
+          },
+          paid: { type: 'boolean' as const, description: 'Only set this if actually told — omit rather than assume unpaid' },
+          notes: str('Anything else'),
+        },
+        required: ['accountId', 'sentAt', 'lines'],
+      },
+    },
+    run: async (i) => {
+      const account = await db.wholesaleAccount.findUnique({ where: { id: i.accountId as string } })
+      if (!account) return { error: `No wholesale account ${i.accountId}` }
+      const shipment = await db.wholesaleShipment.create({
+        data: {
+          accountId: i.accountId as string,
+          sentAt: new Date(String(i.sentAt) + 'T12:00:00-07:00'),
+          paid: (i.paid as boolean | undefined) ?? null,
+          notes: (i.notes as string | undefined) ?? null,
+          lines: {
+            create: (i.lines as any[]).map((l) => ({
+              item: l.item, qty: l.qty, wholesaleCents: l.wholesaleCents ?? null,
+            })),
+          },
+        },
+        include: { lines: true },
+      })
+      return {
+        shipmentId: shipment.id, account: account.name,
+        lineCount: shipment.lines.length,
+        tellTheUser: `Logged ${shipment.lines.length} lines to ${account.name}, sent ${i.sentAt}. Nothing in Shopify touched.`,
+      }
+    },
+  },
+
+  update_wholesale_shipment: {
+    def: {
+      name: 'update_wholesale_shipment',
+      description:
+        'Record payment on a wholesale shipment, or that specific lines on it have sold ' +
+        '(what a consignment balance actually turns on). Give only what changed.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          shipmentId: str('The shipment id'),
+          paid: { type: 'boolean' as const, description: 'Whether it has now been paid' },
+          paidAt: str('ISO date it was paid, if known'),
+          notes: str('Replaces the existing note'),
+          soldLines: {
+            type: 'array' as const,
+            description: 'Line ids that have now sold at retail, with the date',
+            items: {
+              type: 'object' as const,
+              properties: { lineId: str('Line id'), soldAt: str('ISO date it sold') },
+              required: ['lineId', 'soldAt'],
+            },
+          },
+        },
+        required: ['shipmentId'],
+      },
+    },
+    run: async (i) => {
+      const shipment = await db.wholesaleShipment.findUnique({ where: { id: i.shipmentId as string } })
+      if (!shipment) return { error: `No wholesale shipment ${i.shipmentId}` }
+      const data: any = {}
+      if (i.paid !== undefined) data.paid = i.paid
+      if (i.paidAt) data.paidAt = new Date(String(i.paidAt) + 'T12:00:00-07:00')
+      if (i.notes !== undefined) data.notes = i.notes
+      if (Object.keys(data).length) await db.wholesaleShipment.update({ where: { id: shipment.id }, data })
+
+      let soldCount = 0
+      for (const s of (i.soldLines as any[]) ?? []) {
+        await db.wholesaleShipmentLine.update({
+          where: { id: s.lineId },
+          data: { soldAt: new Date(String(s.soldAt) + 'T12:00:00-07:00') },
+        })
+        soldCount++
+      }
+      return { shipmentId: shipment.id, updated: Object.keys(data), linesMarkedSold: soldCount }
+    },
+  },
+
   query_status: {
     def: {
       name: 'query_status',

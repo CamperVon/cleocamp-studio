@@ -14,7 +14,7 @@ import { poLineLabel } from '@/lib/po'
  * turn. Keep it deterministic: no timestamps, stable ordering.
  */
 export async function buildCatalog(): Promise<string> {
-  const [products, components, vendors, items, pos, runs, lastSale, notes, events, forecasts, alerts, people, finances, sales] = await Promise.all([
+  const [products, components, vendors, items, pos, runs, lastSale, notes, events, forecasts, alerts, people, finances, sales, wholesale] = await Promise.all([
     db.product.findMany({
       orderBy: { name: 'asc' },
       include: {
@@ -49,6 +49,10 @@ export async function buildCatalog(): Promise<string> {
       by: ['productVariantId'],
       _sum: { unitsSold: true },
       where: { date: { gte: new Date(Date.now() - 56 * 864e5) } },
+    }),
+    db.wholesaleAccount.findMany({
+      where: { active: true },
+      include: { shipments: { include: { lines: true }, orderBy: { sentAt: 'desc' } } },
     }),
   ])
 
@@ -158,6 +162,29 @@ export async function buildCatalog(): Promise<string> {
           (p.expectedAt ? ` · due ${p.expectedAt.toISOString().slice(0, 10)}` : ' · no date confirmed') +
           (p.deliverTo ? ` · delivers to ${p.deliverTo.split('\n')[0]}` : ''),
       )
+    }
+  }
+
+  if (wholesale.length) {
+    // What has shipped and what's owed — never a count. See CLAUDE.md and
+    // WholesaleShipment's own comment: this tracks money and shipping
+    // dates only, deliberately disconnected from inventory everywhere.
+    L.push('\n## Wholesale — shipped, paid or not')
+    for (const a of wholesale) {
+      if (!a.shipments.length) continue
+      L.push(`\n### ${a.name} [${a.id}] · ${a.type}${a.commissionSplit ? ` ${a.commissionSplit}` : ''}`)
+      for (const s of a.shipments) {
+        const total = s.lines.reduce((n, l) => n + (l.wholesaleCents ?? 0), 0)
+        const paidStr = s.paid === true ? `paid${s.paidAt ? ' ' + s.paidAt.toISOString().slice(0, 10) : ''}`
+          : s.paid === false ? 'UNPAID' : 'payment status not confirmed'
+        const soldStr = a.type === 'CONSIGNMENT'
+          ? ` · ${s.lines.filter((l) => l.soldAt).length}/${s.lines.length} sold` : ''
+        L.push(
+          `- [${s.id}] ${s.sentAt.toISOString().slice(0, 10)}: ${s.lines.length} lines, ` +
+            `${total ? money(total) : 'no total recorded'} · ${paidStr}${soldStr}` +
+            (s.notes ? ` · ${s.notes}` : ''),
+        )
+      }
     }
   }
 

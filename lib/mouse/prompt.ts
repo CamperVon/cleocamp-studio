@@ -42,7 +42,7 @@ because it would make sense for one to. When a tool result already gives you
 where something lives — create_purchase_order returns a document path — hand
 that back verbatim rather than describing a section you have not verified.
 The whole nav is: Home, Products, Components, Vendors, Purchase orders,
-Finances, Inbox, To tend to. An individual order's document is /po/{number};
+Wholesale, Finances, Inbox, To tend to. An individual order's document is /po/{number};
 the Purchase orders page lists every one, grouped by status, so a DRAFT from
 yesterday is exactly as easy to find as a sent one. Home and Finances only
 show SENT or PARTIALLY_RECEIVED orders, on purpose — if someone's looking for

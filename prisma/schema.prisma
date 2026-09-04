@@ -840,3 +840,76 @@ model DigestSend {
 
   @@unique([kind, sentForDate])
 }
+
+// ─────────────────────────────────────────────────────────────
+// Wholesale — what has shipped, what has been paid
+// ─────────────────────────────────────────────────────────────
+//
+// Brandon, 4 Sept 2026: track what's shipped and what's been paid, seeded
+// from the last three months of the studio's own wholesale spreadsheet.
+// Deliberately not linked to Component, ProductVariant or InventoryEvent
+// anywhere below — "do NOT change inventory in any way, everything is up
+// to date in Shopify." This is a financial and shipping record sitting
+// beside inventory, not another way to move it.
+
+enum WholesaleAccountType {
+  WHOLESALE   // standard split, sold or not doesn't change what's owed
+  CONSIGNMENT // owed only on what actually sells
+}
+
+model WholesaleAccount {
+  id              String   @id @default(cuid())
+  name            String
+  type            WholesaleAccountType @default(WHOLESALE)
+  /// e.g. "60/40" — only meaningful for CONSIGNMENT. Recorded exactly as
+  /// told, never assumed from the standard collection's 70/30.
+  commissionSplit String?
+  contactName     String?
+  email           String?
+  address         String?
+  active          Boolean  @default(true)
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  shipments WholesaleShipment[]
+
+  @@index([active])
+}
+
+model WholesaleShipment {
+  id        String    @id @default(cuid())
+  accountId String
+  sentAt    DateTime
+  /// Null means not recorded — never assumed paid just because an earlier
+  /// shipment to the same account was. Unknown is the honest default.
+  paid      Boolean?
+  paidAt    DateTime?
+  notes     String?
+  createdAt DateTime  @default(now())
+
+  account WholesaleAccount       @relation(fields: [accountId], references: [id])
+  lines   WholesaleShipmentLine[]
+
+  @@index([accountId, sentAt])
+}
+
+model WholesaleShipmentLine {
+  id         String   @id @default(cuid())
+  shipmentId String
+  /// Free text — "Cleo Tee / White / 1" — deliberately not a
+  /// ProductVariant relation. This describes what a spreadsheet said left
+  /// the studio, not a live count; Shopify already holds the real one.
+  item       String
+  qty        Int
+  /// The line's total in cents, as recorded — the source wasn't always
+  /// consistent about per-unit vs. line total, so this is whichever the
+  /// row actually gave. Null where no price was recorded.
+  wholesaleCents Int?
+  /// When the account actually sold it at retail — mostly unknown. What a
+  /// consignment balance actually turns on.
+  soldAt     DateTime?
+
+  shipment WholesaleShipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+}
