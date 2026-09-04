@@ -1,6 +1,6 @@
 import { laDay } from '@/lib/dates'
 
-export type PaymentStage = { label: string; amountCents: number; due: string; overdue: boolean }
+export type PaymentStage = { label: string; amountCents: number; due: string; overdue: boolean; paid?: boolean }
 
 /**
  * Work out what falls due and when, from the terms on a purchase order.
@@ -9,9 +9,17 @@ export type PaymentStage = { label: string; amountCents: number; due: string; ov
  * rest on delivery; the rib is net 60 from delivery. Where a delivery date is
  * unconfirmed the date is unknown rather than guessed — an invented due date is
  * worse than an admitted gap, because someone will plan around it.
+ *
+ * The deposit stage checks depositPaidAt — recorded correctly by chat
+ * (update_purchase_order) the moment Cleo confirms a wire went out, but
+ * never read back here before this, so a paid deposit still showed as due
+ * and overdue forever. Found because the underlying data was already right
+ * and the screen still wasn't — the write worked, nothing downstream looked
+ * at it.
  */
 export function paymentStages(po: {
   depositPercent: number | null
+  depositPaidAt: Date | null
   netDaysAfterDelivery: number | null
   orderedAt: Date | null
   expectedAt: Date | null
@@ -25,12 +33,22 @@ export function paymentStages(po: {
   if (po.depositPercent) {
     const deposit = Math.round((totalCents * po.depositPercent) / 100)
     const due = po.orderedAt
-    stages.push({
-      label: `${po.depositPercent}% on order`,
-      amountCents: deposit,
-      due: due ? laDay(due) : 'unknown',
-      overdue: !!due && due.getTime() < now && po.status !== 'RECEIVED',
-    })
+    stages.push(
+      po.depositPaidAt
+        ? {
+            label: `${po.depositPercent}% on order`,
+            amountCents: deposit,
+            due: `paid ${laDay(po.depositPaidAt)}`,
+            overdue: false,
+            paid: true,
+          }
+        : {
+            label: `${po.depositPercent}% on order`,
+            amountCents: deposit,
+            due: due ? laDay(due) : 'unknown',
+            overdue: !!due && due.getTime() < now && po.status !== 'RECEIVED',
+          },
+    )
     stages.push({
       label: 'Balance on delivery',
       amountCents: totalCents - deposit,

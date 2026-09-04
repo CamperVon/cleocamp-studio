@@ -152,6 +152,9 @@ export async function buildCatalog(): Promise<string> {
           (p.forProduct ? ` for the ${p.forProduct.name}` : '') +
           ` · ${p.status}` +
           (p.paymentTerms ? ` · ${p.paymentTerms}` : '') +
+          (p.depositPercent
+            ? (p.depositPaidAt ? ` · deposit paid ${p.depositPaidAt.toISOString().slice(0, 10)}` : ' · deposit NOT yet paid')
+            : '') +
           (p.expectedAt ? ` · due ${p.expectedAt.toISOString().slice(0, 10)}` : ' · no date confirmed') +
           (p.deliverTo ? ` · delivers to ${p.deliverTo.split('\n')[0]}` : ''),
       )

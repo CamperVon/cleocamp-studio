@@ -132,7 +132,7 @@ export default async function Finances() {
                             <span className="text-muted">{s.label}</span>
                             <span className="shrink-0">
                               <span className="tnum">{money(BigInt(s.amountCents))}</span>
-                              <span className={s.overdue ? ' text-urgent' : ' text-faint'}> &middot; {s.due}</span>
+                              <span className={s.overdue ? ' text-urgent' : s.paid ? ' text-muted' : ' text-faint'}> &middot; {s.due}</span>
                             </span>
                           </li>
                         ))}
