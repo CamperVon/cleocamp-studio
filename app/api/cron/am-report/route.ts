@@ -27,6 +27,12 @@ export async function GET(req: NextRequest) {
   }
   const dryRun = req.nextUrl.searchParams.get('dry') === '1'
 
+  // This had no off switch at all until 4 Sept 2026 — it simply ran, and
+  // asking Studio Mouse to stop it got "I can't switch that off myself."
+  // NotificationSettings is that switch; Mouse can flip it on request.
+  const notify = await db.notificationSettings.findUnique({ where: { id: 'singleton' } })
+  if (!notify?.amReportEnabled) return NextResponse.json({ skipped: 'morning report switched off' })
+
   // A retry or a manual poke on the same day must not send twice.
   const today = laMidnight(0)
   const already = await db.sentEmail.findFirst({

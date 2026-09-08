@@ -208,14 +208,13 @@ export async function GET(req: NextRequest) {
   })
 
   // ── 6. Send what is due today ────────────────────────────
-  // Paused 3 Sept 2026 at Brandon's request: composeDigest re-summarises the
-  // same figures from scratch and reads less accurate than Mouse's Corner,
-  // which comes from the 'think' step above and already reasons over this
-  // data plus tonight's mail. Flip this back to true to resume sending.
-  const DIGEST_EMAIL_ENABLED = false
+  // Every switch below is a row in NotificationSettings, not a constant —
+  // "stop emailing me" is a thing a person says, and it should never need a
+  // deploy. Mouse can flip any of them with update_notification_settings.
+  const notify = await db.notificationSettings.findUnique({ where: { id: 'singleton' } })
 
   await step('digests', async () => {
-    if (!DIGEST_EMAIL_ENABLED) return { skipped: 'digest paused' }
+    if (!notify?.digestEnabled) return { skipped: 'digest switched off' }
 
     // laMidnight already carries the Pacific calendar date, so day-of-week and
     // day-of-month come straight off it. Asking Intl for a numeric weekday is
@@ -270,6 +269,8 @@ export async function GET(req: NextRequest) {
   // (and the migration that added askedViaEmailAt, if unwanted elsewhere)
   // once the two weeks are up or the list runs dry, whichever is first.
   await step('chipAway', async () => {
+    if (!notify?.chipAwayEnabled) return { skipped: 'chip-away switched off' }
+
     // Same representation laMidnight uses — UTC midnight standing in for the
     // LA calendar date — so subtracting it from `today` below is comparing
     // like with like. A wall-clock offset here (-07:00) would have been off

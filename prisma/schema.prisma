@@ -661,6 +661,27 @@ model StorageCleanup {
   filesPurged  Int       @default(0)
 }
 
+/// One row, id "singleton". Whether each thing that emails people is
+/// switched on.
+///
+/// These were hardcoded constants in the cron routes until 4 Sept 2026,
+/// which meant "stop emailing me" — the most basic request anyone makes of
+/// a system that emails them — needed a code edit and a deploy, and Studio
+/// Mouse had to tell Brandon it couldn't help. Same mistake as the document
+/// content: an operational setting living in code instead of data. Anything
+/// that sends mail on a schedule gets its switch here.
+model NotificationSettings {
+  id              String   @id @default("singleton")
+  /// The two-questions-a-day drip at the open list.
+  chipAwayEnabled Boolean  @default(true)
+  /// The 8am morning report to Brandon and Cleo.
+  amReportEnabled Boolean  @default(true)
+  /// The older daily/weekly/monthly digest — superseded by the morning
+  /// report and off since 3 Sept, kept switchable rather than deleted.
+  digestEnabled   Boolean  @default(false)
+  updatedAt       DateTime @updatedAt
+}
+
 /// One row, id "singleton". The parts of a printed document that are
 /// content rather than layout — who to confirm receipt with, who it's
 /// billed to, the standing line above the signature.

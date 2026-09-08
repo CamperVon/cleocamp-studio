@@ -1210,6 +1210,46 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  update_notification_settings: {
+    def: {
+      name: 'update_notification_settings',
+      description:
+        'Switch the scheduled emails on or off. "Stop emailing me the todo questions", ' +
+        '"turn the morning report back on" — do it, do not log it as a todo for someone ' +
+        'else. Takes effect from the next run; nothing further goes out once off. Say ' +
+        'which ones you changed and that they can be turned back on any time.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          chipAwayEnabled: { type: 'boolean' as const, description: 'The two-questions-a-day drip at the open list' },
+          amReportEnabled: { type: 'boolean' as const, description: 'The 8am morning report to Brandon and Cleo' },
+          digestEnabled: { type: 'boolean' as const, description: 'The older daily/weekly/monthly digest, off since 3 Sept' },
+        },
+      },
+    },
+    run: async (i) => {
+      const data: any = {}
+      for (const k of ['chipAwayEnabled', 'amReportEnabled', 'digestEnabled'] as const) {
+        if (typeof i[k] === 'boolean') data[k] = i[k]
+      }
+      if (!Object.keys(data).length) return { error: 'Nothing given to change — say which emails.' }
+      const row = await db.notificationSettings.upsert({
+        where: { id: 'singleton' },
+        create: { id: 'singleton', ...data },
+        update: data,
+      })
+      return {
+        changed: Object.keys(data),
+        nowOn: {
+          todoQuestions: row.chipAwayEnabled,
+          morningReport: row.amReportEnabled,
+          digest: row.digestEnabled,
+        },
+        tellTheUser: 'Done — takes effect from the next scheduled run. Ask any time to switch them back on.',
+      }
+    },
+  },
+
   update_document_defaults: {
     def: {
       name: 'update_document_defaults',

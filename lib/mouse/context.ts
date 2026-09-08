@@ -15,7 +15,7 @@ import { inventoryWritesEnabled } from './tools'
  * turn. Keep it deterministic: no timestamps, stable ordering.
  */
 export async function buildCatalog(): Promise<string> {
-  const [products, components, vendors, items, pos, runs, lastSale, notes, events, forecasts, alerts, people, finances, sales, wholesale, shopifySync, docDefaults] = await Promise.all([
+  const [products, components, vendors, items, pos, runs, lastSale, notes, events, forecasts, alerts, people, finances, sales, wholesale, shopifySync, docDefaults, notify] = await Promise.all([
     db.product.findMany({
       orderBy: { name: 'asc' },
       include: {
@@ -57,6 +57,7 @@ export async function buildCatalog(): Promise<string> {
     }),
     db.shopifySyncStatus.findUnique({ where: { id: 'singleton' } }),
     db.documentDefaults.findUnique({ where: { id: 'singleton' } }),
+    db.notificationSettings.findUnique({ where: { id: 'singleton' } }),
   ])
 
   const sold = new Map(sales.map((s) => [s.productVariantId, s._sum.unitsSold ?? 0]))
@@ -244,6 +245,16 @@ export async function buildCatalog(): Promise<string> {
         `${finances.apCents === null ? 'card unknown' : '$' + (Number(finances.apCents) / 100).toLocaleString()} owed on the card. ` +
         `These do not refresh on their own.`,
     )
+  }
+
+  if (notify) {
+    const onOff = (b: boolean) => (b ? 'ON' : 'off')
+    L.push('\n## Scheduled emails')
+    L.push('Switch any of these with update_notification_settings — yours to change')
+    L.push('when asked, not something to log for someone else.')
+    L.push(`- Two todo questions a day: ${onOff(notify.chipAwayEnabled)}`)
+    L.push(`- 8am morning report: ${onOff(notify.amReportEnabled)}`)
+    L.push(`- Older daily/weekly digest: ${onOff(notify.digestEnabled)}`)
   }
 
   if (docDefaults) {
