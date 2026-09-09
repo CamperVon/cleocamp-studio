@@ -546,6 +546,85 @@ export const TOOLS: Record<string, Tool> = {
     run: async (i) => db.colorway.create({ data: i, select: { id: true, customerName: true } }),
   },
 
+  create_product_variants: {
+    def: {
+      name: 'create_product_variants',
+      description:
+        'Create the orderable sizes/colour combinations for a product — the things a PO ' +
+        'line, a production run or a count actually points at. Makes every combination of ' +
+        'the sizes and colourways given, skipping any that already exist, so running it ' +
+        'twice is safe. Use it for a product still in development, before it reaches ' +
+        'Shopify: without variants there is nothing to order against. For a product already ' +
+        'listed on Shopify, do NOT use this — the variant has to be made in Shopify first ' +
+        'and pulled in with sync_shopify, or it can never write its count back.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          productId: str('Product id'),
+          sizes: {
+            type: 'array' as const,
+            description: 'Sizes as they should read, e.g. ["0","1","2","3","4"]. Omit entirely for a one-size product.',
+            items: { type: 'string' as const },
+          },
+          colorwayIds: {
+            type: 'array' as const,
+            description: 'Colourway ids to make each size in. Omit for a product with no colours.',
+            items: { type: 'string' as const },
+          },
+        },
+        required: ['productId'],
+      },
+    },
+    run: async (i) => {
+      const product = await db.product.findUnique({
+        where: { id: i.productId as string },
+        include: { variants: true, colorways: true },
+      })
+      if (!product) return { error: `No product ${i.productId}` }
+      if (product.shopifyProductId) {
+        return {
+          created: 0,
+          error:
+            `${product.name} is already listed on Shopify. A variant made here would have no ` +
+            `Shopify link, so its count could never write back and the two would drift. Add it ` +
+            `in Shopify, then run sync_shopify to pull it in.`,
+        }
+      }
+
+      const sizes: (string | null)[] = (i.sizes as string[] | undefined)?.length ? (i.sizes as string[]) : [null]
+      const colorwayIds: (string | null)[] = (i.colorwayIds as string[] | undefined)?.length
+        ? (i.colorwayIds as string[])
+        : [null]
+
+      const created: string[] = []
+      const skipped: string[] = []
+      for (const colorwayId of colorwayIds) {
+        for (const size of sizes) {
+          const exists = product.variants.some((v) => v.colorwayId === colorwayId && v.size === size)
+          const label = [
+            product.name,
+            product.colorways.find((c) => c.id === colorwayId)?.customerName,
+            size,
+          ].filter(Boolean).join(' / ')
+          if (exists) { skipped.push(label); continue }
+          await db.productVariant.create({
+            // onHandQty stays null — unknown, not zero. Nothing has been made
+            // yet, and a real number arrives from a count or from Shopify.
+            data: { productId: product.id, colorwayId, size },
+          })
+          created.push(label)
+        }
+      }
+      return {
+        created: created.length, skipped: skipped.length, names: created,
+        tellTheUser:
+          `${created.length} variant${created.length === 1 ? '' : 's'} created for ${product.name}` +
+          (skipped.length ? `, ${skipped.length} already existed` : '') +
+          '. They can be ordered against now; counts stay unknown until something is made or counted.',
+      }
+    },
+  },
+
   update_colorway: {
     def: {
       name: 'update_colorway',
