@@ -29,7 +29,7 @@ export async function buildCatalog(): Promise<string> {
     db.actionItem.findMany({ where: { resolved: false }, orderBy: { createdAt: 'asc' } }),
     db.purchaseOrder.findMany({
       where: { status: { in: ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'] } },
-      include: { vendor: true, forProduct: true, lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
+      include: { vendor: true, forProduct: true, lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
     }),
     db.productionRun.findMany({
       where: { status: { notIn: ['RECEIVED', 'CANCELLED'] } },

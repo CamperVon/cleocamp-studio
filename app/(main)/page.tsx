@@ -46,7 +46,7 @@ export default async function Today() {
       db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(7) } } }),
       db.purchaseOrder.findMany({
         where: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } },
-        include: { vendor: true, forProduct: true, lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
+        include: { vendor: true, forProduct: true, lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
         orderBy: { expectedAt: 'asc' },
       }),
       db.productionRun.findMany({

@@ -31,7 +31,7 @@ export default async function PurchaseOrders() {
     orderBy: { createdAt: 'desc' },
     include: {
       vendor: true, forProduct: true,
-      lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } },
+      lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } },
     },
   })
 

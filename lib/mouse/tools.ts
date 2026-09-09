@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
+import { poLineLabel } from '@/lib/po'
 
 /** A tool definition paired with the code that runs it. */
 type Tool = {
@@ -562,6 +563,70 @@ export const TOOLS: Record<string, Tool> = {
     run: async (i) => db.colorway.create({ data: i, select: { id: true, customerName: true } }),
   },
 
+  merge_colorway: {
+    def: {
+      name: 'merge_colorway',
+      description:
+        'Fold a duplicate colour into the real one — two names for a single object, which ' +
+        'is how "Leather", "Chocolate Suede" and "Earthy Chocolate Suede" ended up as three ' +
+        'rows for one bag. Everything on the duplicate moves to the one being kept, and the ' +
+        'duplicate is removed. Use it the moment a duplicate is confirmed rather than ' +
+        'leaving both in place: two rows for one object means two counts, and one of them ' +
+        'is always wrong. If the keeper should also be renamed, do that with update_colorway ' +
+        'AFTER merging — the duplicate\'s name is freed up by the merge.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          duplicateId: str('The colourway to remove'),
+          keepId: str('The colourway to keep — normally the one that has the Shopify variant'),
+        },
+        required: ['duplicateId', 'keepId'],
+      },
+    },
+    run: async (i) => {
+      const [dupe, keep] = await Promise.all([
+        db.colorway.findUnique({ where: { id: i.duplicateId as string }, include: { variants: true } }),
+        db.colorway.findUnique({ where: { id: i.keepId as string }, include: { variants: true } }),
+      ])
+      if (!dupe) return { error: `No colourway ${i.duplicateId}` }
+      if (!keep) return { error: `No colourway ${i.keepId}` }
+      if (dupe.id === keep.id) return { error: 'Those are the same colourway.' }
+      if (dupe.productId !== keep.productId) {
+        return { error: `"${dupe.customerName}" and "${keep.customerName}" are on different products — that is not a duplicate.` }
+      }
+
+      // Refuse rather than guess when both sides carry real variants: which
+      // Shopify row survives is a decision about inventory, and merging the
+      // wrong way silently orphans a count. A duplicate with nothing on it is
+      // the ordinary case and is safe.
+      const dupeLinked = dupe.variants.filter((v) => v.shopifyVariantId !== null)
+      if (dupeLinked.length && keep.variants.length) {
+        return {
+          error:
+            `"${dupe.customerName}" has ${dupeLinked.length} variant(s) linked to Shopify and ` +
+            `"${keep.customerName}" has variants too. Merging would have to drop one side's ` +
+            `Shopify link and its count with it. Say which Shopify variant is the real one first.`,
+        }
+      }
+
+      const moved = await db.productVariant.updateMany({
+        where: { colorwayId: dupe.id },
+        data: { colorwayId: keep.id },
+      })
+      await db.colorway.delete({ where: { id: dupe.id } })
+      return {
+        merged: true,
+        movedVariants: moved.count,
+        freedName: dupe.customerName,
+        tellTheUser:
+          `"${dupe.customerName}" folded into "${keep.customerName}"` +
+          (moved.count ? `, ${moved.count} variant(s) moved across` : '') +
+          `. One row for one colour now. The name "${dupe.customerName}" is free if the ` +
+          `kept colour should take it.`,
+      }
+    },
+  },
+
   create_product_variants: {
     def: {
       name: 'create_product_variants',
@@ -1035,7 +1100,7 @@ export const TOOLS: Record<string, Tool> = {
         },
         include: {
           vendor: true,
-          lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } },
+          lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } },
         },
       })
       const total = po.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
@@ -1130,10 +1195,12 @@ export const TOOLS: Record<string, Tool> = {
         'Change the quantity, unit or price of one or more existing lines on a DRAFT — a ' +
         'corrected price, a quantity that changed, a tier rate applying to the whole order. ' +
         'Edits the draft in place: no new PO number, nothing to cancel. Each line is matched ' +
-        'by its componentId, productVariantId or description (whichever the order already ' +
-        'uses) — give only the field(s) that changed, the rest of that line is untouched. ' +
-        'To correct the wording of a described line, match it on its current description and ' +
-        'pass newDescription. Only works on a ' +
+        'by its LINE NUMBER as printed on the document — line 1 is the top row — which is ' +
+        'always available and never needs the exact wording guessed at. componentId or ' +
+        'productVariantId also match, when you have one to hand. Give only the field(s) ' +
+        'that changed, the rest of that line is untouched. newDescription rewrites a ' +
+        'described line; setProductVariantId turns one into a real catalogue line, which ' +
+        'is what pulls the product photo onto the document. Only works on a ' +
         'DRAFT; a sent order is a real document already in someone else\'s hands.',
       input_schema: {
         type: 'object',
@@ -1145,6 +1212,7 @@ export const TOOLS: Record<string, Tool> = {
             items: {
               type: 'object' as const,
               properties: {
+                lineNumber: num('Which line, counting from 1 down the document. The reliable way to point at a line.'),
                 componentId: str('Matches an existing component line'),
                 productVariantId: str('Matches an existing variant line'),
                 description: str('Matches an existing described line by its current wording'),
@@ -1152,6 +1220,12 @@ export const TOOLS: Record<string, Tool> = {
                 unit: str('New unit, if it changed'),
                 unitCostCents: num('New price per unit in cents, if it changed'),
                 newDescription: str('Rewrite a described line — the wording the vendor reads'),
+                setProductVariantId: str(
+                  'Attach a real catalogue variant to a line that was written as a ' +
+                  'description. Use this the moment a variant turns out to exist after ' +
+                  'all: the line then carries the variant\'s name, style number and photo ' +
+                  'like every other line, instead of being loose text.',
+                ),
               },
             },
           },
@@ -1162,7 +1236,9 @@ export const TOOLS: Record<string, Tool> = {
     run: async (i) => {
       const po = await db.purchaseOrder.findFirst({
         where: { poNumber: String(i.poNumber) },
-        include: { lines: true },
+        // Ordered and labelled, so line numbers here mean the same rows in the
+        // same order as the document the person is reading them off.
+        include: { lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
       })
       if (!po) return { error: `No purchase order ${i.poNumber}` }
       if (po.status !== 'DRAFT') {
@@ -1171,13 +1247,28 @@ export const TOOLS: Record<string, Tool> = {
 
       const results: string[] = []
       for (const l of i.lines as any[]) {
-        const existing = po.lines.find((x) =>
-          (l.componentId && x.componentId === l.componentId) ||
-          (l.productVariantId && x.productVariantId === l.productVariantId) ||
-          (l.description && x.description === l.description))
-        const named = l.componentId ?? l.productVariantId ?? l.description
+        // Line number first. Matching a line by its exact free text failed three
+        // times in a row on PO 2370 — Studio Mouse could not see the document
+        // and had to ask Brandon to type the wording back, which is the system
+        // asking a person to do its job. The number is on the page in front of
+        // whoever is asking.
+        const existing =
+          l.lineNumber !== undefined
+            ? po.lines[Number(l.lineNumber) - 1]
+            : po.lines.find((x) =>
+                (l.componentId && x.componentId === l.componentId) ||
+                (l.productVariantId && x.productVariantId === l.productVariantId) ||
+                (l.description && x.description === l.description))
+        const named =
+          l.lineNumber !== undefined
+            ? `line ${l.lineNumber}`
+            : (l.componentId ?? l.productVariantId ?? l.description)
         if (!existing) {
-          results.push(`no matching line for ${named} — nothing changed for it`)
+          results.push(
+            `no matching line for ${named} — nothing changed for it. ` +
+            `This order has ${po.lines.length} line${po.lines.length === 1 ? '' : 's'}; ` +
+            `they are: ${po.lines.map((x, n) => `${n + 1}. ${poLineLabel(x)}`).join(', ')}`,
+          )
           continue
         }
         const data: any = {}
@@ -1185,6 +1276,14 @@ export const TOOLS: Record<string, Tool> = {
         if (l.unit !== undefined) data.unit = l.unit
         if (l.unitCostCents !== undefined) data.unitCostCents = l.unitCostCents
         if (l.newDescription !== undefined) data.description = l.newDescription
+        if (l.setProductVariantId !== undefined) {
+          const v = await db.productVariant.findUnique({ where: { id: l.setProductVariantId } })
+          if (!v) { results.push(`no variant ${l.setProductVariantId} — line left as it was`); continue }
+          // A line names one thing: once it points at a variant, the loose
+          // text is gone, not kept alongside as a second opinion.
+          data.productVariantId = v.id
+          data.description = null
+        }
         if (Object.keys(data).length === 0) continue
         await db.purchaseOrderLine.update({ where: { id: existing.id }, data })
         results.push(`updated ${named}`)
@@ -1192,7 +1291,7 @@ export const TOOLS: Record<string, Tool> = {
 
       const updated = await db.purchaseOrder.findFirst({
         where: { id: po.id },
-        include: { lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
+        include: { lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
       })
       const total = updated!.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
       return { poNumber: po.poNumber, results, newTotalDollars: (total / 100).toFixed(2) }

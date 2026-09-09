@@ -46,7 +46,7 @@ export async function getDailyBrief(): Promise<{ text: string; fresh: boolean } 
     db.actionItem.findMany({ where: { resolved: false }, take: 30, orderBy: { createdAt: 'asc' } }),
     db.purchaseOrder.findMany({
       where: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } },
-      include: { vendor: true, lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
+      include: { vendor: true, lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
     }),
     db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(7) } } }),
     db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(1) } } }),

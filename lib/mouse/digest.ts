@@ -25,7 +25,7 @@ export async function composeDigest(kind: 'DAILY' | 'WEEKLY' | 'MONTHLY'): Promi
     db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(days) } } }),
     db.purchaseOrder.findMany({
       where: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } },
-      include: { vendor: true, lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
+      include: { vendor: true, lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
     }),
   ])
 

@@ -31,7 +31,7 @@ export async function addInFlightUpdate(
   } else {
     const p = await db.purchaseOrder.findUnique({
       where: { id },
-      include: { vendor: true, lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
+      include: { vendor: true, lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
     })
     if (!p) return
     subject =

@@ -18,7 +18,7 @@ export default async function Finances() {
     db.purchaseOrder.findMany({
       orderBy: { createdAt: 'desc' },
       take: 10,
-      include: { vendor: true, forProduct: true, lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
+      include: { vendor: true, forProduct: true, lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
     }),
   ])
   const open = pos.filter((p) => p.status === 'SENT' || p.status === 'PARTIALLY_RECEIVED')

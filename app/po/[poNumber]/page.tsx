@@ -24,7 +24,7 @@ export default async function PurchaseOrderDoc({
     where: { poNumber },
     include: {
       vendor: true, forProduct: true,
-      lines: { include: { component: true, productVariant: { include: { product: true, colorway: true } } } },
+      lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } },
     },
   })
   if (!po) notFound()
