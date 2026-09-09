@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
+import { asDocLanguage } from '@/lib/po-strings'
 
 /** A tool definition paired with the code that runs it. */
 type Tool = {
@@ -460,6 +461,11 @@ export const TOOLS: Record<string, Tool> = {
           orderMethod: str('How orders are placed'),
           paymentTerms: str('e.g. COD, Net 30'),
           leadTimeDays: num('Turnaround in days. For a range, record the longer end.'),
+          documentLanguage: { type: 'string' as const, enum: ['en', 'es', 'both'],
+            description:
+              'What language this vendor\'s purchase orders are written in, from now on — ' +
+              '"es", or "both" for bilingual. Set it once here rather than saying it on ' +
+              'every order. A single order can still override it.' },
           active: { type: 'boolean' as const, description: 'False when replaced' },
           notes: str('Replaces the existing note'),
         },
@@ -982,6 +988,26 @@ export const TOOLS: Record<string, Tool> = {
           depositPercent: num('Percent due at order'),
           netDaysAfterDelivery: num('Days after delivery the balance is due'),
           notes: str('Anything the vendor should know'),
+          language: { type: 'string' as const, enum: ['en', 'es', 'both'],
+            description:
+              'What language the DOCUMENT is written in — "es" for Spanish throughout, ' +
+              '"both" for a bilingual document with English and Spanish labels side by side, ' +
+              'which suits a shop where the office and the floor read different languages. ' +
+              'Defaults to the vendor\'s own setting. This translates the printed labels and ' +
+              'dates only: notes, payment terms, units and any line you write out yourself ' +
+              'are content, so WRITE THOSE IN THE DOCUMENT\'S LANGUAGE when you write them. ' +
+              'Product and colourway names never translate — "Earthy Chocolate Suede" is what ' +
+              'the thing is called.' },
+          supersedes: {
+            type: 'array' as const,
+            description:
+              'PO numbers this order replaces. They are cancelled as part of creating this ' +
+              'one, each noting the number that replaced it. ALWAYS use this when redrafting ' +
+              'or combining orders — never create the replacement and cancel the old ones as ' +
+              'a separate step afterwards, which is how a superseded draft gets left sitting ' +
+              'in the drafts list looking live.',
+            items: { type: 'string' as const },
+          },
         },
         required: ['vendorId', 'forProductId', 'lines'],
       },
@@ -1048,6 +1074,12 @@ export const TOOLS: Record<string, Tool> = {
         return null
       }
 
+      // Language inherits from the vendor the same way terms and the delivery
+      // address do — "Lorena and Santos get Spanish" is said once, not on
+      // every order. A single order still overrides it.
+      const vendorRow = await db.vendor.findUnique({ where: { id: i.vendorId as string }, select: { documentLanguage: true } })
+      const language = take(i.language as string | undefined, vendorRow?.documentLanguage ?? null, 'document language') ?? 'en'
+
       const deliverTo = take(i.deliverTo, previous?.deliverTo ?? null, 'delivery address')
       const paymentTerms = take(i.paymentTerms, previous?.paymentTerms ?? null, 'payment terms')
       const depositPercent = take(i.depositPercent, previous?.depositPercent ?? null, 'deposit percentage')
@@ -1096,6 +1128,7 @@ export const TOOLS: Record<string, Tool> = {
           depositPercent,
           netDaysAfterDelivery: netDays,
           notes: i.notes ?? null,
+          language,
           lines: { create: lines },
         },
         include: {
@@ -1103,6 +1136,28 @@ export const TOOLS: Record<string, Tool> = {
           lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } },
         },
       })
+      // Cancelling what this order replaces is part of creating it, not a
+      // follow-up step. PO 2371 combined 2366 and 2368 and both were left
+      // sitting in the drafts list looking live — the tool to cancel them
+      // existed and worked, it just had to be remembered separately, twice,
+      // and was not. A step that is only sometimes taken is a step in the
+      // wrong place.
+      const superseded: string[] = []
+      const notFound: string[] = []
+      for (const n of ((i.supersedes as string[] | undefined) ?? []).map(String)) {
+        const old = await db.purchaseOrder.findFirst({ where: { poNumber: n } })
+        if (!old) { notFound.push(n); continue }
+        if (old.status === 'CANCELLED') { superseded.push(n); continue }
+        await db.purchaseOrder.update({
+          where: { id: old.id },
+          data: {
+            status: 'CANCELLED',
+            notes: `Superseded by PO ${poNumber}.${old.notes ? ` ${old.notes}` : ''}`,
+          },
+        })
+        superseded.push(n)
+      }
+
       const total = po.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
       const lineName = (l: (typeof po.lines)[number]) =>
         l.component
@@ -1118,9 +1173,13 @@ export const TOOLS: Record<string, Tool> = {
         totalDollars: (total / 100).toFixed(2),
         lines: po.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${lineName(l)}`),
         document: `/po/${po.poNumber}`,
+        supersededAndCancelled: superseded.length ? superseded : undefined,
+        supersedesNotFound: notFound.length ? notFound : undefined,
         carriedOverFromLastOrder: inherited.length ? inherited : 'nothing — this is a first order for this vendor',
         tellTheUser:
           `Drafted as PO ${po.poNumber}. Not sent — open /po/${po.poNumber} to review and print. ` +
+          (superseded.length ? `PO ${superseded.join(' and ')} cancelled, replaced by this one. ` : '') +
+          (notFound.length ? `No PO ${notFound.join(' or ')} to cancel — check the number. ` : '') +
           (inherited.length
             ? `Carried over from the last ${po.vendor.name} order: ${inherited.join(', ')}. Say if any of that has changed.`
             : (() => {
@@ -1168,6 +1227,16 @@ export const TOOLS: Record<string, Tool> = {
             'document from now on, use update_document_defaults instead.',
           ),
           notes: str('Anything else'),
+          language: { type: 'string' as const, enum: ['en', 'es', 'both'],
+            description:
+              'What language the DOCUMENT is written in — "es" for Spanish throughout, ' +
+              '"both" for a bilingual document with English and Spanish labels side by side, ' +
+              'which suits a shop where the office and the floor read different languages. ' +
+              'Defaults to the vendor\'s own setting. This translates the printed labels and ' +
+              'dates only: notes, payment terms, units and any line you write out yourself ' +
+              'are content, so WRITE THOSE IN THE DOCUMENT\'S LANGUAGE when you write them. ' +
+              'Product and colourway names never translate — "Earthy Chocolate Suede" is what ' +
+              'the thing is called.' },
         },
         required: ['poNumber'],
       },
@@ -1342,10 +1411,27 @@ export const TOOLS: Record<string, Tool> = {
       const pdf = await renderPurchaseOrderPdf(po.poNumber, { asSent: true })
       if (!pdf) return { sent: false, reason: 'could not generate the PDF' }
 
-      const body =
-        (i.message ? `${i.message}\n\n` : '') +
-        `Please see the attached purchase order (No. ${po.poNumber}). Please confirm receipt ` +
-        `and expected date.\n\nBrandon Camp\nbrandon@cleocamp.com · 310-622-3898`
+      // The covering email follows the document. Sending a Spanish purchase
+      // order under an English email is half a job, and the half that arrives
+      // first. Fixed sentences, same as the document's labels — anything the
+      // caller writes in `message` is theirs to put in the right language.
+      const lang = asDocLanguage(po.language)
+      const signature = `\n\nBrandon Camp\nbrandon@cleocamp.com · 310-622-3898`
+      const covering =
+        lang === 'es'
+          ? `Adjunto encontrará la orden de compra (N.º ${po.poNumber}). Favor de confirmar ` +
+            `la recepción y la fecha estimada de envío.`
+          : lang === 'both'
+            ? `Please see the attached purchase order (No. ${po.poNumber}). Please confirm ` +
+              `receipt and expected date.\n\nAdjunto encontrará la orden de compra ` +
+              `(N.º ${po.poNumber}). Favor de confirmar la recepción y la fecha estimada de envío.`
+            : `Please see the attached purchase order (No. ${po.poNumber}). Please confirm ` +
+              `receipt and expected date.`
+      const body = (i.message ? `${i.message}\n\n` : '') + covering + signature
+      const subject =
+        lang === 'es'
+          ? `Orden de Compra ${po.poNumber} — Cleo Couture LLC`
+          : `Purchase Order ${po.poNumber} — Cleo Couture LLC`
 
       // Standing recipients on this vendor (a production manager, etc.) —
       // set with update_vendor's ccEmails, always included, never asked
@@ -1361,7 +1447,7 @@ export const TOOLS: Record<string, Tool> = {
       const { sendEmail } = await import('@/lib/email')
       const res = await sendEmail({
         to: [po.vendor.email], cc,
-        subject: `Purchase Order ${po.poNumber} — Cleo Couture LLC`,
+        subject,
         text: body,
         attachments: [{ filename: `PO-${po.poNumber}.pdf`, content: pdf }],
       })
@@ -1375,7 +1461,7 @@ export const TOOLS: Record<string, Tool> = {
         db.sentEmail.create({
           data: {
             toAddress: po.vendor.email, ccAddress: cc.join(', '),
-            subject: `Purchase Order ${po.poNumber} — Cleo Couture LLC`, body,
+            subject, body,
             resendId: (res as { id?: string }).id ?? null, sentBy: 'chat (send_purchase_order)',
           },
         }),
@@ -1616,13 +1702,18 @@ export const TOOLS: Record<string, Tool> = {
         properties: {
           billToLines: str('The bill-to block, one line per line. Replaces what is there.'),
           confirmLine: str('The standing sentence above the contacts, e.g. "Please confirm receipt and expected ship date."'),
+          confirmLineEs: str(
+            'The same sentence in Spanish, used on a Spanish or bilingual order, e.g. ' +
+            '"Favor de confirmar la recepción y la fecha estimada de envío." Written once ' +
+            'and stored, never translated on the fly — a vendor acts on this sentence.',
+          ),
           contactLines: str('Who to confirm with, one per line — name · email · phone. Replaces what is there, so include everyone who should stay.'),
         },
       },
     },
     run: async (i) => {
       const data: any = {}
-      for (const k of ['billToLines', 'confirmLine', 'contactLines'] as const) {
+      for (const k of ['billToLines', 'confirmLine', 'confirmLineEs', 'contactLines'] as const) {
         if (i[k] !== undefined && i[k] !== null) data[k] = i[k]
       }
       if (!Object.keys(data).length) return { error: 'Nothing given to change.' }
@@ -1638,7 +1729,7 @@ export const TOOLS: Record<string, Tool> = {
       })
       return {
         changed: Object.keys(data),
-        nowReads: { billTo: row.billToLines, confirmLine: row.confirmLine, contacts: row.contactLines },
+        nowReads: { billTo: row.billToLines, confirmLine: row.confirmLine, confirmLineEs: row.confirmLineEs, contacts: row.contactLines },
         tellTheUser: 'Changed on every document from now on, including ones already drafted — they render fresh each time.',
       }
     },

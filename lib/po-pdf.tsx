@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { Document, Page, Text, View, Image, Font, StyleSheet, renderToBuffer } from '@react-pdf/renderer'
 import { db } from '@/lib/db'
+import { asDocLanguage, confirmSentence, formatDate, label, type DocLanguage } from '@/lib/po-strings'
 
 /**
  * The same purchase order as app/po/[poNumber]/page.tsx, as an actual PDF
@@ -89,10 +90,10 @@ async function loadPo(poNumber: string) {
 type DocContent = { billTo: string[]; confirmLine: string; contactLines: string[] }
 
 function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocContent }) {
+  const lang: DocLanguage = asDocLanguage(po.language)
+  const t = (k: Parameters<typeof label>[1]) => label(lang, k)
   const total = po.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
-  const date = (po.orderedAt ?? po.createdAt).toLocaleDateString('en-US', {
-    timeZone: 'America/Los_Angeles', month: 'long', day: 'numeric', year: 'numeric',
-  })
+  const date = formatDate(lang, po.orderedAt ?? po.createdAt)
 
   // See the same fix, and why, in app/po/[poNumber]/page.tsx: notes is
   // exactly what was actually written, nothing synthesized per line.
@@ -100,7 +101,7 @@ function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocContent }
 
   const lineLabel = (l: (typeof po.lines)[number]) => {
     if (l.component) {
-      return `${l.component.vendorSku ? `Style ${l.component.vendorSku} — ` : ''}${l.component.vendorDescription ?? l.component.name}`
+      return `${l.component.vendorSku ? `${t('style')} ${l.component.vendorSku} — ` : ''}${l.component.vendorDescription ?? l.component.name}`
     }
     // A line describing something the catalogue does not hold yet — a new
     // colour, a sample size. Its text is the whole label; there is no sku or
@@ -108,7 +109,7 @@ function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocContent }
     const v = l.productVariant
     if (!v) return l.description ?? ''
     return (
-      `${v.sku ? `Style ${v.sku} — ` : ''}${v.product.name}` +
+      `${v.sku ? `${t('style')} ${v.sku} — ` : ''}${v.product.name}` +
       `${v.colorway ? ` — ${v.colorway.customerName}` : ''}` +
       `${v.size ? ` / ${v.size}` : ''}`
     )
@@ -123,18 +124,18 @@ function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocContent }
             <Text style={styles.sub}>CLEO COUTURE LLC</Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={styles.docTitle}>PURCHASE ORDER</Text>
-            <Text style={{ marginTop: 6 }}><Text style={styles.muted}>No. </Text>{po.poNumber}</Text>
-            {po.forProduct ? <Text><Text style={styles.muted}>For </Text>{po.forProduct.name}</Text> : null}
-            <Text><Text style={styles.muted}>Date </Text>{date}</Text>
+            <Text style={styles.docTitle}>{t('purchaseOrder')}</Text>
+            <Text style={{ marginTop: 6 }}><Text style={styles.muted}>{t('no')} </Text>{po.poNumber}</Text>
+            {po.forProduct ? <Text><Text style={styles.muted}>{t('for')} </Text>{po.forProduct.name}</Text> : null}
+            <Text><Text style={styles.muted}>{t('date')} </Text>{date}</Text>
             {po.expectedAt ? (
               <Text>
-                <Text style={styles.muted}>Expected </Text>
-                {po.expectedAt.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', day: 'numeric', year: 'numeric' })}
+                <Text style={styles.muted}>{t('expected')} </Text>
+                {formatDate(lang, po.expectedAt, 'UTC')}
               </Text>
             ) : null}
-            {po.paymentTerms ? <Text><Text style={styles.muted}>Terms </Text>{po.paymentTerms}</Text> : null}
-            {po.status === 'DRAFT' ? <Text style={{ marginTop: 3, fontSize: 8, color: '#8C3A2B' }}>DRAFT — NOT SENT</Text> : null}
+            {po.paymentTerms ? <Text><Text style={styles.muted}>{t('terms')} </Text>{po.paymentTerms}</Text> : null}
+            {po.status === 'DRAFT' ? <Text style={{ marginTop: 3, fontSize: 8, color: '#8C3A2B' }}>{t('draft')}</Text> : null}
           </View>
         </View>
 
@@ -142,30 +143,30 @@ function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocContent }
 
         <View style={styles.row}>
           <View style={styles.addrBlock}>
-            <Text style={styles.addrLabel}>VENDOR</Text>
+            <Text style={styles.addrLabel}>{t('vendor')}</Text>
             {/* Registered name, not Cleo's own name for them — see the same
                 fix in app/po/[poNumber]/page.tsx. */}
             <Text style={styles.addrLine}>{po.vendor.legalName ?? po.vendor.name}</Text>
-            {po.vendor.contactName ? <Text style={styles.addrLine}>Attn: {po.vendor.contactName}</Text> : null}
+            {po.vendor.contactName ? <Text style={styles.addrLine}>{t('attn')} {po.vendor.contactName}</Text> : null}
             {po.vendor.address ? <Text style={styles.addrLine}>{po.vendor.address}</Text> : null}
           </View>
           <View style={styles.addrBlock}>
-            <Text style={styles.addrLabel}>ADDRESS</Text>
+            <Text style={styles.addrLabel}>{t('address')}</Text>
             {(po.deliverTo ?? '').split('\n').filter(Boolean).map((l, i) => <Text key={i} style={styles.addrLine}>{l}</Text>)}
           </View>
           <View style={styles.addrBlock}>
-            <Text style={styles.addrLabel}>BILL TO</Text>
+            <Text style={styles.addrLabel}>{t('billTo')}</Text>
             {content.billTo.map((l, i) => <Text key={i} style={styles.addrLine}>{l}</Text>)}
           </View>
         </View>
 
         <View style={styles.table}>
           <View style={styles.thead}>
-            <Text style={[styles.th, { flex: 5 }]}>ITEM</Text>
-            <Text style={[styles.th, styles.tdQty]}>QTY</Text>
-            <Text style={[styles.th, styles.tdUnit]}>UNIT</Text>
-            <Text style={[styles.th, styles.tdPrice]}>PRICE</Text>
-            <Text style={[styles.th, styles.tdAmount]}>AMOUNT</Text>
+            <Text style={[styles.th, { flex: 5 }]}>{t('item')}</Text>
+            <Text style={[styles.th, styles.tdQty]}>{t('qty')}</Text>
+            <Text style={[styles.th, styles.tdUnit]}>{t('unit')}</Text>
+            <Text style={[styles.th, styles.tdPrice]}>{t('price')}</Text>
+            <Text style={[styles.th, styles.tdAmount]}>{t('amount')}</Text>
           </View>
           {po.lines.map((l) => (
             <View key={l.id} style={styles.tr}>
@@ -182,13 +183,13 @@ function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocContent }
         </View>
 
         <View style={styles.totalRow}>
-          <Text style={{ width: 100 }}>Total</Text>
+          <Text style={{ width: 100 }}>{t('total')}</Text>
           <Text style={{ width: 90, textAlign: 'right' }}>{money(total)}</Text>
         </View>
 
         {notes.length ? (
           <View style={styles.notes}>
-            <Text style={styles.addrLabel}>NOTES</Text>
+            <Text style={styles.addrLabel}>{t('notes')}</Text>
             {notes.map((n, i) => <Text key={i} style={{ marginBottom: 3 }}>{'• ' + n}</Text>)}
           </View>
         ) : null}
@@ -229,7 +230,8 @@ export async function renderPurchaseOrderPdf(
   const forDoc = opts.asSent && po.status === 'DRAFT' ? { ...po, status: 'SENT' as const } : po
   const content: DocContent = {
     billTo: (defaults?.billToLines ?? '').split('\n').filter(Boolean),
-    confirmLine: defaults?.confirmLine ?? '',
+    // Spanish is a stored sentence, not a render-time translation.
+    confirmLine: confirmSentence(asDocLanguage(po.language), defaults?.confirmLine ?? '', defaults?.confirmLineEs),
     // A per-order override wins; almost nothing sets one.
     contactLines: (po.contactLines ?? defaults?.contactLines ?? '').split('\n').filter(Boolean),
   }

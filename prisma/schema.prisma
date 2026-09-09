@@ -84,6 +84,13 @@ model Vendor {
   /// Studio Mouse tells Cleo which one she's dealing with.
   orderMethod  String?
   paymentTerms String?    // "COD", "Net 30"
+  /// What language this vendor's documents are written in — "en" or "es",
+  /// or "both" for a bilingual document. The default for every order to
+  /// them, which a single order can still override. Null means English.
+  /// Lorena and Santos and Empire are LA cut-and-sew shops; the office
+  /// reading the PO and the floor cutting from it are not always the same
+  /// people, which is what "both" is for.
+  documentLanguage String?
   /// Turnaround in days. On a manufacturer this is cut-and-sew time; on a dye
   /// house it is dyeing time, which is a separate stage that adds to it.
   leadTimeDays Int?
@@ -446,6 +453,12 @@ model PurchaseOrder {
   /// content change, not a template change, and nobody should have to know
   /// the difference to make it.
   contactLines String?
+  /// "en", "es" or "both" — what language the document renders in, labels
+  /// and dates. Defaults from the vendor's documentLanguage when not given.
+  /// Only the fixed chrome is translated by the app; notes, terms and line
+  /// text are content, written in the right language when they are written.
+  /// See lib/po-strings.ts.
+  language   String              @default("en")
   /// Percentage due at order rather than on delivery. RichLine take 50% up
   /// front on the lurex stripe.
   depositPercent Int?
@@ -706,6 +719,10 @@ model DocumentDefaults {
   billToLines  String
   /// The standing sentence above the contact block.
   confirmLine  String
+  /// The same sentence in Spanish, for an order rendered in Spanish. Null
+  /// falls back to the English one rather than machine-translating it — a
+  /// sentence a vendor acts on is content, not chrome. See lib/po-strings.ts.
+  confirmLineEs String?
   /// Who to confirm with, newline-separated. A PO can override this for
   /// itself; most never do.
   contactLines String

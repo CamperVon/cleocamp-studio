@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { db } from '@/lib/db'
+import { asDocLanguage, confirmSentence, formatDate, label, type DocLanguage } from '@/lib/po-strings'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,16 +30,19 @@ export default async function PurchaseOrderDoc({
   })
   if (!po) notFound()
 
+  const lang: DocLanguage = asDocLanguage(po.language)
+  const t = (k: Parameters<typeof label>[1]) => label(lang, k)
   const total = po.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
-  const date = (po.orderedAt ?? po.createdAt).toLocaleDateString('en-US', {
-    timeZone: 'America/Los_Angeles', month: 'long', day: 'numeric', year: 'numeric',
-  })
+  const date = formatDate(lang, po.orderedAt ?? po.createdAt)
 
   // Content, not layout — editable by anyone talking to Studio Mouse. See
   // DocumentDefaults in schema.prisma for why this stopped being hardcoded.
   const defaults = await db.documentDefaults.findUnique({ where: { id: 'singleton' } })
   const billTo = (defaults?.billToLines ?? '').split('\n').filter(Boolean)
-  const confirmLine = defaults?.confirmLine ?? ''
+  // The one standing sentence a vendor acts on. Spanish is a stored
+  // sentence, not a translation made at render time — see lib/po-strings.ts
+  // on why chrome translates and content does not.
+  const confirmLine = confirmSentence(lang, defaults?.confirmLine ?? '', defaults?.confirmLineEs)
   const contactLines = (po.contactLines ?? defaults?.contactLines ?? '').split('\n').filter(Boolean)
 
   // Brandon, 4 Sept 2026: "notes at the end of pdf should only be notes i
@@ -63,25 +67,25 @@ export default async function PurchaseOrderDoc({
           </div>
         </div>
         <div className="text-right">
-          <div className="text-[14pt] tracking-[0.08em]">PURCHASE ORDER</div>
+          <div className="text-[14pt] tracking-[0.08em]">{t('purchaseOrder')}</div>
           <div className="mt-2 tabular-nums">
-            <span className="text-[#6A736F]">No. </span>{po.poNumber}
+            <span className="text-[#6A736F]">{t('no')} </span>{po.poNumber}
           </div>
           {po.forProduct ? (
-            <div><span className="text-[#6A736F]">For </span>{po.forProduct.name}</div>
+            <div><span className="text-[#6A736F]">{t('for')} </span>{po.forProduct.name}</div>
           ) : null}
-          <div><span className="text-[#6A736F]">Date </span>{date}</div>
+          <div><span className="text-[#6A736F]">{t('date')} </span>{date}</div>
           {po.expectedAt ? (
             <div>
-              <span className="text-[#6A736F]">Expected </span>
-              {po.expectedAt.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', day: 'numeric', year: 'numeric' })}
+              <span className="text-[#6A736F]">{t('expected')} </span>
+              {formatDate(lang, po.expectedAt, 'UTC')}
             </div>
           ) : null}
           {po.paymentTerms ? (
-            <div><span className="text-[#6A736F]">Terms </span>{po.paymentTerms}</div>
+            <div><span className="text-[#6A736F]">{t('terms')} </span>{po.paymentTerms}</div>
           ) : null}
           {po.status === 'DRAFT' ? (
-            <div className="mt-1 text-[9pt] uppercase tracking-wider text-[#8C3A2B]">Draft — not sent</div>
+            <div className="mt-1 text-[9pt] uppercase tracking-wider text-[#8C3A2B]">{t('draft')}</div>
           ) : null}
         </div>
       </div>
@@ -94,13 +98,13 @@ export default async function PurchaseOrderDoc({
           // to the vendor, and "Antonio's" means nothing on Antonio's own
           // letterhead. legalName is exactly what a formal document needs;
           // fall back to name only if it was never given one.
-          ['Vendor', [po.vendor.legalName ?? po.vendor.name, po.vendor.contactName ? `Attn: ${po.vendor.contactName}` : '', po.vendor.address ?? '']],
+          [t('vendor'), [po.vendor.legalName ?? po.vendor.name, po.vendor.contactName ? `${t('attn')} ${po.vendor.contactName}` : '', po.vendor.address ?? '']],
           // Brandon, 4 Sept 2026: "Deliver to" read as confusing when it's
           // the same address as the vendor block — a cut-and-sew order's
           // finished goods often go right back to the maker's own address,
           // and the two side by side looked like a mistake, not a fact.
-          ['Address', (po.deliverTo ?? '').split('\n')],
-          ['Bill to', billTo],
+          [t('address'), (po.deliverTo ?? '').split('\n')],
+          [t('billTo'), billTo],
         ].map(([label, lines]) => (
           <div key={label as string} className="flex-1">
             <h2 className="mb-1.5 font-sans text-[8.5pt] uppercase tracking-[0.11em] text-[#6A736F]">
@@ -114,11 +118,11 @@ export default async function PurchaseOrderDoc({
       <table className="mt-7 w-full border-collapse">
         <thead>
           <tr className="border-b border-[#14181A] text-left font-sans text-[8pt] uppercase tracking-[0.09em] text-[#6A736F]">
-            <th className="w-1/2 pb-1.5 pr-2 font-normal">Item</th>
-            <th className="pb-1.5 pr-2 text-right font-normal">Qty</th>
-            <th className="pb-1.5 pr-2 text-right font-normal">Unit</th>
-            <th className="pb-1.5 pr-2 text-right font-normal">Price</th>
-            <th className="pb-1.5 text-right font-normal">Amount</th>
+            <th className="w-1/2 pb-1.5 pr-2 font-normal">{t('item')}</th>
+            <th className="pb-1.5 pr-2 text-right font-normal">{t('qty')}</th>
+            <th className="pb-1.5 pr-2 text-right font-normal">{t('unit')}</th>
+            <th className="pb-1.5 pr-2 text-right font-normal">{t('price')}</th>
+            <th className="pb-1.5 text-right font-normal">{t('amount')}</th>
           </tr>
         </thead>
         <tbody>
@@ -128,7 +132,7 @@ export default async function PurchaseOrderDoc({
                 {l.component ? (
                   <>
                     <div>
-                      {l.component.vendorSku ? `Style ${l.component.vendorSku} — ` : ''}
+                      {l.component.vendorSku ? `${t('style')} ${l.component.vendorSku} — ` : ''}
                       {l.component.vendorDescription ?? l.component.name}
                     </div>
                     {l.component.spec ? (
@@ -154,7 +158,7 @@ export default async function PurchaseOrderDoc({
                       />
                     ) : null}
                     <div>
-                      {l.productVariant!.sku ? `Style ${l.productVariant!.sku} — ` : ''}
+                      {l.productVariant!.sku ? `${t('style')} ${l.productVariant!.sku} — ` : ''}
                       {l.productVariant!.product.name}
                       {l.productVariant!.colorway ? ` — ${l.productVariant!.colorway.customerName}` : ''}
                       {l.productVariant!.size ? ` / ${l.productVariant!.size}` : ''}
@@ -175,14 +179,14 @@ export default async function PurchaseOrderDoc({
 
       <div className="ml-auto mt-3.5 w-[250px]">
         <div className="flex justify-between border-t border-[#14181A] pt-2 text-[12.5pt]">
-          <span>Total</span>
+          <span>{t('total')}</span>
           <span className="tabular-nums">{money(total)}</span>
         </div>
       </div>
 
       {notes.length ? (
         <div className="mt-8 border-t border-[#DEDFDB] pt-3.5 text-[9.5pt] text-[#5C6663]">
-          <h2 className="mb-1.5 font-sans text-[8.5pt] uppercase tracking-[0.11em] text-[#6A736F]">Notes</h2>
+          <h2 className="mb-1.5 font-sans text-[8.5pt] uppercase tracking-[0.11em] text-[#6A736F]">{t('notes')}</h2>
           <ul className="list-disc pl-5">
             {notes.map((n, i) => <li key={i} className="mb-1">{n}</li>)}
           </ul>
@@ -190,7 +194,7 @@ export default async function PurchaseOrderDoc({
       ) : null}
 
       <div className="mt-7 text-[9pt] text-[#8B9491]">
-        {confirmLine ? <>{confirmLine}<br /></> : null}
+        {confirmLine.split('\n').filter(Boolean).map((l, i) => <span key={i}>{l}<br /></span>)}
         {contactLines.map((l, i) => <span key={i}>{l}<br /></span>)}
       </div>
 
