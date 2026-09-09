@@ -60,6 +60,42 @@ const LABEL: Record<string, string> = {
 const ACCEPTED_TYPES = 'application/pdf,image/jpeg,image/png,image/webp'
 const MAX_FILES = 3
 const MAX_BYTES = 4 * 1024 * 1024
+/** Vercel rejects the whole request over 4.5MB, and base64 is a third bigger
+ *  than the file — so the real ceiling on what can be attached is well under
+ *  it. Measured against production: 4.0MB body arrives, 4.5MB gets a 413. */
+const MAX_TOTAL_BYTES = 3 * 1024 * 1024
+/** Claude downsamples images past ~1568px anyway, so anything bigger is
+ *  bytes spent for no extra readability. Shrinking here is what stops two
+ *  ordinary Mac screenshots from breaching the request limit at all. */
+const MAX_IMAGE_EDGE = 1568
+
+/**
+ * Re-encode an image down to something sensible before it goes anywhere.
+ * PDFs pass through untouched — they're documents, not pictures, and
+ * rasterising one would destroy it.
+ */
+async function shrinkImage(file: File): Promise<PendingFile> {
+  if (!file.type.startsWith('image/')) throw new Error('not an image')
+  const bitmap = await createImageBitmap(file)
+  const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(bitmap.width, bitmap.height))
+  const w = Math.round(bitmap.width * scale)
+  const h = Math.round(bitmap.height * scale)
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('no canvas')
+  // White behind it: JPEG has no alpha, and without this a transparent PNG
+  // comes out on black, which can bury dark text entirely.
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, w, h)
+  ctx.drawImage(bitmap, 0, 0, w, h)
+  bitmap.close()
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+  const base64 = dataUrl.split(',')[1] ?? ''
+  if (!base64) throw new Error('encode failed')
+  return { filename: file.name, mediaType: 'image/jpeg', base64 }
+}
 
 // Every turn is already saved server-side; this just remembers which thread
 // belongs to this browser so leaving the page (or refreshing it) doesn't
@@ -153,8 +189,23 @@ export function Chat() {
       })
 
     try {
-      const read1 = await Promise.all(chosen.map(read))
-      setFiles((prev) => [...prev, ...read1])
+      const read1 = await Promise.all(chosen.map((f) => shrinkImage(f).catch(() => read(f))))
+      const next = [...files, ...read1]
+      // The number that actually matters is the base64 total, not the file
+      // sizes — base64 is a third bigger, and it is what crosses the wire.
+      // Two screenshots at 2.5MB and 1MB passed the per-file check and then
+      // hit Vercel's 4.5MB request cap, which answers in plain text, not
+      // JSON, so it surfaced as "something went wrong". See send() below.
+      const totalBytes = next.reduce((n, f) => n + Math.ceil(f.base64.length * 0.75), 0)
+      if (totalBytes > MAX_TOTAL_BYTES) {
+        setFileError(
+          `Those come to ${(totalBytes / 1024 / 1024).toFixed(1)}MB together, over the ${
+            MAX_TOTAL_BYTES / 1024 / 1024
+          }MB limit. Send them in two goes.`,
+        )
+        return
+      }
+      setFiles(next)
     } catch {
       setFileError("Couldn't read that file — try again.")
     }
@@ -187,6 +238,18 @@ export function Chat() {
         body: JSON.stringify({ threadId, message: text, attachments: attached }),
       })
       if (!res.ok) {
+        // A 413 comes from Vercel, not from us, and answers in plain text —
+        // so res.json() fails, the message becomes the bare string "413",
+        // and the catch below reads that as unhelpful and shows the generic
+        // line. That is how an oversized attachment surfaced as "something
+        // went wrong reaching me" instead of saying the files were too big.
+        if (res.status === 413) {
+          throw new Error(
+            attached.length
+              ? 'Those attachments are too big to send together — try one at a time.'
+              : 'That message was too large to send.',
+          )
+        }
         const body = await res.json().catch(() => null)
         throw new Error(body?.error || `${res.status}`)
       }

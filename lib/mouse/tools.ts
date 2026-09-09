@@ -546,6 +546,46 @@ export const TOOLS: Record<string, Tool> = {
     run: async (i) => db.colorway.create({ data: i, select: { id: true, customerName: true } }),
   },
 
+  update_colorway: {
+    def: {
+      name: 'update_colorway',
+      description:
+        'Change a colour, or retire one that is no longer made — "remove cream and purple" ' +
+        'means active: false. Retiring keeps the colour and everything ever made in it, so ' +
+        'past orders and history stay readable; it just stops appearing as something current. ' +
+        'Colours are never actually deleted, for that reason. This is yours to do when asked.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          id: str('Colourway id'),
+          customerName: str('What customers see'),
+          dyeHouseName: str('What the dye house calls it'),
+          pantone: str('Pantone reference'),
+          inHouseMatch: { type: 'boolean' as const, description: 'True when matched in-house with no dye house name' },
+          active: { type: 'boolean' as const, description: 'False retires it — the honest way to "remove" a colour' },
+          notes: str('Anything worth keeping'),
+        },
+        required: ['id'],
+      },
+    },
+    run: async ({ id, ...rest }) => {
+      const data: any = {}
+      for (const [k, v] of Object.entries(rest)) if (v !== undefined && v !== null) data[k] = v
+      if (!Object.keys(data).length) return { error: 'Nothing given to change.' }
+      const c = await db.colorway.update({
+        where: { id },
+        data,
+        select: { id: true, customerName: true, active: true },
+      })
+      return {
+        ...c,
+        tellTheUser: c.active
+          ? `${c.customerName} updated.`
+          : `${c.customerName} retired — it stays on past orders and history, it just isn't current any more.`,
+      }
+    },
+  },
+
   create_production_run: {
     def: {
       name: 'create_production_run',
