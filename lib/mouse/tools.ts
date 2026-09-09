@@ -145,6 +145,22 @@ async function writeEvent(args: {
   }
 }
 
+/**
+ * Whether a product is live on Shopify — which decides whether its sizes and
+ * variants are ours to change or Shopify's.
+ *
+ * Read off the variants, not off Product.shopifyProductId: the sync writes
+ * shopifyVariantId and shopifyInventoryItemId per variant and has never set
+ * the product-level id, so it is null on all 20 products including the ones
+ * with 68 live Shopify variants between them. The first version of this
+ * guard tested that field and therefore never once fired. It looked like it
+ * worked because Studio Mouse declined the test case on its own reasoning —
+ * the code behind it would have happily made the orphan variant.
+ */
+function isListedOnShopify(product: { variants: { shopifyVariantId: string | null }[] }) {
+  return product.variants.some((v) => v.shopifyVariantId !== null)
+}
+
 export const TOOLS: Record<string, Tool> = {
   log_inventory_event: {
     def: {
@@ -581,7 +597,7 @@ export const TOOLS: Record<string, Tool> = {
         include: { variants: true, colorways: true },
       })
       if (!product) return { error: `No product ${i.productId}` }
-      if (product.shopifyProductId) {
+      if (isListedOnShopify(product)) {
         return {
           created: 0,
           error:
@@ -621,6 +637,83 @@ export const TOOLS: Record<string, Tool> = {
           `${created.length} variant${created.length === 1 ? '' : 's'} created for ${product.name}` +
           (skipped.length ? `, ${skipped.length} already existed` : '') +
           '. They can be ordered against now; counts stay unknown until something is made or counted.',
+      }
+    },
+  },
+
+  rename_variant_sizes: {
+    def: {
+      name: 'rename_variant_sizes',
+      description:
+        'Change what a product\'s sizes are called — "0" to "XS" and so on — across every ' +
+        'colourway at once. The size is a label, so renaming keeps the same variants and ' +
+        'anything already pointing at them: a PO line, a production run, a count. Use it ' +
+        'when someone tells you the size names, rather than making a second set of variants ' +
+        'under the new names. Only for a product not yet on Shopify — once it is listed, ' +
+        'Shopify owns the size names and they are changed there.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          productId: str('Product id'),
+          renames: {
+            type: 'array' as const,
+            description: 'Each size to rename, old name to new.',
+            items: {
+              type: 'object' as const,
+              properties: { from: str('Size as it reads now'), to: str('What it should read') },
+              required: ['from', 'to'],
+            },
+          },
+        },
+        required: ['productId', 'renames'],
+      },
+    },
+    run: async (i) => {
+      const product = await db.product.findUnique({
+        where: { id: i.productId as string },
+        include: { variants: true },
+      })
+      if (!product) return { error: `No product ${i.productId}` }
+      if (isListedOnShopify(product)) {
+        return {
+          renamed: 0,
+          error:
+            `${product.name} is on Shopify, and Shopify holds the size names. Renaming here ` +
+            `would leave the two disagreeing about the same variant. Change it in Shopify and ` +
+            `run sync_shopify.`,
+        }
+      }
+
+      const renames = i.renames as { from: string; to: string }[]
+
+      // Reject the whole thing rather than half-renaming a size run: a
+      // product left half "0-4" and half "XS-XL" is worse than one that
+      // never changed, and much harder to notice.
+      const problems: string[] = []
+      for (const { from, to } of renames) {
+        const matches = product.variants.filter((v) => v.size === from)
+        if (!matches.length) { problems.push(`no size "${from}" on ${product.name}`); continue }
+        const collides = product.variants.some(
+          (v) => v.size === to && !matches.some((m) => m.colorwayId === v.colorwayId && m.id === v.id),
+        )
+        if (collides) problems.push(`"${to}" is already a size on ${product.name}`)
+      }
+      if (problems.length) return { renamed: 0, error: problems.join('; ') }
+
+      let renamed = 0
+      for (const { from, to } of renames) {
+        const res = await db.productVariant.updateMany({
+          where: { productId: product.id, size: from },
+          data: { size: to },
+        })
+        renamed += res.count
+      }
+      return {
+        renamed,
+        tellTheUser:
+          `${product.name} sizes are now ` +
+          renames.map((r) => `${r.from} \u2192 ${r.to}`).join(', ') +
+          ` \u2014 ${renamed} variant${renamed === 1 ? '' : 's'} relabelled. Nothing pointing at them moved.`,
       }
     },
   },
