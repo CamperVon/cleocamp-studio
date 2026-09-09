@@ -988,7 +988,10 @@ export const TOOLS: Record<string, Tool> = {
       }
 
       const { renderPurchaseOrderPdf } = await import('@/lib/po-pdf')
-      const pdf = await renderPurchaseOrderPdf(po.poNumber)
+      // asSent: this attachment IS the sent order, even though status is
+      // written below rather than above. Without it the vendor gets a
+      // document stamped DRAFT — which RichLine did, on PO 2361.
+      const pdf = await renderPurchaseOrderPdf(po.poNumber, { asSent: true })
       if (!pdf) return { sent: false, reason: 'could not generate the PDF' }
 
       const body =

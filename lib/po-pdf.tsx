@@ -193,17 +193,36 @@ function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocContent }
 }
 
 /** Null if the PO doesn't exist. */
-export async function renderPurchaseOrderPdf(poNumber: string): Promise<Buffer | null> {
+/**
+ * @param opts.asSent Render as SENT even though the row still says DRAFT.
+ *
+ * send_purchase_order needs this. It renders the attachment, emails it, and
+ * only then writes status = SENT — deliberately, so a failed send leaves the
+ * order untouched rather than marked sent when it isn't. But that ordering
+ * meant the file in the vendor's hands was built while the row still said
+ * DRAFT, so it went out stamped "DRAFT — NOT SENT". RichLine received PO
+ * 2361 that way on 9 Sept 2026.
+ *
+ * Fixing it by flipping status first would trade a wrong document for a
+ * wrong record on a failed send. This renders the document as what it is at
+ * the moment of sending — a sent order — and leaves the database write last
+ * where it belongs.
+ */
+export async function renderPurchaseOrderPdf(
+  poNumber: string,
+  opts: { asSent?: boolean } = {},
+): Promise<Buffer | null> {
   const [po, defaults] = await Promise.all([
     loadPo(poNumber),
     db.documentDefaults.findUnique({ where: { id: 'singleton' } }),
   ])
   if (!po) return null
+  const forDoc = opts.asSent && po.status === 'DRAFT' ? { ...po, status: 'SENT' as const } : po
   const content: DocContent = {
     billTo: (defaults?.billToLines ?? '').split('\n').filter(Boolean),
     confirmLine: defaults?.confirmLine ?? '',
     // A per-order override wins; almost nothing sets one.
     contactLines: (po.contactLines ?? defaults?.contactLines ?? '').split('\n').filter(Boolean),
   }
-  return renderToBuffer(<PurchaseOrderDoc po={po} content={content} />)
+  return renderToBuffer(<PurchaseOrderDoc po={forDoc} content={content} />)
 }
