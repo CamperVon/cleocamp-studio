@@ -135,6 +135,11 @@ export default async function PurchaseOrderDoc({
                       <div className="text-[9.5pt] text-[#5C6663]">{l.component.spec}</div>
                     ) : null}
                   </>
+                ) : !l.productVariant ? (
+                  // A line for something the catalogue does not hold yet — a
+                  // colour nobody has dyed, a sample size. Its own text is the
+                  // whole label. See lib/po.ts:poLineLabel.
+                  <div>{l.description}</div>
                 ) : (
                   <div className="flex items-start gap-2.5">
                     {l.productVariant!.imageUrl ? (

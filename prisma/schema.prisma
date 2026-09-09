@@ -474,6 +474,13 @@ model PurchaseOrderLine {
   purchaseOrderId String
   componentId   String?
   productVariantId String?
+  /// What is being ordered, when it is not yet a catalogue row. A purchase
+  /// order is how a NEW thing comes into existence — a colour that does not
+  /// exist yet, a product being sampled, a size nobody has cut before — so a
+  /// line must be able to describe something the catalogue has never heard
+  /// of. Ignored when componentId or productVariantId is set; those carry
+  /// their own name. See lib/po.ts:poLineLabel.
+  description   String?
   /// Quantity in the PURCHASE unit (rolls, or finished pieces for a
   /// cut-and-sew line), with the conversion recorded so incoming stock lands
   /// in the consumption unit (yards).

@@ -601,9 +601,12 @@ export const TOOLS: Record<string, Tool> = {
         return {
           created: 0,
           error:
-            `${product.name} is already listed on Shopify. A variant made here would have no ` +
-            `Shopify link, so its count could never write back and the two would drift. Add it ` +
-            `in Shopify, then run sync_shopify to pull it in.`,
+            `${product.name} is already listed on Shopify, and a variant made here would have ` +
+            `no Shopify link — its count could never write back, and the two would drift. It ` +
+            `has to be added in Shopify and pulled in with sync_shopify. That is about the ` +
+            `COUNT and nothing else: to order this, write the purchase order line as a ` +
+            `description instead. No variant is needed to place an order, so do not hold up ` +
+            `a document waiting for one.`,
         }
       }
 
@@ -680,7 +683,8 @@ export const TOOLS: Record<string, Tool> = {
           error:
             `${product.name} is on Shopify, and Shopify holds the size names. Renaming here ` +
             `would leave the two disagreeing about the same variant. Change it in Shopify and ` +
-            `run sync_shopify.`,
+            `run sync_shopify. A purchase order does not wait on this — a line can name the ` +
+            `size however the vendor needs to read it.`,
         }
       }
 
@@ -868,7 +872,10 @@ export const TOOLS: Record<string, Tool> = {
         'Works for two kinds of order on the same template: fabric/trim from a supplier ' +
         '(componentId lines) and a cut-and-sew production order to a manufacturer, ' +
         'ordering finished units by colour and size (productVariantId lines). A single ' +
-        'order does not mix the two.',
+        'order does not mix the two. Either kind of line can instead be written out as ' +
+        'a description, for something the catalogue does not hold yet — a new colour, a ' +
+        'new product, a sample. Never refuse or delay an order because a variant is ' +
+        'missing: describe the line and draft the document.',
       input_schema: {
         type: 'object',
         properties: {
@@ -885,6 +892,14 @@ export const TOOLS: Record<string, Tool> = {
               properties: {
                 componentId: str('Component id — for fabric or trim'),
                 productVariantId: str('Product variant id — for finished units on a cut-and-sew order'),
+                description: str(
+                  'What is being ordered, written out, for anything the catalogue does not ' +
+                  'hold yet — a colour that has never been made, a product still being ' +
+                  'sampled, a one-off. Use it INSTEAD of componentId/productVariantId, ' +
+                  'never as well. Write it the way the vendor needs to read it, e.g. ' +
+                  '"Bean Bag — Red / Medium". No catalogue row is required to order ' +
+                  'something: that is what a purchase order is for.',
+                ),
                 qty: num('Quantity in the purchase unit'),
                 unit: str('e.g. yards, rolls, buttons, pcs'),
                 unitCostCents: num(
@@ -908,9 +923,21 @@ export const TOOLS: Record<string, Tool> = {
     },
     run: async (i) => {
       const rawLines = i.lines as any[]
+      // A line names one thing. It can be a component, a catalogue variant,
+      // or — for something that does not exist yet — its own description.
+      // The third case is not a loophole: ordering a colour nobody has dyed
+      // is ordinary, and refusing to write the document until the catalogue
+      // catches up gets the order no closer to being placed.
       for (const l of rawLines) {
-        if (!!l.componentId === !!l.productVariantId) {
-          return { error: 'Each line needs exactly one of componentId or productVariantId, not both or neither.' }
+        const named = [l.componentId, l.productVariantId, l.description].filter(Boolean).length
+        if (named !== 1) {
+          return {
+            error:
+              'Each line names exactly one thing: componentId for fabric or trim, ' +
+              'productVariantId for a variant already in the catalogue, or description ' +
+              'for anything not in it yet. This line gave ' +
+              (named === 0 ? 'none' : `${named}`) + '.',
+          }
         }
       }
 
@@ -931,7 +958,8 @@ export const TOOLS: Record<string, Tool> = {
             }
           }
           return {
-            productVariantId: l.productVariantId,
+            productVariantId: l.productVariantId ?? null,
+            description: l.productVariantId ? null : l.description,
             qtyOrdered: String(l.qty),
             unit: l.unit,
             // No component-style fallback cost exists for a finished unit —
@@ -969,7 +997,7 @@ export const TOOLS: Record<string, Tool> = {
       let expectedAt: Date | null = i.expectedAt ? new Date(i.expectedAt + 'T12:00:00-07:00') : null
       if (!expectedAt) {
         const componentIds = rawLines.filter((l) => l.componentId).map((l) => l.componentId)
-        const hasVariantLines = rawLines.some((l) => l.productVariantId)
+        const hasVariantLines = rawLines.some((l) => l.productVariantId || l.description)
         const [componentLeads, vendor] = await Promise.all([
           componentIds.length
             ? db.component.findMany({ where: { id: { in: componentIds } }, select: { leadTimeDays: true } })
@@ -1014,8 +1042,10 @@ export const TOOLS: Record<string, Tool> = {
       const lineName = (l: (typeof po.lines)[number]) =>
         l.component
           ? l.component.name
-          : [l.productVariant!.product.name, l.productVariant!.colorway?.customerName, l.productVariant!.size]
-              .filter(Boolean).join(' / ')
+          : l.productVariant
+            ? [l.productVariant.product.name, l.productVariant.colorway?.customerName, l.productVariant.size]
+                .filter(Boolean).join(' / ')
+            : (l.description ?? '')
       return {
         poNumber: po.poNumber,
         vendor: po.vendor.name,
@@ -1100,8 +1130,10 @@ export const TOOLS: Record<string, Tool> = {
         'Change the quantity, unit or price of one or more existing lines on a DRAFT — a ' +
         'corrected price, a quantity that changed, a tier rate applying to the whole order. ' +
         'Edits the draft in place: no new PO number, nothing to cancel. Each line is matched ' +
-        'by its componentId or productVariantId (whichever the order already uses) — give ' +
-        'only the field(s) that changed, the rest of that line is untouched. Only works on a ' +
+        'by its componentId, productVariantId or description (whichever the order already ' +
+        'uses) — give only the field(s) that changed, the rest of that line is untouched. ' +
+        'To correct the wording of a described line, match it on its current description and ' +
+        'pass newDescription. Only works on a ' +
         'DRAFT; a sent order is a real document already in someone else\'s hands.',
       input_schema: {
         type: 'object',
@@ -1115,9 +1147,11 @@ export const TOOLS: Record<string, Tool> = {
               properties: {
                 componentId: str('Matches an existing component line'),
                 productVariantId: str('Matches an existing variant line'),
+                description: str('Matches an existing described line by its current wording'),
                 qty: num('New quantity, if it changed'),
                 unit: str('New unit, if it changed'),
                 unitCostCents: num('New price per unit in cents, if it changed'),
+                newDescription: str('Rewrite a described line — the wording the vendor reads'),
               },
             },
           },
@@ -1139,18 +1173,21 @@ export const TOOLS: Record<string, Tool> = {
       for (const l of i.lines as any[]) {
         const existing = po.lines.find((x) =>
           (l.componentId && x.componentId === l.componentId) ||
-          (l.productVariantId && x.productVariantId === l.productVariantId))
+          (l.productVariantId && x.productVariantId === l.productVariantId) ||
+          (l.description && x.description === l.description))
+        const named = l.componentId ?? l.productVariantId ?? l.description
         if (!existing) {
-          results.push(`no matching line for ${l.componentId ?? l.productVariantId} — nothing changed for it`)
+          results.push(`no matching line for ${named} — nothing changed for it`)
           continue
         }
         const data: any = {}
         if (l.qty !== undefined) data.qtyOrdered = String(l.qty)
         if (l.unit !== undefined) data.unit = l.unit
         if (l.unitCostCents !== undefined) data.unitCostCents = l.unitCostCents
+        if (l.newDescription !== undefined) data.description = l.newDescription
         if (Object.keys(data).length === 0) continue
         await db.purchaseOrderLine.update({ where: { id: existing.id }, data })
-        results.push(`updated ${l.componentId ?? l.productVariantId}`)
+        results.push(`updated ${named}`)
       }
 
       const updated = await db.purchaseOrder.findFirst({

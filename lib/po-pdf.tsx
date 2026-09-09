@@ -98,12 +98,21 @@ function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocContent }
   // exactly what was actually written, nothing synthesized per line.
   const notes: string[] = po.notes ? [po.notes] : []
 
-  const lineLabel = (l: (typeof po.lines)[number]) =>
-    l.component
-      ? `${l.component.vendorSku ? `Style ${l.component.vendorSku} — ` : ''}${l.component.vendorDescription ?? l.component.name}`
-      : `${l.productVariant!.sku ? `Style ${l.productVariant!.sku} — ` : ''}${l.productVariant!.product.name}` +
-        `${l.productVariant!.colorway ? ` — ${l.productVariant!.colorway.customerName}` : ''}` +
-        `${l.productVariant!.size ? ` / ${l.productVariant!.size}` : ''}`
+  const lineLabel = (l: (typeof po.lines)[number]) => {
+    if (l.component) {
+      return `${l.component.vendorSku ? `Style ${l.component.vendorSku} — ` : ''}${l.component.vendorDescription ?? l.component.name}`
+    }
+    // A line describing something the catalogue does not hold yet — a new
+    // colour, a sample size. Its text is the whole label; there is no sku or
+    // colourway to dress it up with. See lib/po.ts:poLineLabel.
+    const v = l.productVariant
+    if (!v) return l.description ?? ''
+    return (
+      `${v.sku ? `Style ${v.sku} — ` : ''}${v.product.name}` +
+      `${v.colorway ? ` — ${v.colorway.customerName}` : ''}` +
+      `${v.size ? ` / ${v.size}` : ''}`
+    )
+  }
 
   return (
     <Document>
