@@ -35,6 +35,11 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     threadId: thread.id,
     messages: thread.messages.map((m) => ({
+      // The persisted id travels to the client so a reply can be reported as
+      // a gap later — a gap report points at the message rather than copying
+      // it, so whoever picks it up reads the live thread, including whatever
+      // was said after.
+      id: m.id,
       role: m.role === 'USER' ? 'user' : 'assistant',
       text: m.content,
       model: m.model ?? undefined,
@@ -115,7 +120,7 @@ export async function POST(req: NextRequest) {
     attachments.map((a) => ({ mediaType: a.mediaType, base64: a.base64, filename: a.filename })),
   )
 
-  await db.chatMessage.create({
+  const saved = await db.chatMessage.create({
     data: {
       threadId: thread.id, role: 'ASSISTANT',
       content: r.text || '(no reply)',
@@ -126,6 +131,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     threadId: thread.id,
+    messageId: saved.id,
     reply: r.text,
     writes: r.writes,
     model: r.model,

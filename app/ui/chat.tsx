@@ -3,6 +3,11 @@ import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { Mouse } from './mouse'
 
 type Msg = {
+  /// The persisted ChatMessage id, once the turn has been saved. Absent on
+  /// the optimistic user message and on locally-generated error replies —
+  /// neither of which can be reported as a gap, because there is nothing on
+  /// the server to point at.
+  id?: string
   role: 'user' | 'assistant'
   text: string
   writes?: Array<{ tool: string; summary: string }>
@@ -101,6 +106,89 @@ async function shrinkImage(file: File): Promise<PendingFile> {
 // belongs to this browser so leaving the page (or refreshing it) doesn't
 // throw the conversation away — a resume, not a second copy of the data.
 const THREAD_KEY = 'studio-mouse:thread-id'
+
+/**
+ * "Mouse can't do this" — one tap, against this reply.
+ *
+ * Brandon, 9 Sept 2026: "I feel like this is a game of telephone." When Mouse
+ * hits a wall, the fix is usually code, and getting there used to mean a
+ * screenshot and retyping what Mouse had already said. This files it against
+ * the message itself, so the exchange and the tools Mouse reached for are
+ * waiting when someone picks it up.
+ *
+ * Deliberately quiet: it sits under the reply in faint text, because most
+ * replies are fine and a loud complaint button on every one of them would
+ * read as an invitation to distrust the answer.
+ */
+function ReportGap({ messageId }: { messageId: string }) {
+  const [state, setState] = useState<'idle' | 'noting' | 'sending' | 'done' | 'failed'>('idle')
+  const [note, setNote] = useState('')
+
+  async function send() {
+    setState('sending')
+    try {
+      const res = await fetch('/api/gap', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ messageId, note }),
+      })
+      setState(res.ok ? 'done' : 'failed')
+    } catch {
+      setState('failed')
+    }
+  }
+
+  if (state === 'done') {
+    return (
+      <p className="mt-1.5 text-[11px] text-muted">
+        Filed for Claude — it&rsquo;s on <a className="underline" href="/items">To tend to</a> with this
+        exchange attached.
+      </p>
+    )
+  }
+  if (state === 'failed') {
+    return (
+      <p className="mt-1.5 text-[11px] text-warn">
+        Couldn&rsquo;t file that.{' '}
+        <button type="button" className="underline" onClick={send}>Try again</button>
+      </p>
+    )
+  }
+  if (state === 'noting' || state === 'sending') {
+    return (
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <input
+          autoFocus
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); send() } }}
+          placeholder="What did you want it to do? (optional)"
+          className="min-w-0 flex-1 rounded border border-line bg-sunk px-2 py-1 text-[12px]"
+        />
+        <button
+          type="button"
+          onClick={send}
+          disabled={state === 'sending'}
+          className="rounded bg-accent px-2 py-1 text-[11px] font-medium text-white disabled:opacity-50 dark:text-[#0F1211]"
+        >
+          {state === 'sending' ? 'Sending' : 'Send'}
+        </button>
+        <button type="button" className="text-[11px] text-faint underline" onClick={() => setState('idle')}>
+          Cancel
+        </button>
+      </div>
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setState('noting')}
+      className="mt-1.5 text-[11px] text-faint underline decoration-dotted underline-offset-2 hover:text-muted"
+    >
+      Mouse can&rsquo;t do this &mdash; tell Claude
+    </button>
+  )
+}
 
 export function Chat() {
   const [messages, setMessages] = useState<Msg[]>([])
@@ -255,7 +343,7 @@ export function Chat() {
       }
       const d = await res.json()
       rememberThread(d.threadId)
-      setMessages((m) => [...m, { role: 'assistant', text: d.reply, writes: d.writes, model: d.model }])
+      setMessages((m) => [...m, { id: d.messageId, role: 'assistant', text: d.reply, writes: d.writes, model: d.model }])
     } catch (err) {
       setMessages((m) => [...m, {
         role: 'assistant',
@@ -330,6 +418,7 @@ export function Chat() {
                   {m.model === 'claude-opus-5' ? (
                     <p className="mt-1 text-[11px] text-faint">thought about this one properly</p>
                   ) : null}
+                  {m.role === 'assistant' && m.id ? <ReportGap messageId={m.id} /> : null}
                 </div>
               </li>
             ))}

@@ -518,12 +518,20 @@ enum EntityType {
   COMPONENT
   PRODUCTION_RUN
   PURCHASE_ORDER
+  /// Points at a ChatMessage — used by GAP items to carry the exchange.
+  CHAT_MESSAGE
   GENERAL
 }
 
 enum ActionItemKind {
   QUESTION // Studio Mouse needs to know something
   TODO     // a person must do something
+  /// Studio Mouse could not do something it should have been able to do —
+  /// a missing tool, or a wall built into the code. Reported from chat with
+  /// the exchange attached, so whoever changes the code arrives already
+  /// knowing what was asked and what Mouse reached for, instead of being
+  /// told second-hand from a screenshot. entityId is the ChatMessage.
+  GAP
 }
 
 enum ActionItemSource {
