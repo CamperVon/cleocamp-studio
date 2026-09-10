@@ -17,6 +17,14 @@ import { forwardInboundEmail } from '@/lib/inbound-forward'
  *     anyone who can email the company must not be able to write to inventory.
  *     See CLAUDE.md §4.
  */
+/**
+ * Forwarding fetches attachment bytes — up to 20MB across a few files, from
+ * Resend's CDN — before the response goes back. The default timeout is enough
+ * for storing metadata and not obviously enough for that, and a timeout here
+ * makes Resend retry the whole delivery.
+ */
+export const maxDuration = 120
+
 export async function POST(req: NextRequest) {
   const secret = process.env.RESEND_WEBHOOK_SECRET
   if (!secret) {

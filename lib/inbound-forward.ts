@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { sendEmail } from '@/lib/email'
+import { fetchInboundAttachments, type InboundAttachmentMeta } from '@/lib/inbound-attachments'
 
 /**
  * Forward mail that arrives at a Studio Mouse mailbox on to the people who
@@ -86,13 +87,37 @@ export async function forwardInboundEmail(inboundEmailId: string): Promise<Forwa
   })
   if (claim.count !== 1) return { forwarded: false, reason: 'already forwarded' }
 
+  // The files are the reason this matters. Betsy at RichLine sent the packing
+  // list and the invoice for PO 2361 to Mouse and nobody else; a forward that
+  // says "there were attachments" is a forward that still needs someone to go
+  // and look, which is the trip this is meant to save.
+  const raw = email.raw as { data?: { email_id?: string; attachments?: InboundAttachmentMeta[] } }
+  const resendId = raw?.data?.email_id
+  const attachments = resendId
+    ? await fetchInboundAttachments(resendId, raw?.data?.attachments ?? [])
+    : { files: [], omitted: [] }
+
   const received = email.receivedAt.toLocaleString('en-US', {
     timeZone: 'America/Los_Angeles', dateStyle: 'medium', timeStyle: 'short',
   })
-  const body = [
+  // Filtered on its own, so dropping an absent line cannot also swallow the
+  // blank lines that separate the header from the message.
+  const header = [
     `From: ${email.fromAddress}`,
     `To: ${email.toAddress}`,
     `Received: ${received}`,
+    attachments.files.length
+      ? `Attached: ${attachments.files.map((f) => f.filename).join(', ')}`
+      : null,
+    // Never silently drop a file. Someone who knows an invoice was sent needs
+    // to be told it is not on this mail, not left to wonder.
+    attachments.omitted.length
+      ? `Not attached: ${attachments.omitted.map((o) => `${o.filename} (${o.why})`).join(', ')} — open it in the app`
+      : null,
+  ].filter((l): l is string => l !== null)
+
+  const body = [
+    ...header,
     '',
     'Replying to this reaches the sender, with Studio Mouse copied automatically.',
     '',
@@ -108,6 +133,7 @@ export async function forwardInboundEmail(inboundEmailId: string): Promise<Forwa
     // The sender first, so a client that honours only one uses theirs. Mouse
     // second, so the thread comes back in and gets read on the nightly pass.
     replyTo: [email.fromAddress, ...(process.env.EMAIL_FROM ? [process.env.EMAIL_FROM] : [])],
+    ...(attachments.files.length ? { attachments: attachments.files } : {}),
   })
 
   if (!res.sent) {
