@@ -198,11 +198,18 @@ export function Chat() {
   const [restoring, setRestoring] = useState(true)
   const [files, setFiles] = useState<PendingFile[]>([])
   const [fileError, setFileError] = useState<string | null>(null)
-  const endRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, pending])
+  // Scroll the message list's OWN scrollbar, not scrollIntoView on a
+  // descendant — that scrolls every scrollable ancestor needed to bring the
+  // element into view, which on Home means the whole page lurches down to
+  // chase a chat box that sits above other content. This touches only the
+  // panel's internal scrollTop, so the page itself never moves.
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+  }, [messages, pending])
 
   // Resume the last conversation this browser had, once, on mount.
   useEffect(() => {
@@ -370,7 +377,7 @@ export function Chat() {
           </button>
         </div>
       ) : null}
-      <div className="max-h-[65vh] min-h-[20rem] overflow-y-auto px-4 py-3 sm:max-h-[36rem] sm:px-5">
+      <div ref={scrollRef} className="max-h-[65vh] min-h-[20rem] overflow-y-auto px-4 py-3 sm:max-h-[36rem] sm:px-5">
         {restoring ? null : messages.length === 0 ? (
           <div className="flex items-center gap-3 py-1">
             <Mouse size={30} className="shrink-0 text-faint" />
@@ -430,7 +437,6 @@ export function Chat() {
             {pending}&hellip;
           </p>
         ) : null}
-        <div ref={endRef} />
       </div>
 
       <form onSubmit={send} className="border-t border-line p-3 sm:px-5">

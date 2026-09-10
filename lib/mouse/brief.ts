@@ -28,14 +28,29 @@ Ending on a neat summary. Sign-offs.
 Never invent a number. If something is unknown, say so plainly. Not knowing is
 often the most useful thing you can point at.
 
-British spelling. Plain prose, no markdown, no lists.`
+Only what she needs to know today. If the night's notes ran long — a lot of
+mail, several things raised — that is not a reason to write a long brief. It
+is a reason to work harder at compressing it. Skip anything already resolved,
+anything that does not change what she should do today, and anything that is
+merely detail behind a point you have already made. One good fact beats three
+supporting ones.
 
-export async function getDailyBrief(): Promise<{ text: string; fresh: boolean } | null> {
+British spelling. Plain prose, no markdown, no lists, no bold, no headers.`
+
+/**
+ * The single place Mouse's Corner text is ever produced. `overnight` is
+ * nightlyPass's own working notes — its record of what it read and what it
+ * raised, useful as a log but never as the brief itself, since nothing bounds
+ * its length or tone the way VOICE does. It is DISTILLED here, not repeated.
+ *
+ * Brandon, 10 Sept: the brief had gone long, listy and toneless on a busy
+ * night. It had — but not because VOICE stopped working: the nightly cron
+ * was writing nightlyPass's raw output straight into DailyBrief and this
+ * function, VOICE and all, never ran on any day the cron already had. A
+ * working prompt sitting unused is the same failure as a broken one.
+ */
+export async function composeDailyBrief(overnight?: string): Promise<{ text: string; model: string }> {
   const forDate = laMidnight(0)
-  const existing = await db.dailyBrief.findUnique({ where: { forDate } })
-  if (existing) return { text: existing.text, fresh: false }
-  if (!process.env.ANTHROPIC_API_KEY) return null
-
   const [lowStock, items, pos, sales7, sales1] = await Promise.all([
     db.productVariant.findMany({
       where: { onHandQty: { not: null } },
@@ -73,7 +88,8 @@ export async function getDailyBrief(): Promise<{ text: string; fresh: boolean } 
     ...items.slice(0, 14).map((i) => `- ${i.title}`),
     '',
     'Note: inventory writing is currently paused for a studio count, so counts may be stale.',
-  ].join('\n')
+    overnight ? `\nStudio Mouse's own working notes from tonight — distill the ONE or TWO things from this that actually matter, do not summarise the whole thing:\n${overnight}` : '',
+  ].filter(Boolean).join('\n')
 
   const client = new Anthropic()
   const res = await client.messages.create({
@@ -89,6 +105,28 @@ export async function getDailyBrief(): Promise<{ text: string; fresh: boolean } 
     .join('\n')
     .trim()
 
-  await db.dailyBrief.create({ data: { forDate, text, model: 'claude-opus-5' } })
+  // Upsert, not create — this runs from the nightly cron every night, and
+  // must be able to overwrite today's row rather than fail the second time
+  // it is asked to produce one.
+  await db.dailyBrief.upsert({
+    where: { forDate },
+    create: { forDate, text, model: 'claude-opus-5' },
+    update: { text, model: 'claude-opus-5' },
+  })
+  return { text, model: 'claude-opus-5' }
+}
+
+/**
+ * Read today's brief, generating a plain one (no overnight notes to work
+ * from) only if the cron has not already produced one. In normal operation
+ * the cron always wins this race — it runs hours before anyone opens Home —
+ * so this is the fallback for a day the cron did not run, not the main path.
+ */
+export async function getDailyBrief(): Promise<{ text: string; fresh: boolean } | null> {
+  const forDate = laMidnight(0)
+  const existing = await db.dailyBrief.findUnique({ where: { forDate } })
+  if (existing) return { text: existing.text, fresh: false }
+  if (!process.env.ANTHROPIC_API_KEY) return null
+  const { text } = await composeDailyBrief()
   return { text, fresh: true }
 }

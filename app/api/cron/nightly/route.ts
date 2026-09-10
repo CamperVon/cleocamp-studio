@@ -84,14 +84,13 @@ export async function GET(req: NextRequest) {
   // Then one pass over everything else, with the same brain the chat uses.
   await step('think', async () => {
     const r = await nightlyPass()
+    // r.summary is the working pass's own notes — what it read, what it
+    // raised. Useful as a log, but nothing bounds its length or tone, so it
+    // is fed to composeDailyBrief() to be DISTILLED under Mouse's actual
+    // voice, never written into DailyBrief verbatim. See lib/mouse/brief.ts.
     if (r.summary) {
-      // This is what appears as Mouse's Corner in the morning.
-      const forDate = laMidnight(0)
-      await db.dailyBrief.upsert({
-        where: { forDate },
-        create: { forDate, text: r.summary, model: r.model },
-        update: { text: r.summary, model: r.model },
-      })
+      const { composeDailyBrief } = await import('@/lib/mouse/brief')
+      await composeDailyBrief(r.summary)
     }
     return { read: r.read, raised: r.raised, model: r.model }
   })
