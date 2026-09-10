@@ -4,6 +4,13 @@ Running record of answers as they arrive. Everything here is confirmed from a
 primary source (invoice, screenshot, or a direct answer from Brandon/Cleo).
 Unconfirmed items stay in the intake doc and get seeded as OpenQuestion rows.
 
+> **This is a dated snapshot, not a live description.** It records what was
+> confirmed around 1 September 2026 and was correct then. Prices, lead times
+> and vendors have moved since — the database is the live answer, and `/items`
+> is the live list of what is still unknown. Do not seed from this file
+> without checking; a stale number written as fact is exactly what CLAUDE.md §3
+> forbids.
+
 ---
 
 ## Components
