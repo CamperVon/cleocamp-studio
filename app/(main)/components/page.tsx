@@ -93,6 +93,7 @@ function Table({ rows, stockOf, stockHeader, vendors }: {
               name={c.name}
               vendorId={c.vendorId}
               vendorSku={c.vendorSku}
+              stockedInStudio={c.stockedInStudio}
               unitCostCents={c.unitCostCents}
               unitOfMeasure={c.unitOfMeasure}
               leadTimeDays={c.leadTimeDays}

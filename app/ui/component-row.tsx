@@ -1,5 +1,6 @@
 'use client'
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { updateComponentDetails } from '@/app/(main)/components/actions'
 import { VendorPicker } from '@/app/ui/vendor-picker'
 import { Chip } from './primitives'
@@ -30,7 +31,7 @@ const money = (c: number | null) => (c === null ? '' : (c / 100).toFixed(2))
  */
 export function ComponentRow({
   id, name, vendorId, vendorSku, unitCostCents, unitOfMeasure, leadTimeDays,
-  stock, vendors, bomUsage,
+  stockedInStudio, stock, vendors, bomUsage,
 }: {
   id: string
   name: string
@@ -39,6 +40,7 @@ export function ComponentRow({
   unitCostCents: number | null
   unitOfMeasure: string
   leadTimeDays: number | null
+  stockedInStudio: boolean
   stock: StockDisplay
   vendors: Vendor[]
   bomUsage: BomUsage[]
@@ -46,11 +48,13 @@ export function ComponentRow({
   const [open, setOpen] = useState(false)
   const [pending, start] = useTransition()
   const [saved, setSaved] = useState(false)
+  const router = useRouter()
 
   const [fVendorId, setFVendorId] = useState(vendorId ?? '')
   const [fSku, setFSku] = useState(vendorSku ?? '')
   const [fCost, setFCost] = useState(money(unitCostCents))
   const [fLead, setFLead] = useState(leadTimeDays === null ? '' : String(leadTimeDays))
+  const [fStocked, setFStocked] = useState(stockedInStudio)
 
   // A gap someone can point at from across the room — the whole reason this
   // exists is to make blanks easy to find, not just easy to fill once found.
@@ -65,10 +69,14 @@ export function ComponentRow({
         vendorSku: fSku,
         unitCostCents: Number.isFinite(cost) ? cost : null,
         leadTimeDays: Number.isFinite(lead) ? lead : null,
+        stockedInStudio: fStocked,
       })
       setSaved(true)
       setOpen(false)
       setTimeout(() => setSaved(false), 2500)
+      // stockedInStudio decides which section on the page this row belongs
+      // to — a plain client-state update wouldn't move it there.
+      router.refresh()
     })
   }
 
@@ -111,9 +119,19 @@ export function ComponentRow({
           )}
         </td>
         <td className="px-3 py-2.5 text-right">
-          {leadTimeDays === 0
-            ? <span className="text-accent">in stock</span>
-            : leadTimeDays === null ? '—' : <span className="tnum">{leadTimeDays} days</span>}
+          {leadTimeDays === null ? (
+            '—'
+          ) : (
+            <>
+              <span className="tnum">{leadTimeDays} days</span>
+              {/* Brandon: "we want to see the lead time, even if something
+                  is in stock. otherwise we won't know" — 0 used to REPLACE
+                  the number with just the word "in stock", which threw away
+                  the one fact worth keeping once whatever's on hand runs
+                  out. Now it's a note beside the number, never instead of it. */}
+              {leadTimeDays === 0 ? <span className="ml-1 text-accent">· in stock</span> : null}
+            </>
+          )}
         </td>
         <td className="px-3 py-2.5 text-right sm:pr-5">
           {stock.kind === 'count' ? (
@@ -177,6 +195,10 @@ export function ComponentRow({
                   className="w-28 rounded-lg border border-line bg-bg px-2.5 py-1.5 text-sm"
                 />
               </label>
+              <label className="flex items-center gap-1.5 pb-1.5 text-sm text-muted">
+                <input type="checkbox" checked={fStocked} onChange={(e) => setFStocked(e.target.checked)} />
+                Kept at the studio
+              </label>
               <button
                 type="button"
                 disabled={pending}
@@ -196,6 +218,7 @@ export function ComponentRow({
             <p className="mt-2 text-xs text-faint">
               Stock counts and incoming quantities aren&rsquo;t edited here — tell Studio
               Mouse what came in or what was counted, so the ledger stays right.
+              {fStocked ? '' : ' Where it actually is, once known, is set the same way.'}
             </p>
           </td>
         </tr>

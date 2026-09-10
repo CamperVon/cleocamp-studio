@@ -105,7 +105,13 @@ export async function createComponent(data: {
 
 export async function updateComponentDetails(
   id: string,
-  data: { vendorId: string | null; vendorSku: string | null; unitCostCents: number | null; leadTimeDays: number | null },
+  data: {
+    vendorId: string | null
+    vendorSku: string | null
+    unitCostCents: number | null
+    leadTimeDays: number | null
+    stockedInStudio: boolean
+  },
 ) {
   const component = await db.component.update({
     where: { id },
@@ -114,6 +120,7 @@ export async function updateComponentDetails(
       vendorSku: data.vendorSku?.trim() || null,
       unitCostCents: data.unitCostCents,
       leadTimeDays: data.leadTimeDays,
+      stockedInStudio: data.stockedInStudio,
     },
   })
 
