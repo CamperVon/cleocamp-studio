@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { Page, Card } from '@/app/ui/primitives'
 import { ComponentRow } from '@/app/ui/component-row'
+import { AddComponentForm } from '@/app/ui/add-component-form'
 
 export const dynamic = 'force-dynamic'
 
@@ -95,6 +96,8 @@ export default async function Components() {
       title="Components"
       lede="Everything that goes into a product, plus the packaging that goes out with it. Click a row to fill in what's missing."
     >
+      <AddComponentForm vendors={vendors} />
+
       {perRun.length ? (
         <Card title="Bought per production run">
           <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">

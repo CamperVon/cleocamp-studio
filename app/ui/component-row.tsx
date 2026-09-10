@@ -1,6 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { updateComponentDetails } from '@/app/(main)/components/actions'
+import { VendorPicker } from '@/app/ui/vendor-picker'
 import { Chip } from './primitives'
 
 type Vendor = { id: string; name: string }
@@ -120,14 +121,7 @@ export function ComponentRow({
             >
               <label className="flex flex-col gap-1 text-xs text-muted">
                 Vendor
-                <select
-                  value={fVendorId}
-                  onChange={(e) => setFVendorId(e.target.value)}
-                  className="rounded-lg border border-line bg-bg px-2.5 py-1.5 text-sm"
-                >
-                  <option value="">— none —</option>
-                  {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
+                <VendorPicker value={fVendorId} onChange={setFVendorId} vendors={vendors} />
               </label>
               <label className="flex flex-col gap-1 text-xs text-muted">
                 Style #
