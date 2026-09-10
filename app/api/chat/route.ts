@@ -1,3 +1,4 @@
+import { completedWrites } from '@/lib/mouse/outcomes'
 import { NextResponse, type NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { chatTurn } from '@/lib/mouse/agent'
@@ -44,15 +45,7 @@ export async function GET(req: NextRequest) {
       text: m.content,
       model: m.model ?? undefined,
       attachments: m.attachments.length ? m.attachments : undefined,
-      // toolCallsJson is every call made that turn, {name, input}[]. The
-      // "write" badges only ever show the ones chatTurn itself treats as a
-      // write — the same two lookup tools excluded there. No summary is
-      // stored, but the badge never showed it, only the tool name.
-      writes: Array.isArray(m.toolCallsJson)
-        ? (m.toolCallsJson as Array<{ name: string }>)
-            .filter((c) => c.name !== 'query_status' && c.name !== 'request_deep_analysis')
-            .map((c) => ({ tool: c.name, summary: '' }))
-        : undefined,
+      writes: completedWrites(m.toolCallsJson),
     })),
   })
 }
@@ -126,6 +119,7 @@ export async function POST(req: NextRequest) {
       content: r.text || '(no reply)',
       toolCallsJson: r.toolCalls.length ? (r.toolCalls as never) : undefined,
       model: r.model,
+      agentUsageJson: r.usage as never,
     },
   })
 

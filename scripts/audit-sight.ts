@@ -29,6 +29,7 @@ const EXPECTED_ABSENT: Record<string, string> = {
   ProductionRunLine: 'included with its run',
   ProductionRunCost: 'included with its run',
   PurchaseOrderLine: 'included with its order',
+  PurchaseOrderExport: 'included with its order in the catalog; immutable PDF bytes never enter the prompt',
   WholesaleShipment: 'included with its account',
   WholesaleShipmentLine: 'included with its shipment',
   BomLine: 'included with its product',

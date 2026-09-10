@@ -1367,6 +1367,18 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  export_purchase_order: {
+    def: {
+      name: 'export_purchase_order',
+      description: 'Prepare an immutable clean PDF of an existing PO for the person to download and send themselves. No draft watermark. Does NOT email, mark SENT, or change inventory. Reuse the returned documentPath verbatim. Make requested content/language edits first; this saves the document exactly as it is now. Older saved copies remain available after edits.',
+      input_schema: { type: 'object', properties: { poNumber: str('Existing PO number') }, required: ['poNumber'] },
+    },
+    run: async (i) => {
+      const { exportPurchaseOrder } = await import('@/lib/po-export')
+      return exportPurchaseOrder(String(i.poNumber))
+    },
+  },
+
   send_purchase_order: {
     def: {
       name: 'send_purchase_order',

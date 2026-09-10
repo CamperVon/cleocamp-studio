@@ -62,6 +62,10 @@ export async function nightlyPass() {
     maxRounds: 8,
   })
 
+  if (r.usage.stopReason !== 'complete') {
+    return { read: 0, raised: r.writes.length, summary: null, model: r.model, incomplete: true }
+  }
+
   for (const m of unread) {
     await db.inboundEmail.update({ where: { id: m.id }, data: { processedAt: new Date() } })
   }

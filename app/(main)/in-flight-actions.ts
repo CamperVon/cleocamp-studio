@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
 import { runAgent } from '@/lib/mouse/agent'
+import { requireComplete } from '@/lib/mouse/runner'
 
 /**
  * An update typed against a specific run or order.
@@ -40,7 +41,7 @@ export async function addInFlightUpdate(
       `${p.status}, expected ${p.expectedAt?.toISOString().slice(0, 10) ?? 'unconfirmed'}.`
   }
 
-  await runAgent({
+  const result = await runAgent({
     instruction:
       `An update about one specific thing in flight.\n\n${subject}\n\n` +
       `The update is: ${text.trim()}\n\n` +
@@ -50,6 +51,7 @@ export async function addInFlightUpdate(
       `write down what you were told.`,
     effort: 'medium',
   })
+  requireComplete(result)
 
   // Only meaningful inside a request; called directly from a script it throws.
   try {

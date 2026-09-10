@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
   // own deployment URL, even server-to-server.
   outputFileTracingIncludes: {
     "/po/[poNumber]/pdf": ["./assets/fonts/*.ttf"],
+    "/po/[poNumber]/exports": ["./assets/fonts/*.ttf"],
+    "/api/chat": ["./assets/fonts/*.ttf"],
   },
 };
 

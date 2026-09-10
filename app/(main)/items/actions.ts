@@ -2,6 +2,7 @@
 import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { runAgent } from '@/lib/mouse/agent'
+import { requireComplete } from '@/lib/mouse/runner'
 
 /**
  * Answering a question should do two things: close it, and apply whatever the
@@ -12,7 +13,7 @@ export async function answerItem(id: string, answer: string) {
   const item = await db.actionItem.findUnique({ where: { id } })
   if (!item || !answer.trim()) return
 
-  await runAgent({
+  const result = await runAgent({
     instruction:
       `This answers an open item.\n\n` +
       `Item [${item.id}]: ${item.title}\n` +
@@ -23,6 +24,7 @@ export async function answerItem(id: string, answer: string) {
       `Do not just record the words.`,
     effort: 'medium',
   })
+  requireComplete(result)
 
   // Belt and braces: if the agent did not resolve it, close it anyway so the
   // list does not keep showing something already answered.

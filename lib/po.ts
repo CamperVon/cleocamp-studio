@@ -1,5 +1,15 @@
 import type { Component, ProductVariant, Product, Colorway } from '@/generated/prisma/client'
 
+/** An unpriced line is unknown, never free. Round per line to whole cents. */
+export function poLineAmount(qty: number, unitCostCents: number | null): number | null {
+  return unitCostCents === null ? null : Math.round(qty * unitCostCents)
+}
+
+export function poAmounts(lines: Array<{ qtyOrdered: unknown; unitCostCents: number | null }>) {
+  const amounts = lines.map(l => poLineAmount(Number(l.qtyOrdered), l.unitCostCents))
+  return { knownCents: amounts.reduce<number>((sum, n) => sum + (n ?? 0), 0), incomplete: amounts.some(n => n === null) }
+}
+
 /**
  * A purchase order line names either a component or a finished-goods variant
  * — see the comment on PurchaseOrderLine in schema.prisma. Every place that

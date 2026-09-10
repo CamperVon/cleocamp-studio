@@ -13,7 +13,8 @@
     "seed": "tsx prisma/seed.ts",
     "sync:shopify": "tsx scripts/sync-shopify.ts",
     "sync:calendar": "tsx scripts/sync-calendar.ts",
-    "audit:sight": "tsx scripts/audit-sight.ts"
+    "audit:sight": "tsx scripts/audit-sight.ts",
+    "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
@@ -32,6 +33,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.4.3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/pg": "^8.23.1",
@@ -44,5 +46,6 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.13",
     "typescript": "^5"
-  }
+  },
+  "type": "module"
 }

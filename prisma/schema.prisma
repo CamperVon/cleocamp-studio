@@ -479,8 +479,24 @@ model PurchaseOrder {
   vendor     Vendor              @relation(fields: [vendorId], references: [id])
   forProduct Product?            @relation(fields: [forProductId], references: [id])
   lines      PurchaseOrderLine[]
+  exports    PurchaseOrderExport[]
 
   @@index([status])
+}
+
+/// Immutable clean copies. Exporting a document never changes order status.
+/// The exact PDF is retained so later edits cannot change a copy already shared.
+model PurchaseOrderExport {
+  id              String   @id @default(cuid())
+  purchaseOrderId String
+  contentHash     String
+  language        String
+  pdf             Bytes
+  createdAt       DateTime @default(now())
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+
+  @@unique([purchaseOrderId, contentHash])
+  @@index([purchaseOrderId, createdAt])
 }
 
 /// A line is either a component (fabric, trim — a purchase order to a
@@ -646,6 +662,8 @@ model ChatMessage {
   role     ChatRole
   content  String
   toolCallsJson Json?
+  /// Per-request model/token usage and stop reason; no prompts or credentials.
+  agentUsageJson Json?
   /// Which model handled this turn — lets us see how often Sonnet escalates
   /// to Opus and whether the routing is right.
   model    String?

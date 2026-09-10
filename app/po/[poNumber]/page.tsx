@@ -1,3 +1,5 @@
+import { poAmounts, poLineAmount } from '@/lib/po'
+import { PoExportButton } from '@/app/ui/po-export-button'
 import { notFound } from 'next/navigation'
 import { db } from '@/lib/db'
 import { asDocLanguage, confirmSentence, formatDate, label, type DocLanguage } from '@/lib/po-strings'
@@ -25,6 +27,7 @@ export default async function PurchaseOrderDoc({
     where: { poNumber },
     include: {
       vendor: true, forProduct: true,
+      exports: { orderBy: { createdAt: 'desc' }, select: { id: true, language: true, createdAt: true }, take: 20 },
       lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } },
     },
   })
@@ -32,7 +35,7 @@ export default async function PurchaseOrderDoc({
 
   const lang: DocLanguage = asDocLanguage(po.language)
   const t = (k: Parameters<typeof label>[1]) => label(lang, k)
-  const total = po.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
+  const total = poAmounts(po.lines)
   const date = formatDate(lang, po.orderedAt ?? po.createdAt)
 
   // Content, not layout — editable by anyone talking to Studio Mouse. See
@@ -168,9 +171,9 @@ export default async function PurchaseOrderDoc({
               </td>
               <td className="py-2.5 pr-2 text-right tabular-nums">{Number(l.qtyOrdered).toLocaleString()}</td>
               <td className="py-2.5 pr-2 text-right">{l.unit}</td>
-              <td className="py-2.5 pr-2 text-right tabular-nums">{l.unitCostCents ? money(l.unitCostCents) : '—'}</td>
+              <td className="py-2.5 pr-2 text-right tabular-nums">{l.unitCostCents !== null ? money(l.unitCostCents) : '—'}</td>
               <td className="py-2.5 text-right tabular-nums">
-                {money(Number(l.qtyOrdered) * (l.unitCostCents ?? 0))}
+                {l.unitCostCents === null ? '—' : money(poLineAmount(Number(l.qtyOrdered), l.unitCostCents)!)}
               </td>
             </tr>
           ))}
@@ -179,8 +182,8 @@ export default async function PurchaseOrderDoc({
 
       <div className="ml-auto mt-3.5 w-[250px]">
         <div className="flex justify-between border-t border-[#14181A] pt-2 text-[12.5pt]">
-          <span>{t('total')}</span>
-          <span className="tabular-nums">{money(total)}</span>
+          <span>{t(total.incomplete ? 'knownSubtotal' : 'total')}</span>
+          <span className="tabular-nums">{money(total.knownCents)}</span>
         </div>
       </div>
 
@@ -198,15 +201,25 @@ export default async function PurchaseOrderDoc({
         {contactLines.map((l, i) => <span key={i}>{l}<br /></span>)}
       </div>
 
-      <div className="no-print mt-10 flex items-center gap-3 border-t border-[#DEDFDB] pt-4 text-[9pt] text-[#8B9491]">
+      <div className="no-print mt-10 flex flex-wrap items-start gap-5 border-t border-[#DEDFDB] pt-4 text-[9pt] text-[#8B9491]">
+        {po.status !== 'CANCELLED' ? <PoExportButton poNumber={po.poNumber} /> : null}
         <a
           href={`/po/${po.poNumber}/pdf`}
           className="rounded border border-[#14181A]/20 px-3 py-1.5 font-sans text-[9pt] text-[#14181A] no-underline hover:bg-black/5"
         >
-          Download PDF
+          Download working PDF
         </a>
         <span>or print this page from your browser.</span>
       </div>
+      {po.exports.length ? <section className="no-print mt-5 text-[9pt]">
+        <h2 className="font-sans font-semibold">Saved clean copies</h2>
+        <p className="mt-1 text-[#5C6663]">These copies stay as they were when prepared, even if you edit the order.</p>
+        <ul className="mt-2 space-y-2">
+          {po.exports.map(copy => <li key={copy.id}><a className="underline" href={`/po/${encodeURIComponent(po.poNumber)}/exports/${copy.id}`}>
+            {copy.createdAt.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })} · {copy.language.toUpperCase()}
+          </a></li>)}
+        </ul>
+      </section> : null}
     </main>
   )
 }

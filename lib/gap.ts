@@ -1,3 +1,4 @@
+import { diagnosticValue } from '@/lib/mouse/outcomes'
 import { db } from '@/lib/db'
 
 /**
@@ -28,7 +29,7 @@ export type PackagedGap = {
     role: 'user' | 'assistant'
     text: string
     isTheReportedReply: boolean
-    tools: Array<{ name: string; input: unknown }>
+    tools: Array<{ name: string; input: unknown; status?: string; result?: unknown; error?: string }>
   }> | null
   /** The same thing as plain text, for pasting into a Claude Code session. */
   asText: string
@@ -58,23 +59,23 @@ export async function packageGap(item: {
       where: { threadId: message.threadId, createdAt: { lte: message.createdAt } },
       orderBy: { createdAt: 'desc' },
       take: TURNS_BEFORE + 1,
-      select: { id: true, role: true, content: true, toolCallsJson: true },
+      select: { id: true, role: true, content: true, toolCallsJson: true, agentUsageJson: true },
     }),
     db.chatMessage.findMany({
       where: { threadId: message.threadId, createdAt: { gt: message.createdAt } },
       orderBy: { createdAt: 'asc' },
       take: TURNS_AFTER,
-      select: { id: true, role: true, content: true, toolCallsJson: true },
+      select: { id: true, role: true, content: true, toolCallsJson: true, agentUsageJson: true },
     }),
   ])
 
   const rows = [...before.reverse(), ...after]
   const exchange = rows.map((m) => ({
     role: (m.role === 'USER' ? 'user' : 'assistant') as 'user' | 'assistant',
-    text: m.content,
+    text: String(diagnosticValue(m.content)),
     isTheReportedReply: m.id === message.id,
     tools: Array.isArray(m.toolCallsJson)
-      ? (m.toolCallsJson as Array<{ name: string; input: unknown }>)
+      ? (diagnosticValue(m.toolCallsJson) as Array<{ name: string; input: unknown; status?: string; result?: unknown; error?: string }>)
       : [],
   }))
 
@@ -85,8 +86,8 @@ export async function packageGap(item: {
     ...exchange.map((m) => {
       const who = m.role === 'user' ? 'Person' : 'Mouse'
       const mark = m.isTheReportedReply ? '  <<< reported' : ''
-      const tools = m.tools.length
-        ? `\n    tools: ${m.tools.map((t) => `${t.name}(${JSON.stringify(t.input)})`).join(', ')}`
+    const tools = m.tools.length
+        ? `\n    tools: ${m.tools.map((t) => `${t.name}(${JSON.stringify(t.input)}): ${t.status ?? 'outcome not recorded'} ${JSON.stringify(t.error ?? t.result ?? null)}`).join(', ')}`
         : '\n    tools: none'
       return `\n${who}:${mark}\n    ${m.text.replace(/\n/g, '\n    ')}${tools}`
     }),

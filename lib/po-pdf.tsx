@@ -1,3 +1,4 @@
+import { poAmounts, poLineAmount } from '@/lib/po'
 import path from 'node:path'
 import { Document, Page, Text, View, Image, Font, StyleSheet, renderToBuffer } from '@react-pdf/renderer'
 import { db } from '@/lib/db'
@@ -75,9 +76,9 @@ const styles = StyleSheet.create({
   footer: { marginTop: 20, fontSize: 8.5, color: '#8B9491' },
 })
 
-type PoForPdf = NonNullable<Awaited<ReturnType<typeof loadPo>>>
+export type PoForPdf = NonNullable<Awaited<ReturnType<typeof loadPo>>>
 
-async function loadPo(poNumber: string) {
+export async function loadPo(poNumber: string) {
   return db.purchaseOrder.findFirst({
     where: { poNumber },
     include: {
@@ -87,12 +88,12 @@ async function loadPo(poNumber: string) {
   })
 }
 
-type DocContent = { billTo: string[]; confirmLine: string; contactLines: string[] }
+export type DocContent = { billTo: string[]; confirmLine: string; contactLines: string[] }
 
-function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocContent }) {
+export function PurchaseOrderDoc({ po, content, clean = false }: { po: PoForPdf; content: DocContent; clean?: boolean }) {
   const lang: DocLanguage = asDocLanguage(po.language)
   const t = (k: Parameters<typeof label>[1]) => label(lang, k)
-  const total = po.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
+  const total = poAmounts(po.lines)
   const date = formatDate(lang, po.orderedAt ?? po.createdAt)
 
   // See the same fix, and why, in app/po/[poNumber]/page.tsx: notes is
@@ -135,7 +136,7 @@ function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocContent }
               </Text>
             ) : null}
             {po.paymentTerms ? <Text><Text style={styles.muted}>{t('terms')} </Text>{po.paymentTerms}</Text> : null}
-            {po.status === 'DRAFT' ? <Text style={{ marginTop: 3, fontSize: 8, color: '#8C3A2B' }}>{t('draft')}</Text> : null}
+            {po.status === 'DRAFT' && !clean ? <Text style={{ marginTop: 3, fontSize: 8, color: '#8C3A2B' }}>{t('draft')}</Text> : null}
           </View>
         </View>
 
@@ -176,15 +177,15 @@ function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocContent }
               </View>
               <Text style={styles.tdQty}>{Number(l.qtyOrdered).toLocaleString()}</Text>
               <Text style={styles.tdUnit}>{l.unit}</Text>
-              <Text style={styles.tdPrice}>{l.unitCostCents ? money(l.unitCostCents) : '—'}</Text>
-              <Text style={styles.tdAmount}>{money(Number(l.qtyOrdered) * (l.unitCostCents ?? 0))}</Text>
+              <Text style={styles.tdPrice}>{l.unitCostCents !== null ? money(l.unitCostCents) : '—'}</Text>
+              <Text style={styles.tdAmount}>{l.unitCostCents === null ? '—' : money(poLineAmount(Number(l.qtyOrdered), l.unitCostCents)!)}</Text>
             </View>
           ))}
         </View>
 
         <View style={styles.totalRow}>
-          <Text style={{ width: 100 }}>{t('total')}</Text>
-          <Text style={{ width: 90, textAlign: 'right' }}>{money(total)}</Text>
+          <Text style={{ width: 100 }}>{t(total.incomplete ? 'knownSubtotal' : 'total')}</Text>
+          <Text style={{ width: 90, textAlign: 'right' }}>{money(total.knownCents)}</Text>
         </View>
 
         {notes.length ? (
@@ -220,14 +221,21 @@ function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocContent }
  */
 export async function renderPurchaseOrderPdf(
   poNumber: string,
-  opts: { asSent?: boolean } = {},
+  opts: { asSent?: boolean; clean?: boolean } = {},
 ): Promise<Buffer | null> {
   const [po, defaults] = await Promise.all([
     loadPo(poNumber),
     db.documentDefaults.findUnique({ where: { id: 'singleton' } }),
   ])
   if (!po) return null
-  const forDoc = opts.asSent && po.status === 'DRAFT' ? { ...po, status: 'SENT' as const } : po
+  return renderPoSnapshot(po, defaults, { clean: opts.clean || opts.asSent })
+}
+
+export async function renderPoSnapshot(
+  po: PoForPdf,
+  defaults: { billToLines: string; confirmLine: string; confirmLineEs?: string | null; contactLines: string } | null,
+  opts: { clean?: boolean } = {},
+): Promise<Buffer> {
   const content: DocContent = {
     billTo: (defaults?.billToLines ?? '').split('\n').filter(Boolean),
     // Spanish is a stored sentence, not a render-time translation.
@@ -235,5 +243,5 @@ export async function renderPurchaseOrderPdf(
     // A per-order override wins; almost nothing sets one.
     contactLines: (po.contactLines ?? defaults?.contactLines ?? '').split('\n').filter(Boolean),
   }
-  return renderToBuffer(<PurchaseOrderDoc po={forDoc} content={content} />)
+  return renderToBuffer(<PurchaseOrderDoc po={po} content={content} clean={opts.clean} />)
 }
