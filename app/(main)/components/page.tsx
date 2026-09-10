@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
-import { Page, Card, Value, Money } from '@/app/ui/primitives'
+import { Page, Card } from '@/app/ui/primitives'
+import { ComponentRow } from '@/app/ui/component-row'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,20 +15,33 @@ async function load() {
   return db.component.findMany({
     where: { active: true },
     orderBy: [{ category: 'asc' }, { name: 'asc' }],
-    include: { vendor: { select: { name: true } } },
+    include: {
+      vendor: { select: { name: true } },
+      // How much of this a finished product actually takes — 3 yards of
+      // shell fabric per You Dress, two snaps per bag. Brandon, 10 Sept:
+      // "amt of yardage / item for finished product where applicable" — a
+      // sub-assembly's own BOM (parentComponentId) isn't a finished product,
+      // so only lines with a real parentProduct count here.
+      usedIn: {
+        where: { parentProductId: { not: null } },
+        orderBy: { id: 'asc' },
+        include: { parentProduct: { select: { name: true } } },
+      },
+    },
   })
 }
 
-function Table({ rows, showStock }: { rows: Row[]; showStock: boolean }) {
+function Table({ rows, showStock, vendors }: { rows: Row[]; showStock: boolean; vendors: { id: string; name: string }[] }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[42rem] text-sm">
+      <table className="w-full min-w-[52rem] text-sm">
         <thead>
           <tr className="border-b border-line text-left text-xs text-faint">
             <th className="px-4 py-2 font-normal sm:px-5">Component</th>
             <th className="px-3 py-2 font-normal">Vendor</th>
             <th className="px-3 py-2 font-normal">Style #</th>
             <th className="px-3 py-2 text-right font-normal">Cost</th>
+            <th className="px-3 py-2 text-right font-normal">Per finished unit</th>
             <th className="px-3 py-2 text-right font-normal">Lead time</th>
             <th className="px-3 py-2 text-right font-normal sm:pr-5">
               {showStock ? 'In studio' : 'Incoming'}
@@ -36,26 +50,26 @@ function Table({ rows, showStock }: { rows: Row[]; showStock: boolean }) {
         </thead>
         <tbody className="divide-y divide-line">
           {rows.map((c) => (
-            <tr key={c.id}>
-              <td className="px-4 py-2.5 sm:px-5">{c.name}</td>
-              <td className="px-3 py-2.5 text-muted"><Value value={c.vendor?.name} /></td>
-              <td className="px-3 py-2.5 font-mono text-xs text-muted"><Value value={c.vendorSku} /></td>
-              <td className="px-3 py-2.5 text-right">
-                <Money cents={c.unitCostCents} />
-                {c.unitCostCents !== null ? <span className="text-faint">/{c.unitOfMeasure}</span> : null}
-              </td>
-              <td className="px-3 py-2.5 text-right">
-                {c.leadTimeDays === 0
-                  ? <span className="text-accent">in stock</span>
-                  : <Value value={c.leadTimeDays} unit="days" />}
-              </td>
-              <td className="px-3 py-2.5 text-right sm:pr-5">
-                {/* Fabric has no stock level by design. Showing 0 would read as
-                    "we have none", which is a different and wrong claim. */}
-                <span className="tnum">{String(showStock ? c.onHandQty : c.incomingQty)}</span>
-                <span className="text-faint"> {c.unitOfMeasure}</span>
-              </td>
-            </tr>
+            <ComponentRow
+              key={c.id}
+              id={c.id}
+              name={c.name}
+              vendorId={c.vendorId}
+              vendorSku={c.vendorSku}
+              unitCostCents={c.unitCostCents}
+              unitOfMeasure={c.unitOfMeasure}
+              leadTimeDays={c.leadTimeDays}
+              // Fabric has no stock level by design — showing 0 would read as
+              // "we have none", which is a different and wrong claim.
+              stockValue={String(showStock ? c.onHandQty : c.incomingQty)}
+              showStock={showStock}
+              vendors={vendors}
+              bomUsage={c.usedIn.map((l) => ({
+                productName: l.parentProduct!.name,
+                qtyPerUnit: Number(l.qtyPerUnit).toLocaleString(),
+                unit: c.unitOfMeasure,
+              }))}
+            />
           ))}
         </tbody>
       </table>
@@ -64,7 +78,10 @@ function Table({ rows, showStock }: { rows: Row[]; showStock: boolean }) {
 }
 
 export default async function Components() {
-  const rows = await load()
+  const [rows, vendors] = await Promise.all([
+    load(),
+    db.vendor.findMany({ where: { active: true }, orderBy: { name: 'asc' }, select: { id: true, name: true } }),
+  ])
   const studio = rows.filter((c) => c.stockedInStudio)
   const perRun = rows.filter((c) => !c.stockedInStudio)
 
@@ -76,7 +93,7 @@ export default async function Components() {
   return (
     <Page
       title="Components"
-      lede="Everything that goes into a product, plus the packaging that goes out with it."
+      lede="Everything that goes into a product, plus the packaging that goes out with it. Click a row to fill in what's missing."
     >
       {perRun.length ? (
         <Card title="Bought per production run">
@@ -85,13 +102,13 @@ export default async function Components() {
             studio and are never counted — what matters is what a planned run will need,
             and what is already on order.
           </p>
-          <Table rows={perRun} showStock={false} />
+          <Table rows={perRun} showStock={false} vendors={vendors} />
         </Card>
       ) : null}
 
       {Object.entries(byCategory).map(([category, items]) => (
         <Card key={category} title={`${LABELS[category] ?? category} — in the studio`}>
-          <Table rows={items} showStock />
+          <Table rows={items} showStock vendors={vendors} />
         </Card>
       ))}
     </Page>
