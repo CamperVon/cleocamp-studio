@@ -1,8 +1,6 @@
 import { db } from '@/lib/db'
-import { poLineLabel } from '@/lib/po'
-import { Page, Card, Empty, Stat } from '@/app/ui/primitives'
+import { Page, Card, Empty } from '@/app/ui/primitives'
 import { isConfigured } from '@/lib/integrations/quickbooks'
-import { paymentStages } from '@/lib/payments'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,29 +10,19 @@ const money = (c: bigint | null | undefined) =>
     : (Number(c) / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 
 export default async function Finances() {
-  const [conn, snap, pos] = await Promise.all([
+  const [conn, snap] = await Promise.all([
     db.quickBooksConnection.findUnique({ where: { id: 'singleton' } }),
     db.financialSnapshot.findFirst({ orderBy: { forDate: 'desc' } }),
-    db.purchaseOrder.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-      include: { vendor: true, forProduct: true, lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
-    }),
   ])
-  const open = pos.filter((p) => p.status === 'SENT' || p.status === 'PARTIALLY_RECEIVED')
   const invoices = ((snap?.raw as any)?.invoices ?? []) as Array<{
     number: string; customer: string; date: string; total: number; balance: number
   }>
-
-  const committed = pos
-    .filter((p) => p.status === 'SENT' || p.status === 'PARTIALLY_RECEIVED')
-    .reduce((n, p) => n + p.lines.reduce((m, l) => m + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0), 0)
 
   // Figures can arrive by hand long before the Intuit connection exists — the
   // page should show what it has rather than insisting on OAuth first.
   if (!conn && !snap) {
     return (
-      <Page title="Finances" lede="Where the money is, what is committed, and what is owed.">
+      <Page title="Finances" lede="Where the money is and what is owed to Cleo Camp. Purchase order commitments live on the Purchase orders tab.">
         <Card title="Nothing recorded yet">
           <div className="flex flex-col gap-3 px-4 py-5 sm:px-5">
             <p className="text-sm text-muted">
@@ -69,7 +57,6 @@ export default async function Finances() {
             })}. Pulled nightly at 7pm.`
           : 'Nothing recorded yet.'
       }
-
     >
       <a
         href="https://qbo.intuit.com/app/homepage"
@@ -92,58 +79,6 @@ export default async function Finances() {
 
       {snap ? (
         <>
-          <div className="flex flex-wrap gap-3">
-            <Stat label="Committed" value={money(BigInt(committed))} sub="open purchase orders" />
-            <Stat label="Open POs" value={open.length} sub="awaiting delivery" />
-          </div>
-
-
-
-          <Card title={`Open purchase orders (${open.length})`}>
-            {open.length === 0 ? (
-              <Empty>Nothing outstanding.</Empty>
-            ) : (
-              <ul className="divide-y divide-line">
-                {open.map((p) => {
-                  const total = p.lines.reduce((m, l) => m + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
-                  const stages = paymentStages(p, total)
-                  return (
-                    <li key={p.id} className="px-4 py-3.5 sm:px-5">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium">
-                            <a href={`/po/${p.poNumber}`} target="_blank" rel="noreferrer" className="hover:underline">
-                              PO {p.poNumber} &middot; {p.vendor.name} &nearr;
-                            </a>
-                          </p>
-                          <p className="truncate text-xs text-muted">
-                            {p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${poLineLabel(l)}`).join(', ')}
-                            {p.forProduct ? ` · for the ${p.forProduct.name}` : ''}
-                          </p>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <p className="tnum text-sm">{money(BigInt(total))}</p>
-                          <p className="text-xs text-faint">{p.paymentTerms ?? 'terms not recorded'}</p>
-                        </div>
-                      </div>
-                      <ul className="mt-2 flex flex-col gap-1 border-t border-line pt-2">
-                        {stages.map((s, i) => (
-                          <li key={i} className="flex justify-between gap-3 text-xs">
-                            <span className="text-muted">{s.label}</span>
-                            <span className="shrink-0">
-                              <span className="tnum">{money(BigInt(s.amountCents))}</span>
-                              <span className={s.overdue ? ' text-urgent' : s.paid ? ' text-muted' : ' text-faint'}> &middot; {s.due}</span>
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </Card>
-
           <Card title="Invoices">
             {invoices.length === 0 ? (
               <Empty>

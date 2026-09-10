@@ -1,7 +1,7 @@
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
 import { paymentStages } from '@/lib/payments'
-import { Page, Card, Chip, Empty, Money } from '@/app/ui/primitives'
+import { Page, Card, Chip, Empty, Money, Stat } from '@/app/ui/primitives'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,6 +44,21 @@ export default async function PurchaseOrders() {
     { key: 'DONE', title: 'Received', items: pos.filter((p) => p.status === 'RECEIVED') },
     { key: 'CANCELLED', title: 'Cancelled', items: pos.filter((p) => p.status === 'CANCELLED') },
   ].filter((g) => g.items.length)
+
+  // What is still owed across everything not yet finished — draft, sent, and
+  // partially received. RECEIVED is deliberately excluded: goods landing
+  // does not mean the balance is paid (PO 2357 was Net 60 from delivery), but
+  // that is a settled question of WHEN it is due, tracked on the order
+  // itself — this stat is about orders still actively moving. Reuses
+  // paymentStages() rather than a second way of reading terms, same reason
+  // the row-level display below does.
+  const outstandingCents = pos
+    .filter((p) => p.status === 'DRAFT' || p.status === 'SENT' || p.status === 'PARTIALLY_RECEIVED')
+    .reduce((sum, p) => {
+      const total = p.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
+      const stages = paymentStages(p, total)
+      return sum + stages.filter((s) => !s.paid).reduce((n, s) => n + s.amountCents, 0)
+    }, 0)
 
   const row = (p: (typeof pos)[number]) => {
     const total = p.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
@@ -89,6 +104,15 @@ export default async function PurchaseOrders() {
 
   return (
     <Page title="Purchase orders" lede="Every order Studio Mouse has drafted or sent, whatever its status.">
+      {pos.length ? (
+        <div className="flex flex-wrap gap-3">
+          <Stat
+            label="Outstanding payments owed"
+            value={<Money cents={outstandingCents} />}
+            sub="draft, sent and partially received — unpaid stages"
+          />
+        </div>
+      ) : null}
       {pos.length === 0 ? (
         <Card><Empty>No purchase orders yet.</Empty></Card>
       ) : (
