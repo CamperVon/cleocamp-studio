@@ -37,22 +37,93 @@ async function writeEvent(args: {
   countedQty?: number
   type: string
   note?: string
+  locationId?: string
+  atVendorId?: string
 }) {
   if (args.componentId) {
-    // Components have no Shopify concept of themselves — CLAUDE.md §3.
-    // Nothing here ever calls out.
+    const c = await db.component.findUniqueOrThrow({ where: { id: args.componentId } })
+
+    // Fabric is never modeled as stock anywhere, at any place — CLAUDE.md §3.
+    // Untouched by everything below; this is the old, simple behaviour,
+    // unchanged, for the one category that deliberately has no stock level.
+    if (c.category === 'MATERIAL') {
+      return db.$transaction(async (tx) => {
+        const event = await tx.inventoryEvent.create({
+          data: {
+            componentId: args.componentId, deltaQty: String(args.deltaQty),
+            countedQty: args.countedQty === undefined ? null : String(args.countedQty),
+            type: args.type as never, source: 'CHAT', note: args.note ?? null,
+          },
+        })
+        const next = args.countedQty ?? Number(c.onHandQty) + args.deltaQty
+        await tx.component.update({ where: { id: args.componentId! }, data: { onHandQty: String(next) } })
+        return { eventId: event.id, name: c.name, newQty: next }
+      })
+    }
+
+    // Everywhere else — trim, hardware, packaging — WHERE it is is now real
+    // information, not an assumption. Brandon, 10 Sept: "we will rarely have
+    // buttons in studio, we will have them at various factories... SM
+    // exists for clear accounting." A component someone still genuinely
+    // keeps a stash of at the studio (stockedInStudio: true) defaults there
+    // automatically; anything else has to say where.
+    let locationId = args.locationId ?? null
+    let atVendorId = args.atVendorId ?? null
+    if (locationId && atVendorId) {
+      return { eventId: null, applied: false, error: 'Give a location or a vendor for this, not both.' }
+    }
+    if (!locationId && !atVendorId) {
+      if (c.stockedInStudio) {
+        const studio = await db.location.findFirst({ where: { isDefault: true } })
+        locationId = studio?.id ?? null
+      } else {
+        return {
+          eventId: null, applied: false,
+          error:
+            `${c.name} isn't tracked as a studio stash — say where this happened: at the ` +
+            `studio, or which vendor currently holds it. Ask rather than guess.`,
+        }
+      }
+    }
+
     return db.$transaction(async (tx) => {
       const event = await tx.inventoryEvent.create({
         data: {
           componentId: args.componentId, deltaQty: String(args.deltaQty),
           countedQty: args.countedQty === undefined ? null : String(args.countedQty),
           type: args.type as never, source: 'CHAT', note: args.note ?? null,
+          locationId, atVendorId,
         },
       })
-      const c = await tx.component.findUniqueOrThrow({ where: { id: args.componentId! } })
-      const next = args.countedQty ?? Number(c.onHandQty) + args.deltaQty
-      await tx.component.update({ where: { id: args.componentId! }, data: { onHandQty: String(next) } })
-      return { eventId: event.id, name: c.name, newQty: next }
+
+      const existing = await tx.componentLocationStock.findFirst({
+        where: { componentId: args.componentId!, locationId, atVendorId },
+      })
+      const prevAtPlace = existing ? Number(existing.qty) : 0
+      // COUNTED is an absolute statement about THIS place only — "40 at
+      // Antonio's" says nothing about what might also be at the studio. The
+      // grand total below is recomputed from every place afterwards rather
+      // than set to this number directly, so a count at one place can never
+      // silently erase stock recorded somewhere else.
+      const nextAtPlace = args.countedQty ?? prevAtPlace + args.deltaQty
+      if (existing) {
+        await tx.componentLocationStock.update({ where: { id: existing.id }, data: { qty: String(nextAtPlace) } })
+      } else {
+        await tx.componentLocationStock.create({
+          data: { componentId: args.componentId!, locationId, atVendorId, qty: String(nextAtPlace) },
+        })
+      }
+
+      const agg = await tx.componentLocationStock.aggregate({
+        where: { componentId: args.componentId! }, _sum: { qty: true },
+      })
+      const newTotal = Number(agg._sum.qty ?? 0)
+      await tx.component.update({ where: { id: args.componentId! }, data: { onHandQty: String(newTotal) } })
+
+      const place = locationId
+        ? (await tx.location.findUnique({ where: { id: locationId } }))?.name
+        : (await tx.vendor.findUnique({ where: { id: atVendorId! } }))?.name
+      return { eventId: event.id, name: c.name, at: place ?? 'unknown place', nowAtThatPlace: nextAtPlace, newQty: newTotal }
     })
   }
 
@@ -174,12 +245,27 @@ export const TOOLS: Record<string, Tool> = {
         'deltaQty is then ignored. For a finished-goods variant this also pushes the same ' +
         'change to Shopify, which stays master — check the result\'s "shopify" field. If it ' +
         'ever says the local save failed after Shopify had already taken the change, do not ' +
-        'call this again for the same movement — say so plainly and get a person to reconcile.',
+        'call this again for the same movement — say so plainly and get a person to reconcile.\n\n' +
+        'For a component that is not a small studio stash (most trim and hardware now — see ' +
+        'each component\'s stockedInStudio), say WHERE with locationId or atVendorId: this ' +
+        'is frequently at a manufacturer, not the studio, and the count only means something ' +
+        'once it is attached to a place. If you do not know where, ask rather than guess — ' +
+        'do not default to the studio for something that plainly is not there.',
       input_schema: {
         type: 'object',
         properties: {
           componentId: str('Component id, if this is a component'),
           productVariantId: str('Variant id, if this is a finished product'),
+          locationId: str(
+            'For a component event only. The studio\'s location id, when this genuinely ' +
+            'happened there. Omit for a component with stockedInStudio true — it defaults ' +
+            'there automatically.',
+          ),
+          atVendorId: str(
+            'For a component event only. Which vendor currently holds this stock — the ' +
+            'common case for trim and hardware bought per production run. Exactly one of ' +
+            'locationId or atVendorId, never both.',
+          ),
           type: {
             type: 'string',
             enum: ['RECEIVED', 'USED', 'COUNTED', 'MANUAL_ADJUST', 'GIFTED',
@@ -187,7 +273,7 @@ export const TOOLS: Record<string, Tool> = {
             description: 'WHOLESALE_SHIPPED and GIFTED count as demand. Stylist pulls do not.',
           },
           deltaQty: num('Signed change. Negative for things leaving.'),
-          countedQty: num('For COUNTED only: the absolute number stated.'),
+          countedQty: num('For COUNTED only: the absolute number stated, AT THE PLACE GIVEN — not a total across every place this component lives.'),
           note: str('Who it went to, why, anything worth keeping.'),
         },
         required: ['type', 'deltaQty'],
@@ -244,12 +330,108 @@ export const TOOLS: Record<string, Tool> = {
         deltaQty: -Number(orig.deltaQty),
         type: 'CORRECTION',
         note: i.note ?? `Reverses ${orig.id}`,
+        // The reversal happens at the SAME place the original event did — a
+        // correction to a count taken at Antonio's is still about Antonio's,
+        // not a fresh question of where.
+        locationId: orig.locationId ?? undefined,
+        atVendorId: orig.atVendorId ?? undefined,
       })
       await db.inventoryEvent.update({
         where: { id: r.eventId as string },
         data: { correctsEventId: orig.id },
       })
       return { ...r, reversed: orig.id }
+    },
+  },
+
+  transfer_component_stock: {
+    def: {
+      name: 'transfer_component_stock',
+      description:
+        'Move a component\'s stock from one place to another — a manufacturer to the ' +
+        'studio, or one vendor to another — without changing how much exists in total. ' +
+        'Use it when leftover trim comes back from a finished run, or moves on to the next ' +
+        'one. Writes a matched pair of TRANSFER events, one leaving the source and one ' +
+        'arriving at the destination, so the ledger reads as what actually happened rather ' +
+        'than an unexplained drop in one place and a rise in another.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          componentId: str('Which component is moving'),
+          qty: num('How much is moving. Always positive.'),
+          fromLocationId: str('The studio\'s location id, if that is where it is leaving from'),
+          fromVendorId: str('Which vendor it is leaving, if not the studio. Exactly one of fromLocationId/fromVendorId.'),
+          toLocationId: str('The studio\'s location id, if that is where it is going'),
+          toVendorId: str('Which vendor it is going to, if not the studio. Exactly one of toLocationId/toVendorId.'),
+          note: str('What prompted the move — a run finishing, leftovers going to the next one'),
+        },
+        required: ['componentId', 'qty'],
+      },
+    },
+    run: async (i) => {
+      if (!inventoryWritesEnabled()) {
+        return { applied: false, reason: 'Inventory writing is paused until the studio count is done.' }
+      }
+      const from = { locationId: i.fromLocationId ?? null, atVendorId: i.fromVendorId ?? null }
+      const to = { locationId: i.toLocationId ?? null, atVendorId: i.toVendorId ?? null }
+      if ((from.locationId && from.atVendorId) || (!from.locationId && !from.atVendorId)) {
+        return { error: 'Say exactly one source: a location or a vendor.' }
+      }
+      if ((to.locationId && to.atVendorId) || (!to.locationId && !to.atVendorId)) {
+        return { error: 'Say exactly one destination: a location or a vendor.' }
+      }
+      if (from.locationId === to.locationId && from.atVendorId === to.atVendorId) {
+        return { error: 'Source and destination are the same place — nothing to transfer.' }
+      }
+
+      const groupId = crypto.randomUUID()
+      return db.$transaction(async (tx) => {
+        const c = await tx.component.findUniqueOrThrow({ where: { id: i.componentId } })
+
+        async function moveAt(place: { locationId: string | null; atVendorId: string | null }, delta: number) {
+          const existing = await tx.componentLocationStock.findFirst({
+            where: { componentId: i.componentId, locationId: place.locationId, atVendorId: place.atVendorId },
+          })
+          const next = (existing ? Number(existing.qty) : 0) + delta
+          if (existing) {
+            await tx.componentLocationStock.update({ where: { id: existing.id }, data: { qty: String(next) } })
+          } else {
+            await tx.componentLocationStock.create({
+              data: { componentId: i.componentId, locationId: place.locationId, atVendorId: place.atVendorId, qty: String(next) },
+            })
+          }
+          await tx.inventoryEvent.create({
+            data: {
+              componentId: i.componentId, deltaQty: String(delta), type: 'TRANSFER',
+              source: 'CHAT', note: i.note ?? null, transferGroupId: groupId,
+              locationId: place.locationId, atVendorId: place.atVendorId,
+            },
+          })
+          return next
+        }
+
+        const leftBehind = await moveAt(from, -Number(i.qty))
+        const nowThere = await moveAt(to, Number(i.qty))
+
+        const [fromName, toName] = await Promise.all([
+          from.locationId
+            ? tx.location.findUnique({ where: { id: from.locationId } }).then((l) => l?.name)
+            : tx.vendor.findUnique({ where: { id: from.atVendorId! } }).then((v) => v?.name),
+          to.locationId
+            ? tx.location.findUnique({ where: { id: to.locationId } }).then((l) => l?.name)
+            : tx.vendor.findUnique({ where: { id: to.atVendorId! } }).then((v) => v?.name),
+        ])
+
+        return {
+          component: c.name, qty: Number(i.qty),
+          from: fromName ?? 'unknown', fromNowHas: leftBehind,
+          to: toName ?? 'unknown', toNowHas: nowThere,
+          // The total across every place is unchanged by a transfer — say so
+          // explicitly, since it is easy to assume moving stock also moves
+          // the number Cleo cares about, when it does not.
+          totalUnchanged: Number(c.onHandQty),
+        }
+      })
     },
   },
 
@@ -368,9 +550,12 @@ export const TOOLS: Record<string, Tool> = {
           stockedInStudio: {
             type: 'boolean' as const,
             description:
-              'True if it physically sits in the studio and gets counted (buttons, tags, ' +
-              'hardware, packaging). False if it is bought per production run and shipped ' +
-              'straight to the manufacturer (all fabric, leather, denim, canvas).',
+              'True only if a real stash of this genuinely sits in the studio and gets ' +
+              'counted there — packaging, or a small stash of something kept for repairs. ' +
+              'False for most trim and hardware now: bought per production run, it usually ' +
+              'ships straight to whichever vendor is cutting that run, same as fabric. This ' +
+              'is a fact about how a specific thing is actually bought, not something the ' +
+              'category decides — do not default it from MATERIAL/TRIM/HARDWARE.',
           },
           purchaseUnit: str('How it is bought, e.g. roll or hide'),
           unitsPerPurchaseUnit: num('How many consumption units per purchase unit'),
@@ -515,7 +700,15 @@ export const TOOLS: Record<string, Tool> = {
           name: str('What Cleo calls it'),
           category: { type: 'string' as const, enum: ['MATERIAL', 'TRIM', 'HARDWARE', 'PACKAGING', 'SUBASSEMBLY'] },
           unitOfMeasure: str('How it is used, e.g. yard, button, tag'),
-          stockedInStudio: { type: 'boolean' as const, description: 'False for anything shipped straight to the manufacturer' },
+          stockedInStudio: {
+            type: 'boolean' as const,
+            description:
+              'True only for a real stash kept in the studio — packaging, or a small ' +
+              'repair stash. False for most trim and hardware, which now ships straight to ' +
+              'a vendor for a run, same as fabric. Defaults to true only for PACKAGING; ' +
+              'everything else defaults false unless told otherwise — ask if unsure rather ' +
+              'than assume it lives here.',
+          },
           vendorId: str('Supplier'), vendorSku: str("Vendor's style number"),
           unitCostCents: num('Price in cents'), leadTimeDays: num('Days to arrive'),
           purchaseUnit: str('How it is bought'), notes: str('Anything else'),
@@ -523,7 +716,11 @@ export const TOOLS: Record<string, Tool> = {
         required: ['name', 'category', 'unitOfMeasure'],
       },
     },
-    run: async (i) => db.component.create({ data: i, select: { id: true, name: true } }),
+    run: async (i) =>
+      db.component.create({
+        data: { ...i, stockedInStudio: i.stockedInStudio ?? i.category === 'PACKAGING' },
+        select: { id: true, name: true },
+      }),
   },
 
   create_product: {

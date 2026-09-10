@@ -51,8 +51,22 @@ data. That must not happen again.
   time a purchase order needs — not a stock level. Do not model fabric held at
   a manufacturer, and do not forecast from a fabric stock count; forecast the
   fabric a planned run will need.
-- **Studio supplies — buttons, tags, hardware, packaging — do live in the
-  studio** and are counted there. They are supplies, not inventory.
+- **Trim and hardware usually live at a vendor, not the studio — this was
+  stated wrong here until 10 Sept 2026.** This file used to say buttons,
+  tags and hardware "do live in the studio and are counted there." Brandon:
+  "we will rarely have button in studio, we will have them at various
+  factories." Most of it is bought per production run and ships straight to
+  whoever is cutting that run, same as fabric always has. The difference
+  from fabric: this IS worth counting, because a factory can end up sitting
+  on a real surplus or running short and nobody would know — "SM exists for
+  clear accounting." `Component.stockedInStudio` is a fact about a specific
+  purchase, never inferred from category, and true only for a genuine studio
+  stash (packaging, a small repair stock — small counts here don't need to
+  be precise). Everything else is tracked per-place via
+  `ComponentLocationStock` (the studio, or a vendor), materialized from
+  `InventoryEvent.locationId` / `.atVendorId` the same way `onHandQty`
+  itself is. Never model this for `MATERIAL` (fabric) — that stays
+  exactly as the rule above says, uncounted anywhere, by design.
 - **`InventoryEvent` is an append-only ledger.** Never edit or delete an
   event. Corrections are new `CORRECTION` events linked via `correctsEventId`.
 - **`onHandQty` is a materialized sum of events.** It must be written in the

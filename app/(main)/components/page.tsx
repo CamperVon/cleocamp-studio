@@ -1,15 +1,36 @@
 import { db } from '@/lib/db'
 import { Page, Card } from '@/app/ui/primitives'
-import { ComponentRow } from '@/app/ui/component-row'
+import { ComponentRow, type StockDisplay } from '@/app/ui/component-row'
 import { AddComponentForm } from '@/app/ui/add-component-form'
 
 export const dynamic = 'force-dynamic'
 
-const LABELS: Record<string, string> = {
-  MATERIAL: 'Materials', TRIM: 'Trim', HARDWARE: 'Hardware',
-  PACKAGING: 'Packaging', SUBASSEMBLY: 'Sub-assemblies',
-}
-
+/**
+ * Brandon, 10 Sept: "shouldn't we broaden this to something that is more
+ * accurate. we will rarely have button in studio. we will have them at
+ * various factories" — followed by "I would remove 'in studio' from all
+ * points on the page... except for things we actually ship... obviously
+ * shipping supplies are separate." and "we need [real per-location
+ * tracking] — otherwise SM won't know how many they need or if there is a
+ * surplus. don't worry about small counts for repairs."
+ *
+ * Four groups now, not two, because "counted here" and "not counted at all"
+ * turned out to be hiding a THIRD real state — counted, just not here:
+ *
+ *  - SHIPPING — packaging, genuinely held and counted at the studio. The one
+ *    place "In studio" was always literally true.
+ *  - STUDIO STASH — anything else someone actually keeps a small stock of
+ *    here (a jar of spare buttons for repairs). Same simple count; Brandon
+ *    said not to worry about tracking these precisely.
+ *  - AT VENDORS — most trim and hardware now. Bought per production run,
+ *    shipped straight to whoever is cutting it, same as fabric always was —
+ *    but unlike fabric, THIS is worth counting, because a factory can end
+ *    up sitting on a real surplus or running short, and nobody would know.
+ *    Shown as a real per-place breakdown (lib/mouse/tools.ts:
+ *    ComponentLocationStock), not a single number.
+ *  - FABRIC — MATERIAL components, unchanged from before. Never modeled as
+ *    stock anywhere, by design (CLAUDE.md §3) — "Incoming" only.
+ */
 type Row = Awaited<ReturnType<typeof load>>[number]
 
 async function load() {
@@ -19,20 +40,37 @@ async function load() {
     include: {
       vendor: { select: { name: true } },
       // How much of this a finished product actually takes — 3 yards of
-      // shell fabric per You Dress, two snaps per bag. Brandon, 10 Sept:
-      // "amt of yardage / item for finished product where applicable" — a
-      // sub-assembly's own BOM (parentComponentId) isn't a finished product,
-      // so only lines with a real parentProduct count here.
+      // shell fabric per You Dress, two snaps per bag.
       usedIn: {
         where: { parentProductId: { not: null } },
         orderBy: { id: 'asc' },
         include: { parentProduct: { select: { name: true } } },
       },
+      // Where it actually is, when that's tracked per place rather than as
+      // one studio number.
+      locationStock: {
+        where: { qty: { not: 0 } },
+        orderBy: { updatedAt: 'desc' },
+        include: { location: { select: { name: true } }, atVendor: { select: { name: true } } },
+      },
     },
   })
 }
 
-function Table({ rows, showStock, vendors }: { rows: Row[]; showStock: boolean; vendors: { id: string; name: string }[] }) {
+function bomUsageOf(c: Row) {
+  return c.usedIn.map((l) => ({
+    productName: l.parentProduct!.name,
+    qtyPerUnit: Number(l.qtyPerUnit).toLocaleString(),
+    unit: c.unitOfMeasure,
+  }))
+}
+
+function Table({ rows, stockOf, stockHeader, vendors }: {
+  rows: Row[]
+  stockOf: (c: Row) => StockDisplay
+  stockHeader: string
+  vendors: { id: string; name: string }[]
+}) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[52rem] text-sm">
@@ -44,9 +82,7 @@ function Table({ rows, showStock, vendors }: { rows: Row[]; showStock: boolean; 
             <th className="px-3 py-2 text-right font-normal">Cost</th>
             <th className="px-3 py-2 text-right font-normal">Per finished unit</th>
             <th className="px-3 py-2 text-right font-normal">Lead time</th>
-            <th className="px-3 py-2 text-right font-normal sm:pr-5">
-              {showStock ? 'In studio' : 'Incoming'}
-            </th>
+            <th className="px-3 py-2 text-right font-normal sm:pr-5">{stockHeader}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
@@ -60,16 +96,9 @@ function Table({ rows, showStock, vendors }: { rows: Row[]; showStock: boolean; 
               unitCostCents={c.unitCostCents}
               unitOfMeasure={c.unitOfMeasure}
               leadTimeDays={c.leadTimeDays}
-              // Fabric has no stock level by design — showing 0 would read as
-              // "we have none", which is a different and wrong claim.
-              stockValue={String(showStock ? c.onHandQty : c.incomingQty)}
-              showStock={showStock}
+              stock={stockOf(c)}
               vendors={vendors}
-              bomUsage={c.usedIn.map((l) => ({
-                productName: l.parentProduct!.name,
-                qtyPerUnit: Number(l.qtyPerUnit).toLocaleString(),
-                unit: c.unitOfMeasure,
-              }))}
+              bomUsage={bomUsageOf(c)}
             />
           ))}
         </tbody>
@@ -83,13 +112,11 @@ export default async function Components() {
     load(),
     db.vendor.findMany({ where: { active: true }, orderBy: { name: 'asc' }, select: { id: true, name: true } }),
   ])
-  const studio = rows.filter((c) => c.stockedInStudio)
-  const perRun = rows.filter((c) => !c.stockedInStudio)
 
-  const byCategory = studio.reduce<Record<string, Row[]>>((acc, r) => {
-    (acc[r.category] ??= []).push(r)
-    return acc
-  }, {})
+  const shipping = rows.filter((c) => c.stockedInStudio && c.category === 'PACKAGING')
+  const studioStash = rows.filter((c) => c.stockedInStudio && c.category !== 'PACKAGING')
+  const atVendors = rows.filter((c) => !c.stockedInStudio && c.category !== 'MATERIAL')
+  const fabric = rows.filter((c) => !c.stockedInStudio && c.category === 'MATERIAL')
 
   return (
     <Page
@@ -98,22 +125,69 @@ export default async function Components() {
     >
       <AddComponentForm vendors={vendors} />
 
-      {perRun.length ? (
-        <Card title="Bought per production run">
+      {shipping.length ? (
+        <Card title={`Shipping supplies (${shipping.length})`}>
           <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
-            Shipped straight from the vendor to the manufacturer. These never reach the
-            studio and are never counted — what matters is what a planned run will need,
-            and what is already on order.
+            Held and counted at the studio — used the moment an order goes out.
           </p>
-          <Table rows={perRun} showStock={false} vendors={vendors} />
+          <Table
+            rows={shipping}
+            stockHeader="In studio"
+            stockOf={(c) => ({ kind: 'count', value: String(c.onHandQty), unit: c.unitOfMeasure })}
+            vendors={vendors}
+          />
         </Card>
       ) : null}
 
-      {Object.entries(byCategory).map(([category, items]) => (
-        <Card key={category} title={`${LABELS[category] ?? category} — in the studio`}>
-          <Table rows={items} showStock vendors={vendors} />
+      {studioStash.length ? (
+        <Card title={`Kept at the studio (${studioStash.length})`}>
+          <Table
+            rows={studioStash}
+            stockHeader="In studio"
+            stockOf={(c) => ({ kind: 'count', value: String(c.onHandQty), unit: c.unitOfMeasure })}
+            vendors={vendors}
+          />
         </Card>
-      ))}
+      ) : null}
+
+      {atVendors.length ? (
+        <Card title={`At vendors (${atVendors.length})`}>
+          <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
+            Bought per production run and shipped straight to whoever is cutting it — but
+            unlike fabric, this is worth counting, so Studio Mouse can tell a shortage from a
+            surplus. Tell Mouse what came in, where, or what a run used to keep this current.
+          </p>
+          <Table
+            rows={atVendors}
+            stockHeader="Where it is"
+            stockOf={(c) => ({
+              kind: 'byPlace',
+              unit: c.unitOfMeasure,
+              rows: c.locationStock.map((s) => ({
+                place: s.atVendor?.name ?? s.location?.name ?? 'unknown',
+                qty: Number(s.qty).toLocaleString(),
+              })),
+            })}
+            vendors={vendors}
+          />
+        </Card>
+      ) : null}
+
+      {fabric.length ? (
+        <Card title={`Fabric — bought per production run (${fabric.length})`}>
+          <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
+            Shipped straight from the vendor to the manufacturer. Never stocked or counted,
+            by design — what matters is what a planned run will need, and what is already on
+            order.
+          </p>
+          <Table
+            rows={fabric}
+            stockHeader="Incoming"
+            stockOf={(c) => ({ kind: 'count', value: String(c.incomingQty), unit: c.unitOfMeasure })}
+            vendors={vendors}
+          />
+        </Card>
+      ) : null}
     </Page>
   )
 }

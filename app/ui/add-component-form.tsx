@@ -34,14 +34,19 @@ export function AddComponentForm({ vendors }: { vendors: Vendor[] }) {
   const [name, setName] = useState('')
   const [category, setCategory] = useState('MATERIAL')
   const [unit, setUnit] = useState('')
-  const [stocked, setStocked] = useState(true)
+  // Only packaging is genuinely, reliably held at the studio now — most
+  // trim and hardware ships to whichever vendor is cutting the run, same as
+  // fabric always has. This follows the category as a starting point, not a
+  // rule; the checkbox stays a real override either way.
+  const [stocked, setStocked] = useState(false)
+  const [stockedTouched, setStockedTouched] = useState(false)
   const [vendorId, setVendorId] = useState('')
   const [sku, setSku] = useState('')
   const [cost, setCost] = useState('')
   const [lead, setLead] = useState('')
 
   function reset() {
-    setName(''); setCategory('MATERIAL'); setUnit(''); setStocked(true)
+    setName(''); setCategory('MATERIAL'); setUnit(''); setStocked(false); setStockedTouched(false)
     setVendorId(''); setSku(''); setCost(''); setLead(''); setError(null)
   }
 
@@ -95,7 +100,12 @@ export function AddComponentForm({ vendors }: { vendors: Vendor[] }) {
           Category
           <select
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={(e) => {
+              setCategory(e.target.value)
+              // Re-guess the default only until someone has actually
+              // touched the checkbox themselves — after that it's theirs.
+              if (!stockedTouched) setStocked(e.target.value === 'PACKAGING')
+            }}
             className="rounded-lg border border-line bg-bg px-2.5 py-1.5 text-sm"
           >
             {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
@@ -111,7 +121,11 @@ export function AddComponentForm({ vendors }: { vendors: Vendor[] }) {
           />
         </label>
         <label className="flex items-center gap-1.5 pb-1.5 text-sm text-muted">
-          <input type="checkbox" checked={stocked} onChange={(e) => setStocked(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={stocked}
+            onChange={(e) => { setStocked(e.target.checked); setStockedTouched(true) }}
+          />
           Counted in the studio
         </label>
       </div>

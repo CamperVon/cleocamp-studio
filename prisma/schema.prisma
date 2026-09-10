@@ -25,37 +25,38 @@ datasource db {
 /// Everyone who can create a todo, log an event, or be assigned something.
 /// Auth is a single shared password, so this is attribution, not identity.
 model Person {
-  id        String   @id @default(cuid())
-  name      String
-  email     String?  @unique
+  id          String   @id @default(cuid())
+  name        String
+  email       String?  @unique
   /// Other addresses this person sends from, comma-separated. Brandon sends
   /// from bc@thecampbrand.com as often as brandon@cleocamp.com, and Cleo from
   /// studio@cleocamp.com — neither is the address anything is configured to
   /// recognise, so "don't forward this back to whoever sent it" silently
   /// never matched either of them. Identity by inbox, not by one email field.
   aliasEmails String?
-  role      String?  // "Founder", "Project Manager — Manufacturing", etc.
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
+  role        String? // "Founder", "Project Manager — Manufacturing", etc.
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
 
-  eventsCreated    InventoryEvent[] @relation("EventCreatedBy")
-  itemsCreated     ActionItem[]     @relation("ItemCreatedBy")
-  itemsAssigned    ActionItem[]     @relation("ItemAssignedTo")
+  eventsCreated InventoryEvent[] @relation("EventCreatedBy")
+  itemsCreated  ActionItem[]     @relation("ItemCreatedBy")
+  itemsAssigned ActionItem[]     @relation("ItemAssignedTo")
 }
 
 /// One location today: the studio. Everything is here.
 /// Exists so a 3PL in 2027 is a migration rather than a rewrite.
 model Location {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  address   String?
+  id                String   @id @default(cuid())
+  name              String   @unique
+  address           String?
   /// Shopify adjusts stock per location, so the write-through needs this.
   shopifyLocationId String?
-  isDefault Boolean  @default(false)
-  createdAt DateTime @default(now())
+  isDefault         Boolean  @default(false)
+  createdAt         DateTime @default(now())
 
-  components Component[]
-  variants   ProductVariant[]
+  variants ProductVariant[]
+  events   InventoryEvent[]
+  stock    ComponentLocationStock[]
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -70,26 +71,26 @@ enum VendorRole {
 }
 
 model Vendor {
-  id           String     @id @default(cuid())
-  name         String
-  legalName    String?    // "Empire Sewing Inc" vs how Cleo says it, "Antonio's"
-  role         VendorRole @default(COMPONENT_SUPPLIER)
-  contactName  String?
-  contactInfo  String?
+  id               String     @id @default(cuid())
+  name             String
+  legalName        String? // "Empire Sewing Inc" vs how Cleo says it, "Antonio's"
+  role             VendorRole @default(COMPONENT_SUPPLIER)
+  contactName      String?
+  contactInfo      String?
   /// A real, structured email — contactInfo is freeform and often a phone
   /// number instead, so send_purchase_order reads this, never contactInfo.
   /// Null means ask, never guess or parse a number out of contactInfo.
-  email        String?
+  email            String?
   /// Standing extra recipients for every PO sent to this vendor — a
   /// production manager, a second contact. Comma-separated; send_purchase_order
   /// always cc's these, on top of Cleo and Brandon. Not the same as a one-off
   /// cc on a single email — this is "always", every time, until changed.
-  ccEmails     String?
-  address      String?
+  ccEmails         String?
+  address          String?
   /// How you actually place an order — email, phone, walk in, Etsy, Amazon.
   /// Studio Mouse tells Cleo which one she's dealing with.
-  orderMethod  String?
-  paymentTerms String?    // "COD", "Net 30"
+  orderMethod      String?
+  paymentTerms     String? // "COD", "Net 30"
   /// What language this vendor's documents are written in — "en" or "es",
   /// or "both" for a bilingual document. The default for every order to
   /// them, which a single order can still override. Null means English.
@@ -99,17 +100,21 @@ model Vendor {
   documentLanguage String?
   /// Turnaround in days. On a manufacturer this is cut-and-sew time; on a dye
   /// house it is dyeing time, which is a separate stage that adds to it.
-  leadTimeDays Int?
+  leadTimeDays     Int?
   /// Inactive vendors are retained with their history intact, never deleted.
   /// When a vendor is replaced, their prices and lead times become UNKNOWN on
   /// the new vendor — never inherited. See CLAUDE.md §3.
-  active       Boolean    @default(true)
-  notes        String?
-  createdAt    DateTime   @default(now())
+  active           Boolean    @default(true)
+  notes            String?
+  createdAt        DateTime   @default(now())
 
   components     Component[]
   productionRuns ProductionRun[]
   purchaseOrders PurchaseOrder[]
+  /// Component stock currently held here rather than at the studio — see
+  /// ComponentLocationStock.
+  heldStock      ComponentLocationStock[]
+  eventsHere     InventoryEvent[]         @relation("EventAtVendor")
 
   @@index([active, role])
 }
@@ -126,17 +131,17 @@ enum ProductStatus {
 }
 
 model Product {
-  id               String        @id @default(cuid())
-  name             String
-  shopifyProductId String?
-  status           ProductStatus @default(DEVELOPMENT)
+  id                     String        @id @default(cuid())
+  name                   String
+  shopifyProductId       String?
+  status                 ProductStatus @default(DEVELOPMENT)
   /// CMT turnaround from "components in hand" to "finished goods ready to
   /// sell". Separate from any single component's lead time. Null = unknown,
   /// which blocks forecasting and must raise an ActionItem — never assume.
   productionLeadTimeDays Int?
-  retailPriceCents Int?
-  notes            String?
-  createdAt        DateTime      @default(now())
+  retailPriceCents       Int?
+  notes                  String?
+  createdAt              DateTime      @default(now())
 
   variants       ProductVariant[]
   colorways      Colorway[]
@@ -152,15 +157,15 @@ model Product {
 /// "Shrinking Violet". Studio Mouse must speak both — telling Cleo to reorder
 /// "Shell" is useless when she's on the phone with Martin.
 model Colorway {
-  id            String  @id @default(cuid())
-  productId     String
-  customerName  String  // "Shell", "Hot Pink", "Sunshine"
-  dyeHouseName  String? // "Shrinking Violet", "Pastel Yellow"
-  pantone       String? // "639C"
+  id           String  @id @default(cuid())
+  productId    String
+  customerName String // "Shell", "Hot Pink", "Sunshine"
+  dyeHouseName String? // "Shrinking Violet", "Pastel Yellow"
+  pantone      String? // "639C"
   /// Set when there is no dye-house name because it's matched in-house.
-  inHouseMatch  Boolean @default(false)
-  active        Boolean @default(true)
-  notes         String?
+  inHouseMatch Boolean @default(false)
+  active       Boolean @default(true)
+  notes        String?
 
   product  Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
   variants ProductVariant[]
@@ -170,36 +175,36 @@ model Colorway {
 }
 
 model ProductVariant {
-  id               String  @id @default(cuid())
-  productId        String
-  colorwayId       String?
-  shopifyVariantId String?
+  id                     String   @id @default(cuid())
+  productId              String
+  colorwayId             String?
+  shopifyVariantId       String?
   /// The InventoryItem gid — what Shopify's inventory API actually adjusts
   /// against, distinct from the variant id. Write-through needs this.
   shopifyInventoryItemId String?
-  size             String?
+  size                   String?
   /// The manufacturer-facing style code, e.g. "CCSS26COT-SHL01" — what goes
   /// on a cut-and-sew purchase order line, not Shopify's own variant id.
   /// Null means never given one, not blank on purpose.
-  sku              String?
+  sku                    String?
   /// The product photo, pulled from Shopify (the variant's own image, or the
   /// product's featured image as a fallback) — refreshed on every sync, same
   /// as onHandQty. Used on a cut-and-sew PO so the maker sees what they're
   /// cutting, the way the reference orders from Shopify already do.
-  imageUrl         String?
+  imageUrl               String?
   /// Overrides the product price where a variant is priced differently — the
   /// Bean Bag is $368 in Petite and $398 in Medium.
-  retailPriceCents Int?
-  locationId       String?
+  retailPriceCents       Int?
+  locationId             String?
   /// Finished-goods on hand. NULL means UNKNOWN, not zero — the difference
   /// matters. Once Phase 1 wires Shopify this becomes a write-through cache of
   /// Shopify's number and is never edited independently. See CLAUDE.md §3.
-  onHandQty        Decimal? @db.Decimal(12, 3)
-  createdAt        DateTime @default(now())
+  onHandQty              Decimal? @db.Decimal(12, 3)
+  createdAt              DateTime @default(now())
 
-  product   Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
-  colorway  Colorway?        @relation(fields: [colorwayId], references: [id])
-  location  Location?        @relation(fields: [locationId], references: [id])
+  product   Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  colorway  Colorway?           @relation(fields: [colorwayId], references: [id])
+  location  Location?           @relation(fields: [locationId], references: [id])
   events    InventoryEvent[]
   runLines  ProductionRunLine[]
   snapshots SalesSnapshot[]
@@ -213,10 +218,10 @@ model ProductVariant {
 // ─────────────────────────────────────────────────────────────
 
 enum ComponentCategory {
-  MATERIAL   // fabric, leather, denim
-  TRIM       // buttons, tags, zippers
-  HARDWARE   // studs, snaps, magnets, rivets
-  PACKAGING  // glassine bags, stickers, hang tags — consumed per SHIPMENT
+  MATERIAL // fabric, leather, denim
+  TRIM // buttons, tags, zippers
+  HARDWARE // studs, snaps, magnets, rivets
+  PACKAGING // glassine bags, stickers, hang tags — consumed per SHIPMENT
   SUBASSEMBLY // made from other components, e.g. Bateau handles
 }
 
@@ -230,13 +235,13 @@ model Component {
   /// Studio Mouse must quote the vendor's own reference when reordering.
   vendorSku         String?
   vendorDescription String?
-  spec              String?  // "58-60\" wide, 220 gsm"
+  spec              String? // "58-60\" wide, 220 gsm"
 
   /// Consumption unit — how it's used. Fabric: "yard".
-  unitOfMeasure String
+  unitOfMeasure        String
   /// Purchase unit — how it's bought. Fabric: "roll".
   /// "Order 200 yards" is not something a vendor can sell.
-  purchaseUnit        String?
+  purchaseUnit         String?
   unitsPerPurchaseUnit Decimal? @db.Decimal(12, 3) // ~65 yards per roll
 
   /// NULL means unknown. Never inherit a replaced vendor's figures.
@@ -244,29 +249,67 @@ model Component {
   unitCostCents Int?
 
   reorderThreshold Decimal? @db.Decimal(12, 3)
-  /// Does this physically sit in the studio and get counted?
-  /// True for buttons, tags, hardware and packaging. False for fabric, which
-  /// is bought per production run and shipped straight to the manufacturer —
-  /// it has no stock level by design, so onHandQty is meaningless for it and
-  /// must not be displayed as though it were a count of zero.
+  /// True only for something a real, if small, stash of actually sits in
+  /// Cleo's own space — a jar of spare buttons kept for repairs, packaging
+  /// used at the moment of shipping. False for anything bought per
+  /// production run, which for most trim and hardware now means it ships
+  /// straight to whichever vendor is cutting the run, not the studio.
+  /// Brandon, 10 Sept: "we will rarely have buttons in studio, we will have
+  /// them at various factories" — a category (HARDWARE, TRIM) never implied
+  /// this; it is a fact about a specific purchase, and true was the wrong
+  /// default for most of it. When true, a stock event defaults to the
+  /// studio automatically. When false, WHERE the stock currently sits is
+  /// real information — see ComponentLocationStock — not just "not here."
+  /// Always false for MATERIAL (fabric): CLAUDE.md §3 forbids modeling
+  /// fabric held at a manufacturer as stock at all, at any location.
   stockedInStudio  Boolean  @default(true)
+  /// The TOTAL across every place this is held — the sum of every
+  /// ComponentLocationStock row for this component. Forecasting and reorder
+  /// thresholds read this; the per-place breakdown is what tells someone
+  /// WHERE a shortage or a surplus actually is.
   onHandQty        Decimal  @default(0) @db.Decimal(12, 3)
   /// Derived from open PurchaseOrderLines — do not set directly.
   incomingQty      Decimal  @default(0) @db.Decimal(12, 3)
-  locationId       String?
   active           Boolean  @default(true)
   notes            String?
   createdAt        DateTime @default(now())
 
-  vendor      Vendor?   @relation(fields: [vendorId], references: [id])
-  location    Location? @relation(fields: [locationId], references: [id])
-  events      InventoryEvent[]
-  usedIn      BomLine[]          @relation("BomComponent")
-  subAssembly BomLine[]          @relation("ComponentBom")
-  poLines     PurchaseOrderLine[]
-  forecasts   ForecastResult[]
+  vendor        Vendor?                  @relation(fields: [vendorId], references: [id])
+  events        InventoryEvent[]
+  locationStock ComponentLocationStock[]
+  usedIn        BomLine[]                @relation("BomComponent")
+  subAssembly   BomLine[]                @relation("ComponentBom")
+  poLines       PurchaseOrderLine[]
+  forecasts     ForecastResult[]
 
   @@index([active, category])
+}
+
+/// Where a component's stock actually is, broken down by place — the studio,
+/// or a vendor currently holding it. Materialized the same way onHandQty
+/// itself is: written in the same transaction as the InventoryEvent that
+/// changed it, and recomputable from the ledger alone.
+///
+/// Exactly one of locationId / atVendorId is set. Two separate unique
+/// constraints rather than one compound check — Postgres treats NULL as
+/// never equal to NULL, so @@unique([componentId, locationId]) alone would
+/// let the same vendor appear twice for one component as long as locationId
+/// stayed null on both rows. Splitting them means each pointer is uniquely
+/// constrained on its own terms.
+model ComponentLocationStock {
+  id          String   @id @default(cuid())
+  componentId String
+  locationId  String?
+  atVendorId  String?
+  qty         Decimal  @default(0) @db.Decimal(12, 3)
+  updatedAt   DateTime @updatedAt
+
+  component Component @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  location  Location? @relation(fields: [locationId], references: [id])
+  atVendor  Vendor?   @relation(fields: [atVendorId], references: [id])
+
+  @@unique([componentId, locationId])
+  @@unique([componentId, atVendorId])
 }
 
 /// A bill-of-materials line. The parent is either a Product or another
@@ -298,12 +341,17 @@ enum InventoryEventType {
   USED
   COUNTED
   MANUAL_ADJUST
-  GIFTED               // out permanently, counts as demand
-  WHOLESALE_SHIPPED    // out permanently, counts as demand
-  STYLIST_PULL_OUT     // out on loan, NOT demand
+  GIFTED // out permanently, counts as demand
+  WHOLESALE_SHIPPED // out permanently, counts as demand
+  STYLIST_PULL_OUT // out on loan, NOT demand
   STYLIST_PULL_RETURN
   RETURNED
   CORRECTION
+  /// Stock moving between places — the studio and a vendor, or one vendor
+  /// and another — with the count unchanged overall. Always written as a
+  /// matched pair, one negative at the source and one positive at the
+  /// destination, linked by transferGroupId.
+  TRANSFER
 }
 
 enum InventoryEventSource {
@@ -320,26 +368,44 @@ model InventoryEvent {
   componentId      String?
   productVariantId String?
 
+  /// WHERE a component event happened — the studio, or a vendor currently
+  /// holding it. Exactly one of the two, and only meaningful for a component
+  /// event; a productVariant event leaves both null, since Shopify is the
+  /// one place finished goods live. Brandon, 10 Sept: "we will rarely have
+  /// buttons in studio, we will have them at various factories... SM exists
+  /// for clear accounting" — the ledger has to know WHERE, not only HOW MANY,
+  /// or Mouse cannot tell a shortage at Antonio's from a surplus at Staples.
+  /// Never set for a MATERIAL (fabric) component — CLAUDE.md §3 is explicit
+  /// that fabric held at a manufacturer is never modeled as stock at all.
+  locationId String?
+  atVendorId String?
+
   /// Signed change. Always set.
-  deltaQty  Decimal @db.Decimal(12, 3)
+  deltaQty   Decimal  @db.Decimal(12, 3)
   /// For COUNTED only: the absolute number Cleo actually said ("I counted 40").
   /// deltaQty carries the derived change. Storing only the delta would lose
   /// what she told us.
   countedQty Decimal? @db.Decimal(12, 3)
 
-  type       InventoryEventType
-  source     InventoryEventSource @default(CHAT)
-  note       String?
-  createdById String?
-  chatMessageId String?
+  type            InventoryEventType
+  source          InventoryEventSource @default(CHAT)
+  note            String?
+  createdById     String?
+  chatMessageId   String?
   correctsEventId String?
-  createdAt  DateTime @default(now())
+  /// Links the two halves of a TRANSFER — the negative at the source and the
+  /// positive at the destination — so one can be found from the other.
+  transferGroupId String?
+  createdAt       DateTime             @default(now())
 
-  component      Component?      @relation(fields: [componentId], references: [id])
-  productVariant ProductVariant? @relation(fields: [productVariantId], references: [id])
-  createdBy      Person?         @relation("EventCreatedBy", fields: [createdById], references: [id])
-  chatMessage    ChatMessage?    @relation(fields: [chatMessageId], references: [id])
-  corrects       InventoryEvent? @relation("Corrections", fields: [correctsEventId], references: [id])
+  location Location? @relation(fields: [locationId], references: [id])
+  atVendor Vendor?   @relation("EventAtVendor", fields: [atVendorId], references: [id])
+
+  component      Component?       @relation(fields: [componentId], references: [id])
+  productVariant ProductVariant?  @relation(fields: [productVariantId], references: [id])
+  createdBy      Person?          @relation("EventCreatedBy", fields: [createdById], references: [id])
+  chatMessage    ChatMessage?     @relation(fields: [chatMessageId], references: [id])
+  corrects       InventoryEvent?  @relation("Corrections", fields: [correctsEventId], references: [id])
   correctedBy    InventoryEvent[] @relation("Corrections")
 
   @@index([componentId, createdAt])
@@ -365,27 +431,27 @@ enum ProductionStatus {
 /// Tracks where a run is so Cleo can ask "where is my run?" and so lead times
 /// chain. Holds NO inventory — nothing counts until it reaches the studio.
 model ProductionRun {
-  id          String           @id @default(cuid())
-  productId   String
-  vendorId    String?          // the CMT
+  id              String           @id @default(cuid())
+  productId       String
+  vendorId        String? // the CMT
   /// The manufacturer's own reference — Fashion Garcia used "Cut #12".
-  cutRef      String?
-  status      ProductionStatus @default(PLANNED)
-  startedAt   DateTime?
+  cutRef          String?
+  status          ProductionStatus @default(PLANNED)
+  startedAt       DateTime?
   expectedReadyAt DateTime?
   /// Null when the manufacturer hasn't confirmed a date yet. Common.
-  dateConfirmed Boolean  @default(false)
+  dateConfirmed   Boolean          @default(false)
   /// The journey in one line — "at Fashion Garcia, to dye house 10 Sep, ~2wk
   /// dyeing, then back for buttons". A single date cannot express a job that
   /// moves between three places, and the date alone reads as completion when
   /// it is often only the next hand-off.
-  statusSummary String?
-  receivedAt  DateTime?
-  notes       String?
-  createdAt   DateTime @default(now())
+  statusSummary   String?
+  receivedAt      DateTime?
+  notes           String?
+  createdAt       DateTime         @default(now())
 
-  product Product @relation(fields: [productId], references: [id])
-  vendor  Vendor? @relation(fields: [vendorId], references: [id])
+  product Product             @relation(fields: [productId], references: [id])
+  vendor  Vendor?             @relation(fields: [vendorId], references: [id])
   lines   ProductionRunLine[]
   costs   ProductionRunCost[]
 
@@ -411,7 +477,7 @@ model ProductionRunLine {
 model ProductionRunCost {
   id          String  @id @default(cuid())
   runId       String
-  description String  // "Cutting", "Transport to dye house"
+  description String // "Cutting", "Transport to dye house"
   isPerUnit   Boolean @default(false)
   amountCents Int
 
@@ -436,48 +502,48 @@ enum PurchaseOrderStatus {
 /// what it genuinely doesn't have.
 /// Open lines are what `Component.incomingQty` derives from.
 model PurchaseOrder {
-  id         String              @id @default(cuid())
-  poNumber   String              @unique
-  vendorId   String
-  status     PurchaseOrderStatus @default(DRAFT)
-  orderedAt  DateTime?
-  expectedAt DateTime?
-  receivedAt DateTime?
-  shipToLocationId String?
+  id                   String              @id @default(cuid())
+  poNumber             String              @unique
+  vendorId             String
+  status               PurchaseOrderStatus @default(DRAFT)
+  orderedAt            DateTime?
+  expectedAt           DateTime?
+  receivedAt           DateTime?
+  shipToLocationId     String?
   /// Where it physically goes, for the PO document. Fabric ships to the
   /// manufacturer, not the studio, so this is rarely Cleo's address.
-  deliverTo  String?
+  deliverTo            String?
   /// What the order is for. A vendor seeing "for the Cleo Tee" can catch a
   /// wrong fabric before it ships, and it is how anyone later works out why
   /// the order existed.
-  forProductId String?
+  forProductId         String?
   /// Payment terms as agreed, in plain words for the PO document.
-  paymentTerms String?
+  paymentTerms         String?
   /// Who the vendor should confirm receipt with, one per line, for this
   /// order only. Null falls back to DocumentDefaults — which is the usual
   /// case. Here because a draft gets edited: "put Nicki on this one" is a
   /// content change, not a template change, and nobody should have to know
   /// the difference to make it.
-  contactLines String?
+  contactLines         String?
   /// "en", "es" or "both" — what language the document renders in, labels
   /// and dates. Defaults from the vendor's documentLanguage when not given.
   /// Only the fixed chrome is translated by the app; notes, terms and line
   /// text are content, written in the right language when they are written.
   /// See lib/po-strings.ts.
-  language   String              @default("en")
+  language             String              @default("en")
   /// Percentage due at order rather than on delivery. RichLine take 50% up
   /// front on the lurex stripe.
-  depositPercent Int?
+  depositPercent       Int?
   /// Days after delivery the balance falls due. The rib is net 60.
   netDaysAfterDelivery Int?
   /// When the deposit actually went out. Lead times that run "from PO" often
   /// really run from payment, so this is what the arrival date is counted from.
-  depositPaidAt DateTime?
-  notes      String?
-  createdAt  DateTime            @default(now())
+  depositPaidAt        DateTime?
+  notes                String?
+  createdAt            DateTime            @default(now())
 
-  vendor     Vendor              @relation(fields: [vendorId], references: [id])
-  forProduct Product?            @relation(fields: [forProductId], references: [id])
+  vendor     Vendor                @relation(fields: [vendorId], references: [id])
+  forProduct Product?              @relation(fields: [forProductId], references: [id])
   lines      PurchaseOrderLine[]
   exports    PurchaseOrderExport[]
 
@@ -487,12 +553,12 @@ model PurchaseOrder {
 /// Immutable clean copies. Exporting a document never changes order status.
 /// The exact PDF is retained so later edits cannot change a copy already shared.
 model PurchaseOrderExport {
-  id              String   @id @default(cuid())
+  id              String        @id @default(cuid())
   purchaseOrderId String
   contentHash     String
   language        String
   pdf             Bytes
-  createdAt       DateTime @default(now())
+  createdAt       DateTime      @default(now())
   purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
 
   @@unique([purchaseOrderId, contentHash])
@@ -505,9 +571,9 @@ model PurchaseOrderExport {
 /// productVariantId is set; nothing in the schema forces that, so every
 /// writer must, the same convention InventoryEvent already uses.
 model PurchaseOrderLine {
-  id            String  @id @default(cuid())
-  purchaseOrderId String
-  componentId   String?
+  id               String  @id @default(cuid())
+  purchaseOrderId  String
+  componentId      String?
   productVariantId String?
   /// What is being ordered, when it is not yet a catalogue row. A purchase
   /// order is how a NEW thing comes into existence — a colour that does not
@@ -515,14 +581,14 @@ model PurchaseOrderLine {
   /// line must be able to describe something the catalogue has never heard
   /// of. Ignored when componentId or productVariantId is set; those carry
   /// their own name. See lib/po.ts:poLineLabel.
-  description   String?
+  description      String?
   /// Quantity in the PURCHASE unit (rolls, or finished pieces for a
   /// cut-and-sew line), with the conversion recorded so incoming stock lands
   /// in the consumption unit (yards).
-  qtyOrdered    Decimal @db.Decimal(12, 3)
-  unit          String
-  unitCostCents Int?
-  qtyReceived   Decimal @default(0) @db.Decimal(12, 3)
+  qtyOrdered       Decimal @db.Decimal(12, 3)
+  unit             String
+  unitCostCents    Int?
+  qtyReceived      Decimal @default(0) @db.Decimal(12, 3)
 
   purchaseOrder  PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   component      Component?      @relation(fields: [componentId], references: [id])
@@ -547,7 +613,7 @@ enum EntityType {
 
 enum ActionItemKind {
   QUESTION // Studio Mouse needs to know something
-  TODO     // a person must do something
+  TODO // a person must do something
   /// Studio Mouse could not do something it should have been able to do —
   /// a missing tool, or a wall built into the code. Reported from chat with
   /// the exchange attached, so whoever changes the code arrives already
@@ -558,7 +624,7 @@ enum ActionItemKind {
 
 enum ActionItemSource {
   CHAT
-  EMAIL   // Phase 2. Extracted facts are PROPOSALS, never direct writes.
+  EMAIL // Phase 2. Extracted facts are PROPOSALS, never direct writes.
   SYSTEM
   MANUAL
 }
@@ -567,26 +633,26 @@ enum ActionItemSource {
 /// Both are resolved by a human and both belong in one list, so Cleo has one
 /// place to look rather than three screens.
 model ActionItem {
-  id         String           @id @default(cuid())
-  kind       ActionItemKind   @default(QUESTION)
-  entityType EntityType       @default(GENERAL)
-  entityId   String?
-  title      String
-  detail     String?
-  dueDate    DateTime?
+  id               String           @id @default(cuid())
+  kind             ActionItemKind   @default(QUESTION)
+  entityType       EntityType       @default(GENERAL)
+  entityId         String?
+  title            String
+  detail           String?
+  dueDate          DateTime?
   /// Days before dueDate to start surfacing it.
-  remindDaysBefore Int?       @default(3)
-  createdById  String?
-  assignedToId String?
-  source     ActionItemSource @default(CHAT)
-  resolved   Boolean          @default(false)
-  resolvedAt DateTime?
-  resolutionNote String?
+  remindDaysBefore Int?             @default(3)
+  createdById      String?
+  assignedToId     String?
+  source           ActionItemSource @default(CHAT)
+  resolved         Boolean          @default(false)
+  resolvedAt       DateTime?
+  resolutionNote   String?
   /// Set once this has gone out in the "chip away" drip email, so the next
   /// day's pair never repeats it. Null just means never sent that way —
   /// unrelated to resolved, which is a person answering it.
-  askedViaEmailAt DateTime?
-  createdAt  DateTime         @default(now())
+  askedViaEmailAt  DateTime?
+  createdAt        DateTime         @default(now())
 
   createdBy  Person? @relation("ItemCreatedBy", fields: [createdById], references: [id])
   assignedTo Person? @relation("ItemAssignedTo", fields: [assignedToId], references: [id])
@@ -605,16 +671,16 @@ enum AlertSeverity {
 /// System-raised and system-resolving. Kept separate from ActionItem for that
 /// reason — nobody "completes" an alert, the condition simply stops being true.
 model Alert {
-  id       String        @id @default(cuid())
-  severity AlertSeverity @default(WARNING)
-  message  String
+  id                  String        @id @default(cuid())
+  severity            AlertSeverity @default(WARNING)
+  message             String
   /// Stable key for idempotency — the nightly job must not duplicate an alert
   /// for a condition that is still unresolved. Unique among unresolved rows.
-  dedupeKey String
+  dedupeKey           String
   relatedActionItemId String?
-  resolved  Boolean  @default(false)
-  resolvedAt DateTime?
-  createdAt DateTime @default(now())
+  resolved            Boolean       @default(false)
+  resolvedAt          DateTime?
+  createdAt           DateTime      @default(now())
 
   relatedActionItem ActionItem? @relation(fields: [relatedActionItemId], references: [id])
 
@@ -650,24 +716,24 @@ enum ChatRole {
 /// Threads exist so "the buttons" from three days ago doesn't bleed into
 /// today's context window.
 model ChatThread {
-  id        String   @id @default(cuid())
+  id        String        @id @default(cuid())
   title     String?
-  createdAt DateTime @default(now())
+  createdAt DateTime      @default(now())
   messages  ChatMessage[]
 }
 
 model ChatMessage {
-  id       String   @id @default(cuid())
-  threadId String
-  role     ChatRole
-  content  String
-  toolCallsJson Json?
+  id             String   @id @default(cuid())
+  threadId       String
+  role           ChatRole
+  content        String
+  toolCallsJson  Json?
   /// Per-request model/token usage and stop reason; no prompts or credentials.
   agentUsageJson Json?
   /// Which model handled this turn — lets us see how often Sonnet escalates
   /// to Opus and whether the routing is right.
-  model    String?
-  createdAt DateTime @default(now())
+  model          String?
+  createdAt      DateTime @default(now())
 
   thread      ChatThread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
   events      InventoryEvent[]
@@ -723,23 +789,23 @@ model StorageCleanup {
 /// content: an operational setting living in code instead of data. Anything
 /// that sends mail on a schedule gets its switch here.
 model NotificationSettings {
-  id              String   @id @default("singleton")
+  id                    String   @id @default("singleton")
   /// The two-questions-a-day drip at the open list.
-  chipAwayEnabled Boolean  @default(true)
+  chipAwayEnabled       Boolean  @default(true)
   /// The 8am morning report to Brandon and Cleo.
-  amReportEnabled Boolean  @default(true)
+  amReportEnabled       Boolean  @default(true)
   /// The older daily/weekly/monthly digest — superseded by the morning
   /// report and off since 3 Sept, kept switchable rather than deleted.
-  digestEnabled   Boolean  @default(false)
+  digestEnabled         Boolean  @default(false)
   /// Forward anything arriving at a Studio Mouse mailbox on to the people
   /// who should have been cc'd. Brandon, 9 Sept 2026: "some people only
   /// respond to SM and forget to hit cc."
-  forwardInboundEnabled Boolean @default(true)
+  forwardInboundEnabled Boolean  @default(true)
   /// Who those forwards go to, comma-separated. Null falls back to
   /// DIGEST_RECIPIENTS. Here rather than in code so changing who sees the
   /// mail does not need a deploy.
-  forwardInboundTo String?
-  updatedAt       DateTime @updatedAt
+  forwardInboundTo      String?
+  updatedAt             DateTime @updatedAt
 }
 
 /// One row, id "singleton". The parts of a printed document that are
@@ -754,19 +820,19 @@ model NotificationSettings {
 /// Studio Mouse can edit it; typography, columns and page layout stay in
 /// the template where they belong.
 model DocumentDefaults {
-  id           String   @id @default("singleton")
+  id            String   @id @default("singleton")
   /// Newline-separated, same convention as PurchaseOrder.deliverTo.
-  billToLines  String
+  billToLines   String
   /// The standing sentence above the contact block.
-  confirmLine  String
+  confirmLine   String
   /// The same sentence in Spanish, for an order rendered in Spanish. Null
   /// falls back to the English one rather than machine-translating it — a
   /// sentence a vendor acts on is content, not chrome. See lib/po-strings.ts.
   confirmLineEs String?
   /// Who to confirm with, newline-separated. A PO can override this for
   /// itself; most never do.
-  contactLines String
-  updatedAt    DateTime @updatedAt
+  contactLines  String
+  updatedAt     DateTime @updatedAt
 }
 
 /// One row, id "singleton". Set at the end of every real syncShopify() call
@@ -797,20 +863,20 @@ model SalesSnapshot {
 }
 
 model ForecastResult {
-  id          String    @id @default(cuid())
-  productId   String?
-  componentId String?
+  id                    String    @id @default(cuid())
+  productId             String?
+  componentId           String?
   projectedStockoutDate DateTime?
   recommendedOrderDate  DateTime?
   /// Human-readable working, so the digest can explain rather than assert.
-  note        String?
+  note                  String?
   /// Set when the forecast could NOT be computed. Never skip silently —
   /// name exactly what's missing. "Manufacturing lead time unknown."
-  blockedReason String?
-  computedAt  DateTime  @default(now())
+  blockedReason         String?
+  computedAt            DateTime  @default(now())
 
-  product   Product?   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  component Component? @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  product   Product?        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  component Component?      @relation(fields: [componentId], references: [id], onDelete: Cascade)
   events    CalendarEvent[]
 
   @@index([computedAt])
@@ -823,7 +889,7 @@ model ForecastResult {
 enum CalendarEventType {
   ORDER_BY
   PRODUCTION_DUE
-  PRESS_OR_EVENT   // forecast INPUT — flagged before Cleo sizes an order
+  PRESS_OR_EVENT // forecast INPUT — flagged before Cleo sizes an order
   DELIVERY_EXPECTED
   OTHER
 }
@@ -869,8 +935,8 @@ model FileLink {
 /// directly. Facts extracted from an email become proposals a human confirms.
 /// See CLAUDE.md §4.
 model InboundEmail {
-  id          String   @id @default(cuid())
-  messageId   String?  @unique
+  id          String    @id @default(cuid())
+  messageId   String?   @unique
   fromAddress String
   toAddress   String
   subject     String?
@@ -886,7 +952,7 @@ model InboundEmail {
   /// thinks failed, and a retry must not send the same mail twice. Claimed
   /// with a conditional update, so two concurrent deliveries cannot both win.
   forwardedAt DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   @@index([processedAt, receivedAt])
 }
@@ -909,31 +975,31 @@ model DailyBrief {
 /// for 100 days it dies and someone has to re-authorise in a browser, which is
 /// why the nightly job touches it whether or not anyone asked for figures.
 model QuickBooksConnection {
-  id                String   @id @default("singleton")
-  realmId           String
-  accessToken       String
-  refreshToken      String
-  accessExpiresAt   DateTime
-  refreshExpiresAt  DateTime
-  lastRefreshedAt   DateTime?
-  lastError         String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id               String    @id @default("singleton")
+  realmId          String
+  accessToken      String
+  refreshToken     String
+  accessExpiresAt  DateTime
+  refreshExpiresAt DateTime
+  lastRefreshedAt  DateTime?
+  lastError        String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
 /// A snapshot of the financial position, so the app is not calling Intuit on
 /// every page load and so trends can be seen over time.
 model FinancialSnapshot {
-  id             String   @id @default(cuid())
-  forDate        DateTime @unique @db.Date
-  cashCents      BigInt?
-  arCents        BigInt?
-  apCents        BigInt?
-  revenueMtdCents BigInt?
-  revenueYtdCents BigInt?
+  id               String   @id @default(cuid())
+  forDate          DateTime @unique @db.Date
+  cashCents        BigInt?
+  arCents          BigInt?
+  apCents          BigInt?
+  revenueMtdCents  BigInt?
+  revenueYtdCents  BigInt?
   expensesMtdCents BigInt?
-  raw            Json?
-  createdAt      DateTime @default(now())
+  raw              Json?
+  createdAt        DateTime @default(now())
 }
 
 /// Every message Studio Mouse has sent on the company's behalf.
@@ -947,7 +1013,7 @@ model SentEmail {
   ccAddress String?
   subject   String
   body      String
-  sentBy    String?  // who asked for it
+  sentBy    String? // who asked for it
   resendId  String?
   createdAt DateTime @default(now())
 
@@ -963,12 +1029,12 @@ enum DigestKind {
 /// One row per digest actually sent. The unique constraint is what makes the
 /// nightly job safe to hit repeatedly — it cannot double-send.
 model DigestSend {
-  id         String     @id @default(cuid())
-  kind       DigestKind
-  sentForDate DateTime  @db.Date
-  recipients String
-  subject    String?
-  sentAt     DateTime   @default(now())
+  id          String     @id @default(cuid())
+  kind        DigestKind
+  sentForDate DateTime   @db.Date
+  recipients  String
+  subject     String?
+  sentAt      DateTime   @default(now())
 
   @@unique([kind, sentForDate])
 }
@@ -985,12 +1051,12 @@ model DigestSend {
 // beside inventory, not another way to move it.
 
 enum WholesaleAccountType {
-  WHOLESALE   // standard split, sold or not doesn't change what's owed
+  WHOLESALE // standard split, sold or not doesn't change what's owed
   CONSIGNMENT // owed only on what actually sells
 }
 
 model WholesaleAccount {
-  id              String   @id @default(cuid())
+  id              String               @id @default(cuid())
   name            String
   type            WholesaleAccountType @default(WHOLESALE)
   /// e.g. "60/40" — only meaningful for CONSIGNMENT. Recorded exactly as
@@ -999,9 +1065,9 @@ model WholesaleAccount {
   contactName     String?
   email           String?
   address         String?
-  active          Boolean  @default(true)
+  active          Boolean              @default(true)
   notes           String?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime             @default(now())
 
   shipments WholesaleShipment[]
 
@@ -1019,27 +1085,27 @@ model WholesaleShipment {
   notes     String?
   createdAt DateTime  @default(now())
 
-  account WholesaleAccount       @relation(fields: [accountId], references: [id])
+  account WholesaleAccount        @relation(fields: [accountId], references: [id])
   lines   WholesaleShipmentLine[]
 
   @@index([accountId, sentAt])
 }
 
 model WholesaleShipmentLine {
-  id         String   @id @default(cuid())
-  shipmentId String
+  id             String    @id @default(cuid())
+  shipmentId     String
   /// Free text — "Cleo Tee / White / 1" — deliberately not a
   /// ProductVariant relation. This describes what a spreadsheet said left
   /// the studio, not a live count; Shopify already holds the real one.
-  item       String
-  qty        Int
+  item           String
+  qty            Int
   /// The line's total in cents, as recorded — the source wasn't always
   /// consistent about per-unit vs. line total, so this is whichever the
   /// row actually gave. Null where no price was recorded.
   wholesaleCents Int?
   /// When the account actually sold it at retail — mostly unknown. What a
   /// consignment balance actually turns on.
-  soldAt     DateTime?
+  soldAt         DateTime?
 
   shipment WholesaleShipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
 

@@ -151,6 +151,22 @@ it for her.
 goods at the dye house. Fabric is bought per production run and shipped straight
 to the manufacturer; it is never stocked or counted.
 
+**Trim and hardware usually live at a vendor, not the studio.** Most of it is
+bought per production run and ships straight to whoever is cutting that run —
+Brandon: "we will rarely have button in studio, we will have them at various
+factories." Unlike fabric, this is worth counting: a factory can end up
+sitting on a real surplus, or running short, and nobody would know without
+asking. So when you log a receipt, a use or a count for a component that is
+not a genuine studio stash, say WHERE it happened — the studio, or which
+vendor currently holds it. Do not guess the studio by default for something
+that plainly is not there, and do not skip saying where just because it is
+easier. There is a tool to move stock between places without touching the
+total, for when a run finishes and leftovers come back or move on to the
+next one. Don't fuss over small amounts left at a vendor from ordinary slack
+— but if a real quantity is sitting somewhere unused, that is exactly the
+kind of thing worth surfacing: "Antonio's is showing 500 snaps left from the
+last run — worth counting against the next order before reordering more."
+
 **Never seed a stale number.** When a vendor is replaced, their prices and lead
 times become unknown, not inherited.
 

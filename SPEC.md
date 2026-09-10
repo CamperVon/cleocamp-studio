@@ -109,12 +109,31 @@ See `docs/seed-facts.md` for confirmed vendor, price, and product data.
 ### Movement
 - **InventoryEvent** — append-only. componentId *or* productVariantId (exactly
   one), deltaQty, countedQty (absolute, required for COUNTED), type, source,
-  note, createdById, chatMessageId, correctsEventId, createdAt
+  note, createdById, chatMessageId, correctsEventId, `locationId` /
+  `atVendorId` (component events only — see below), `transferGroupId`,
+  createdAt
   - Types: RECEIVED, USED, COUNTED, MANUAL_ADJUST, GIFTED, WHOLESALE_SHIPPED,
-    STYLIST_PULL_OUT, STYLIST_PULL_RETURN, RETURNED, CORRECTION
+    STYLIST_PULL_OUT, STYLIST_PULL_RETURN, RETURNED, CORRECTION, TRANSFER
   - `COUNTED` records what Cleo actually said ("I counted 40") in `countedQty`
     and stores the derived delta alongside. Storing only a delta loses the
-    statement.
+    statement. For a component event, `countedQty` is absolute AT THE PLACE
+    GIVEN, never a total across every place it's held.
+- **`ComponentLocationStock`** — componentId, `locationId` *or* `atVendorId`
+  (exactly one), qty. Added 10 Sept 2026. Most trim and hardware is bought
+  per production run and ships straight to whichever vendor is cutting it,
+  not the studio — Brandon: "we will rarely have button in studio, we will
+  have them at various factories." Unlike fabric, this is worth counting:
+  a factory can end up sitting on real surplus or running short and nobody
+  would know. Materialized the same way `Component.onHandQty` itself is —
+  written in the same transaction as the `InventoryEvent` that changed it,
+  recomputable from the ledger alone. `onHandQty` stays the TOTAL across
+  every place; this table is where. `TRANSFER` writes a matched pair (one
+  negative, one positive, linked by `transferGroupId`) and leaves the total
+  unchanged. Never used for MATERIAL (fabric) — that stays uncounted
+  anywhere, by design, unchanged from the rule below. `Component.locationId`
+  (a single location per component) was removed the same day — 26 rows, all
+  pointing at "Studio", carried no real information once every non-studio
+  component could be held at several vendors at once.
 - **ProductionRun** / **ProductionRunLine** — productId, vendorId (the CMT),
   status, currentStage, startedAt, expectedReadyAt, receivedAt, cost.
   **Holds no inventory.** Exists for work-in-progress visibility ("where is my
@@ -231,7 +250,8 @@ Tools, as of 2026-09-10 — `lib/mouse/tools.ts` is the list that counts:
   `create_product_variants`, `rename_variant_sizes`, `merge_colorway`,
   `upsert_bom_line`
 - **Movement** — `log_inventory_event`, `correct_inventory_event`,
-  `create_production_run`, `update_production_run`, `sync_shopify`
+  `transfer_component_stock`, `create_production_run`,
+  `update_production_run`, `sync_shopify`
 - **Documents** — `create_purchase_order`, `update_purchase_order`,
   `update_purchase_order_lines`, `send_purchase_order`,
   `update_document_defaults`

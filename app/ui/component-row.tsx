@@ -6,6 +6,15 @@ import { Chip } from './primitives'
 
 type Vendor = { id: string; name: string }
 type BomUsage = { productName: string; qtyPerUnit: string; unit: string }
+export type StockDisplay =
+  // A single number in one place — the studio, for shipping supplies and a
+  // real stash kept there, or fabric's "Incoming" (never a stock claim).
+  | { kind: 'count'; value: string; unit: string }
+  // Held across more than one possible place — most trim and hardware now.
+  // Brandon, 10 Sept: "SM exists for clear accounting" — a scalar cannot say
+  // whether 350 buttons means comfortable or means 300 of them are stuck at
+  // a vendor nobody's chasing.
+  | { kind: 'byPlace'; rows: Array<{ place: string; qty: string }>; unit: string }
 
 const money = (c: number | null) => (c === null ? '' : (c / 100).toFixed(2))
 
@@ -21,7 +30,7 @@ const money = (c: number | null) => (c === null ? '' : (c / 100).toFixed(2))
  */
 export function ComponentRow({
   id, name, vendorId, vendorSku, unitCostCents, unitOfMeasure, leadTimeDays,
-  stockValue, showStock, vendors, bomUsage,
+  stock, vendors, bomUsage,
 }: {
   id: string
   name: string
@@ -30,8 +39,7 @@ export function ComponentRow({
   unitCostCents: number | null
   unitOfMeasure: string
   leadTimeDays: number | null
-  stockValue: string
-  showStock: boolean
+  stock: StockDisplay
   vendors: Vendor[]
   bomUsage: BomUsage[]
 }) {
@@ -108,8 +116,22 @@ export function ComponentRow({
             : leadTimeDays === null ? '—' : <span className="tnum">{leadTimeDays} days</span>}
         </td>
         <td className="px-3 py-2.5 text-right sm:pr-5">
-          <span className="tnum">{stockValue}</span>
-          <span className="text-faint"> {unitOfMeasure}</span>
+          {stock.kind === 'count' ? (
+            <>
+              <span className="tnum">{stock.value}</span>
+              <span className="text-faint"> {stock.unit}</span>
+            </>
+          ) : stock.rows.length === 0 ? (
+            <span className="text-faint">not recorded yet</span>
+          ) : (
+            <span className="tnum">
+              {stock.rows.map((r, i) => (
+                <span key={i} className="block whitespace-nowrap">
+                  {r.qty} {stock.unit} <span className="text-faint">· {r.place}</span>
+                </span>
+              ))}
+            </span>
+          )}
         </td>
       </tr>
       {open ? (
