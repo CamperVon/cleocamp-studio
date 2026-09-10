@@ -12,12 +12,12 @@ export function Page({ title, lede, children }: { title: string; lede?: string; 
   )
 }
 
-export function Card({ title, action, children }: { title?: string; action?: ReactNode; children: ReactNode }) {
+export function Card({ title, action, children }: { title?: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (
     <section className="overflow-hidden rounded-xl border border-line bg-surface">
       {title ? (
         <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
-          <h2 className="text-sm font-semibold">{title}</h2>
+          <h2 className="flex items-center gap-2 text-sm font-semibold">{title}</h2>
           {action}
         </div>
       ) : null}

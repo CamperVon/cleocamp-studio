@@ -95,7 +95,14 @@ export default async function Today() {
 
   return (
     <Page title="Home" lede="What needs attention, and what Studio Mouse is still waiting to learn.">
-      <Card title="Studio Mouse">
+      <Card
+        title={
+          <>
+            <Mouse size={20} className="text-ink/70" />
+            Studio Mouse
+          </>
+        }
+      >
         <Chat />
       </Card>
 
