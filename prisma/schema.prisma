@@ -28,6 +28,12 @@ model Person {
   id        String   @id @default(cuid())
   name      String
   email     String?  @unique
+  /// Other addresses this person sends from, comma-separated. Brandon sends
+  /// from bc@thecampbrand.com as often as brandon@cleocamp.com, and Cleo from
+  /// studio@cleocamp.com — neither is the address anything is configured to
+  /// recognise, so "don't forward this back to whoever sent it" silently
+  /// never matched either of them. Identity by inbox, not by one email field.
+  aliasEmails String?
   role      String?  // "Founder", "Project Manager — Manufacturing", etc.
   active    Boolean  @default(true)
   createdAt DateTime @default(now())

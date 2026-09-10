@@ -45,6 +45,31 @@ function looksAutomated(raw: unknown): boolean {
 
 const bare = (a: string) => a.toLowerCase().replace(/^.*</, '').replace(/>.*$/, '').trim()
 
+/**
+ * A person is an inbox, or several. Brandon sends from bc@thecampbrand.com as
+ * often as brandon@cleocamp.com; Cleo sends from studio@cleocamp.com. Neither
+ * is the address anything downstream is configured to recognise, so matching
+ * the sender against one literal email — which is what this used to do —
+ * silently never caught either of them. Every real forward tested this
+ * session went out to both, including mail Brandon or Cleo had themselves
+ * just sent or forwarded.
+ *
+ * Resolves who actually sent a message, by every address on file for them —
+ * see Person.aliasEmails.
+ */
+async function resolvePerson(address: string): Promise<{ id: string; name: string } | null> {
+  const bareAddr = bare(address)
+  const people = await db.person.findMany({
+    where: { active: true, OR: [{ email: { not: null } }, { aliasEmails: { not: null } }] },
+    select: { id: true, name: true, email: true, aliasEmails: true },
+  })
+  for (const p of people) {
+    const addresses = [p.email, ...(p.aliasEmails ?? '').split(',')].filter(Boolean).map((a) => bare(a!))
+    if (addresses.includes(bareAddr)) return { id: p.id, name: p.name }
+  }
+  return null
+}
+
 export type ForwardOutcome =
   | { forwarded: true; to: string[] }
   | { forwarded: false; reason: string }
@@ -73,9 +98,34 @@ export async function forwardInboundEmail(inboundEmailId: string): Promise<Forwa
   if (process.env.EMAIL_FROM && from === bare(process.env.EMAIL_FROM)) {
     return { forwarded: false, reason: 'sent by us' }
   }
-  // Already in their inbox. Brandon emailing Mouse directly does not need to
-  // arrive back at Brandon.
-  const others = recipients.filter((r) => bare(r) !== from)
+
+  // Mail Brandon or Cleo sent or forwarded is not news to Brandon or Cleo.
+  // Forwarding it back to either of them is exactly the noise this feature
+  // was built to remove, just arriving from a different address than the one
+  // anything was configured to recognise — which is the whole reason the
+  // alias table above exists; a plain string match already tried this and
+  // never once fired, because Brandon and Cleo do not send from the addresses
+  // they receive at.
+  //
+  // Brandon and Cleo are each other's redundancy here, not independent
+  // recipients: if either one sent or forwarded this, the other already
+  // shares an inbox, a desk and a text thread with them, and both are the
+  // exact two people this feature exists to protect. So a sender identified
+  // as either one suppresses BOTH from the recipient list — anyone else
+  // configured to receive forwards (Jane, Nicki, if that ever happens) is
+  // unaffected, because they are not who sent it and are not redundant with
+  // whoever did.
+  const INTERNAL = new Set(['per_brandon', 'per_cleo'])
+  const sender = await resolvePerson(email.fromAddress)
+  let others = recipients
+  if (sender && INTERNAL.has(sender.id)) {
+    const resolved = await Promise.all(recipients.map(async (r) => ({ address: r, who: await resolvePerson(r) })))
+    others = resolved.filter(({ who }) => !(who && INTERNAL.has(who.id))).map(({ address }) => address)
+  } else if (sender) {
+    // Some other known person (Jane, Nicki) sent it. Only they themselves are
+    // redundant — everyone else configured to receive forwards still should.
+    others = recipients.filter((r) => bare(r) !== bare(email.fromAddress))
+  }
   if (!others.length) return { forwarded: false, reason: 'sender is the only recipient' }
 
   // Claim it before sending. Two concurrent webhook deliveries — Resend

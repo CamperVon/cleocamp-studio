@@ -1647,6 +1647,41 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  update_person_email: {
+    def: {
+      name: 'update_person_email',
+      description:
+        'Set who someone actually emails from. Brandon sends from ' +
+        'bc@thecampbrand.com as often as brandon@cleocamp.com, and mail forwarding ' +
+        'has to recognise both as him or it treats his own forward as an outside ' +
+        'reply and bounces it right back to him. Use this whenever someone mentions ' +
+        'an address of theirs that is not already on file — "I also send from ' +
+        '___" — rather than letting it go unrecorded.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          name: str('Their name, e.g. "Brandon" or "Cleo" — matched against Person'),
+          email: str('Their primary address'),
+          aliasEmails: str('Every other address they send from, comma-separated. Replaces what is there, so include all of them.'),
+        },
+        required: ['name'],
+      },
+    },
+    run: async (i) => {
+      const person = await db.person.findFirst({ where: { name: { equals: i.name as string, mode: 'insensitive' } } })
+      if (!person) return { error: `No one named "${i.name}" on file.` }
+      const data: any = {}
+      if (typeof i.email === 'string') data.email = i.email
+      if (typeof i.aliasEmails === 'string') data.aliasEmails = i.aliasEmails
+      if (!Object.keys(data).length) return { error: 'Nothing given to change.' }
+      const row = await db.person.update({ where: { id: person.id }, data })
+      return {
+        name: row.name, email: row.email, aliasEmails: row.aliasEmails,
+        tellTheUser: `${row.name} is now recognised at ${[row.email, ...(row.aliasEmails ?? '').split(',').filter(Boolean)].join(', ')}.`,
+      }
+    },
+  },
+
   update_notification_settings: {
     def: {
       name: 'update_notification_settings',
