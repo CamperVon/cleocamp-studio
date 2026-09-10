@@ -103,6 +103,13 @@ Framework-level conventions from the Next.js scaffold live in `AGENTS.md`.
   variables cannot be read back.** `vercel env pull` returns an empty string for
   them. Empty does not mean unset — check with `--no-sensitive` before
   concluding a value is missing, and never delete one on that basis.
+- **Local runs use the REAL Resend key and the REAL database.** There is no
+  staging copy of either. Any test that touches a send path sends, to real
+  people — on 9 Sept 2026 two test forwards reached Cleo and Brandon because a
+  stubbed `sendEmail` silently did nothing (ESM binds the import inside the
+  calling module; reassigning the export never touches it). Set
+  `EMAIL_DRY_RUN=1` when exercising anything that might send. It is checked
+  inside `sendEmail` itself, which is the only place every send passes through.
 - **Watch for success that does nothing.** Every real bug here has had the same
   shape: the seed wiped Shopify counts while reporting success; the inbound
   webhook returned 200 on every message and stored none; the balance parser

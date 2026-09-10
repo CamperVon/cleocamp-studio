@@ -1,0 +1,120 @@
+import { db } from '@/lib/db'
+import { sendEmail } from '@/lib/email'
+
+/**
+ * Forward mail that arrives at a Studio Mouse mailbox on to the people who
+ * should have been cc'd.
+ *
+ * Brandon, 9 Sept 2026: "some people only respond to SM and forget to hit cc."
+ * A vendor hits reply on a purchase order, the answer lands in Mouse's mailbox
+ * and nowhere else, and nobody knows the ship date moved until someone thinks
+ * to look. Mouse reading it overnight is not the same as a person seeing it.
+ *
+ * The reply-to is the point, not the copy. It carries the original sender AND
+ * Mouse's own address, so hitting reply on a forward reaches the vendor and
+ * keeps Mouse in the thread without anyone remembering to cc anything — which
+ * is the habit that caused this in the first place. Fixing the habit by asking
+ * people to have a better habit does not work.
+ *
+ * Nothing here interprets the mail. Forwarding is a copy; CLAUDE.md §4 still
+ * holds, and facts from email still become proposals a human confirms.
+ */
+
+/** Addresses that mean "a machine sent this", never a person waiting on a reply. */
+const MACHINE_SENDER = /(^|[<.])(mailer-daemon|postmaster|no-?reply|do-?not-?reply|bounces?|notifications?)@/i
+
+/**
+ * Headers that say a message was generated automatically. Forwarding an
+ * out-of-office to two people who then reply to it is how a mail loop starts,
+ * and a loop between two of our own addresses would run until someone noticed.
+ */
+function looksAutomated(raw: unknown): boolean {
+  const headers = (raw as { data?: { headers?: Array<{ name?: string; value?: string }> } })?.data?.headers
+  if (!Array.isArray(headers)) return false
+  for (const h of headers) {
+    const name = (h?.name ?? '').toLowerCase()
+    const value = (h?.value ?? '').toLowerCase()
+    if (name === 'auto-submitted' && value !== 'no') return true
+    if (name === 'x-autoreply' || name === 'x-autorespond') return true
+    if (name === 'precedence' && /bulk|auto_reply|junk|list/.test(value)) return true
+    if (name === 'list-unsubscribe') return true
+  }
+  return false
+}
+
+const bare = (a: string) => a.toLowerCase().replace(/^.*</, '').replace(/>.*$/, '').trim()
+
+export type ForwardOutcome =
+  | { forwarded: true; to: string[] }
+  | { forwarded: false; reason: string }
+
+export async function forwardInboundEmail(inboundEmailId: string): Promise<ForwardOutcome> {
+  const settings = await db.notificationSettings.findUnique({ where: { id: 'singleton' } })
+  // Absent settings row means nobody has switched anything off — the schema
+  // default is on, and defaulting to silence would be the failure this is
+  // meant to fix.
+  if (settings && !settings.forwardInboundEnabled) return { forwarded: false, reason: 'forwarding is switched off' }
+
+  const email = await db.inboundEmail.findUnique({ where: { id: inboundEmailId } })
+  if (!email) return { forwarded: false, reason: 'no such email' }
+  if (email.forwardedAt) return { forwarded: false, reason: 'already forwarded' }
+
+  const recipients = (settings?.forwardInboundTo ?? process.env.DIGEST_RECIPIENTS ?? '')
+    .split(',').map((s) => s.trim()).filter(Boolean)
+  if (!recipients.length) return { forwarded: false, reason: 'nobody configured to forward to' }
+
+  const from = bare(email.fromAddress)
+
+  if (MACHINE_SENDER.test(from)) return { forwarded: false, reason: 'automated sender' }
+  if (looksAutomated(email.raw)) return { forwarded: false, reason: 'auto-generated message' }
+  // Our own outgoing address. Mouse's sent mail can land back here via a
+  // catch-all or a list; forwarding it would bounce our own words back at us.
+  if (process.env.EMAIL_FROM && from === bare(process.env.EMAIL_FROM)) {
+    return { forwarded: false, reason: 'sent by us' }
+  }
+  // Already in their inbox. Brandon emailing Mouse directly does not need to
+  // arrive back at Brandon.
+  const others = recipients.filter((r) => bare(r) !== from)
+  if (!others.length) return { forwarded: false, reason: 'sender is the only recipient' }
+
+  // Claim it before sending. Two concurrent webhook deliveries — Resend
+  // retries anything it thinks failed — must not both send. updateMany with
+  // the null check is a compare-and-swap: exactly one caller gets count 1.
+  const claim = await db.inboundEmail.updateMany({
+    where: { id: email.id, forwardedAt: null },
+    data: { forwardedAt: new Date() },
+  })
+  if (claim.count !== 1) return { forwarded: false, reason: 'already forwarded' }
+
+  const received = email.receivedAt.toLocaleString('en-US', {
+    timeZone: 'America/Los_Angeles', dateStyle: 'medium', timeStyle: 'short',
+  })
+  const body = [
+    `From: ${email.fromAddress}`,
+    `To: ${email.toAddress}`,
+    `Received: ${received}`,
+    '',
+    'Replying to this reaches the sender, with Studio Mouse copied automatically.',
+    '',
+    '—'.repeat(20),
+    '',
+    email.text?.trim() || '(no plain-text body — open it in the app to read the HTML version)',
+  ].join('\n')
+
+  const res = await sendEmail({
+    to: others,
+    subject: `Fwd: ${email.subject ?? '(no subject)'}`,
+    text: body,
+    // The sender first, so a client that honours only one uses theirs. Mouse
+    // second, so the thread comes back in and gets read on the nightly pass.
+    replyTo: [email.fromAddress, ...(process.env.EMAIL_FROM ? [process.env.EMAIL_FROM] : [])],
+  })
+
+  if (!res.sent) {
+    // Give the claim back. A message nobody saw is worse than one seen twice,
+    // and leaving forwardedAt set on a send that failed would hide it forever.
+    await db.inboundEmail.update({ where: { id: email.id }, data: { forwardedAt: null } })
+    return { forwarded: false, reason: res.reason ?? 'send failed' }
+  }
+  return { forwarded: true, to: others }
+}

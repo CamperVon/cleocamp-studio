@@ -1651,23 +1651,34 @@ export const TOOLS: Record<string, Tool> = {
     def: {
       name: 'update_notification_settings',
       description:
-        'Switch the scheduled emails on or off. "Stop emailing me the todo questions", ' +
-        '"turn the morning report back on" — do it, do not log it as a todo for someone ' +
-        'else. Takes effect from the next run; nothing further goes out once off. Say ' +
-        'which ones you changed and that they can be turned back on any time.',
+        'Switch the scheduled emails on or off, and set who inbound mail is forwarded to. ' +
+        '"Stop emailing me the todo questions", "turn the morning report back on", "send ' +
+        'the forwards to Jane too" — do it, do not log it as a todo for someone else. ' +
+        'Takes effect from the next run; nothing further goes out once off. Say which ones ' +
+        'you changed and that they can be turned back on any time.',
       input_schema: {
         type: 'object',
         properties: {
           chipAwayEnabled: { type: 'boolean' as const, description: 'The two-questions-a-day drip at the open list' },
           amReportEnabled: { type: 'boolean' as const, description: 'The 8am morning report to Brandon and Cleo' },
           digestEnabled: { type: 'boolean' as const, description: 'The older daily/weekly/monthly digest, off since 3 Sept' },
+          forwardInboundEnabled: { type: 'boolean' as const, description: 'Forward mail arriving at a Studio Mouse address on to Cleo and Brandon, so a vendor who forgets to cc them is not the reason nobody sees it' },
+          forwardInboundTo: str('Who those forwards go to, comma-separated email addresses. Replaces the list, so include everyone who should stay on it.'),
         },
       },
     },
     run: async (i) => {
       const data: any = {}
-      for (const k of ['chipAwayEnabled', 'amReportEnabled', 'digestEnabled'] as const) {
+      for (const k of ['chipAwayEnabled', 'amReportEnabled', 'digestEnabled', 'forwardInboundEnabled'] as const) {
         if (typeof i[k] === 'boolean') data[k] = i[k]
+      }
+      if (typeof i.forwardInboundTo === 'string') {
+        const bad = i.forwardInboundTo.split(',').map((a: string) => a.trim()).filter(Boolean)
+          .filter((a: string) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a))
+        if (bad.length) {
+          return { error: `"${bad.join(', ')}" doesn't look like an email address. Mail forwarded to a wrong address is mail nobody sees.` }
+        }
+        data.forwardInboundTo = i.forwardInboundTo
       }
       if (!Object.keys(data).length) return { error: 'Nothing given to change — say which emails.' }
       const row = await db.notificationSettings.upsert({
@@ -1680,6 +1691,7 @@ export const TOOLS: Record<string, Tool> = {
         nowOn: {
           todoQuestions: row.chipAwayEnabled,
           morningReport: row.amReportEnabled,
+          forwardInbound: row.forwardInboundEnabled ? (row.forwardInboundTo ?? 'the standing list') : false,
           digest: row.digestEnabled,
         },
         tellTheUser: 'Done — takes effect from the next scheduled run. Ask any time to switch them back on.',

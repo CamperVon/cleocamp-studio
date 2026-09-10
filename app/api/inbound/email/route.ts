@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { Webhook } from 'svix'
 import { db } from '@/lib/db'
+import { forwardInboundEmail } from '@/lib/inbound-forward'
 
 /**
  * Inbound email — anything CC'd or forwarded to Studio Mouse.
@@ -88,10 +89,21 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  await db.inboundEmail.upsert({
-    where: { messageId: d.message_id ?? d.email_id ?? crypto.randomUUID() },
+  // A random key here meant a retry of a message carrying neither id found
+  // nothing to match and created a SECOND row — messageId is unique but
+  // Postgres allows many nulls, so nothing complained. Harmless while mail was
+  // only stored; not harmless now that a row triggers a forward. Fall back to
+  // something derived from the message itself, so the same mail keys the same
+  // way twice.
+  const key =
+    d.message_id ??
+    d.email_id ??
+    `derived:${String(d.from ?? '')}|${String(d.subject ?? '')}|${String(d.created_at ?? '')}`
+
+  const stored = await db.inboundEmail.upsert({
+    where: { messageId: key },
     create: {
-      messageId: d.message_id ?? d.email_id ?? null,
+      messageId: key,
       fromAddress: String(d.from ?? 'unknown'),
       toAddress: to,
       subject: d.subject ?? null,
@@ -101,7 +113,21 @@ export async function POST(req: NextRequest) {
       receivedAt: d.created_at ? new Date(d.created_at) : new Date(),
     },
     update: {},
+    select: { id: true },
   })
 
-  return NextResponse.json({ ok: true })
+  // Forwarded inline: Vercel functions have no reliable after-response work,
+  // and mail nobody sees is the whole problem being fixed. A failure here is
+  // logged and swallowed — the message is already safely stored, and a 500
+  // would make Resend retry the whole delivery for something unrelated to
+  // whether we received it.
+  let forwarded: unknown = 'not attempted'
+  try {
+    forwarded = await forwardInboundEmail(stored.id)
+  } catch (err) {
+    console.error('inbound forward failed', err)
+    forwarded = { forwarded: false, reason: 'threw' }
+  }
+
+  return NextResponse.json({ ok: true, forwarded })
 }
