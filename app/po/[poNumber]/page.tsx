@@ -1,5 +1,4 @@
 import { poAmounts, poLineAmount, poUnitTotals } from '@/lib/po'
-import { PoExportButton } from '@/app/ui/po-export-button'
 import { notFound } from 'next/navigation'
 import { db } from '@/lib/db'
 import { asDocLanguage, confirmSentence, formatDate, label, type DocLanguage } from '@/lib/po-strings'
@@ -27,7 +26,6 @@ export default async function PurchaseOrderDoc({
     where: { poNumber },
     include: {
       vendor: true, forProduct: true,
-      exports: { orderBy: { createdAt: 'desc' }, select: { id: true, language: true, createdAt: true }, take: 20 },
       lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } },
     },
   })
@@ -70,7 +68,7 @@ export default async function PurchaseOrderDoc({
             Cleo Couture LLC
           </div>
         </div>
-        <div className="text-right">
+        <div className="max-w-[58%] text-right">
           <div className="text-[14pt] tracking-[0.08em]">{t('purchaseOrder')}</div>
           <div className="mt-2 tabular-nums">
             <span className="text-[#6A736F]">{t('no')} </span>{po.poNumber}
@@ -87,9 +85,6 @@ export default async function PurchaseOrderDoc({
           ) : null}
           {po.paymentTerms ? (
             <div><span className="text-[#6A736F]">{t('terms')} </span>{po.paymentTerms}</div>
-          ) : null}
-          {po.status === 'DRAFT' ? (
-            <div className="mt-1 text-[9pt] uppercase tracking-wider text-[#8C3A2B]">{t('draft')}</div>
           ) : null}
         </div>
       </div>
@@ -209,24 +204,14 @@ export default async function PurchaseOrderDoc({
       </div>
 
       <div className="no-print mt-10 flex flex-wrap items-start gap-5 border-t border-[#DEDFDB] pt-4 text-[9pt] text-[#8B9491]">
-        {po.status !== 'CANCELLED' ? <PoExportButton poNumber={po.poNumber} /> : null}
         <a
           href={`/po/${po.poNumber}/pdf`}
           className="rounded border border-[#14181A]/20 px-3 py-1.5 font-sans text-[9pt] text-[#14181A] no-underline hover:bg-black/5"
         >
-          Download working PDF
+          Download PDF
         </a>
         <span>or print this page from your browser.</span>
       </div>
-      {po.exports.length ? <section className="no-print mt-5 text-[9pt]">
-        <h2 className="font-sans font-semibold">Saved clean copies</h2>
-        <p className="mt-1 text-[#5C6663]">These copies stay as they were when prepared, even if you edit the order.</p>
-        <ul className="mt-2 space-y-2">
-          {po.exports.map(copy => <li key={copy.id}><a className="underline" href={`/po/${encodeURIComponent(po.poNumber)}/exports/${copy.id}`}>
-            {copy.createdAt.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })} · {copy.language.toUpperCase()}
-          </a></li>)}
-        </ul>
-      </section> : null}
     </main>
   )
 }

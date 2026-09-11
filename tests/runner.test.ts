@@ -8,7 +8,7 @@ const usage = { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 2
 const toolUse = (name: string, id = name): Anthropic.ToolUseBlock => ({ type: 'tool_use', caller: { type: 'direct' }, name, id, input: { poNumber: 'TEST-1' } })
 const response = (content: Anthropic.ContentBlock[], stop_reason: Anthropic.StopReason = 'tool_use') => ({ content, stop_reason, usage })
 const answer = response([{ type: 'text', text: 'Done.', citations: null }], 'end_turn')
-const defs: Anthropic.Tool[] = ['update_purchase_order', 'send_purchase_order', 'request_deep_analysis', 'query_status', 'export_purchase_order']
+const defs: Anthropic.Tool[] = ['update_purchase_order', 'send_purchase_order', 'request_deep_analysis', 'query_status', 'create_purchase_order']
   .map(name => ({ name, input_schema: { type: 'object' } }))
 const base = { system: [], messages: [{ role: 'user' as const, content: 'Prepare my order.' }], tools: defs, model: 'normal', deepModel: 'deep' }
 
@@ -79,11 +79,11 @@ test('unavailable tools cannot execute even when a model requests one', async ()
   assert.equal(r.toolCalls[0].status, 'failed')
 })
 
-test('clean export is a success although no email was sent', async () => {
+test('a write that sends no email is still a success, not a failure', async () => {
   let n = 0
   const r = await runLoop({ ...base,
-    create: async () => n++ === 0 ? response([toolUse('export_purchase_order')]) : answer,
-    execute: async () => ({ exported: true, emailSent: false, documentPath: '/po/TEST-1/exports/one' }),
+    create: async () => n++ === 0 ? response([toolUse('create_purchase_order')]) : answer,
+    execute: async () => ({ poNumber: 'TEST-1', emailSent: false, document: '/po/TEST-1' }),
   })
   assert.equal(r.writes.length, 1)
 })

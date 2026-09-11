@@ -56,6 +56,12 @@ const styles = StyleSheet.create({
   wordmark: { fontSize: 20, fontStyle: 'italic', fontWeight: 'bold' },
   sub: { marginTop: 3, fontSize: 8, letterSpacing: 1, color: '#6A736F' },
   docTitle: { fontSize: 13, letterSpacing: 1 },
+  // Capped and right-aligned. Without a width the block grows until it runs
+  // off the page: Empire's terms ("No deposit. Billed in two invoices: 1st on
+  // cutting & sewing complete, 2nd on finishing & packing complete") was
+  // clipped mid-word at the paper's edge on PO 2360.
+  headerMeta: { alignItems: 'flex-end', maxWidth: '58%' },
+  terms: { textAlign: 'right' },
   muted: { color: '#6A736F' },
   hr: { marginTop: 14, marginBottom: 14, borderBottomWidth: 1, borderBottomColor: '#14181A' },
   addrBlock: { flex: 1 },
@@ -90,7 +96,7 @@ export async function loadPo(poNumber: string) {
 
 export type DocContent = { billTo: string[]; confirmLine: string; contactLines: string[] }
 
-export function PurchaseOrderDoc({ po, content, clean = false }: { po: PoForPdf; content: DocContent; clean?: boolean }) {
+export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocContent }) {
   const lang: DocLanguage = asDocLanguage(po.language)
   const t = (k: Parameters<typeof label>[1]) => label(lang, k)
   const total = poAmounts(po.lines)
@@ -125,7 +131,7 @@ export function PurchaseOrderDoc({ po, content, clean = false }: { po: PoForPdf;
             <Text style={styles.wordmark}>Cleo</Text>
             <Text style={styles.sub}>CLEO COUTURE LLC</Text>
           </View>
-          <View style={{ alignItems: 'flex-end' }}>
+          <View style={styles.headerMeta}>
             <Text style={styles.docTitle}>{t('purchaseOrder')}</Text>
             <Text style={{ marginTop: 6 }}><Text style={styles.muted}>{t('no')} </Text>{po.poNumber}</Text>
             {po.forProduct ? <Text><Text style={styles.muted}>{t('for')} </Text>{po.forProduct.name}</Text> : null}
@@ -136,19 +142,9 @@ export function PurchaseOrderDoc({ po, content, clean = false }: { po: PoForPdf;
                 {formatDate(lang, po.expectedAt, 'UTC')}
               </Text>
             ) : null}
-            {po.paymentTerms ? <Text><Text style={styles.muted}>{t('terms')} </Text>{po.paymentTerms}</Text> : null}
-            {/* Brandon, 11 Sept: "no more draft on the PO -- too confusing,
-                it never gets taken off if i need to send externally." Never
-                shown here now, regardless of status — this is the PDF a
-                vendor actually receives, whether through send_purchase_order
-                or Brandon downloading and sending it himself, and there is
-                no path from here back to "clean" once it has left the
-                building. The in-app HTML page still shows DRAFT — that view
-                is internal-only and the status is real, useful information
-                there. `clean`/`asSent` no longer change anything on this
-                line; kept as parameters since other call sites still pass
-                them and removing the plumbing is a separate, unrelated
-                change from what was actually asked for here. */}
+            {po.paymentTerms ? (
+              <Text style={styles.terms}><Text style={styles.muted}>{t('terms')} </Text>{po.paymentTerms}</Text>
+            ) : null}
           </View>
         </View>
 
@@ -239,22 +235,18 @@ export function PurchaseOrderDoc({ po, content, clean = false }: { po: PoForPdf;
  * still pass it — deleting the plumbing is a separate cleanup from what was
  * actually asked for.
  */
-export async function renderPurchaseOrderPdf(
-  poNumber: string,
-  opts: { asSent?: boolean; clean?: boolean } = {},
-): Promise<Buffer | null> {
+export async function renderPurchaseOrderPdf(poNumber: string): Promise<Buffer | null> {
   const [po, defaults] = await Promise.all([
     loadPo(poNumber),
     db.documentDefaults.findUnique({ where: { id: 'singleton' } }),
   ])
   if (!po) return null
-  return renderPoSnapshot(po, defaults, { clean: opts.clean || opts.asSent })
+  return renderPoSnapshot(po, defaults)
 }
 
 export async function renderPoSnapshot(
   po: PoForPdf,
   defaults: { billToLines: string; confirmLine: string; confirmLineEs?: string | null; contactLines: string } | null,
-  opts: { clean?: boolean } = {},
 ): Promise<Buffer> {
   const content: DocContent = {
     billTo: (defaults?.billToLines ?? '').split('\n').filter(Boolean),
@@ -263,5 +255,5 @@ export async function renderPoSnapshot(
     // A per-order override wins; almost nothing sets one.
     contactLines: (po.contactLines ?? defaults?.contactLines ?? '').split('\n').filter(Boolean),
   }
-  return renderToBuffer(<PurchaseOrderDoc po={po} content={content} clean={opts.clean} />)
+  return renderToBuffer(<PurchaseOrderDoc po={po} content={content} />)
 }

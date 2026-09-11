@@ -29,7 +29,7 @@ export async function buildCatalog(): Promise<string> {
     db.actionItem.findMany({ where: { resolved: false }, orderBy: { createdAt: 'asc' } }),
     db.purchaseOrder.findMany({
       where: { status: { in: ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'] } },
-      include: { exports: { select: { id: true, language: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take: 3 }, vendor: true, forProduct: true, lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
+      include: { vendor: true, forProduct: true, lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
     }),
     db.productionRun.findMany({
       where: { status: { notIn: ['RECEIVED', 'CANCELLED'] } },
@@ -166,7 +166,6 @@ export async function buildCatalog(): Promise<string> {
   if (pos.length) {
     L.push('\n## Open purchase orders')
     for (const p of pos) {
-      for (const copy of p.exports) L.push(`  Saved clean copy of PO ${p.poNumber}: /po/${encodeURIComponent(p.poNumber)}/exports/${copy.id} (${copy.language}, ${copy.createdAt.toISOString()}). Export alone does not mean sent.`)
       const lines = p.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${poLineLabel(l)}`).join(', ')
       L.push(
         `- PO ${p.poNumber} to ${p.vendor.name}: ${lines}` +
