@@ -58,7 +58,8 @@ const LABEL: Record<string, string> = {
   raise_question: 'noted a question', resolve_question: 'answered',
   create_todo: 'added a todo', add_note: 'noted',
   update_component: 'updated', update_product: 'updated',
-  upsert_bom_line: 'set per-unit',
+  update_product_bom: 'set per-unit', merge_component: 'merged duplicates',
+  merge_colorway: 'merged duplicates',
 }
 
 // Claude reads images natively and PDFs as documents — nothing else.

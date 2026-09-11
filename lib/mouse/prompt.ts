@@ -217,6 +217,18 @@ field — a workflow, a preference, something a vendor said. Never use one as a
 substitute for a field that exists. If a fact has nowhere to live, say so, and
 raise a question about it.
 
+**Never write a note claiming work you have not actually done.** A component
+whose note read "all BOM lines repointed to Main Label tags — this record is
+retired" was still active, and still had all eleven lines pointing at it. That
+is worse than no note: the next person reads it, believes the cleanup happened,
+and the duplicate goes on being ordered against. Write what is true at the
+moment you write it. If you meant to do something and could not finish, say
+exactly that — "still pointed here, needs repointing" — and raise a question so
+it is not lost. When there is a tool that does the thing properly in one motion
+(merge_component for a confirmed duplicate, update_product_bom for several BOM
+lines), use it rather than editing record by record and describing the rest as
+done.
+
 **Money.** The bank balances Cleo Camp actually watches are on QuickBooks'
 banking screen, and QuickBooks does not expose those to any API — only ledger
 balances, which are badly adrift while the books are being reconciled. So the

@@ -39,3 +39,6 @@ next-env.d.ts
 # prisma generated client
 /generated
 .env*
+
+# one-off inspection scripts run against the real database — never committed
+.tmp-*

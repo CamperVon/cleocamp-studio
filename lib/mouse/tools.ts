@@ -560,6 +560,15 @@ export const TOOLS: Record<string, Tool> = {
           purchaseUnit: str('How it is bought, e.g. roll or hide'),
           unitsPerPurchaseUnit: num('How many consumption units per purchase unit'),
           notes: str('Replaces the existing note'),
+          active: {
+            type: 'boolean' as const,
+            description:
+              'False retires it — the honest way to "remove" a component. It keeps its ' +
+              'history and stays on past orders; it simply stops being something to order ' +
+              'or build with. If it is being retired because it duplicates another row, ' +
+              'use merge_component instead: retiring on its own leaves every BOM line ' +
+              'still pointing at the dead record.',
+          },
         },
         required: ['id'],
       },
@@ -596,34 +605,109 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
-  upsert_bom_line: {
+  update_product_bom: {
     def: {
-      name: 'upsert_bom_line',
+      name: 'update_product_bom',
       description:
-        'Set how much of a component goes into one unit of a product. Only when you have ' +
-        'been given a real figure — never an estimate.',
+        'Set what goes into one unit of a product — as many lines as you need, in one ' +
+        'call. Adds a component that was missing, changes a quantity, and takes off a line ' +
+        'that should not be there, all in the same motion; do not make a separate call per ' +
+        'line. Only ever with real figures you were actually given — never an estimate. ' +
+        'Removing a line means this product genuinely does not use that component. If ' +
+        'instead one component turned out to be another under a second name, use ' +
+        'merge_component, which repoints every product at once rather than product by ' +
+        'product.',
       input_schema: {
         type: 'object',
         properties: {
           productId: str('Product id'),
-          componentId: str('Component id'),
-          qtyPerUnit: num('Quantity per finished unit'),
-          notes: str('Where the figure came from'),
+          set: {
+            type: 'array' as const,
+            description: 'Lines to add or change — the component, and how much of it one finished unit takes.',
+            items: {
+              type: 'object' as const,
+              properties: {
+                componentId: str('Component id'),
+                qtyPerUnit: num('Quantity per finished unit'),
+                notes: str('Where the figure came from'),
+              },
+              required: ['componentId', 'qtyPerUnit'],
+            },
+          },
+          remove: {
+            type: 'array' as const,
+            description: 'Component ids to take off this product entirely.',
+            items: { type: 'string' as const },
+          },
         },
-        required: ['productId', 'componentId', 'qtyPerUnit'],
+        required: ['productId'],
       },
     },
     run: async (i) => {
-      const existing = await db.bomLine.findFirst({
-        where: { parentProductId: i.productId, componentId: i.componentId },
-      })
-      const data = {
-        parentProductId: i.productId, componentId: i.componentId,
-        qtyPerUnit: String(i.qtyPerUnit), notes: i.notes ?? null,
+      const productId = i.productId as string
+      const set = (i.set ?? []) as { componentId: string; qtyPerUnit: number; notes?: string }[]
+      const remove = (i.remove ?? []) as string[]
+
+      const product = await db.product.findUnique({ where: { id: productId }, select: { name: true } })
+      if (!product) return { error: `No product ${productId}` }
+      if (!set.length && !remove.length) return { error: 'Nothing to do — give set, remove, or both.' }
+
+      // Naming both sides of the same component is a contradiction, not an
+      // ordering question. Refuse rather than pick one.
+      const clash = set.filter((l) => remove.includes(l.componentId)).map((l) => l.componentId)
+      if (clash.length) {
+        return { error: `${clash.join(', ')} appears in both set and remove. Say which one you mean.` }
       }
-      return existing
-        ? db.bomLine.update({ where: { id: existing.id }, data, select: { id: true } })
-        : db.bomLine.create({ data, select: { id: true } })
+
+      const named = await db.component.findMany({
+        where: { id: { in: [...set.map((l) => l.componentId), ...remove] } },
+        select: { id: true, name: true, unitOfMeasure: true },
+      })
+      const byId = new Map(named.map((c) => [c.id, c]))
+      const missing = [...set.map((l) => l.componentId), ...remove].filter((id) => !byId.has(id))
+      if (missing.length) return { error: `No component ${missing.join(', ')}` }
+
+      return db.$transaction(async (tx) => {
+        const added: string[] = []
+        const changed: string[] = []
+        for (const line of set) {
+          const existing = await tx.bomLine.findFirst({
+            where: { parentProductId: productId, componentId: line.componentId },
+            select: { id: true, qtyPerUnit: true },
+          })
+          const data = {
+            parentProductId: productId, componentId: line.componentId,
+            qtyPerUnit: String(line.qtyPerUnit), notes: line.notes ?? null,
+          }
+          const name = byId.get(line.componentId)!.name
+          if (existing) {
+            await tx.bomLine.update({ where: { id: existing.id }, data })
+            if (Number(existing.qtyPerUnit) !== line.qtyPerUnit) {
+              changed.push(`${name} ${Number(existing.qtyPerUnit)} → ${line.qtyPerUnit}`)
+            }
+          } else {
+            await tx.bomLine.create({ data })
+            added.push(`${name} ×${line.qtyPerUnit}`)
+          }
+        }
+        const dropped: string[] = []
+        for (const componentId of remove) {
+          const { count } = await tx.bomLine.deleteMany({ where: { parentProductId: productId, componentId } })
+          if (count) dropped.push(byId.get(componentId)!.name)
+        }
+
+        const parts = [
+          added.length ? `added ${added.join(', ')}` : null,
+          changed.length ? `changed ${changed.join(', ')}` : null,
+          dropped.length ? `removed ${dropped.join(', ')}` : null,
+        ].filter(Boolean)
+        return {
+          product: product.name, added, changed, dropped,
+          tellTheUser: parts.length
+            ? `${product.name}: ${parts.join('; ')}.`
+            : `${product.name}'s bill of materials was already exactly that — nothing changed.`,
+        }
+      })
     },
   },
 
@@ -826,6 +910,114 @@ export const TOOLS: Record<string, Tool> = {
           (moved.count ? `, ${moved.count} variant(s) moved across` : '') +
           `. One row for one colour now. The name "${dupe.customerName}" is free if the ` +
           `kept colour should take it.`,
+      }
+    },
+  },
+
+  merge_component: {
+    def: {
+      name: 'merge_component',
+      description:
+        'Fold a duplicate component into the real one — one physical thing that ended up ' +
+        'with two rows, the way "Cleo tags" and "Main label" turned out to be the same ' +
+        'label. Every bill-of-materials line pointing at the duplicate is repointed to the ' +
+        'one being kept, across every product at once, and the duplicate is then retired ' +
+        'rather than deleted so its history stays readable. Where a product already carries ' +
+        'both, the keeper\'s line stands and the duplicate\'s is dropped — one line per ' +
+        'component, never two. Use it the moment a duplicate is confirmed by a person: two ' +
+        'rows for one object means two counts and two orders, and one of them is always ' +
+        'wrong. Do not hand-edit each product instead; that is what left the duplicate ' +
+        'half-repointed last time.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          duplicateId: str('The component to retire'),
+          keepId: str('The component to keep — normally the one whose vendor, price and lead time are filled in'),
+        },
+        required: ['duplicateId', 'keepId'],
+      },
+    },
+    run: async (i) => {
+      const include = {
+        usedIn: { include: { parentProduct: { select: { name: true } } } },
+        _count: { select: { poLines: true, events: true } },
+      } as const
+      const [dupe, keep] = await Promise.all([
+        db.component.findUnique({ where: { id: i.duplicateId as string }, include }),
+        db.component.findUnique({ where: { id: i.keepId as string }, include }),
+      ])
+      if (!dupe) return { error: `No component ${i.duplicateId}` }
+      if (!keep) return { error: `No component ${i.keepId}` }
+      if (dupe.id === keep.id) return { error: 'Those are the same component.' }
+
+      // A merge rewrites what the duplicate was part of. BOM lines are a
+      // current statement and are the point of this tool; a purchase order
+      // line and an inventory event are history — CLAUDE.md §3 makes the
+      // ledger append-only, and a PO line is what a vendor was actually
+      // sent. Refuse rather than quietly rewrite either.
+      if (dupe._count.events || dupe._count.poLines) {
+        const held = [
+          dupe._count.events ? `${dupe._count.events} inventory event(s)` : null,
+          dupe._count.poLines ? `${dupe._count.poLines} purchase order line(s)` : null,
+        ].filter(Boolean).join(' and ')
+        return {
+          error:
+            `"${dupe.name}" carries ${held}, which merging would rewrite — the ledger is ` +
+            `append-only and a PO line is what a vendor was actually sent. Retire it with ` +
+            `update_component instead and repoint the products by hand, or say which ` +
+            `record the history really belongs to.`,
+        }
+      }
+
+      const keepProducts = new Set(keep.usedIn.map((l) => l.parentProductId))
+      const conflicts = dupe.usedIn
+        .filter((l) => keepProducts.has(l.parentProductId))
+        .map((l) => {
+          const theirs = keep.usedIn.find((k) => k.parentProductId === l.parentProductId)!
+          return {
+            product: l.parentProduct?.name ?? l.parentProductId ?? 'a sub-assembly',
+            duplicateQty: Number(l.qtyPerUnit),
+            keptQty: Number(theirs.qtyPerUnit),
+          }
+        })
+
+      const result = await db.$transaction(async (tx) => {
+        // Both @@unique constraints on BomLine are (parent, componentId), so a
+        // product already carrying the keeper cannot take a second line for it.
+        // Drop the duplicate's line there; repoint everywhere else.
+        const dropIds = dupe.usedIn.filter((l) => keepProducts.has(l.parentProductId)).map((l) => l.id)
+        if (dropIds.length) await tx.bomLine.deleteMany({ where: { id: { in: dropIds } } })
+        const repointed = await tx.bomLine.updateMany({
+          where: { componentId: dupe.id }, data: { componentId: keep.id },
+        })
+        // Lines where the duplicate was itself the parent of a sub-assembly.
+        const reparented = await tx.bomLine.updateMany({
+          where: { parentComponentId: dupe.id }, data: { parentComponentId: keep.id },
+        })
+        await tx.component.update({
+          where: { id: dupe.id },
+          data: {
+            active: false,
+            notes: `Duplicate of "${keep.name}" (${keep.id}) — merged ${new Date().toISOString().slice(0, 10)}. ` +
+              `Every bill-of-materials line now points at "${keep.name}". Retired: do not order against this row.`,
+          },
+        })
+        return { repointed: repointed.count, dropped: dropIds.length, reparented: reparented.count }
+      })
+
+      return {
+        merged: true,
+        ...result,
+        conflicts,
+        tellTheUser:
+          `"${dupe.name}" folded into "${keep.name}" — ` +
+          `${result.repointed} product line(s) repointed` +
+          (result.dropped ? `, ${result.dropped} dropped where both were already listed` : '') +
+          `, and "${dupe.name}" retired. ` +
+          (conflicts.some((c) => c.duplicateQty !== c.keptQty)
+            ? `Quantities disagreed on ${conflicts.filter((c) => c.duplicateQty !== c.keptQty).map((c) => `${c.product} (${c.duplicateQty} vs ${c.keptQty} kept)`).join(', ')} — worth confirming which is right. `
+            : '') +
+          `One row for one thing now.`,
       }
     },
   },

@@ -244,11 +244,11 @@ components, vendors, open items. At this scale that is a few thousand tokens,
 and it beats fuzzy retrieval, which fails silently when "the pink one" doesn't
 substring-match a colorway named "Rose".
 
-Tools, as of 2026-09-10 — `lib/mouse/tools.ts` is the list that counts:
+Tools, as of 2026-09-11 — `lib/mouse/tools.ts` is the list that counts:
 
 - **Catalogue** — create/update vendor, product, component, colorway;
   `create_product_variants`, `rename_variant_sizes`, `merge_colorway`,
-  `upsert_bom_line`
+  `merge_component`, `update_product_bom`
 - **Movement** — `log_inventory_event`, `correct_inventory_event`,
   `transfer_component_stock`, `create_production_run`,
   `update_production_run`, `sync_shopify`
