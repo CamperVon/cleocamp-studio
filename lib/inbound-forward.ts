@@ -57,7 +57,7 @@ const bare = (a: string) => a.toLowerCase().replace(/^.*</, '').replace(/>.*$/, 
  * Resolves who actually sent a message, by every address on file for them —
  * see Person.aliasEmails.
  */
-async function resolvePerson(address: string): Promise<{ id: string; name: string } | null> {
+async function resolvePerson(address: string): Promise<{ id: string; name: string; addresses: string[] } | null> {
   const bareAddr = bare(address)
   const people = await db.person.findMany({
     where: { active: true, OR: [{ email: { not: null } }, { aliasEmails: { not: null } }] },
@@ -65,9 +65,23 @@ async function resolvePerson(address: string): Promise<{ id: string; name: strin
   })
   for (const p of people) {
     const addresses = [p.email, ...(p.aliasEmails ?? '').split(',')].filter(Boolean).map((a) => bare(a!))
-    if (addresses.includes(bareAddr)) return { id: p.id, name: p.name }
+    if (addresses.includes(bareAddr)) return { id: p.id, name: p.name, addresses }
   }
   return null
+}
+
+/**
+ * Everyone already on the original message — its own To and Cc, straight
+ * from Resend's payload, not the flattened toAddress column (that only ever
+ * held To). Brandon, 11 Sept: "SM doesn't need to forward emails that I am
+ * cc'd on." If he was already cc'd on the mail that hit mouse@, forwarding
+ * it to him is the exact noise this feature exists to remove, just arriving
+ * from the opposite direction — the sender already reached him directly.
+ */
+function originalRecipients(raw: unknown): string[] {
+  const d = (raw as { data?: { to?: unknown; cc?: unknown } })?.data
+  const flatten = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
+  return [...flatten(d?.to), ...flatten(d?.cc)].map(bare)
 }
 
 export type ForwardOutcome =
@@ -127,6 +141,24 @@ export async function forwardInboundEmail(inboundEmailId: string): Promise<Forwa
     others = recipients.filter((r) => bare(r) !== bare(email.fromAddress))
   }
   if (!others.length) return { forwarded: false, reason: 'sender is the only recipient' }
+
+  // Drop anyone already on the original To/Cc — Brandon, 11 Sept: "SM
+  // doesn't need to forward emails that I am cc'd on." They already got this
+  // straight from whoever sent it; a forward on top is the same redundancy
+  // this feature exists to remove, just aimed the other way. Checked against
+  // every address on file for the recipient (Person.aliasEmails), not just
+  // the one address they're configured to be forwarded at — being cc'd as
+  // bc@thecampbrand.com still means Brandon already has it.
+  const alreadyOn = originalRecipients(email.raw)
+  if (alreadyOn.length) {
+    const resolved = await Promise.all(others.map(async (r) => {
+      const who = await resolvePerson(r)
+      const addresses = who?.addresses ?? [bare(r)]
+      return { address: r, hasIt: addresses.some((a) => alreadyOn.includes(a)) }
+    }))
+    others = resolved.filter(({ hasIt }) => !hasIt).map(({ address }) => address)
+  }
+  if (!others.length) return { forwarded: false, reason: 'recipient(s) already on the original message' }
 
   // Claim it before sending. Two concurrent webhook deliveries — Resend
   // retries anything it thinks failed — must not both send. updateMany with
