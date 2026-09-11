@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { Webhook } from 'svix'
 import { db } from '@/lib/db'
-import { forwardInboundEmail } from '@/lib/inbound-forward'
 
 /**
  * Inbound email — anything CC'd or forwarded to Studio Mouse.
@@ -124,18 +123,12 @@ export async function POST(req: NextRequest) {
     select: { id: true },
   })
 
-  // Forwarded inline: Vercel functions have no reliable after-response work,
-  // and mail nobody sees is the whole problem being fixed. A failure here is
-  // logged and swallowed — the message is already safely stored, and a 500
-  // would make Resend retry the whole delivery for something unrelated to
-  // whether we received it.
-  let forwarded: unknown = 'not attempted'
-  try {
-    forwarded = await forwardInboundEmail(stored.id)
-  } catch (err) {
-    console.error('inbound forward failed', err)
-    forwarded = { forwarded: false, reason: 'threw' }
-  }
-
-  return NextResponse.json({ ok: true, forwarded })
+  // Auto-forwarding was removed on 11 Sept 2026. Brandon, three times: the
+  // forwards were clogging his inbox, and the last round went out working
+  // exactly as specified — mail from Nicki, who is neither him nor Cleo, so
+  // every suppression rule correctly declined to suppress it. The filter was
+  // never the problem; wanting the copies at all was the wrong premise. Mail
+  // still lands here and is still read on the nightly pass and in the Inbox —
+  // what stopped is the copy landing in a person's inbox uninvited.
+  return NextResponse.json({ ok: true, stored: stored.id })
 }

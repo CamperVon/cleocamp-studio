@@ -103,6 +103,77 @@ export async function createComponent(data: {
   }
 }
 
+/**
+ * Take a component off the Components page.
+ *
+ * Brandon, 11 Sept: "we need to be able to delete components in the components
+ * page." Two different things wear that word, and the difference matters:
+ *
+ *  - Something added by mistake — a typo, a duplicate typed twice — that no
+ *    product, order or count has ever referred to. Nothing points at it and
+ *    nothing remembers it, so it is deleted outright.
+ *  - Something real that is simply finished with. Deleting that would take a
+ *    bill-of-materials line, a purchase order line a vendor was actually sent,
+ *    or a row of the append-only ledger down with it (CLAUDE.md §3). It is
+ *    retired instead — off the page, still readable wherever it is referenced.
+ *
+ * The database already enforces this: BomLine.component, InventoryEvent.component
+ * and PurchaseOrderLine.component carry no onDelete, so Postgres restricts the
+ * delete. Checking here first is only so the answer is a sentence rather than a
+ * foreign-key error.
+ */
+export async function removeComponent(
+  id: string,
+): Promise<{ deleted: boolean; name: string; reason: string | null }> {
+  const component = await db.component.findUnique({
+    where: { id },
+    select: {
+      name: true,
+      _count: { select: { usedIn: true, subAssembly: true, poLines: true, events: true } },
+    },
+  })
+  if (!component) throw new Error('No such component')
+
+  const holds = [
+    component._count.usedIn ? `${component._count.usedIn} bill-of-materials line(s)` : null,
+    component._count.subAssembly ? `${component._count.subAssembly} sub-assembly line(s)` : null,
+    component._count.poLines ? `${component._count.poLines} purchase order line(s)` : null,
+    component._count.events ? `${component._count.events} inventory event(s)` : null,
+  ].filter(Boolean)
+
+  if (holds.length) {
+    await db.component.update({ where: { id }, data: { active: false } })
+  } else {
+    // Only ComponentLocationStock and ForecastResult cascade, and both are
+    // derived rows — nothing anyone wrote by hand is lost here.
+    await db.component.delete({ where: { id } })
+  }
+
+  try {
+    revalidatePath('/components')
+    revalidatePath('/items')
+  } catch {
+    // Not in a request context.
+  }
+
+  return {
+    deleted: holds.length === 0,
+    name: component.name,
+    reason: holds.length ? `still on ${holds.join(', ')}` : null,
+  }
+}
+
+/** Undo a retire — for one taken off the page by mistake. */
+export async function restoreComponent(id: string) {
+  await db.component.update({ where: { id }, data: { active: true } })
+  try {
+    revalidatePath('/components')
+    revalidatePath('/items')
+  } catch {
+    // Not in a request context.
+  }
+}
+
 export async function updateComponentDetails(
   id: string,
   data: {

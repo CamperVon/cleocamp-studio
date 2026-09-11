@@ -182,9 +182,10 @@ All three of ActionItem, Alert, and the forecast surface in one homepage panel:
   *content*, and Studio Mouse can edit it. Layout stays in the template. It was
   hardcoded until 4 Sept, which meant changing a name on a document needed a
   deploy.
-- **NotificationSettings** (singleton) — every scheduled email's on/off switch,
-  plus who inbound mail is forwarded to. Same reasoning: "stop emailing me" is
-  a thing a person says, not a deploy.
+- **NotificationSettings** (singleton) — every scheduled email's on/off switch.
+  Same reasoning: "stop emailing me" is a thing a person says, not a deploy.
+  The `forwardInbound*` columns are dead as of 11 Sept 2026 (§9); nothing reads
+  or writes them and Studio Mouse can no longer set them.
 - **WholesaleAccount** / **WholesaleShipment** / **WholesaleShipmentLine** —
   what went out, what was paid, what sold on consignment.
 - **FinancialSnapshot** — bank and AR figures, as of a date, entered by hand
@@ -192,7 +193,8 @@ All three of ActionItem, Alert, and the forecast surface in one homepage panel:
 
 ### Email & sync
 - **InboundEmail** — everything arriving at a Studio Mouse mailbox, stored raw.
-  `forwardedAt` doubles as the idempotency guard on forwarding (§9).
+  `forwardedAt` is vestigial: it guarded forwarding against Resend's retries
+  until auto-forwarding was removed on 11 Sept 2026 (§9). Nothing writes it now.
 - **SentEmail** — what went out, so a thread can be reconstructed from one side.
 - **ShopifySyncStatus** (singleton) — when the last real sync ran, so "how
   current is this" is a timestamp rather than a claimed cadence that silently
@@ -443,18 +445,22 @@ applied**: Studio Mouse reads it later and raises *proposals* a human confirms,
 because anyone who can email the company must not be able to write to
 inventory. See CLAUDE.md §4.
 
-Anything arriving is **forwarded to Cleo and Brandon** — some people reply to
-Mouse and forget to cc. The reply-to carries both the original sender and
-mouse@, so hitting reply reaches the vendor *and* keeps Mouse in the thread
-without anyone remembering to; fixing the habit by asking for a better habit
-does not work. Attachments ride along: the webhook carries metadata only, so
-the bytes come from a second call returning a signed CDN URL good for about an
-hour. Inline parts are skipped — every corporate signature carries its logo as
-one, and attaching those buries the file that matters. `content_disposition` is
-the discriminator, not `content_id`; real photos carry both. 20MB cap, under
-Gmail's 25MB; anything not carried is named in the body rather than dropped
-silently. Bounces, auto-replies and mail from our own address are not
-forwarded — a forwarded out-of-office someone replies to is how a loop starts.
+**Auto-forwarding — built 9 Sept, removed 11 Sept 2026.** Arriving mail used to
+be copied on to Cleo and Brandon, because some people reply to Mouse and forget
+to cc. It was narrowed three times — machine senders, auto-replies, our own
+address, then anyone already on the original To/Cc, then down to Brandon alone —
+and every round still produced forwards he did not want. The last batch went out
+working *exactly as specified*: mail from Nicki, who is neither Brandon nor Cleo
+and had not cc'd either, so every suppression rule correctly declined to fire.
+The filter was never the bug. The premise was: wanting a copy of everything is
+not the same as wanting to be told what changed, and the nightly pass and the
+Inbox already do the second one. `lib/inbound-forward.ts` and
+`lib/inbound-attachments.ts` are deleted, the settings toggle is gone with them
+so Mouse cannot switch it back on, and `InboundEmail.forwardedAt` survives only
+as a column nothing writes. Bringing it back is a build decision, not a setting.
+
+Mail still arrives, is still stored, and is still read — by Mouse overnight and
+by anyone on the Inbox page. What stopped is the uninvited copy.
 
 **Not built: Google Drive.** Archiving sent POs to the shared drive needs a
 Google Cloud service account and is still owed.

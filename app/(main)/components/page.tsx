@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { Page, Card } from '@/app/ui/primitives'
-import { ComponentRow, type StockDisplay } from '@/app/ui/component-row'
+import { ComponentRow, RetiredComponentRow, type StockDisplay } from '@/app/ui/component-row'
 import { AddComponentForm } from '@/app/ui/add-component-form'
 
 export const dynamic = 'force-dynamic'
@@ -109,9 +109,17 @@ function Table({ rows, stockOf, stockHeader, vendors }: {
 }
 
 export default async function Components() {
-  const [rows, vendors] = await Promise.all([
+  const [rows, vendors, retired] = await Promise.all([
     load(),
     db.vendor.findMany({ where: { active: true }, orderBy: { name: 'asc' }, select: { id: true, name: true } }),
+    // Retired rather than deleted — anything a product, an order or the ledger
+    // still refers to. Listed so "where did it go?" has an answer, and so one
+    // taken off by mistake can come back without needing Studio Mouse.
+    db.component.findMany({
+      where: { active: false },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, notes: true },
+    }),
   ])
 
   const shipping = rows.filter((c) => c.stockedInStudio && c.category === 'PACKAGING')
@@ -187,6 +195,22 @@ export default async function Components() {
             stockOf={(c) => ({ kind: 'count', value: String(c.incomingQty), unit: c.unitOfMeasure })}
             vendors={vendors}
           />
+        </Card>
+      ) : null}
+
+      {retired.length ? (
+        <Card title={`Retired (${retired.length})`}>
+          <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
+            Taken off the list but kept, because a product, an order or the stock ledger still
+            refers to them — deleting one would take that history with it. Anything nothing
+            refers to is deleted outright instead and does not appear here. Restore one if it
+            came off by mistake.
+          </p>
+          <ul className="divide-y divide-line">
+            {retired.map((c) => (
+              <RetiredComponentRow key={c.id} id={c.id} name={c.name} notes={c.notes} />
+            ))}
+          </ul>
         </Card>
       ) : null}
     </Page>

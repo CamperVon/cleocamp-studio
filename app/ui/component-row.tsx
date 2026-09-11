@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { updateComponentDetails } from '@/app/(main)/components/actions'
+import { removeComponent, restoreComponent, updateComponentDetails } from '@/app/(main)/components/actions'
 import { VendorPicker } from '@/app/ui/vendor-picker'
 import { Chip } from './primitives'
 
@@ -18,6 +18,38 @@ export type StockDisplay =
   | { kind: 'byPlace'; rows: Array<{ place: string; qty: string }>; unit: string }
 
 const money = (c: number | null) => (c === null ? '' : (c / 100).toFixed(2))
+
+/**
+ * One component that was taken off the page but kept.
+ *
+ * Anything a product, an order or the ledger still refers to can only be
+ * retired, never deleted — see removeComponent in
+ * app/(main)/components/actions.ts. Listing them here is what makes that
+ * honest rather than a disappearance: "where did it go" has an answer, and a
+ * row removed by mistake comes back without needing Studio Mouse.
+ */
+export function RetiredComponentRow({
+  id, name, notes,
+}: { id: string; name: string; notes: string | null }) {
+  const [pending, start] = useTransition()
+  const router = useRouter()
+  return (
+    <li className="flex items-start justify-between gap-4 px-4 py-2.5 sm:px-5">
+      <div className="min-w-0">
+        <div className="text-sm">{name}</div>
+        {notes ? <div className="mt-0.5 text-xs text-faint">{notes}</div> : null}
+      </div>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => start(async () => { await restoreComponent(id); router.refresh() })}
+        className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-sm text-muted hover:bg-bg disabled:opacity-40"
+      >
+        {pending ? 'Restoring…' : 'Restore'}
+      </button>
+    </li>
+  )
+}
 
 /**
  * One component row, click to fill in what's missing.
@@ -48,6 +80,7 @@ export function ComponentRow({
   const [open, setOpen] = useState(false)
   const [pending, start] = useTransition()
   const [saved, setSaved] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const router = useRouter()
 
   const [fVendorId, setFVendorId] = useState(vendorId ?? '')
@@ -214,6 +247,53 @@ export function ComponentRow({
               >
                 Cancel
               </button>
+
+              {/* Brandon, 11 Sept: "we need to be able to delete components in
+                  the components page." What that means depends on whether
+                  anything refers to it — so say which one is about to happen
+                  BEFORE the click, rather than reporting it afterwards to a
+                  row that has already vanished. bomUsage is the common case
+                  and is already here; the server re-checks orders and ledger
+                  entries too and has the final say. */}
+              <div className="ml-auto flex items-center gap-2">
+                {confirming ? (
+                  <>
+                    <span className="text-xs text-muted">
+                      {bomUsage.length
+                        ? `Used on ${bomUsage.length} product${bomUsage.length > 1 ? 's' : ''} — it will be kept under Retired, not deleted.`
+                        : 'Nothing uses this. It will be deleted for good.'}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={pending}
+                      onClick={() =>
+                        start(async () => {
+                          await removeComponent(id)
+                          router.refresh()
+                        })
+                      }
+                      className="rounded-lg bg-[#B3261E] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+                    >
+                      {pending ? 'Removing…' : bomUsage.length ? 'Retire it' : 'Delete it'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirming(false)}
+                      className="rounded-lg border border-line px-3 py-1.5 text-sm text-muted hover:bg-bg"
+                    >
+                      Keep
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(true)}
+                    className="rounded-lg border border-line px-3 py-1.5 text-sm text-[#B3261E] hover:bg-bg"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
             </div>
             <p className="mt-2 text-xs text-faint">
               Stock counts and incoming quantities aren&rsquo;t edited here — tell Studio

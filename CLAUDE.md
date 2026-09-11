@@ -129,6 +129,15 @@ Framework-level conventions from the Next.js scaffold live in `AGENTS.md`.
   webhook returned 200 on every message and stored none; the balance parser
   matched no accounts and recorded zero. Nothing threw. When something looks
   empty, verify the write actually happened rather than trusting the status.
+- **Check the premise before tuning the filter.** Auto-forwarding of inbound
+  mail was narrowed three separate times — machine senders, then people already
+  cc'd, then down to a single recipient — because Brandon kept saying the
+  forwards were noise. Each fix was correct and none of them helped, because
+  the last round went out behaving exactly as designed: mail from someone who
+  was neither of the two people being suppressed. He did not want a better
+  filter, he wanted the feature gone, and said so three times before it was
+  heard. When a second round of narrowing is being written for the same
+  complaint, stop and ask whether the thing should exist at all.
 - **Studio Mouse must be told the date.** Without it in context it cannot reason
   about lead times or due dates, and correctly refuses to guess — which means
   asking Cleo what day it is.
