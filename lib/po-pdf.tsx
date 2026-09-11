@@ -137,7 +137,18 @@ export function PurchaseOrderDoc({ po, content, clean = false }: { po: PoForPdf;
               </Text>
             ) : null}
             {po.paymentTerms ? <Text><Text style={styles.muted}>{t('terms')} </Text>{po.paymentTerms}</Text> : null}
-            {po.status === 'DRAFT' && !clean ? <Text style={{ marginTop: 3, fontSize: 8, color: '#8C3A2B' }}>{t('draft')}</Text> : null}
+            {/* Brandon, 11 Sept: "no more draft on the PO -- too confusing,
+                it never gets taken off if i need to send externally." Never
+                shown here now, regardless of status — this is the PDF a
+                vendor actually receives, whether through send_purchase_order
+                or Brandon downloading and sending it himself, and there is
+                no path from here back to "clean" once it has left the
+                building. The in-app HTML page still shows DRAFT — that view
+                is internal-only and the status is real, useful information
+                there. `clean`/`asSent` no longer change anything on this
+                line; kept as parameters since other call sites still pass
+                them and removing the plumbing is a separate, unrelated
+                change from what was actually asked for here. */}
           </View>
         </View>
 
@@ -214,19 +225,19 @@ export function PurchaseOrderDoc({ po, content, clean = false }: { po: PoForPdf;
 
 /** Null if the PO doesn't exist. */
 /**
- * @param opts.asSent Render as SENT even though the row still says DRAFT.
- *
- * send_purchase_order needs this. It renders the attachment, emails it, and
- * only then writes status = SENT — deliberately, so a failed send leaves the
- * order untouched rather than marked sent when it isn't. But that ordering
- * meant the file in the vendor's hands was built while the row still said
- * DRAFT, so it went out stamped "DRAFT — NOT SENT". RichLine received PO
- * 2361 that way on 9 Sept 2026.
- *
- * Fixing it by flipping status first would trade a wrong document for a
- * wrong record on a failed send. This renders the document as what it is at
- * the moment of sending — a sent order — and leaves the database write last
- * where it belongs.
+ * @param opts.asSent / opts.clean No longer change the rendered PDF as of
+ * 11 Sept 2026 — see the comment on the draft-stamp line inside
+ * PurchaseOrderDoc. Originally `asSent` rendered the document as SENT even
+ * though the row still said DRAFT: send_purchase_order writes the real
+ * status only after a successful send (so a failed send leaves the order
+ * untouched rather than marked sent when it isn't), which meant the file in
+ * the vendor's hands was built while the row still said DRAFT — RichLine
+ * received PO 2361 that way on 9 Sept 2026. Brandon then asked for the
+ * stamp gone from the PDF entirely, unconditionally, which is a strictly
+ * bigger fix that makes this flag redundant for that purpose. Kept as a
+ * parameter, not removed, since send_purchase_order and the export path
+ * still pass it — deleting the plumbing is a separate cleanup from what was
+ * actually asked for.
  */
 export async function renderPurchaseOrderPdf(
   poNumber: string,
