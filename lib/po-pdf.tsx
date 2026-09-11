@@ -1,4 +1,4 @@
-import { poAmounts, poLineAmount } from '@/lib/po'
+import { poAmounts, poLineAmount, poUnitTotals } from '@/lib/po'
 import path from 'node:path'
 import { Document, Page, Text, View, Image, Font, StyleSheet, renderToBuffer } from '@react-pdf/renderer'
 import { db } from '@/lib/db'
@@ -94,6 +94,7 @@ export function PurchaseOrderDoc({ po, content, clean = false }: { po: PoForPdf;
   const lang: DocLanguage = asDocLanguage(po.language)
   const t = (k: Parameters<typeof label>[1]) => label(lang, k)
   const total = poAmounts(po.lines)
+  const unitTotals = poUnitTotals(po.lines)
   const date = formatDate(lang, po.orderedAt ?? po.createdAt)
 
   // See the same fix, and why, in app/po/[poNumber]/page.tsx: notes is
@@ -183,6 +184,14 @@ export function PurchaseOrderDoc({ po, content, clean = false }: { po: PoForPdf;
           ))}
         </View>
 
+        {unitTotals.map((u, i) => (
+          <View key={i} style={styles.totalRow}>
+            <Text style={{ width: 100 }}>{t('totalUnits')}</Text>
+            <Text style={{ width: 90, textAlign: 'right' }}>
+              {u.qty.toLocaleString()} {u.unit}
+            </Text>
+          </View>
+        ))}
         <View style={styles.totalRow}>
           <Text style={{ width: 100 }}>{t(total.incomplete ? 'knownSubtotal' : 'total')}</Text>
           <Text style={{ width: 90, textAlign: 'right' }}>{money(total.knownCents)}</Text>

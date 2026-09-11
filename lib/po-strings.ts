@@ -32,14 +32,14 @@ export function asDocLanguage(v: string | null | undefined): DocLanguage {
 type Key =
   | 'purchaseOrder' | 'no' | 'for' | 'date' | 'expected' | 'terms' | 'draft'
   | 'vendor' | 'attn' | 'address' | 'billTo'
-  | 'item' | 'qty' | 'unit' | 'price' | 'amount' | 'total' | 'knownSubtotal' | 'notes' | 'style'
+  | 'item' | 'qty' | 'unit' | 'price' | 'amount' | 'total' | 'knownSubtotal' | 'totalUnits' | 'notes' | 'style'
 
 const EN: Record<Key, string> = {
   purchaseOrder: 'PURCHASE ORDER', no: 'No.', for: 'For', date: 'Date',
   expected: 'Expected', terms: 'Terms', draft: 'DRAFT — NOT SENT',
   vendor: 'VENDOR', attn: 'Attn:', address: 'ADDRESS', billTo: 'BILL TO',
   item: 'ITEM', qty: 'QTY', unit: 'UNIT', price: 'PRICE', amount: 'AMOUNT',
-  total: 'Total', knownSubtotal: 'Known subtotal', notes: 'NOTES', style: 'Style',
+  total: 'Total', knownSubtotal: 'Known subtotal', totalUnits: 'Total units', notes: 'NOTES', style: 'Style',
 }
 
 const ES: Record<Key, string> = {
@@ -47,7 +47,7 @@ const ES: Record<Key, string> = {
   expected: 'Entrega prevista', terms: 'Condiciones', draft: 'BORRADOR — NO ENVIADO',
   vendor: 'PROVEEDOR', attn: 'Atn:', address: 'DIRECCIÓN', billTo: 'FACTURAR A',
   item: 'ARTÍCULO', qty: 'CANT.', unit: 'UNIDAD', price: 'PRECIO', amount: 'IMPORTE',
-  total: 'Total', knownSubtotal: 'Subtotal conocido', notes: 'NOTAS', style: 'Estilo',
+  total: 'Total', knownSubtotal: 'Subtotal conocido', totalUnits: 'Unidades totales', notes: 'NOTAS', style: 'Estilo',
 }
 
 /**

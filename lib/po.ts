@@ -11,6 +11,22 @@ export function poAmounts(lines: Array<{ qtyOrdered: unknown; unitCostCents: num
 }
 
 /**
+ * Total quantity, grouped by unit rather than blindly summed. Brandon, 11
+ * Sept: "I need total units at the bottom of these POs as well. Not just
+ * total price." Every real PO on file so far orders in one unit throughout
+ * — all "pcs", or all "yards" — but nothing enforces that, and 50 yards of
+ * fabric plus 200 buttons is not "250" of anything. One line per unit
+ * reads correctly either way: the common case prints exactly like a single
+ * total ("2,230 pcs"), and a mixed order still says something true instead
+ * of something wrong.
+ */
+export function poUnitTotals(lines: Array<{ qtyOrdered: unknown; unit: string }>): Array<{ unit: string; qty: number }> {
+  const byUnit = new Map<string, number>()
+  for (const l of lines) byUnit.set(l.unit, (byUnit.get(l.unit) ?? 0) + Number(l.qtyOrdered))
+  return [...byUnit.entries()].map(([unit, qty]) => ({ unit, qty }))
+}
+
+/**
  * A purchase order line names either a component or a finished-goods variant
  * — see the comment on PurchaseOrderLine in schema.prisma. Every place that
  * summarises a line (the finances list, in-flight rows, the home page, the

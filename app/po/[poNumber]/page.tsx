@@ -1,4 +1,4 @@
-import { poAmounts, poLineAmount } from '@/lib/po'
+import { poAmounts, poLineAmount, poUnitTotals } from '@/lib/po'
 import { PoExportButton } from '@/app/ui/po-export-button'
 import { notFound } from 'next/navigation'
 import { db } from '@/lib/db'
@@ -36,6 +36,7 @@ export default async function PurchaseOrderDoc({
   const lang: DocLanguage = asDocLanguage(po.language)
   const t = (k: Parameters<typeof label>[1]) => label(lang, k)
   const total = poAmounts(po.lines)
+  const unitTotals = poUnitTotals(po.lines)
   const date = formatDate(lang, po.orderedAt ?? po.createdAt)
 
   // Content, not layout — editable by anyone talking to Studio Mouse. See
@@ -181,6 +182,12 @@ export default async function PurchaseOrderDoc({
       </table>
 
       <div className="ml-auto mt-3.5 w-[250px]">
+        {unitTotals.map((u, i) => (
+          <div key={i} className="flex justify-between border-t border-[#DEDFDB] pt-2 text-[10.5pt] text-[#5C6663]">
+            <span>{t('totalUnits')}</span>
+            <span className="tabular-nums">{u.qty.toLocaleString()} {u.unit}</span>
+          </div>
+        ))}
         <div className="flex justify-between border-t border-[#14181A] pt-2 text-[12.5pt]">
           <span>{t(total.incomplete ? 'knownSubtotal' : 'total')}</span>
           <span className="tabular-nums">{money(total.knownCents)}</span>
