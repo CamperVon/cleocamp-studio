@@ -536,8 +536,10 @@ export const TOOLS: Record<string, Tool> = {
     def: {
       name: 'update_component',
       description:
-        'Change a component: price, lead time, vendor, style number, reorder threshold. ' +
-        'Only set fields you were actually told.',
+        'Change a component, renaming included: name, price, lead time, vendor, style ' +
+        'number, reorder threshold, whether it is retired. Renaming is YOURS to do and is ' +
+        'safe — "call these the 5to7 skirt labels" is a rename, not a job for Brandon, and ' +
+        'saying you have no rename tool is wrong. Only set fields you were actually told.',
       input_schema: {
         type: 'object',
         properties: {
@@ -591,7 +593,11 @@ export const TOOLS: Record<string, Tool> = {
   update_product: {
     def: {
       name: 'update_product',
-      description: 'Change a product: production lead time, status, retail price, notes.',
+      description:
+        'Change a product, renaming included: name, production lead time, status, retail ' +
+        'price, notes. Renaming is YOURS to do — "the skirt should be called the 5to7 ' +
+        'skirt" is this tool, not something to hand to Brandon. It changes the name here, ' +
+        'not in Shopify, so say that when the product is listed there.',
       input_schema: {
         type: 'object',
         properties: {
