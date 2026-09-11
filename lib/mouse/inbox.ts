@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { htmlToText } from '@/lib/html-to-text'
 
 /**
  * Structured intake only.
@@ -82,7 +83,10 @@ export async function processInbox(limit = 20) {
   let balancesRecorded = 0
   for (const mail of unread) {
     if (!TRUSTED.test(mail.fromAddress)) continue
-    const body = (mail.text ?? mail.html ?? '').slice(0, 6000)
+    // A structured-figure email with no plain-text part (rare, but the same
+    // gap that left forwards empty — see lib/html-to-text.ts) would otherwise
+    // hand raw markup to a regex expecting numbers next to dollar signs.
+    const body = (mail.text?.trim() || (mail.html ? htmlToText(mail.html) : '')).slice(0, 6000)
     const found = extractBalances(body)
     if (!found) continue
     await recordBalances(found.accounts, mail.fromAddress, mail.receivedAt)

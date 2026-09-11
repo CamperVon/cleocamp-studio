@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { sendEmail } from '@/lib/email'
 import { fetchInboundAttachments, type InboundAttachmentMeta } from '@/lib/inbound-attachments'
+import { htmlToText } from '@/lib/html-to-text'
 
 /**
  * Forward mail that arrives at a Studio Mouse mailbox on to the people who
@@ -198,6 +199,17 @@ export async function forwardInboundEmail(inboundEmailId: string): Promise<Forwa
       : null,
   ].filter((l): l is string => l !== null)
 
+  // A Gmail reply commonly carries only an HTML part — Nicki's real pricing
+  // update from Antonio ($9.50/pc, $8.50/pc over 1000 units, no deposit, a
+  // 2-3 week timeline) went out twice today as "(no plain-text body — open
+  // it in the app)" for exactly this reason. Fall back to a stripped-down
+  // reading of the HTML rather than an empty-looking notification; only say
+  // there is truly nothing to read when neither part exists at all.
+  const readableBody =
+    email.text?.trim() ||
+    (email.html ? htmlToText(email.html) : '') ||
+    '(this message has no readable body — open it in the app)'
+
   const body = [
     ...header,
     '',
@@ -205,7 +217,7 @@ export async function forwardInboundEmail(inboundEmailId: string): Promise<Forwa
     '',
     '—'.repeat(20),
     '',
-    email.text?.trim() || '(no plain-text body — open it in the app to read the HTML version)',
+    readableBody,
   ].join('\n')
 
   const res = await sendEmail({
