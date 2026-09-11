@@ -2124,13 +2124,21 @@ export const TOOLS: Record<string, Tool> = {
       name: 'query_status',
       description:
         'Look up detail not in your context: the event ledger for something, sales history ' +
-        'over a window, or recent inbound email.',
+        'over a window, recent inbound email, or a units-sold TOTAL. For "how many did we ' +
+        'sell" over any real window (this year, last quarter, since a date) use "salesTotal" ' +
+        '— it is a single database sum, not something to add up by hand from "sales" rows. ' +
+        '"sales" returns raw daily numbers for ONE variant and is for looking at a pattern ' +
+        '(is it trending up, did a day spike), never for arithmetic across many days or ' +
+        'variants — that is exactly what burned a whole turn\'s budget on 10 Sept trying to ' +
+        'hand-sum 27 variants of daily Cleo Tee sales for a pricing question. If a product has ' +
+        'several variants, salesTotal with productId sums all of them in one call.',
       input_schema: {
         type: 'object',
         properties: {
-          what: { type: 'string', enum: ['events', 'sales', 'email'] },
+          what: { type: 'string', enum: ['events', 'sales', 'salesTotal', 'email'] },
           entityId: str('Component or variant id, for events or sales'),
-          days: num('How far back, default 56'),
+          productId: str('For salesTotal: sum every variant of this product. Omit entityId when using this.'),
+          days: num('How far back, default 56. For salesTotal, pass how many days back you actually mean — e.g. 365 for "this year".'),
         },
         required: ['what'],
       },
@@ -2153,6 +2161,19 @@ export const TOOLS: Record<string, Tool> = {
           orderBy: { date: 'desc' }, take: 90,
           select: { date: true, unitsSold: true },
         })
+      }
+      if (i.what === 'salesTotal') {
+        // A real SQL sum, not raw rows for the model to add by hand. This is
+        // the fix for a real, observed failure: asked for this year's Cleo
+        // Tee volume, Mouse pulled up to 90 raw days per variant across 27
+        // variants and tried to sum them itself, burning the whole turn's
+        // reasoning budget (including an Opus escalation) without finishing.
+        const where: any = { date: { gte: since } }
+        if (i.productId) where.variant = { productId: i.productId }
+        else if (i.entityId) where.productVariantId = i.entityId
+        else return { error: 'Give a productId (sums every variant) or entityId (one variant).' }
+        const agg = await db.salesSnapshot.aggregate({ where, _sum: { unitsSold: true } })
+        return { totalUnits: agg._sum.unitsSold ?? 0, sinceDate: since.toISOString().slice(0, 10), days: i.days ?? 56 }
       }
       return db.inboundEmail.findMany({
         where: { receivedAt: { gte: since } },
