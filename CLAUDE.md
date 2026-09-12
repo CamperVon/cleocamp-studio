@@ -141,7 +141,32 @@ Framework-level conventions from the Next.js scaffold live in `AGENTS.md`.
 - **Studio Mouse must be told the date.** Without it in context it cannot reason
   about lead times or due dates, and correctly refuses to guess — which means
   asking Cleo what day it is.
-- **QuickBooks reaches this project through a claude.ai connector, which does
-  not reach Claude Code sessions.** The Intuit OAuth code in
-  `lib/integrations/quickbooks.ts` is built and dormant for when live sync is
-  wanted; until then figures arrive by hand or via the scheduled routine.
+- **QuickBooks' "Total Expenses" reads $0.00 when it is not.** Confirmed on
+  Cleo Couture's own books, 12 Sept 2026: the P&L returned `totalExpenses: 0`
+  while the real figure, $38,014.22, sat in the same row's
+  `DETAIL_NATURAL_HOME_AMOUNT__TOTAL` cell and `metadata.displayValue` said 0.
+  It appears to be the period-over-period trend calculation defaulting to zero
+  with no comparable prior-year period. Income and COGS group rows do the same.
+  **Get the cross-check right:** Gross Profit − Net Operating Income is exact
+  (254,193.71 − 216,179.49 = 38,014.22), but `summaryBreakdown.netOperatingIncome`
+  is NOT net operating income — on these books it held 216,114.12, which is Net
+  INCOME, after $65.37 of Other Expenses. Using it gives 38,079.59 and is wrong
+  by exactly that. Take Net Operating Income from its own row.
+  Summing the account rows is the other check, but only where subtotals are
+  genuinely separate from their children — this report carries "Total for X"
+  rows as siblings of the rows they total, and naively adding the leaves gave
+  509,415.23 against a true 38,014.22. So `totalExpenses()` in
+  `lib/integrations/quickbooks.ts` prefers the derived identity, uses the
+  line-item sum as a cross-check, treats the headline field as a last resort,
+  and carries any disagreement out with the figure instead of resolving it
+  quietly. Anything displaying these numbers shows the warning beside them.
+- **QuickBooks is reachable two different ways, and only one of them is live.**
+  The claude.ai connector DOES reach Claude Code sessions (verified 12 Sept
+  2026) — that is how the figures above were pulled, and it is what the daily
+  co-work task uses. The app's OWN Intuit OAuth in
+  `lib/integrations/quickbooks.ts` is built but unconfigured: `QBO_CLIENT_ID`,
+  `QBO_CLIENT_SECRET` and `QBO_REDIRECT_URI` are empty placeholders and
+  `QuickBooksConnection` has no row, so `isConfigured()` is false and the
+  nightly cron skips the figures step. Fill those three in and visit
+  `/api/quickbooks/connect` and Studio Mouse pulls its own figures nightly; the
+  rotating refresh token is stored in the database, never in an env var.

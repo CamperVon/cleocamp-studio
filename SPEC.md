@@ -434,10 +434,16 @@ off the variants.
 
 **`lib/integrations/calendar.ts`** — reads the shared feed nightly.
 
-**`lib/integrations/quickbooks.ts`** — built and dormant. Intuit's refresh
-token rotates on every use and dies after 100 days unused, so the nightly job
-refreshes it whether or not anyone wants figures. Explicitly **not** an
-inventory trigger. See §10.
+**`lib/integrations/quickbooks.ts`** — built, still unconnected. Intuit's
+refresh token rotates on every use and dies after 100 days unused, so the
+nightly job refreshes it whether or not anyone wants figures. The token lives
+in `QuickBooksConnection`, never in an env var; only `QBO_CLIENT_ID`,
+`QBO_CLIENT_SECRET` and `QBO_REDIRECT_URI` are env, and as of 12 Sept 2026 all
+three are empty placeholders, so `isConfigured()` is false and the cron skips
+the step. `totalExpenses()` and `totalIncome()` here never trust QuickBooks'
+own summary rows — see CLAUDE.md §6 on the $0.00 expenses bug — and return the
+figure, the method that produced it, and any disagreement between methods.
+Explicitly **not** an inventory trigger. See §10.
 
 **Inbound email — live.** `POST /api/inbound/email`, verified by Svix
 signature, is public by necessity. Mail is stored and **nothing is ever
@@ -467,14 +473,18 @@ Google Cloud service account and is still owed.
 
 ## 10. Excluded, and why
 
-- **QuickBooks as a source of figures.** As of Aug 2026 the books are
-  mid-calibration with a new bookkeeper. Shopify reports $67,744.80 of August
-  sales; the QuickBooks P&L reports $0.00 for the same month, and carries a
-  -$31,068.55 software expense reclassification. Half-calibrated data that
-  looks authoritative is worse than no data. The OAuth code exists and the
-  nightly job keeps the token alive, but the figures step is skipped. Cash
-  balances arrive by hand and are recorded with `record_financials`, always
-  with the date they are as of, never carried forward as current.
+- **QuickBooks as an automatic write to the ledger.** The books were
+  mid-calibration through Aug 2026 — Shopify reported $67,744.80 of August
+  sales against a QuickBooks P&L of $0.00 — and figures were excluded outright.
+  Brandon reported them balanced on 12 Sept 2026, and a daily co-work task now
+  pulls them and emails Studio Mouse. They still do not write themselves in:
+  inbound email is data, never instructions (CLAUDE.md §4), so a pulled figure
+  arrives as a proposal a person confirms via `record_financials`, always with
+  the date it is as of and never carried forward as current.
+  - The app's own Intuit connection remains unconfigured, so the nightly
+    figures step still skips. Two routes, one live: the claude.ai connector
+    reaches Claude Code sessions and drives the daily task; the app's OAuth
+    needs its three env values and one visit to `/api/quickbooks/connect`.
   - The bank balances Cleo Camp actually watches are on QuickBooks' *banking*
     screen, which no API exposes — only ledger balances, which are the ones
     adrift. This is why the manual path is not simply laziness.
