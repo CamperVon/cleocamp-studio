@@ -6,22 +6,27 @@ import { attachComponentToProduct, detachComponentFromProduct } from '@/app/(mai
 type Product = { id: string; name: string }
 /** qtyPerUnit null means nobody has said how much yet — never shown as 0. */
 export type Usage = { productId: string; productName: string; qtyPerUnit: string | null }
+type Pending = { productId: string; qty: string }
 
 /**
  * Which products a component goes into, and how much of it each one takes.
  *
  * Brandon, 11 Sept: "every component belongs to a product or shipping... when
  * adding a component or editing a component we should be able to attach it to
- * a product. read only isn't helpful." So this edits in place rather than
- * describing the state and sending someone to the chat to change it.
+ * a product. read only isn't helpful."
  *
- * Brandon, 12 Sept: "need to be able to save even if we don't have the yardage
- * etc." The quantity is optional and always has been the wrong thing to block
- * on — whether a component goes into a product is a fact worth recording on
- * its own, and the yardage often arrives later from a different person. Left
- * blank it stores as 0, which is this codebase's "not known yet": shown as
- * unknown, counted as a gap on the Products page, and skipped by the
- * forecaster rather than treated as zero demand.
+ * Brandon, 12 Sept: "how do i add a second product when editing a component."
+ * One at a time was technically possible and practically not, because of where
+ * it was being done from: a component opened in "Not on a product yet" stops
+ * being unassigned the moment the first product is saved, so the row unmounts
+ * and the half-finished form goes with it. Queuing several and saving them
+ * together fixes that properly — the row only leaves once the work is done —
+ * and matches how the add-component form already behaves.
+ *
+ * The quantity stays optional throughout ("need to be able to save even if we
+ * don't have the yardage"). Blank stores as 0, which is this codebase's "not
+ * known yet": shown as unknown, counted as a gap on the Products page, and
+ * skipped by the forecaster rather than treated as zero demand.
  */
 export function ProductAttachments({
   componentId, unit, usage, products,
@@ -32,18 +37,28 @@ export function ProductAttachments({
   products: Product[]
 }) {
   const [pending, start] = useTransition()
-  const [addingId, setAddingId] = useState('')
-  const [addingQty, setAddingQty] = useState('')
+  const [rows, setRows] = useState<Pending[]>([])
   const router = useRouter()
 
-  const unused = products.filter((p) => !usage.some((u) => u.productId === p.id))
+  const attachedIds = usage.map((u) => u.productId)
+  const available = products.filter((p) => !attachedIds.includes(p.id))
 
-  function attach(productId: string, qtyRaw: string, onDone?: () => void) {
-    const n = parseFloat(qtyRaw)
-    const qty = Number.isFinite(n) && n > 0 ? n : null
+  function setRow(i: number, patch: Partial<Pending>) {
+    setRows((r) => r.map((row, n) => (n === i ? { ...row, ...patch } : row)))
+  }
+
+  const chosen = rows.filter((r) => r.productId)
+
+  function saveAll() {
+    if (!chosen.length) return
     start(async () => {
-      await attachComponentToProduct(componentId, productId, qty)
-      onDone?.()
+      // Sequential on purpose: each one is a separate row and a failure part
+      // way through should leave the earlier ones written, not roll them back.
+      for (const r of chosen) {
+        const n = parseFloat(r.qty)
+        await attachComponentToProduct(componentId, r.productId, Number.isFinite(n) && n > 0 ? n : null)
+      }
+      setRows([])
       router.refresh()
     })
   }
@@ -60,7 +75,15 @@ export function ProductAttachments({
               usage={u}
               unit={unit}
               pending={pending}
-              onSave={(qty) => attach(u.productId, qty)}
+              onSave={(qty) => {
+                const n = parseFloat(qty)
+                start(async () => {
+                  await attachComponentToProduct(
+                    componentId, u.productId, Number.isFinite(n) && n > 0 ? n : null,
+                  )
+                  router.refresh()
+                })
+              }}
               onRemove={() =>
                 start(async () => {
                   await detachComponentFromProduct(componentId, u.productId)
@@ -77,44 +100,70 @@ export function ProductAttachments({
         </p>
       )}
 
-      {unused.length ? (
-        <div className="mt-2.5 flex flex-wrap items-end gap-2">
-          <select
-            value={addingId}
-            onChange={(e) => setAddingId(e.target.value)}
-            className="rounded-lg border border-line bg-bg px-2.5 py-1.5 text-sm"
-          >
-            <option value="">Add to a product…</option>
-            {unused.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          {addingId ? (
-            <>
-              <div className="flex items-center gap-1">
+      {rows.length ? (
+        <ul className="mt-2 flex flex-col gap-2">
+          {rows.map((r, i) => {
+            const takenHere = rows.filter((_, n) => n !== i).map((x) => x.productId)
+            return (
+              <li key={i} className="flex flex-wrap items-center gap-2">
+                <select
+                  value={r.productId}
+                  onChange={(e) => setRow(i, { productId: e.target.value })}
+                  className="rounded-lg border border-line bg-bg px-2.5 py-1.5 text-sm"
+                >
+                  <option value="">Choose a product…</option>
+                  {available
+                    .filter((p) => p.id === r.productId || !takenHere.includes(p.id))
+                    .map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
                 <input
-                  autoFocus
-                  value={addingQty}
-                  onChange={(e) => setAddingQty(e.target.value)}
+                  value={r.qty}
+                  onChange={(e) => setRow(i, { qty: e.target.value })}
                   inputMode="decimal"
                   placeholder="if known"
                   className="w-28 rounded-lg border border-line bg-bg px-2.5 py-1.5 text-sm"
                 />
                 <span className="text-xs text-faint">{unit} per unit</span>
-              </div>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => attach(addingId, addingQty, () => { setAddingId(''); setAddingQty('') })}
-                className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:text-[#0F1211]"
-              >
-                {pending ? 'Adding…' : 'Add'}
-              </button>
-            </>
-          ) : null}
-        </div>
+                <button
+                  type="button"
+                  onClick={() => setRows((rs) => rs.filter((_, n) => n !== i))}
+                  className="rounded-lg border border-line px-2.5 py-1 text-xs text-muted hover:bg-bg"
+                >
+                  Remove
+                </button>
+              </li>
+            )
+          })}
+        </ul>
       ) : null}
 
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {rows.length < available.length ? (
+          <button
+            type="button"
+            onClick={() => setRows((r) => [...r, { productId: '', qty: '' }])}
+            className="rounded-lg border border-line px-2.5 py-1 text-xs text-muted hover:bg-bg"
+          >
+            + Add {rows.length ? 'another product' : 'to a product'}
+          </button>
+        ) : null}
+        {chosen.length ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={saveAll}
+            className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:text-[#0F1211]"
+          >
+            {pending
+              ? 'Adding…'
+              : `Add to ${chosen.length} product${chosen.length > 1 ? 's' : ''}`}
+          </button>
+        ) : null}
+      </div>
+
       <p className="mt-1.5 text-xs text-faint">
-        The quantity can wait — leave it blank and it shows as unknown until someone knows it.
+        Add as many products as it goes into before saving. The quantity can wait — leave it
+        blank and it shows as unknown until someone knows it.
       </p>
     </div>
   )
