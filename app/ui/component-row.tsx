@@ -1,9 +1,11 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { removeComponent, restoreComponent, updateComponentDetails } from '@/app/(main)/components/actions'
+import {
+  attachComponentToProduct, removeComponent, restoreComponent, updateComponentDetails,
+} from '@/app/(main)/components/actions'
 import { VendorPicker } from '@/app/ui/vendor-picker'
-import { ProductAttachments } from '@/app/ui/product-attachments'
+import { ProductAttachments, type PendingRow } from '@/app/ui/product-attachments'
 import { Chip } from './primitives'
 
 type Vendor = { id: string; name: string }
@@ -91,6 +93,13 @@ export function ComponentRow({
   const [confirming, setConfirming] = useState(false)
   const router = useRouter()
 
+  // Queued product attachments and edited per-unit quantities live HERE, not
+  // inside ProductAttachments, so the one Save below writes them. They used to
+  // live in that component, which this row unmounted on save — silently
+  // throwing the work away. Brandon, 12 Sept: "i keep saving my edits and they
+  // are still not attached to products."
+  const [pendingRows, setPendingRows] = useState<PendingRow[]>([])
+  const [qtyEdits, setQtyEdits] = useState<Record<string, string>>({})
   const [fName, setFName] = useState(name)
   const [fVendorId, setFVendorId] = useState(vendorId ?? '')
   const [fSku, setFSku] = useState(vendorSku ?? '')
@@ -114,8 +123,27 @@ export function ComponentRow({
         leadTimeDays: Number.isFinite(lead) ? lead : null,
         stockedInStudio: fStocked,
       })
+
+      // One Save, everything it shows. A blank quantity is fine and stores as
+      // 0 ("not known yet"); what is never acceptable is dropping a product
+      // somebody chose, which is exactly what this form used to do.
+      const qty = (raw: string) => {
+        const n = parseFloat(raw)
+        return Number.isFinite(n) && n > 0 ? n : null
+      }
+      for (const [productId, raw] of Object.entries(qtyEdits)) {
+        await attachComponentToProduct(id, productId, qty(raw))
+      }
+      for (const r of pendingRows.filter((r) => r.productId)) {
+        await attachComponentToProduct(id, r.productId, qty(r.qty))
+      }
+      setPendingRows([])
+      setQtyEdits({})
+
       setSaved(true)
-      setOpen(false)
+      // Deliberately NOT closing the row. Closing is what destroyed the queued
+      // products before, and leaving it open lets someone see the attachment
+      // actually landed rather than taking the word for it.
       setTimeout(() => setSaved(false), 2500)
       // stockedInStudio decides which section on the page this row belongs
       // to — a plain client-state update wouldn't move it there.
@@ -337,6 +365,10 @@ export function ComponentRow({
                 productId: u.productId, productName: u.productName, qtyPerUnit: u.qtyPerUnit,
               }))}
               products={products}
+              rows={pendingRows}
+              onRowsChange={setPendingRows}
+              qtyEdits={qtyEdits}
+              onQtyEditsChange={setQtyEdits}
             />
 
             <p className="mt-2 text-xs text-faint">
