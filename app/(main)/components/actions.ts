@@ -3,8 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 
 /**
- * Filling in a component's vendor, style number, cost or lead time from the
- * Components page.
+ * Filling in a component's details from the Components page.
  *
  * Deliberately a plain write, not a round trip through Studio Mouse. These
  * are facts someone is reading off an invoice or a vendor's site and typing
@@ -19,6 +18,17 @@ import { db } from '@/lib/db'
  * "seed a stale number" it forbids. A count comes from log_inventory_event,
  * never from this form.
  */
+
+/** revalidatePath throws outside a real request (a script calling in). */
+function refresh() {
+  try {
+    revalidatePath('/components')
+    revalidatePath('/items')
+  } catch {
+    // Not in a request context.
+  }
+}
+
 /**
  * Add a vendor from inside the Components form, without leaving the page.
  *
@@ -43,18 +53,53 @@ export async function createVendorQuick(name: string): Promise<{ id: string; nam
   })
   if (existing) return existing
 
-  const vendor = await db.vendor.create({
-    data: { name: trimmed },
-    select: { id: true, name: true },
-  })
-
+  const vendor = await db.vendor.create({ data: { name: trimmed }, select: { id: true, name: true } })
+  refresh()
   try {
-    revalidatePath('/components')
     revalidatePath('/vendors')
   } catch {
     // Not in a request context.
   }
   return vendor
+}
+
+/**
+ * Put a component on a product's bill of materials, or change how much of it
+ * that product takes.
+ *
+ * Brandon, 11 Sept: "every component belongs to a product or shipping... when
+ * adding a component or editing a component we should be able to attach it to
+ * a product." A component with no product is not a kind of component — it is
+ * data nobody has entered yet.
+ *
+ * The quantity is required and has no default. A bill-of-materials line IS a
+ * quantity; one label per dress and 0.7 yards per tee are both real figures
+ * somebody knows, and quietly writing 1 because it is usually 1 would be
+ * exactly the invented number CLAUDE.md §3 forbids. Asking for it is one
+ * keystroke; a wrong figure silently wrong in a forecast is not.
+ */
+export async function attachComponentToProduct(
+  componentId: string,
+  productId: string,
+  qtyPerUnit: number,
+) {
+  if (!Number.isFinite(qtyPerUnit) || qtyPerUnit <= 0) {
+    throw new Error('How much of it one finished unit takes is needed — that is what the line is.')
+  }
+  const existing = await db.bomLine.findFirst({
+    where: { parentProductId: productId, componentId },
+    select: { id: true },
+  })
+  const data = { parentProductId: productId, componentId, qtyPerUnit: String(qtyPerUnit) }
+  if (existing) await db.bomLine.update({ where: { id: existing.id }, data })
+  else await db.bomLine.create({ data })
+  refresh()
+}
+
+/** Take a component off one product. It stays a component, and stays on any other product. */
+export async function detachComponentFromProduct(componentId: string, productId: string) {
+  await db.bomLine.deleteMany({ where: { parentProductId: productId, componentId } })
+  refresh()
 }
 
 /**
@@ -64,10 +109,12 @@ export async function createVendorQuick(name: string): Promise<{ id: string; nam
  * typing in a fact they already know, not asking Mouse to make a judgement
  * call. Brandon, 10 Sept: "we should be able to add other components if
  * they are missing. if SM has questions, he can bring up in corner or
- * todo" — so this does not block on completeness or route through the
- * agent to ask anything up front. Only name, category and unit are
- * required; everything else can be filled in later, from this same page,
- * exactly like an existing component's blanks.
+ * todo" — so this does not block on completeness. Only name, category and
+ * unit are required.
+ *
+ * A product can be named right here, with how much of it that product takes,
+ * so a new component starts out attached rather than landing in the unassigned
+ * pile for someone to find later.
  */
 export async function createComponent(data: {
   name: string
@@ -78,12 +125,14 @@ export async function createComponent(data: {
   vendorSku: string | null
   unitCostCents: number | null
   leadTimeDays: number | null
+  productId?: string | null
+  qtyPerUnit?: number | null
 }) {
   const name = data.name.trim()
   const unitOfMeasure = data.unitOfMeasure.trim()
   if (!name || !unitOfMeasure) throw new Error('Name and unit of measure are required')
 
-  await db.component.create({
+  const component = await db.component.create({
     data: {
       name,
       category: data.category as never,
@@ -94,13 +143,66 @@ export async function createComponent(data: {
       unitCostCents: data.unitCostCents,
       leadTimeDays: data.leadTimeDays,
     },
+    select: { id: true },
   })
 
-  try {
-    revalidatePath('/components')
-  } catch {
-    // Not in a request context.
+  if (data.productId && data.qtyPerUnit != null) {
+    await attachComponentToProduct(component.id, data.productId, data.qtyPerUnit)
   }
+
+  refresh()
+}
+
+export async function updateComponentDetails(
+  id: string,
+  data: {
+    name: string
+    vendorId: string | null
+    vendorSku: string | null
+    unitCostCents: number | null
+    leadTimeDays: number | null
+    stockedInStudio: boolean
+  },
+) {
+  // Brandon, 11 Sept: "we need to be able to edit the names if they are not
+  // quite right... on the component page itself." Studio Mouse can rename too,
+  // but tidying four names in a row is a form's job, not a conversation's.
+  const name = data.name.trim()
+  if (!name) throw new Error('A component needs a name')
+
+  const component = await db.component.update({
+    where: { id },
+    data: {
+      name,
+      vendorId: data.vendorId,
+      vendorSku: data.vendorSku?.trim() || null,
+      unitCostCents: data.unitCostCents,
+      leadTimeDays: data.leadTimeDays,
+      stockedInStudio: data.stockedInStudio,
+    },
+  })
+
+  // Filling in the blank is answering the question, even when nobody thinks
+  // of it that way — close the loop rather than leaving an open item sitting
+  // there for something that just got filled in on this exact screen.
+  const filled = [
+    data.vendorId ? 'a vendor' : null,
+    data.vendorSku ? 'a style number' : null,
+    data.unitCostCents !== null ? 'a price' : null,
+    data.leadTimeDays !== null ? 'a lead time' : null,
+  ].filter(Boolean)
+  if (filled.length) {
+    await db.actionItem.updateMany({
+      where: { kind: 'QUESTION', resolved: false, entityType: 'COMPONENT', entityId: id },
+      data: {
+        resolved: true,
+        resolvedAt: new Date(),
+        resolutionNote: `Filled in on the Components page: ${filled.join(', ')} for ${component.name}.`,
+      },
+    })
+  }
+
+  refresh()
 }
 
 /**
@@ -149,12 +251,7 @@ export async function removeComponent(
     await db.component.delete({ where: { id } })
   }
 
-  try {
-    revalidatePath('/components')
-    revalidatePath('/items')
-  } catch {
-    // Not in a request context.
-  }
+  refresh()
 
   return {
     deleted: holds.length === 0,
@@ -166,62 +263,5 @@ export async function removeComponent(
 /** Undo a retire — for one taken off the page by mistake. */
 export async function restoreComponent(id: string) {
   await db.component.update({ where: { id }, data: { active: true } })
-  try {
-    revalidatePath('/components')
-    revalidatePath('/items')
-  } catch {
-    // Not in a request context.
-  }
-}
-
-export async function updateComponentDetails(
-  id: string,
-  data: {
-    vendorId: string | null
-    vendorSku: string | null
-    unitCostCents: number | null
-    leadTimeDays: number | null
-    stockedInStudio: boolean
-  },
-) {
-  const component = await db.component.update({
-    where: { id },
-    data: {
-      vendorId: data.vendorId,
-      vendorSku: data.vendorSku?.trim() || null,
-      unitCostCents: data.unitCostCents,
-      leadTimeDays: data.leadTimeDays,
-      stockedInStudio: data.stockedInStudio,
-    },
-  })
-
-  // Filling in the blank is answering the question, even when nobody thinks
-  // of it that way — close the loop rather than leaving an open item sitting
-  // there for something that just got filled in on this exact screen.
-  const filled = [
-    data.vendorId ? 'a vendor' : null,
-    data.vendorSku ? 'a style number' : null,
-    data.unitCostCents !== null ? 'a price' : null,
-    data.leadTimeDays !== null ? 'a lead time' : null,
-  ].filter(Boolean)
-  if (filled.length) {
-    await db.actionItem.updateMany({
-      where: { kind: 'QUESTION', resolved: false, entityType: 'COMPONENT', entityId: id },
-      data: {
-        resolved: true,
-        resolvedAt: new Date(),
-        resolutionNote: `Filled in on the Components page: ${filled.join(', ')} for ${component.name}.`,
-      },
-    })
-  }
-
-  // Guarded the same way app/(main)/items/actions.ts does — revalidatePath
-  // throws when called outside a real Next.js request (a test script calling
-  // this directly, say), and the write above has already happened either way.
-  try {
-    revalidatePath('/components')
-    revalidatePath('/items')
-  } catch {
-    // Not in a request context.
-  }
+  refresh()
 }

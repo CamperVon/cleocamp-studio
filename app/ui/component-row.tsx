@@ -3,10 +3,12 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { removeComponent, restoreComponent, updateComponentDetails } from '@/app/(main)/components/actions'
 import { VendorPicker } from '@/app/ui/vendor-picker'
+import { ProductAttachments } from '@/app/ui/product-attachments'
 import { Chip } from './primitives'
 
 type Vendor = { id: string; name: string }
-type BomUsage = { productName: string; qtyPerUnit: string; unit: string }
+type Product = { id: string; name: string }
+type BomUsage = { productId: string; productName: string; qtyPerUnit: string; unit: string }
 export type StockDisplay =
   // A single number in one place — the studio, for shipping supplies and a
   // real stash kept there, or fabric's "Incoming" (never a stock claim).
@@ -63,7 +65,7 @@ export function RetiredComponentRow({
  */
 export function ComponentRow({
   id, name, vendorId, vendorSku, unitCostCents, unitOfMeasure, leadTimeDays,
-  stockedInStudio, stock, vendors, bomUsage,
+  stockedInStudio, stock, vendors, bomUsage, products, inProductId,
 }: {
   id: string
   name: string
@@ -76,6 +78,11 @@ export function ComponentRow({
   stock: StockDisplay
   vendors: Vendor[]
   bomUsage: BomUsage[]
+  products: Product[]
+  /** Set when this row is shown inside one product's section — then the
+   *  per-unit column is that product's figure alone, not a list of every
+   *  product the component appears on. */
+  inProductId?: string
 }) {
   const [open, setOpen] = useState(false)
   const [pending, start] = useTransition()
@@ -83,6 +90,7 @@ export function ComponentRow({
   const [confirming, setConfirming] = useState(false)
   const router = useRouter()
 
+  const [fName, setFName] = useState(name)
   const [fVendorId, setFVendorId] = useState(vendorId ?? '')
   const [fSku, setFSku] = useState(vendorSku ?? '')
   const [fCost, setFCost] = useState(money(unitCostCents))
@@ -98,6 +106,7 @@ export function ComponentRow({
       const cost = fCost.trim() === '' ? null : Math.round(parseFloat(fCost) * 100)
       const lead = fLead.trim() === '' ? null : Math.round(parseFloat(fLead))
       await updateComponentDetails(id, {
+        name: fName,
         vendorId: fVendorId || null,
         vendorSku: fSku,
         unitCostCents: Number.isFinite(cost) ? cost : null,
@@ -139,7 +148,15 @@ export function ComponentRow({
           ) : '—'}
         </td>
         <td className="px-3 py-2.5 text-right">
-          {bomUsage.length === 0 ? (
+          {/* Inside a product's own section the product name is the heading
+              above, so repeating it on every line is noise. Everywhere else
+              the list IS the point — Main label is on eleven products. */}
+          {inProductId ? (
+            <span className="tnum whitespace-nowrap">
+              {bomUsage.find((u) => u.productId === inProductId)?.qtyPerUnit ?? '—'}{' '}
+              <span className="text-faint">{unitOfMeasure}</span>
+            </span>
+          ) : bomUsage.length === 0 ? (
             <span className="text-faint">—</span>
           ) : (
             <span className="tnum">
@@ -192,6 +209,14 @@ export function ComponentRow({
               className="flex flex-wrap items-end gap-3"
               onClick={(e) => e.stopPropagation()}
             >
+              <label className="flex flex-col gap-1 text-xs text-muted">
+                Name
+                <input
+                  value={fName}
+                  onChange={(e) => setFName(e.target.value)}
+                  className="w-56 rounded-lg border border-line bg-bg px-2.5 py-1.5 text-sm"
+                />
+              </label>
               <label className="flex flex-col gap-1 text-xs text-muted">
                 Vendor
                 <VendorPicker value={fVendorId} onChange={setFVendorId} vendors={vendors} />
@@ -295,9 +320,19 @@ export function ComponentRow({
                 )}
               </div>
             </div>
+            <ProductAttachments
+              componentId={id}
+              unit={unitOfMeasure}
+              usage={bomUsage.map((u) => ({
+                productId: u.productId, productName: u.productName, qtyPerUnit: u.qtyPerUnit,
+              }))}
+              products={products}
+            />
+
             <p className="mt-2 text-xs text-faint">
-              Stock counts and incoming quantities aren&rsquo;t edited here — tell Studio
-              Mouse what came in or what was counted, so the ledger stays right.
+              These are the component&rsquo;s own details and are shared everywhere it is
+              used. Stock counts and incoming quantities aren&rsquo;t edited here — tell
+              Studio Mouse what came in or what was counted, so the ledger stays right.
               {fStocked ? '' : ' Where it actually is, once known, is set the same way.'}
             </p>
           </td>

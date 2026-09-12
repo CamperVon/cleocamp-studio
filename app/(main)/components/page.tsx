@@ -1,35 +1,39 @@
 import { db } from '@/lib/db'
 import { Page, Card } from '@/app/ui/primitives'
 import { ComponentRow, RetiredComponentRow, type StockDisplay } from '@/app/ui/component-row'
+import { ProductSection } from '@/app/ui/product-section'
 import { AddComponentForm } from '@/app/ui/add-component-form'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * Brandon, 10 Sept: "shouldn't we broaden this to something that is more
- * accurate. we will rarely have button in studio. we will have them at
- * various factories" — followed by "I would remove 'in studio' from all
- * points on the page... except for things we actually ship... obviously
- * shipping supplies are separate." and "we need [real per-location
- * tracking] — otherwise SM won't know how many they need or if there is a
- * surplus. don't worry about small counts for repairs."
+ * Brandon, 11 Sept: "every component belongs to a product or shipping. (if
+ * it's blank right now, it's perhaps because that data has yet to be input or
+ * organized?) ... don't hide products. we know we have to fill them."
  *
- * Four groups now, not two, because "counted here" and "not counted at all"
- * turned out to be hiding a THIRD real state — counted, just not here:
+ * That is the rule this page is now built around, and it corrected a real
+ * mistake in how it was described here before: components with no product were
+ * being treated as a KIND of component rather than as data nobody had entered.
+ * They are a to-do list, and 32 of 46 were sitting in it.
  *
- *  - SHIPPING — packaging, genuinely held and counted at the studio. The one
- *    place "In studio" was always literally true.
- *  - STUDIO STASH — anything else someone actually keeps a small stock of
- *    here (a jar of spare buttons for repairs). Same simple count; Brandon
- *    said not to worry about tracking these precisely.
- *  - AT VENDORS — most trim and hardware now. Bought per production run,
- *    shipped straight to whoever is cutting it, same as fabric always was —
- *    but unlike fabric, THIS is worth counting, because a factory can end
- *    up sitting on a real surplus or running short, and nobody would know.
- *    Shown as a real per-place breakdown (lib/mouse/tools.ts:
- *    ComponentLocationStock), not a single number.
- *  - FABRIC — MATERIAL components, unchanged from before. Never modeled as
- *    stock anywhere, by design (CLAUDE.md §3) — "Incoming" only.
+ * So the page reads top to bottom as the work:
+ *
+ *  - BY PRODUCT — every product, collapsed, including the thirteen with
+ *    nothing recorded yet. An empty one is a job, not a product without parts,
+ *    and hiding it would hide the job.
+ *  - NOT ON A PRODUCT YET — anything that is not packaging and not on a bill
+ *    of materials. This should trend to empty.
+ *  - ALL COMPONENTS — the cross-product view Brandon asked for, "since some
+ *    cover multiple products": Main label alone is on eleven. Kept in the four
+ *    stock groups built on 10 Sept, because where a thing is counted is a
+ *    different question from what it goes into and both still matter:
+ *      · SHIPPING — packaging, genuinely held and counted at the studio, and
+ *        the one group that legitimately belongs to no product.
+ *      · STUDIO STASH — a small stock kept here (spare buttons for repairs).
+ *      · AT VENDORS — most trim and hardware: bought per run and shipped to
+ *        whoever is cutting it, but worth counting, because a factory can sit
+ *        on a surplus and nobody would know.
+ *      · FABRIC — never modeled as stock anywhere, by design (CLAUDE.md §3).
  */
 type Row = Awaited<ReturnType<typeof load>>[number]
 
@@ -59,17 +63,32 @@ async function load() {
 
 function bomUsageOf(c: Row) {
   return c.usedIn.map((l) => ({
+    productId: l.parentProductId!,
     productName: l.parentProduct!.name,
     qtyPerUnit: Number(l.qtyPerUnit).toLocaleString(),
     unit: c.unitOfMeasure,
   }))
 }
 
-function Table({ rows, stockOf, stockHeader, vendors }: {
+const countStock = (c: Row): StockDisplay =>
+  ({ kind: 'count', value: String(c.onHandQty), unit: c.unitOfMeasure })
+
+const placeStock = (c: Row): StockDisplay => ({
+  kind: 'byPlace',
+  unit: c.unitOfMeasure,
+  rows: c.locationStock.map((s) => ({
+    place: s.atVendor?.name ?? s.location?.name ?? 'unknown',
+    qty: Number(s.qty).toLocaleString(),
+  })),
+})
+
+function Table({ rows, stockOf, stockHeader, vendors, products, inProductId }: {
   rows: Row[]
   stockOf: (c: Row) => StockDisplay
   stockHeader: string
   vendors: { id: string; name: string }[]
+  products: { id: string; name: string }[]
+  inProductId?: string
 }) {
   return (
     <div className="overflow-x-auto">
@@ -100,6 +119,8 @@ function Table({ rows, stockOf, stockHeader, vendors }: {
               stock={stockOf(c)}
               vendors={vendors}
               bomUsage={bomUsageOf(c)}
+              products={products}
+              inProductId={inProductId}
             />
           ))}
         </tbody>
@@ -109,9 +130,10 @@ function Table({ rows, stockOf, stockHeader, vendors }: {
 }
 
 export default async function Components() {
-  const [rows, vendors, retired] = await Promise.all([
+  const [rows, vendors, products, retired] = await Promise.all([
     load(),
     db.vendor.findMany({ where: { active: true }, orderBy: { name: 'asc' }, select: { id: true, name: true } }),
+    db.product.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
     // Retired rather than deleted — anything a product, an order or the ledger
     // still refers to. Listed so "where did it go?" has an answer, and so one
     // taken off by mistake can come back without needing Studio Mouse.
@@ -127,35 +149,91 @@ export default async function Components() {
   const atVendors = rows.filter((c) => !c.stockedInStudio && c.category !== 'MATERIAL')
   const fabric = rows.filter((c) => !c.stockedInStudio && c.category === 'MATERIAL')
 
+  // Packaging is the one thing that genuinely belongs to no product — it goes
+  // out with an order, not into a garment. Everything else without a bill-of-
+  // materials line is simply not entered yet.
+  const unassigned = rows.filter((c) => c.category !== 'PACKAGING' && c.usedIn.length === 0)
+
+  const byProduct = products.map((p) => ({
+    ...p,
+    components: rows.filter((c) => c.usedIn.some((l) => l.parentProductId === p.id)),
+  }))
+
+  const tableProps = { vendors, products }
+
   return (
     <Page
       title="Components"
-      lede="Everything that goes into a product, plus the packaging that goes out with it. Click a row to fill in what's missing."
+      lede="Everything that goes into a product, plus the packaging that goes out with it. Open a row to fill in what's missing, rename it, or say which product it belongs to."
     >
-      <AddComponentForm vendors={vendors} />
+      <AddComponentForm vendors={vendors} products={products} />
+
+      <Card title={`By product (${byProduct.length})`}>
+        <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
+          Every product, including the ones with nothing recorded yet — those are data still
+          to enter, not products without parts. Open a component to change how much of it a
+          unit takes, or to put it on another product.
+        </p>
+        <div className="divide-y divide-line">
+          {byProduct.map((p) => (
+            <ProductSection key={p.id} name={p.name} count={p.components.length}>
+              {p.components.length ? (
+                <Table
+                  {...tableProps}
+                  rows={p.components}
+                  inProductId={p.id}
+                  stockHeader="Where it is"
+                  stockOf={(c) => (c.stockedInStudio ? countStock(c) : placeStock(c))}
+                />
+              ) : (
+                <p className="px-4 py-3 text-xs text-faint sm:px-5">
+                  Nothing recorded yet. Open any component below and add it to {p.name}, or
+                  add a new one with the button at the top of the page.
+                </p>
+              )}
+            </ProductSection>
+          ))}
+        </div>
+      </Card>
+
+      {unassigned.length ? (
+        <Card title={`Not on a product yet (${unassigned.length})`}>
+          <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
+            These aren&rsquo;t shipping supplies, so each one goes into something — it just
+            hasn&rsquo;t been said which yet. Open a row and add it to a product. Until then
+            Studio Mouse can&rsquo;t work out how many are needed for a run, because nothing
+            connects them to what gets made.
+          </p>
+          <Table
+            {...tableProps}
+            rows={unassigned}
+            stockHeader="Where it is"
+            stockOf={(c) => (c.stockedInStudio ? countStock(c) : placeStock(c))}
+          />
+        </Card>
+      ) : null}
+
+      <h2 className="mt-2 px-1 text-sm font-medium text-muted">
+        All components
+        <span className="ml-2 text-xs font-normal text-faint">
+          every one, once — several are on more than one product
+        </span>
+      </h2>
 
       {shipping.length ? (
         <Card title={`Shipping supplies (${shipping.length})`}>
           <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
-            Held and counted at the studio — used the moment an order goes out.
+            Held and counted at the studio — used the moment an order goes out. The one group
+            that belongs to no product, because it goes out with an order rather than into a
+            garment.
           </p>
-          <Table
-            rows={shipping}
-            stockHeader="In studio"
-            stockOf={(c) => ({ kind: 'count', value: String(c.onHandQty), unit: c.unitOfMeasure })}
-            vendors={vendors}
-          />
+          <Table {...tableProps} rows={shipping} stockHeader="In studio" stockOf={countStock} />
         </Card>
       ) : null}
 
       {studioStash.length ? (
         <Card title={`Kept at the studio (${studioStash.length})`}>
-          <Table
-            rows={studioStash}
-            stockHeader="In studio"
-            stockOf={(c) => ({ kind: 'count', value: String(c.onHandQty), unit: c.unitOfMeasure })}
-            vendors={vendors}
-          />
+          <Table {...tableProps} rows={studioStash} stockHeader="In studio" stockOf={countStock} />
         </Card>
       ) : null}
 
@@ -166,19 +244,7 @@ export default async function Components() {
             unlike fabric, this is worth counting, so Studio Mouse can tell a shortage from a
             surplus. Tell Mouse what came in, where, or what a run used to keep this current.
           </p>
-          <Table
-            rows={atVendors}
-            stockHeader="Where it is"
-            stockOf={(c) => ({
-              kind: 'byPlace',
-              unit: c.unitOfMeasure,
-              rows: c.locationStock.map((s) => ({
-                place: s.atVendor?.name ?? s.location?.name ?? 'unknown',
-                qty: Number(s.qty).toLocaleString(),
-              })),
-            })}
-            vendors={vendors}
-          />
+          <Table {...tableProps} rows={atVendors} stockHeader="Where it is" stockOf={placeStock} />
         </Card>
       ) : null}
 
@@ -190,10 +256,10 @@ export default async function Components() {
             order.
           </p>
           <Table
+            {...tableProps}
             rows={fabric}
             stockHeader="Incoming"
             stockOf={(c) => ({ kind: 'count', value: String(c.incomingQty), unit: c.unitOfMeasure })}
-            vendors={vendors}
           />
         </Card>
       ) : null}
