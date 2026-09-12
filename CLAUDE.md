@@ -166,13 +166,17 @@ Framework-level conventions from the Next.js scaffold live in `AGENTS.md`.
   line-item sum as a cross-check, treats the headline field as a last resort,
   and carries any disagreement out with the figure instead of resolving it
   quietly. Anything displaying these numbers shows the warning beside them.
-- **QuickBooks is reachable two different ways, and only one of them is live.**
-  The claude.ai connector DOES reach Claude Code sessions (verified 12 Sept
-  2026) — that is how the figures above were pulled, and it is what the daily
-  co-work task uses. The app's OWN Intuit OAuth in
-  `lib/integrations/quickbooks.ts` is built but unconfigured: `QBO_CLIENT_ID`,
-  `QBO_CLIENT_SECRET` and `QBO_REDIRECT_URI` are empty placeholders and
-  `QuickBooksConnection` has no row, so `isConfigured()` is false and the
-  nightly cron skips the figures step. Fill those three in and visit
-  `/api/quickbooks/connect` and Studio Mouse pulls its own figures nightly; the
-  rotating refresh token is stored in the database, never in an env var.
+- **QuickBooks comes in through the Routine. The app's own OAuth is not used —
+  decided by Brandon, 12 Sept 2026.** The claude.ai connector reaches Claude
+  Code sessions (verified 12 Sept 2026) and that is the live path: the daily
+  co-work task pulls the figures and mails them in, where they land as
+  *proposals* a human confirms, never as direct writes (§4). This is how the
+  numbers in `HANDOFF.md` were obtained.
+  The Intuit OAuth in `lib/integrations/quickbooks.ts` is built but deliberately
+  dormant. `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET` and `QBO_REDIRECT_URI` are empty
+  placeholders, `QuickBooksConnection` has no row, `isConfigured()` is false and
+  the nightly cron skips the figures step **by design**. Do not fill those in,
+  do not visit `/api/quickbooks/connect`, and do not treat the skipped cron step
+  as a bug to fix. If that decision is ever reversed, the parsing rules above —
+  the expense guard especially — still apply, because they are about the shape
+  of the report, not the transport.
