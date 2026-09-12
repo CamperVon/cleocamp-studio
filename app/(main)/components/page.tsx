@@ -142,7 +142,18 @@ export default async function Components() {
   const [rows, vendors, products, retired] = await Promise.all([
     load(),
     db.vendor.findMany({ where: { active: true }, orderBy: { name: 'asc' }, select: { id: true, name: true } }),
-    db.product.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
+    // Sunsetted products are out. Brandon's "don't hide products, we know we
+    // have to fill them" was about products with nothing recorded YET — those
+    // still show, flagged, because they are work to do. A sunsetted one is the
+    // opposite: finished with, kept only so old purchase orders still read
+    // correctly. Listing it here put "Cleo Bag" in the worklist beside the five
+    // per-colour products that replaced it — the same bag twice, which is
+    // exactly what he objected to.
+    db.product.findMany({
+      where: { status: { not: 'SUNSETTED' } },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
+    }),
     // Retired rather than deleted — anything a product, an order or the ledger
     // still refers to. Listed so "where did it go?" has an answer, and so one
     // taken off by mistake can come back without needing Studio Mouse.
