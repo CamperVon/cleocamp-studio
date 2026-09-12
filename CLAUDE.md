@@ -6,6 +6,12 @@ The assistant layer inside it is called **Studio Mouse**.
 Read `SPEC.md` for the full design and the reasoning behind every decision
 below. This file is the short list of things that must not be gotten wrong.
 
+**If `HANDOFF.md` exists in this repo, read it now, before doing anything
+else.** It is written by whoever worked here last: where things stand, what is
+in flight, what has already been settled so it is not argued again, and the
+setup steps a fresh machine needs. It is deliberately transient — once you have
+read it and it is stale, delete it.
+
 ---
 
 ## 1. Infrastructure isolation — non-negotiable
