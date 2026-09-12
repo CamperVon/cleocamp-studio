@@ -6,6 +6,7 @@ import { VendorPicker } from '@/app/ui/vendor-picker'
 
 type Vendor = { id: string; name: string }
 type Product = { id: string; name: string }
+type Attachment = { productId: string; qty: string }
 
 const CATEGORIES = [
   { value: 'MATERIAL', label: 'Material — fabric, leather, denim' },
@@ -24,11 +25,11 @@ const CATEGORIES = [
  * category and unit are required.
  *
  * Brandon, 11 Sept: "when adding a component or editing a component we should
- * be able to attach it to a product." Naming the product here is what stops a
- * new component landing straight in the unassigned pile for someone to find
- * later. It stays optional — packaging genuinely belongs to no product — but
- * choosing one requires saying how much of it a unit takes, because that is
- * what a bill-of-materials line is and a guessed figure is worse than none.
+ * be able to attach it to a product", then 12 Sept: "we might need to add to
+ * multiple products, don't have that option." One tag goes on eleven things,
+ * so the product is a repeatable row, not a single choice. Each row carries
+ * its own quantity — a bag and a tee do not necessarily take the same amount
+ * of the same thing, and a shared figure would be a guess applied to both.
  */
 export function AddComponentForm({ vendors, products }: { vendors: Vendor[]; products: Product[] }) {
   const [open, setOpen] = useState(false)
@@ -49,12 +50,15 @@ export function AddComponentForm({ vendors, products }: { vendors: Vendor[]; pro
   const [sku, setSku] = useState('')
   const [cost, setCost] = useState('')
   const [lead, setLead] = useState('')
-  const [productId, setProductId] = useState('')
-  const [qty, setQty] = useState('')
+  const [attachments, setAttachments] = useState<Attachment[]>([])
 
   function reset() {
     setName(''); setCategory('MATERIAL'); setUnit(''); setStocked(false); setStockedTouched(false)
-    setVendorId(''); setSku(''); setCost(''); setLead(''); setProductId(''); setQty(''); setError(null)
+    setVendorId(''); setSku(''); setCost(''); setLead(''); setAttachments([]); setError(null)
+  }
+
+  function setAttachment(i: number, patch: Partial<Attachment>) {
+    setAttachments((a) => a.map((row, n) => (n === i ? { ...row, ...patch } : row)))
   }
 
   function save() {
@@ -62,11 +66,10 @@ export function AddComponentForm({ vendors, products }: { vendors: Vendor[]; pro
       setError('Name and unit of measure are both needed — everything else can wait.')
       return
     }
-    const qtyNum = qty.trim() === '' ? null : parseFloat(qty)
-    if (productId && (qtyNum === null || !Number.isFinite(qtyNum) || qtyNum <= 0)) {
-      setError('Say how much of it one finished unit takes — that is what putting it on a product means.')
-      return
-    }
+    // Brandon, 12 Sept: "need to be able to save even if we don't have the
+    // yardage etc." A blank quantity is not an error — it stores as 0, which
+    // reads as "unknown" everywhere and is counted as a gap to fill later.
+    const chosen = attachments.filter((a) => a.productId)
     start(async () => {
       const costCents = cost.trim() === '' ? null : Math.round(parseFloat(cost) * 100)
       const leadDays = lead.trim() === '' ? null : Math.round(parseFloat(lead))
@@ -75,8 +78,10 @@ export function AddComponentForm({ vendors, products }: { vendors: Vendor[]; pro
         vendorId: vendorId || null, vendorSku: sku || null,
         unitCostCents: Number.isFinite(costCents) ? costCents : null,
         leadTimeDays: Number.isFinite(leadDays) ? leadDays : null,
-        productId: productId || null,
-        qtyPerUnit: productId ? qtyNum : null,
+        attachments: chosen.map((a) => {
+          const n = parseFloat(a.qty)
+          return { productId: a.productId, qtyPerUnit: Number.isFinite(n) && n > 0 ? n : null }
+        }),
       })
       reset()
       setOpen(false)
@@ -95,6 +100,8 @@ export function AddComponentForm({ vendors, products }: { vendors: Vendor[]; pro
       </button>
     )
   }
+
+  const unitLabel = unit.trim() || 'per unit'
 
   return (
     <div className="rounded-xl border border-line bg-surface p-4 sm:p-5">
@@ -144,38 +151,62 @@ export function AddComponentForm({ vendors, products }: { vendors: Vendor[]; pro
         </label>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-xs text-muted">
-          Goes into
-          <select
-            value={productId}
-            onChange={(e) => setProductId(e.target.value)}
-            className="rounded-lg border border-line bg-bg px-2.5 py-1.5 text-sm"
+      <div className="mt-3.5 border-t border-line pt-3">
+        <p className="text-xs text-muted">Goes into</p>
+        {attachments.length ? (
+          <ul className="mt-1.5 flex flex-col gap-2">
+            {attachments.map((a, i) => {
+              const taken = attachments.filter((_, n) => n !== i).map((x) => x.productId)
+              return (
+                <li key={i} className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={a.productId}
+                    onChange={(e) => setAttachment(i, { productId: e.target.value })}
+                    className="rounded-lg border border-line bg-bg px-2.5 py-1.5 text-sm"
+                  >
+                    <option value="">Choose a product…</option>
+                    {products
+                      .filter((p) => p.id === a.productId || !taken.includes(p.id))
+                      .map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <input
+                    value={a.qty}
+                    onChange={(e) => setAttachment(i, { qty: e.target.value })}
+                    inputMode="decimal"
+                    placeholder="if known"
+                    className="w-28 rounded-lg border border-line bg-bg px-2.5 py-1.5 text-sm"
+                  />
+                  <span className="text-xs text-faint">{unitLabel} per unit</span>
+                  <button
+                    type="button"
+                    onClick={() => setAttachments((rows) => rows.filter((_, n) => n !== i))}
+                    className="rounded-lg border border-line px-2.5 py-1 text-xs text-muted hover:bg-bg"
+                  >
+                    Remove
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        ) : (
+          <p className="mt-1 text-xs text-faint">
+            {category === 'PACKAGING'
+              ? 'Packaging usually goes into nothing — it ships with an order. Leave this empty unless it really is part of a garment.'
+              : 'Not on a product yet. Add it to as many as it goes into — one tag can be on a dozen things.'}
+          </p>
+        )}
+        {attachments.length < products.length ? (
+          <button
+            type="button"
+            onClick={() => setAttachments((a) => [...a, { productId: '', qty: '' }])}
+            className="mt-2 rounded-lg border border-line px-2.5 py-1 text-xs text-muted hover:bg-bg"
           >
-            <option value="">
-              {category === 'PACKAGING' ? 'Nothing — it ships with orders' : 'Choose a product…'}
-            </option>
-            {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </label>
-        {productId ? (
-          <label className="flex flex-col gap-1 text-xs text-muted">
-            How many per finished unit
-            <div className="flex items-center gap-1">
-              <input
-                value={qty}
-                onChange={(e) => setQty(e.target.value)}
-                inputMode="decimal"
-                placeholder="e.g. 1"
-                className="w-24 rounded-lg border border-line bg-bg px-2.5 py-1.5 text-sm"
-              />
-              <span className="text-faint">{unit.trim() || 'per unit'}</span>
-            </div>
-          </label>
+            + Add {attachments.length ? 'another product' : 'a product'}
+          </button>
         ) : null}
       </div>
 
-      <div className="mt-3 flex flex-wrap items-end gap-3">
+      <div className="mt-3.5 flex flex-wrap items-end gap-3 border-t border-line pt-3">
         <label className="flex flex-col gap-1 text-xs text-muted">
           Vendor
           <VendorPicker value={vendorId} onChange={setVendorId} vendors={vendors} />
@@ -235,7 +266,7 @@ export function AddComponentForm({ vendors, products }: { vendors: Vendor[]; pro
       </div>
       <p className="mt-2 text-xs text-faint">
         Anything left blank just shows as needing details, same as an existing component —
-        no need to have it all before saving. It can go on more than one product later.
+        no need to have it all before saving. More products can be added later.
       </p>
     </div>
   )

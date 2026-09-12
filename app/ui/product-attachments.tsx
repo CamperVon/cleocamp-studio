@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation'
 import { attachComponentToProduct, detachComponentFromProduct } from '@/app/(main)/components/actions'
 
 type Product = { id: string; name: string }
-export type Usage = { productId: string; productName: string; qtyPerUnit: string }
+/** qtyPerUnit null means nobody has said how much yet — never shown as 0. */
+export type Usage = { productId: string; productName: string; qtyPerUnit: string | null }
 
 /**
  * Which products a component goes into, and how much of it each one takes.
@@ -14,10 +15,13 @@ export type Usage = { productId: string; productName: string; qtyPerUnit: string
  * a product. read only isn't helpful." So this edits in place rather than
  * describing the state and sending someone to the chat to change it.
  *
- * The quantity has no default and no placeholder value that would be accepted
- * as one. A line means "one of these takes exactly this much" — usually 1 for
- * a label, 0.7 yards for a tee — and guessing it is how a forecast goes quietly
- * wrong. See attachComponentToProduct.
+ * Brandon, 12 Sept: "need to be able to save even if we don't have the yardage
+ * etc." The quantity is optional and always has been the wrong thing to block
+ * on — whether a component goes into a product is a fact worth recording on
+ * its own, and the yardage often arrives later from a different person. Left
+ * blank it stores as 0, which is this codebase's "not known yet": shown as
+ * unknown, counted as a gap on the Products page, and skipped by the
+ * forecaster rather than treated as zero demand.
  */
 export function ProductAttachments({
   componentId, unit, usage, products,
@@ -30,18 +34,13 @@ export function ProductAttachments({
   const [pending, start] = useTransition()
   const [addingId, setAddingId] = useState('')
   const [addingQty, setAddingQty] = useState('')
-  const [error, setError] = useState<string | null>(null)
   const router = useRouter()
 
   const unused = products.filter((p) => !usage.some((u) => u.productId === p.id))
 
   function attach(productId: string, qtyRaw: string, onDone?: () => void) {
-    const qty = parseFloat(qtyRaw)
-    if (!Number.isFinite(qty) || qty <= 0) {
-      setError('How much of it one finished unit takes is needed — that is what the line is.')
-      return
-    }
-    setError(null)
+    const n = parseFloat(qtyRaw)
+    const qty = Number.isFinite(n) && n > 0 ? n : null
     start(async () => {
       await attachComponentToProduct(componentId, productId, qty)
       onDone?.()
@@ -96,7 +95,7 @@ export function ProductAttachments({
                   value={addingQty}
                   onChange={(e) => setAddingQty(e.target.value)}
                   inputMode="decimal"
-                  placeholder="how many"
+                  placeholder="if known"
                   className="w-28 rounded-lg border border-line bg-bg px-2.5 py-1.5 text-sm"
                 />
                 <span className="text-xs text-faint">{unit} per unit</span>
@@ -114,7 +113,9 @@ export function ProductAttachments({
         </div>
       ) : null}
 
-      {error ? <p className="mt-1.5 text-xs text-warn">{error}</p> : null}
+      <p className="mt-1.5 text-xs text-faint">
+        The quantity can wait — leave it blank and it shows as unknown until someone knows it.
+      </p>
     </div>
   )
 }
@@ -128,8 +129,9 @@ function UsageRow({
   onSave: (qty: string) => void
   onRemove: () => void
 }) {
-  const [qty, setQty] = useState(usage.qtyPerUnit)
-  const dirty = qty !== usage.qtyPerUnit
+  const original = usage.qtyPerUnit ?? ''
+  const [qty, setQty] = useState(original)
+  const dirty = qty !== original
 
   return (
     <li className="flex flex-wrap items-center gap-2 text-sm">
@@ -138,6 +140,7 @@ function UsageRow({
         value={qty}
         onChange={(e) => setQty(e.target.value)}
         inputMode="decimal"
+        placeholder="unknown"
         className="w-24 rounded-lg border border-line bg-bg px-2.5 py-1 text-sm"
       />
       <span className="text-xs text-faint">{unit} per unit</span>

@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { Page, Card } from '@/app/ui/primitives'
+import { CollapsibleCard } from '@/app/ui/collapsible-card'
 import { ComponentRow, RetiredComponentRow, type StockDisplay } from '@/app/ui/component-row'
 import { ProductSection } from '@/app/ui/product-section'
 import { AddComponentForm } from '@/app/ui/add-component-form'
@@ -11,22 +12,23 @@ export const dynamic = 'force-dynamic'
  * it's blank right now, it's perhaps because that data has yet to be input or
  * organized?) ... don't hide products. we know we have to fill them."
  *
- * That is the rule this page is now built around, and it corrected a real
- * mistake in how it was described here before: components with no product were
- * being treated as a KIND of component rather than as data nobody had entered.
- * They are a to-do list, and 32 of 46 were sitting in it.
+ * That is the rule this page is built around, and it corrected a real mistake
+ * in how it was described here before: components with no product were being
+ * treated as a KIND of component rather than as data nobody had entered. They
+ * are a to-do list, and 32 of 46 were sitting in it.
  *
  * So the page reads top to bottom as the work:
  *
- *  - BY PRODUCT — every product, collapsed, including the thirteen with
- *    nothing recorded yet. An empty one is a job, not a product without parts,
- *    and hiding it would hide the job.
+ *  - BY PRODUCT — every product, collapsed, including the ones with nothing
+ *    recorded yet. An empty one is a job, not a product without parts, and
+ *    hiding it would hide the job.
  *  - NOT ON A PRODUCT YET — anything that is not packaging and not on a bill
- *    of materials. This should trend to empty.
- *  - ALL COMPONENTS — the cross-product view Brandon asked for, "since some
- *    cover multiple products": Main label alone is on eleven. Kept in the four
- *    stock groups built on 10 Sept, because where a thing is counted is a
- *    different question from what it goes into and both still matter:
+ *    of materials. Open by default: it is the pile to work through, and it
+ *    should trend to empty.
+ *  - ALL COMPONENTS — the cross-product view, "since some cover multiple
+ *    products": Main label alone is on eleven. Kept in the four stock groups
+ *    built on 10 Sept, because where a thing is counted is a different
+ *    question from what it goes into and both still matter:
  *      · SHIPPING — packaging, genuinely held and counted at the studio, and
  *        the one group that legitimately belongs to no product.
  *      · STUDIO STASH — a small stock kept here (spare buttons for repairs).
@@ -34,6 +36,10 @@ export const dynamic = 'force-dynamic'
  *        whoever is cutting it, but worth counting, because a factory can sit
  *        on a surplus and nobody would know.
  *      · FABRIC — never modeled as stock anywhere, by design (CLAUDE.md §3).
+ *
+ * Those four fold away (Brandon, 12 Sept: "At vendor should be a drop down") —
+ * At vendors alone is 24 rows, and four open tables rebuilt the long scroll
+ * this page was reorganised to get rid of.
  */
 type Row = Awaited<ReturnType<typeof load>>[number]
 
@@ -65,7 +71,10 @@ function bomUsageOf(c: Row) {
   return c.usedIn.map((l) => ({
     productId: l.parentProductId!,
     productName: l.parentProduct!.name,
-    qtyPerUnit: Number(l.qtyPerUnit).toLocaleString(),
+    // 0 is this codebase's "not known yet" for a BOM quantity — null here so
+    // the UI shows "unknown" rather than a confident zero. Same convention the
+    // Products page and lib/forecast.ts already use.
+    qtyPerUnit: Number(l.qtyPerUnit) === 0 ? null : Number(l.qtyPerUnit).toLocaleString(),
     unit: c.unitOfMeasure,
   }))
 }
@@ -164,7 +173,7 @@ export default async function Components() {
   return (
     <Page
       title="Components"
-      lede="Everything that goes into a product, plus the packaging that goes out with it. Open a row to fill in what's missing, rename it, or say which product it belongs to."
+      lede="Everything that goes into a product, plus the packaging that goes out with it. Open a row to fill in what's missing, rename it, or say which products it belongs to."
     >
       <AddComponentForm vendors={vendors} products={products} />
 
@@ -197,7 +206,7 @@ export default async function Components() {
       </Card>
 
       {unassigned.length ? (
-        <Card title={`Not on a product yet (${unassigned.length})`}>
+        <CollapsibleCard title={`Not on a product yet (${unassigned.length})`} defaultOpen>
           <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
             These aren&rsquo;t shipping supplies, so each one goes into something — it just
             hasn&rsquo;t been said which yet. Open a row and add it to a product. Until then
@@ -210,7 +219,7 @@ export default async function Components() {
             stockHeader="Where it is"
             stockOf={(c) => (c.stockedInStudio ? countStock(c) : placeStock(c))}
           />
-        </Card>
+        </CollapsibleCard>
       ) : null}
 
       <h2 className="mt-2 px-1 text-sm font-medium text-muted">
@@ -221,35 +230,35 @@ export default async function Components() {
       </h2>
 
       {shipping.length ? (
-        <Card title={`Shipping supplies (${shipping.length})`}>
+        <CollapsibleCard title={`Shipping supplies (${shipping.length})`}>
           <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
             Held and counted at the studio — used the moment an order goes out. The one group
             that belongs to no product, because it goes out with an order rather than into a
             garment.
           </p>
           <Table {...tableProps} rows={shipping} stockHeader="In studio" stockOf={countStock} />
-        </Card>
+        </CollapsibleCard>
       ) : null}
 
       {studioStash.length ? (
-        <Card title={`Kept at the studio (${studioStash.length})`}>
+        <CollapsibleCard title={`Kept at the studio (${studioStash.length})`}>
           <Table {...tableProps} rows={studioStash} stockHeader="In studio" stockOf={countStock} />
-        </Card>
+        </CollapsibleCard>
       ) : null}
 
       {atVendors.length ? (
-        <Card title={`At vendors (${atVendors.length})`}>
+        <CollapsibleCard title={`At vendors (${atVendors.length})`}>
           <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
             Bought per production run and shipped straight to whoever is cutting it — but
             unlike fabric, this is worth counting, so Studio Mouse can tell a shortage from a
             surplus. Tell Mouse what came in, where, or what a run used to keep this current.
           </p>
           <Table {...tableProps} rows={atVendors} stockHeader="Where it is" stockOf={placeStock} />
-        </Card>
+        </CollapsibleCard>
       ) : null}
 
       {fabric.length ? (
-        <Card title={`Fabric — bought per production run (${fabric.length})`}>
+        <CollapsibleCard title={`Fabric — bought per production run (${fabric.length})`}>
           <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
             Shipped straight from the vendor to the manufacturer. Never stocked or counted,
             by design — what matters is what a planned run will need, and what is already on
@@ -261,11 +270,11 @@ export default async function Components() {
             stockHeader="Incoming"
             stockOf={(c) => ({ kind: 'count', value: String(c.incomingQty), unit: c.unitOfMeasure })}
           />
-        </Card>
+        </CollapsibleCard>
       ) : null}
 
       {retired.length ? (
-        <Card title={`Retired (${retired.length})`}>
+        <CollapsibleCard title={`Retired (${retired.length})`}>
           <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
             Taken off the list but kept, because a product, an order or the stock ledger still
             refers to them — deleting one would take that history with it. Anything nothing
@@ -277,7 +286,7 @@ export default async function Components() {
               <RetiredComponentRow key={c.id} id={c.id} name={c.name} notes={c.notes} />
             ))}
           </ul>
-        </Card>
+        </CollapsibleCard>
       ) : null}
     </Page>
   )

@@ -8,7 +8,8 @@ import { Chip } from './primitives'
 
 type Vendor = { id: string; name: string }
 type Product = { id: string; name: string }
-type BomUsage = { productId: string; productName: string; qtyPerUnit: string; unit: string }
+/** qtyPerUnit null means nobody has said how much yet — never shown as 0. */
+type BomUsage = { productId: string; productName: string; qtyPerUnit: string | null; unit: string }
 export type StockDisplay =
   // A single number in one place — the studio, for shipping supplies and a
   // real stash kept there, or fabric's "Incoming" (never a stock claim).
@@ -123,6 +124,9 @@ export function ComponentRow({
   }
 
   const vendorName = vendors.find((v) => v.id === vendorId)?.name
+  const inProductQty = inProductId
+    ? bomUsage.find((u) => u.productId === inProductId)?.qtyPerUnit ?? null
+    : null
 
   return (
     <>
@@ -152,17 +156,23 @@ export function ComponentRow({
               above, so repeating it on every line is noise. Everywhere else
               the list IS the point — Main label is on eleven products. */}
           {inProductId ? (
-            <span className="tnum whitespace-nowrap">
-              {bomUsage.find((u) => u.productId === inProductId)?.qtyPerUnit ?? '—'}{' '}
-              <span className="text-faint">{unitOfMeasure}</span>
-            </span>
+            inProductQty === null ? (
+              <span className="italic text-faint">unknown</span>
+            ) : (
+              <span className="tnum whitespace-nowrap">
+                {inProductQty} <span className="text-faint">{unitOfMeasure}</span>
+              </span>
+            )
           ) : bomUsage.length === 0 ? (
             <span className="text-faint">—</span>
           ) : (
             <span className="tnum">
               {bomUsage.map((u, i) => (
                 <span key={i} className="block whitespace-nowrap">
-                  {u.qtyPerUnit} {u.unit} <span className="text-faint">/ {u.productName}</span>
+                  {u.qtyPerUnit === null
+                    ? <span className="italic text-faint">unknown</span>
+                    : `${u.qtyPerUnit} ${u.unit}`}{' '}
+                  <span className="text-faint">/ {u.productName}</span>
                 </span>
               ))}
             </span>

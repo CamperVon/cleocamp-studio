@@ -81,16 +81,26 @@ export async function createVendorQuick(name: string): Promise<{ id: string; nam
 export async function attachComponentToProduct(
   componentId: string,
   productId: string,
-  qtyPerUnit: number,
+  qtyPerUnit: number | null,
 ) {
-  if (!Number.isFinite(qtyPerUnit) || qtyPerUnit <= 0) {
-    throw new Error('How much of it one finished unit takes is needed — that is what the line is.')
-  }
+  // Brandon, 12 Sept: "need to be able to save even if we don't have the
+  // yardage etc." Requiring it here was my mistake, and the wrong reading of
+  // CLAUDE.md: the rule forbids INVENTING a number, not recording a fact you
+  // do know. "This goes into that" and "one takes 0.7 yards" are two separate
+  // facts, and blocking the first because the second is missing loses the one
+  // somebody actually had.
+  //
+  // 0 is already this codebase's "not known yet" for a BOM quantity — the
+  // Products page renders it as "unknown" and counts it as a gap, and
+  // lib/forecast.ts skips such a line rather than forecasting from a zero.
+  // Reusing that beats a nullable column and a second way of saying the same
+  // thing, which every read site would then have to handle.
+  const qty = qtyPerUnit != null && Number.isFinite(qtyPerUnit) && qtyPerUnit > 0 ? qtyPerUnit : 0
   const existing = await db.bomLine.findFirst({
     where: { parentProductId: productId, componentId },
     select: { id: true },
   })
-  const data = { parentProductId: productId, componentId, qtyPerUnit: String(qtyPerUnit) }
+  const data = { parentProductId: productId, componentId, qtyPerUnit: String(qty) }
   if (existing) await db.bomLine.update({ where: { id: existing.id }, data })
   else await db.bomLine.create({ data })
   refresh()
@@ -125,8 +135,12 @@ export async function createComponent(data: {
   vendorSku: string | null
   unitCostCents: number | null
   leadTimeDays: number | null
-  productId?: string | null
-  qtyPerUnit?: number | null
+  /** Brandon, 12 Sept: "we might need to add to multiple products." One tag
+   *  goes on eleven things; making someone save the component and then attach
+   *  it ten more times is the slow path this form exists to avoid. Each entry
+   *  carries its own quantity, because a bag and a tee do not necessarily take
+   *  the same amount of the same thing. */
+  attachments?: { productId: string; qtyPerUnit: number | null }[]
 }) {
   const name = data.name.trim()
   const unitOfMeasure = data.unitOfMeasure.trim()
@@ -146,8 +160,8 @@ export async function createComponent(data: {
     select: { id: true },
   })
 
-  if (data.productId && data.qtyPerUnit != null) {
-    await attachComponentToProduct(component.id, data.productId, data.qtyPerUnit)
+  for (const a of data.attachments ?? []) {
+    await attachComponentToProduct(component.id, a.productId, a.qtyPerUnit)
   }
 
   refresh()

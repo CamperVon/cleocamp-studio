@@ -646,10 +646,14 @@ export const TOOLS: Record<string, Tool> = {
               type: 'object' as const,
               properties: {
                 componentId: str('Component id'),
-                qtyPerUnit: num('Quantity per finished unit'),
+                qtyPerUnit: num(
+                  'How much of it one finished unit takes. Leave it out when nobody has ' +
+                  'said yet — the line still records that the component goes in, and the ' +
+                  'quantity reads as unknown until someone knows it. Never guess it.',
+                ),
                 notes: str('Where the figure came from'),
               },
-              required: ['componentId', 'qtyPerUnit'],
+              required: ['componentId'],
             },
           },
           remove: {
@@ -663,7 +667,7 @@ export const TOOLS: Record<string, Tool> = {
     },
     run: async (i) => {
       const productId = i.productId as string
-      const set = (i.set ?? []) as { componentId: string; qtyPerUnit: number; notes?: string }[]
+      const set = (i.set ?? []) as { componentId: string; qtyPerUnit?: number; notes?: string }[]
       const remove = (i.remove ?? []) as string[]
 
       const product = await db.product.findUnique({ where: { id: productId }, select: { name: true } })
@@ -693,19 +697,25 @@ export const TOOLS: Record<string, Tool> = {
             where: { parentProductId: productId, componentId: line.componentId },
             select: { id: true, qtyPerUnit: true },
           })
+          // 0 is "not known yet" throughout this codebase — shown as unknown,
+          // counted as a gap, and skipped by the forecaster rather than taken
+          // as zero demand. An omitted quantity records the line honestly
+          // instead of refusing to record it at all.
+          const qty = line.qtyPerUnit != null && line.qtyPerUnit > 0 ? line.qtyPerUnit : 0
+          const show = (n: number) => (n === 0 ? 'unknown' : String(n))
           const data = {
             parentProductId: productId, componentId: line.componentId,
-            qtyPerUnit: String(line.qtyPerUnit), notes: line.notes ?? null,
+            qtyPerUnit: String(qty), notes: line.notes ?? null,
           }
           const name = byId.get(line.componentId)!.name
           if (existing) {
             await tx.bomLine.update({ where: { id: existing.id }, data })
-            if (Number(existing.qtyPerUnit) !== line.qtyPerUnit) {
-              changed.push(`${name} ${Number(existing.qtyPerUnit)} → ${line.qtyPerUnit}`)
+            if (Number(existing.qtyPerUnit) !== qty) {
+              changed.push(`${name} ${show(Number(existing.qtyPerUnit))} → ${show(qty)}`)
             }
           } else {
             await tx.bomLine.create({ data })
-            added.push(`${name} ×${line.qtyPerUnit}`)
+            added.push(qty === 0 ? `${name} (quantity not known yet)` : `${name} ×${qty}`)
           }
         }
         const dropped: string[] = []
