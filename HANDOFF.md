@@ -1,148 +1,292 @@
-# Handoff — 12 September 2026
+# HANDOFF — technical, for the next coding agent
 
-Transient. Written for a cloud/phone session picking this up from a Mac
-session. Delete it once you have read it; `CLAUDE.md` and `SPEC.md` are the
-documents that stay.
+Written 13 September 2026. This supplements `README.md`, `CLAUDE.md` and
+`SPEC.md` — it doesn't repeat them. Delete or rewrite this file once it goes
+stale; it's meant to be replaced, not accumulated.
 
-**Read `CLAUDE.md` first.** It is short and every line in it was earned by
-something going wrong. `SPEC.md` has the reasoning behind the design.
+## Read first, in this order
 
----
+1. `CLAUDE.md` — the non-negotiables. Every line was earned by something
+   breaking. Read before touching data, secrets, or Vercel/Neon infra.
+2. `SPEC.md` — full design reasoning.
+3. `docs/seed-facts.md` — a dated snapshot of what Brandon said on 1 Sept
+   2026, not a live description. Don't treat it as current truth.
+4. This file — durable technical knowledge not obvious from reading the code.
+5. `prisma/schema.prisma`, `lib/db.ts`, `lib/mouse/tools.ts` — see "Most
+   important files" below.
 
-## 1. Getting the database working (the only real setup step)
+## Architecture
 
-Neon Postgres, `us-west-2`, reachable over the public internet with SSL. There
-is no VPC, no tunnel, no allowlist — a cloud session needs nothing but the
-connection string.
+Next.js 16 app (App Router), Postgres via Prisma 7, deployed on Vercel
+Hobby. Auth is a single shared password → a signed cookie (`lib/session.ts`,
+`SESSION_SECRET`, `jose`) — there is no per-user identity; `Person` rows are
+attribution, not accounts.
 
-**`vercel env pull` will NOT give it to you.** Verified 12 Sept: Vercel marks
-Production variables sensitive by default and returns an **empty string** for
-them. `DATABASE_URL`, `DIRECT_URL`, `RESEND_API_KEY`, `ANTHROPIC_API_KEY`,
-`SESSION_SECRET`, `ADMIN_PASSWORD`, `CRON_SECRET` and `INVENTORY_WRITES` all
-come back blank. Empty does not mean unset — do not "fix" it by deleting or
-re-adding anything in Vercel.
+**Studio Mouse** (`lib/mouse/`) is the conversational layer — an
+Anthropic-SDK-driven chat agent with tools (`lib/mouse/tools.ts`, large file)
+that read/write the real schema. `lib/mouse/runner.ts` drives the
+tool-calling loop; `lib/mouse/prompt.ts` builds its system prompt;
+`lib/mouse/context.ts` decides what data it's shown. It talks to Cleo mainly
+through `/api/chat`.
 
-Get the two database URLs from the **Neon dashboard** (project `cleocamp-studio`)
-and paste them into a local `.env`:
+**Automation runs on Vercel Cron**, not inside any chat session:
+- `/api/cron/nightly` (`vercel.json`, 12:00 UTC): calendar sync, Shopify
+  sync, Mouse's "think" pass, forecast, alerts, digests. Read this file
+  top-to-bottom before changing any of these — they share one run and one
+  `step()` wrapper that logs failures per-step without aborting the rest.
+- `/api/cron/am-report` (15:00 UTC): the morning report.
+- Both are guarded by `CRON_SECRET` (bearer token), not the session cookie —
+  nothing calling them can hold a login.
+
+**`/api/finances`** is a third write path into `FinancialSnapshot`, also
+`CRON_SECRET`-guarded, meant for an external scheduled routine to post
+figures without Studio Mouse holding Intuit credentials. See "Known issue"
+below — it's easy to assume this is *the* financials pipeline and it isn't,
+fully.
+
+**`/api/gap`** — "Studio Mouse couldn't do this," filed from chat. Stores a
+pointer (the `ChatMessage` id), not a copy, so whoever picks up the gap sees
+the exact exchange and tools Mouse actually reached for. Worth checking when
+asked to fix "Mouse can't do X" — the gap may already be filed with useful
+detail.
+
+## Local setup
+
+```bash
+npm install
+npx prisma generate
+npm run dev
+```
+
+Env vars are set by hand, never via a Vercel Storage integration (CLAUDE.md
+§1). Names only, from `.env.example` — get values from Vercel/Neon/Resend
+dashboards, never paste them into a terminal or ask the user for them:
 
 ```
-DATABASE_URL=...      # pooled connection
-DIRECT_URL=...        # direct connection, used by prisma migrate
+DATABASE_URL, DIRECT_URL          — Neon, pooled / unpooled (see below)
+ANTHROPIC_API_KEY                 — Studio Mouse
+RESEND_API_KEY, EMAIL_FROM, RESEND_WEBHOOK_SECRET
+SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET, SHOPIFY_STORE_DOMAIN
+ADMIN_PASSWORD, SESSION_SECRET
+CRON_SECRET
+CALENDAR_FEED_URL
+DIGEST_RECIPIENTS, INBOUND_ALLOWED_MAILBOXES
+INVENTORY_WRITES                  — feature flag, see CLAUDE.md §3
+APP_TIMEZONE                      — should be America/Los_Angeles; CLAUDE.md §5
+QBO_CLIENT_ID, QBO_CLIENT_SECRET, QBO_REDIRECT_URI  — deliberately empty, see below
 ```
 
-That alone unlocks every read script and most of the work. Add others only as
-needed:
+**Vercel marks Production values sensitive by default; `vercel env pull`
+returns an empty string for those, not an error.** Empty ≠ unset — check with
+`--no-sensitive` before concluding something's missing, and never delete on
+that basis.
 
-| Key | Needed for |
+**One shared database. No staging.** Local, preview, and production all
+point at the same Neon database, and local runs use the *real* Resend key.
+Set `EMAIL_DRY_RUN=1` (checked inside `sendEmail()` itself) before running
+anything that might send mail. Read freely; think before writing.
+
+## The two Neon connections — read this before touching `lib/db.ts` or the scripts
+
+Two different connection strings, two different transports, not
+interchangeable:
+
+- **`DATABASE_URL`** (pooled) — used by `lib/db.ts`, the app's runtime
+  client, via **`@prisma/adapter-neon`** (Neon's own HTTP/WebSocket driver,
+  not raw `pg`). This is deliberate: it's what lets the app's database calls
+  work from a Claude Code cloud session, which can only make outbound
+  HTTP(S) calls — a raw TCP socket (what `@prisma/adapter-pg`/`pg` opens)
+  has no path out of that sandbox. Confirmed working, including Prisma
+  interactive transactions (`$transaction(async tx => ...)`), which
+  `lib/mouse/tools.ts` relies on to write `InventoryEvent` and `onHandQty`
+  together (CLAUDE.md §3).
+- **`DIRECT_URL`** (unpooled) — used directly by `prisma.config.ts`
+  (migrations) and by four other entry points that each build their own
+  `PrismaClient` with `@prisma/adapter-pg`: `prisma/seed.ts`,
+  `scripts/sync-shopify.ts`, `scripts/sync-calendar.ts`, and
+  `scripts/audit-sight.ts` (which uses raw `pg` directly, no Prisma). **None
+  of these five things can run from a Claude Code cloud session** — same
+  raw-TCP wall. They work fine locally and on Vercel. `scripts/sync-shopify.ts`
+  and `scripts/sync-calendar.ts` are explicitly for a first import or full
+  rebuild only — the nightly cron does the real syncing automatically, on
+  Vercel's own infrastructure, via `lib/db.ts`, unaffected by any of this.
+
+Both `@prisma/adapter-pg` and `@prisma/adapter-neon` are dependencies on
+purpose — don't "clean up" by removing either without checking all five call
+sites above.
+
+## Commands
+
+```
+npm run dev            next dev
+npm run build           prisma generate && next build
+npm test                node's built-in test runner, tests/*.test.ts — no network, no DB, 12 tests
+npx tsc --noEmit         typecheck — see known pre-existing failures below
+npm run db:migrate       prisma migrate dev   (needs DIRECT_URL, local machine only)
+npm run db:deploy        prisma migrate deploy
+npm run db:studio        prisma studio
+npm run seed             tsx prisma/seed.ts — first import / rebuild only, see above
+npm run sync:shopify     full Shopify history rebuild, see above
+npm run sync:calendar    full calendar rebuild, see above
+npm run audit:sight      tsx scripts/audit-sight.ts — checks Studio Mouse's tools/context cover every schema model; run after adding a model
+```
+
+One-off inspection: write `.tmp-*.ts`, run with `npx tsx`, delete when done.
+`.tmp-*` is gitignored — this is the expected workflow, not a shortcut.
+
+## Deployment
+
+Vercel Hobby: no long-running processes, cron fires once daily per job and
+only within its scheduled hour (`vercel.json`). Neon is `us-west-2`; Vercel
+functions run in US East — batch queries, don't chain them across the
+round-trip.
+
+Shared Vercel account with other apps (`tcb`, `still-typing`,
+`a-benji-christmas`, `rome`, `peaches`) — this app has its own Neon project,
+own Vercel project, own GitHub repo, on purpose (CLAUDE.md §1). Never touch
+Vercel's Storage tab for this project. Never run a destructive Vercel/Neon
+CLI command without explicit confirmation in the conversation.
+
+## Integrations
+
+- **Shopify** — permanent master for finished-goods counts; this app never
+  keeps a parallel count once synced (CLAUDE.md §3). `lib/integrations/shopify.ts`
+  + `shopify-sync.ts`.
+- **Resend** — outbound mail. See the email hazard above; `sendEmail()` is
+  the single choke point for `EMAIL_DRY_RUN`, so stub-replacing it elsewhere
+  silently does nothing (ESM binds the import at the call site).
+- **Google Calendar** (`lib/integrations/calendar.ts`) — read-only ICS feed
+  via `CALENDAR_FEED_URL`.
+- **QuickBooks** — the app's own OAuth (`lib/integrations/quickbooks.ts`,
+  `/api/quickbooks/connect`+`/callback`) is built but **deliberately dormant**:
+  `QBO_*` are empty placeholders, `isConfigured()` is false, the nightly
+  cron's `quickbooks` step no-ops by design. Do not fill these in or treat
+  the skipped step as a bug — Brandon decided (12 Sept 2026) that QuickBooks
+  comes in through a scheduled Claude routine using the account's own
+  connector instead. `totalExpenses()` in that file still matters if this
+  ever changes — see "known issue" below, it's about the shape of QuickBooks'
+  report, not the transport.
+
+## How financial figures actually get recorded — three paths, easy to get wrong
+
+`FinancialSnapshot` (cash/AR/AP/revenue/expenses) is written from three
+different places, not one pipeline:
+
+1. **`lib/mouse/inbox.ts`** auto-records a *structured* "nightly balances"
+   email (JSON blob, trusted `@cleocamp.com`/`@send.cleocamp.com` sender
+   only) straight into `FinancialSnapshot` — no human confirmation. This is
+   deliberately exempted from the "email is data, not instructions" rule
+   (CLAUDE.md §4) because it's machine-structured output from a trusted
+   routine, not correspondence. **It only ever sets `cashCents`/`apCents`** —
+   never revenue or expenses.
+2. **`POST /api/finances`** (`CRON_SECRET`-guarded) — same idea, a different
+   entry point for a scheduled routine to post cash/AP/AR directly, also
+   never touches revenue/expense fields, also no human confirmation.
+3. **`record_financials`** (a Studio Mouse chat tool, `lib/mouse/tools.ts`)
+   is the *only* path that ever sets `revenueMtdCents`/`revenueYtdCents`/
+   `expensesMtdCents`. A human has to relay the figures into chat for these
+   to land.
+
+The richer prose "QuickBooks figures" email (the one with revenue/expenses
+and the $0-bug workaround) doesn't match the structured-JSON shape path 1
+expects, so it falls through to ordinary inbound handling: stored in
+`InboundEmail` only, a proposal per CLAUDE.md §4, and never promoted into
+`FinancialSnapshot` automatically. **As of 13 Sept 2026 this is exactly
+what's stuck**: a 12-Sept figures email sits unconfirmed in `InboundEmail`
+(matching open `ActionItem`: "Confirm the 12 Sept QuickBooks figures before
+I record them"), while the last committed `FinancialSnapshot` row is 2 Sept
+— and the two cash figures ($80,658 vs $165,897) disagree by enough to be
+worth an actual look, not an assumption. If you're asked to "fix" financials
+looking stale, this is why — likely not a bug, more likely nobody's answered
+the open question yet. Confirm before assuming this diagnosis is still
+current; it's a data-state fact, not a code fact, and could be resolved by
+the time you read this.
+
+## Conventions
+
+- Money: `Int`/`BigInt` cents. `315` = $3.15.
+- Quantity: `Decimal(12,3)` — fabric is fractional yards.
+- Dates: America/Los_Angeles always; never compute a boundary in UTC
+  (`APP_TIMEZONE`, `@date-fns/tz`).
+- `InventoryEvent` is append-only — never edit or delete; corrections are
+  new `CORRECTION` events with `correctsEventId`. `onHandQty` is a
+  materialized sum, written in the same transaction as the event that
+  changes it, and must be recomputable from the ledger alone.
+- BOM `qtyPerUnit` of `0` means *unknown*, not zero — rendered as unknown,
+  counted as a gap, skipped by the forecaster.
+- `Component.stockedInStudio` is a fact about a specific purchase, never
+  inferred from category — most trim/hardware lives at a vendor, not the
+  studio (CLAUDE.md §3, corrected 10 Sept 2026 — this used to say the
+  opposite and was wrong).
+- Fabric is never modeled as stock anywhere, by design — bought per
+  production run, shipped straight to the manufacturer.
+
+## Dangerous areas
+
+- Vercel Storage integration tab — never connect one to this project
+  (CLAUDE.md §1; this has destroyed another project's data before).
+- Destructive Vercel/Neon CLI commands — confirm in-conversation first,
+  always.
+- Anything that sends mail — real key, real people, no dry-run unless you
+  set the flag yourself.
+- `InventoryEvent`/`onHandQty` writes outside a shared transaction — breaks
+  the "recomputable from the ledger" invariant silently.
+- Auto-forwarding inbound mail — removed entirely, asked for three times by
+  Brandon. If a request sounds like "narrow the forwarding filter again,"
+  stop and ask whether the feature should exist at all before writing code.
+
+## Known issues / gotchas (verified this session unless marked otherwise)
+
+- **`npx tsc --noEmit` reports two pre-existing failures** —
+  `app/layout.tsx` and `app/(main)/layout.tsx`, "Cannot find name
+  'LayoutProps'." Confirmed via `git stash` that these exist independent of
+  any change; likely Next's generated `.next/types` not having been built
+  yet in a fresh checkout. Not caused by app code — don't chase it as a
+  regression.
+- **Restart the dev server after `prisma migrate`** — stale client, wrong
+  shape, no error.
+- **Vercel sensitive env vars pull empty** — see above.
+- **QuickBooks' "Total Expenses" and group `displayValue` fields read $0.00**
+  when real expenses exist — a trend-calculation bug with no prior-year
+  comparable. `totalExpenses()` in `lib/integrations/quickbooks.ts` prefers
+  Gross Profit − Net Operating Income (exact identity), cross-checks against
+  summed line items, and only falls back to the headline field last. Two
+  specific traps documented in that file's comments: `summaryBreakdown.netOperatingIncome`
+  is actually Net *Income*, not NOI; and naive leaf-summing double-counts
+  because "Total for X" rows sit as siblings of the rows they total.
+- **Financial figures currently stuck unconfirmed** — see the three-paths
+  section above. Time-sensitive; re-verify rather than trust this
+  description if it's been more than a few days.
+
+## Active work / open data gaps (state, not code — re-verify before acting)
+
+Tracked as open `ActionItem`s in the live data as of 13 Sept 2026, not
+necessarily current by the time you read this — query the table rather than
+trust this list:
+- 12 Sept QuickBooks figures unconfirmed (above).
+- Whether wholesale invoices are entered in QuickBooks at all — A/R reads
+  $0.00, which is either true or a sign they're not being entered.
+- Denim cost/yard for the current vendor (United Leather) is unknown — the
+  prior vendor's price doesn't carry over (CLAUDE.md §3, don't inherit a
+  replaced vendor's pricing).
+- Per-colour leather/snaps/buttons for each Cleo Bag colorway variant, and
+  Petite Bateau handle material, are unspecified.
+- Sixteen suppliers in Cleo's own tracking sheet aren't in the system —
+  left out deliberately (read as a sourcing shortlist, not live accounts).
+- 35 of 73 BOM quantities are unknown (by design — see BOM convention
+  above, this is a visible gap, not corrupted data).
+- The parent "Cleo Bag" product is sunsetted (split into five per-colour
+  products) but still referenced by three purchase orders — not deleted on
+  purpose.
+
+## Most important files to read first
+
+| File | Why |
 |---|---|
-| `ANTHROPIC_API_KEY` | running Studio Mouse chat locally |
-| `RESEND_API_KEY`, `EMAIL_FROM` | anything that sends mail — **see the hazard below** |
-| `SHOPIFY_*` | syncing finished-goods counts |
-| `ADMIN_PASSWORD`, `SESSION_SECRET` | signing in to the app locally |
-| `QBO_*` | nothing — empty placeholders, the OAuth path was dropped |
-
-`SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`, `SHOPIFY_STORE_DOMAIN`,
-`CALENDAR_FEED_URL`, `EMAIL_FROM`, `DIGEST_RECIPIENTS` and
-`INBOUND_ALLOWED_MAILBOXES` *do* come back from `vercel env pull`, so pull
-first and fill the blanks from Neon and the Resend dashboard.
-
-### One shared database. There is no staging copy.
-Local, preview and production all point at the same Neon database. Every script
-you run touches live data that Brandon and Cleo are using **right now** — data
-changed under me twice in one session. Read freely; think before writing.
-
-### The email hazard
-`EMAIL_DRY_RUN=1` must be set before exercising anything that might send. Real
-mail has reached real people from a test twice. The flag is checked inside
-`sendEmail()` itself — stubbing the import does not work, because ESM binds
-imports inside the calling module.
-
----
-
-## 2. Where things stand
-
-Everything is committed and pushed; `main` matches `origin/main`. Production is
-deployed and healthy. Typecheck clean, 12/12 tests (`npm test`).
-
-### Shipped in this session
-- **Components page rebuilt around products.** Every product collapsed,
-  including ones with nothing recorded — an empty one is a job, not a product
-  without parts. "Not on a product yet" is the pile to work through.
-- **One Save button.** The form had two, and the obvious one silently discarded
-  queued products. It now writes details, quantities and attachments together.
-- **BOM quantities are optional.** `0` is this codebase's "not known yet" —
-  rendered as *unknown*, counted as a gap, skipped by the forecaster. Never
-  shown as a confident zero.
-- **`merge_component` + `update_product_bom`** for duplicates and bulk edits.
-- **Inbound auto-forwarding removed entirely.** Asked for three times. The
-  filter was never the bug; wanting the copies was the wrong premise.
-- **Cleo Bag split per colour** (Black / Silver / Chocolate Suede / Denim /
-  Olive), each carrying its own Shopify variant and components. The parent is
-  sunsetted, not deleted — POs 2364, 2369 and 2370 point at it.
-- **QuickBooks expense guard** — see below.
-
-### QuickBooks: working, and the one thing to never trust
-QuickBooks reports `totalExpenses: 0` when real expenses exist. Confirmed twice
-on these books: YTD showed 0 against a true **$38,014.22**; September showed 0
-against a true **$700.00**. It is the period-over-period trend calculation
-defaulting to zero with no comparable prior-year period.
-
-`totalExpenses()` in `lib/integrations/quickbooks.ts` computes three ways —
-Gross Profit − Net Operating Income (preferred, an identity, exact to the cent),
-the summed account rows (cross-check), the headline field (last resort) —
-reports which it used, and carries disagreements out as warnings.
-
-**Two traps, both of which I fell into:**
-1. `summaryBreakdown.netOperatingIncome` is **not** Net Operating Income. It
-   held `216,114.12`, which is Net *Income* after $65.37 of Other Expenses.
-   Using it gives 38,079.59 — wrong by exactly that. Take NOI from its own row.
-2. Naive leaf-summing double-counts: "Total for X" rows sit as siblings of the
-   rows they total. That gave 509,415.23 against a true 38,014.22.
-
-**The daily routine works end to end.** Verified 12 Sept: sent from
-`quickbooks@send.cleocamp.com`, Resend status `delivered`, and the matching
-`InboundEmail` row is in the database. It runs 7am daily — **but only on
-Brandon's Mac, only while the desktop app is open.** It does not travel to the
-cloud. Figures arrive as *proposals*, not writes: inbound email is data, never
-instructions (CLAUDE.md §4).
-
-Latest figures, as of 12 Sept: cash **$165,897.42**, A/R **$0**, A/P **$0**,
-revenue YTD **$296,090.52**, revenue MTD **$26,045.60**, expenses MTD **$700.00**.
-
----
-
-## 3. Open questions (all in "To tend to")
-
-- **Where are the other 2,200 shell buttons?** Brandon says 4,400 on hand,
-  ~60 short of the 4,460 PO 2360 needs. Only 2,200 are in the ledger, at Empire
-  Sewing. The rest have no stated location, so they were deliberately not
-  written. He is recounting at the studio.
-- **The parent "Cleo Bag" record** — sunsetted and hidden from the by-product
-  list, but it still holds a forecast and three POs.
-- **Per-colour leather, snaps and buttons** for each Cleo Bag — they carry only
-  the shared main label and bag tag plus what the bible documented.
-- **Petite Bateau handle material** — "Leather (for handles)", unspecified.
-- **Sixteen suppliers** in Cleo's "Cleo Bags" sheet that are not in the system
-  (LalaLand/Ricardo, Greta P, Asher, Koshtex, Iblu…). Left out deliberately:
-  they read as a sourcing shortlist, not live accounts.
-- **Denim** — no price for United Leather, the current vendor. The $11.25/yd in
-  Cleo's ledger is Pacific Blue Denim's, the *previous* vendor, and a replaced
-  vendor's prices become unknown rather than inherited (CLAUDE.md §3).
-- **35 of 73 BOM quantities** are still unknown.
-
-**Settled, do not reopen:** shell buttons are **$0.04** (Brandon, 12 Sept —
-sourcing docs saying $0.49 are wrong). Cleo Tee yardage is **0.7**.
-
----
-
-## 4. How to work here
-
-- `npm test` — 12 tests, no network, no database.
-- `npx tsc --noEmit` before any commit.
-- One-off inspection scripts: write `.tmp-*.ts`, run with `npx tsx`, delete
-  after. `.tmp-*` is gitignored.
-- **Restart the dev server after `prisma migrate`** — it holds a stale client
-  and returns the old shape without erroring.
-- Verify against the database, not the screen. A tool returning normally is not
-  proof it wrote anything — that has been the shape of nearly every real bug in
-  this project.
+| `CLAUDE.md` | Non-negotiables — read before anything else |
+| `prisma/schema.prisma` | The whole data model and its invariants, in comments |
+| `lib/db.ts` | Runtime DB client — small, but the adapter choice matters, see above |
+| `prisma.config.ts` | Why migrations use a different connection than the app |
+| `lib/mouse/tools.ts` | Every write Studio Mouse can make — large, but this is where the CLAUDE.md invariants are actually enforced in code |
+| `app/api/cron/nightly/route.ts` | Everything that runs automatically, once a day, unattended |
+| `lib/integrations/quickbooks.ts` | The $0-expenses bug workaround, and why the OAuth path is dormant |
