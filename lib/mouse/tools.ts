@@ -158,19 +158,32 @@ async function writeEvent(args: {
     where: { id: args.productVariantId! },
     include: { product: true, colorway: true },
   })
+
+  // Our own cache saying "unknown" doesn't mean Shopify doesn't know — it
+  // means we haven't asked recently. Only worth asking when we're actually
+  // about to push (writes on, variant linked); a failed live check falls
+  // back to genuinely unknown rather than blocking the whole write, since
+  // the local ledger entry below is still worth having either way.
+  let liveBaseline: number | null = null
+  if (v.onHandQty === null && inventoryWritesEnabled() && v.shopifyInventoryItemId && v.shopifyVariantId) {
+    try {
+      const { fetchInventoryQuantity } = await import('@/lib/integrations/shopify')
+      liveBaseline = await fetchInventoryQuantity(v.shopifyVariantId)
+    } catch {
+      liveBaseline = null
+    }
+  }
+  const priorKnown = v.onHandQty !== null ? Number(v.onHandQty) : liveBaseline
+
   // resolvedDelta is what the ledger stores (deltaQty is "always set" per its
-  // schema doc comment) — derived from countedQty against the current count
-  // when that's what was given, an unknown current count treated as 0 for
-  // this purpose only. Kept separate from `next` below, which preserves
-  // null-means-unknown for the variant's own cached onHandQty: a delta
-  // against an unknown count must leave it unknown, not invent a number.
+  // schema doc comment) — derived from countedQty against the best baseline
+  // we have, an unknown baseline treated as 0 for this purpose only. Kept
+  // separate from `next` below, which preserves null-means-unknown for the
+  // variant's own cached onHandQty: a delta against a genuinely unknown
+  // count must leave the cache unknown, not invent a number.
   const resolvedDelta =
-    args.countedQty !== undefined
-      ? args.countedQty - (v.onHandQty === null ? 0 : Number(v.onHandQty))
-      : args.deltaQty!
-  const next =
-    args.countedQty ??
-    (v.onHandQty === null ? null : Number(v.onHandQty) + resolvedDelta)
+    args.countedQty !== undefined ? args.countedQty - (priorKnown ?? 0) : args.deltaQty!
+  const next = args.countedQty ?? (priorKnown === null ? null : priorKnown + resolvedDelta)
   const name = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
 
   let shopifyNote: string
@@ -179,16 +192,24 @@ async function writeEvent(args: {
   // write (a timeout, a re-run) can never double-apply on Shopify's side.
   const eventId = crypto.randomUUID()
 
+  // Surfaced in shopifyNote below whenever the live check actually ran and
+  // produced the baseline used — so a live-checked push reads visibly
+  // differently from an ordinary one in the chat, and a surprising number
+  // is something Cleo or Brandon can catch, rather than something that
+  // happened silently just because it *could* be resolved automatically.
+  const usedLiveCheck = v.onHandQty === null && liveBaseline !== null
+
   if (inventoryWritesEnabled() && v.shopifyInventoryItemId) {
     // The baseline doubles as changeFromQuantity — Shopify's own
-    // compare-and-swap guard, so a stale local number fails loudly against
-    // Shopify's real one rather than applying a delta that no longer holds.
-    const baseline = v.onHandQty === null ? null : Number(v.onHandQty)
+    // compare-and-swap guard, so a stale number (ours or a moment-old live
+    // read) fails loudly against Shopify's real one rather than applying a
+    // delta that no longer holds.
+    const baseline = priorKnown
     const delta = baseline === null ? null : resolvedDelta
     if (baseline === null || delta === null) {
-      shopifyNote = 'not pushed — our own count was unknown, so there was no baseline to compute a delta from. Sync from Shopify first.'
+      shopifyNote = 'not pushed — our own count was unknown and a live check against Shopify failed too, so there was no baseline to compute a delta from. Sync from Shopify first.'
     } else if (delta === 0) {
-      shopifyNote = 'no change to push'
+      shopifyNote = usedLiveCheck ? `no change to push — checked Shopify live (our own count was unknown), found ${baseline}, already matches` : 'no change to push'
     } else {
       const studio = await db.location.findFirst({ where: { isDefault: true }, select: { shopifyLocationId: true } })
       if (!studio?.shopifyLocationId) {
@@ -206,7 +227,9 @@ async function writeEvent(args: {
           error: `Shopify rejected the write: ${res.error}. Nothing changed locally either — say so, rather than let the two disagree.`,
         }
       }
-      shopifyNote = `pushed ${delta > 0 ? '+' : ''}${delta} to Shopify`
+      shopifyNote = usedLiveCheck
+        ? `pushed ${delta > 0 ? '+' : ''}${delta} to Shopify — our own count was unknown, so this used a live Shopify check (found ${baseline}) as the baseline instead of asking you to sync first`
+        : `pushed ${delta > 0 ? '+' : ''}${delta} to Shopify`
     }
   } else if (!v.shopifyInventoryItemId) {
     shopifyNote = 'not pushed — this variant has no Shopify link on file'
@@ -273,7 +296,10 @@ export const TOOLS: Record<string, Tool> = {
         'deltaQty is then ignored. For a finished-goods variant this also pushes the same ' +
         'change to Shopify, which stays master — check the result\'s "shopify" field. If it ' +
         'ever says the local save failed after Shopify had already taken the change, do not ' +
-        'call this again for the same movement — say so plainly and get a person to reconcile.\n\n' +
+        'call this again for the same movement — say so plainly and get a person to reconcile. ' +
+        'If our own count for a variant is unknown, you do not need to ask the user to sync ' +
+        'from Shopify first — this checks Shopify live on its own and uses that as the ' +
+        'baseline. Just mention in your reply that it did, so it is not silent.\n\n' +
         'For a component that is not a small studio stash (most trim and hardware now — see ' +
         'each component\'s stockedInStudio), say WHERE with locationId or atVendorId: this ' +
         'is frequently at a manufacturer, not the studio, and the count only means something ' +

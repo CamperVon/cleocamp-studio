@@ -350,6 +350,24 @@ elsewhere.
   needed re-pushing — only the missing ledger events (`deltaQty: 0`,
   `countedQty` set) were backfilled, restoring `onHandQty`'s
   recomputable-from-the-ledger invariant (CLAUDE.md §3).
+
+  **Follow-up same day, prompted directly by Brandon:** a variant whose
+  local `onHandQty` was unknown made `log_inventory_event` refuse to push
+  to Shopify at all ("sync from Shopify first") — correct caution in
+  principle (never guess a delta with no baseline), but unnecessary,
+  since Shopify itself always knows even when our cache doesn't. Added
+  `fetchInventoryQuantity()` (`lib/integrations/shopify.ts`) — a live
+  single-variant read, `node(id) { ... on ProductVariant { inventoryQuantity } }`,
+  validated against the real API before shipping. `writeEvent` now falls
+  back to it whenever the local count is unknown and a push is actually
+  about to happen (for a stated count *and* a plain add/subtract — not
+  only COUNTED), and the tool's reply says plainly when that live check
+  is what supplied the baseline, so a surprising number is something a
+  human notices rather than something that happened silently. Brandon's
+  framing, worth keeping in mind for this whole tool: a stated count is
+  always master, no confirmation needed; a movement against an unknown
+  local count should make Mouse go check Shopify itself rather than
+  punt back to a person — "think like a person would, not a robot."
 - **`npx tsc --noEmit` reports two pre-existing failures** —
   `app/layout.tsx` and `app/(main)/layout.tsx`, "Cannot find name
   'LayoutProps'." Confirmed via `git stash` that these exist independent of

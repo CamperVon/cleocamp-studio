@@ -237,6 +237,24 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 5): Promise<T> {
  * landing mid-write, say — rather than silently applying a delta against a
  * number that's no longer true.
  */
+/**
+ * A single variant's current count, straight from Shopify — not our cache.
+ *
+ * For when our own onHandQty is null (never synced, or a gap) but a push
+ * still needs a baseline to compute a delta against. Shopify always knows;
+ * we might not have asked recently. Returns null only if Shopify itself
+ * doesn't have the variant or the field, not on a transient failure —
+ * callers should let a thrown error propagate rather than treat it as
+ * "unknown," since that would push a delta with no real baseline at all.
+ */
+export async function fetchInventoryQuantity(shopifyVariantId: string): Promise<number | null> {
+  const d = await shopifyGraphQL<{ node: { inventoryQuantity: number } | null }>(
+    `query($id: ID!) { node(id: $id) { ... on ProductVariant { inventoryQuantity } } }`,
+    { id: `gid://shopify/ProductVariant/${shopifyVariantId}` },
+  )
+  return d.node?.inventoryQuantity ?? null
+}
+
 export async function adjustInventory(args: {
   inventoryItemId: string
   locationId: string
