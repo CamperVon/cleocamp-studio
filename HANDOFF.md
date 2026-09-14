@@ -201,9 +201,12 @@ accounts, literally labeled in its own `raw.source` as "QuickBooks bank feed,
 read from the banking screen." The later figure is QuickBooks' full ledger
 total across all 5 accounts. Reconciled account-by-account, the gap is
 real and exact — Main-cleocamp alone moved +$101,531.14 in 11 days, more
-than 4× that month's entire revenue. That's a specific deposit/transfer/loan
-a human needs to identify from the actual bank statement — not something
-derivable from any API, and not a data-integrity problem in this app.
+than 4× that month's entire revenue. **Answered by Brandon, 14 Sept 2026:
+bookkeeping catching up**, not a specific transaction to chase — expect
+similar-looking jumps for a while as the books get current, not a
+data-integrity problem in this app. Don't re-open this as a mystery next
+time a large swing shows up; ask whether it's the same catch-up before
+treating it as anomalous.
 **A/R reading $0 is also correct, not a bug**: QuickBooks' own AR aging
 report is empty company-wide, because wholesale sales aren't entered into
 QuickBooks as invoices at all — the $0 is QuickBooks accurately reporting
