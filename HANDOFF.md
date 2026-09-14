@@ -238,7 +238,32 @@ to the coding session that built it — so it's tied to that session's
 lifetime, not a standalone routine. If that session is ever deleted, this
 stops firing silently, the same failure shape as before. Check
 `list_triggers` if financials go stale again rather than assuming the app
-is broken.
+is broken. **Currently disabled** (14 Sept 2026, to skip one firing without
+overwriting a manual correction — see below); a `send_later` reminder is
+set to re-enable it 15 Sept ~9am Pacific. If it's still disabled well after
+that, something didn't fire — check and re-enable by hand.
+
+**"Cash" is defined as exactly three accounts — PERFBUS CHK, Main-cleocamp
+(8413), Sales Tax-cleocamp — not the full 5-account Balance Sheet.** Decided
+14 Sept 2026: CURRENT and SAVINGS are deliberately excluded. The routine's
+prompt encodes this now.
+
+**Real, still-open gap: this QuickBooks connector has no API for the live
+bank-feed balance shown on QuickBooks' own Banking page — only the
+reconciled ledger.** Confirmed by searching every tool the connector
+exposes; none of them return it. The ledger can read materially higher than
+the real bank balance while bookkeeping is catching up — seen directly
+14 Sept: Main-cleocamp ledger $120,067.39 vs. its actual bank balance
+$39,837.25, a $80k gap, confirmed as expected catch-up, not an error. The
+automated nightly routine can only ever produce the ledger figure for these
+three accounts. Getting the *true* figure into `FinancialSnapshot` still
+requires a human reading the Banking page and telling Studio Mouse (or
+whoever's driving a session) directly — there's no automated fix for this
+without either Intuit exposing a bank-feed API this connector adopts, or
+browser/vision access to a logged-in QuickBooks session (deliberately not
+attempted — no credentials available, and scripting a login isn't
+appropriate here). Expect this to keep coming up; it's not a bug to
+re-diagnose each time.
 
 **`app/(main)/finances/page.tsx` had a real, separate bug, now fixed on
 `main` (`e57679b`, merged into this branch 14 Sept 2026):** it fetched
