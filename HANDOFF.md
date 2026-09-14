@@ -238,10 +238,9 @@ to the coding session that built it — so it's tied to that session's
 lifetime, not a standalone routine. If that session is ever deleted, this
 stops firing silently, the same failure shape as before. Check
 `list_triggers` if financials go stale again rather than assuming the app
-is broken. **Currently disabled** (14 Sept 2026, to skip one firing without
-overwriting a manual correction — see below); a `send_later` reminder is
-set to re-enable it 15 Sept ~9am Pacific. If it's still disabled well after
-that, something didn't fire — check and re-enable by hand.
+is broken. (Briefly disabled 14 Sept to protect a manual cash figure from
+being overwritten — moot within the hour once cash was dropped from the
+page entirely; re-enabled same day, running normally.)
 
 **Cash was dropped from the Finances page entirely, same day (14 Sept
 2026), superseding the three-account definition above almost immediately.**
