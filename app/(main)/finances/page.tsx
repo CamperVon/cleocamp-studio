@@ -17,15 +17,25 @@ export default async function Finances() {
   const invoices = ((snap?.raw as any)?.invoices ?? []) as Array<{
     number: string; customer: string; date: string; total: number; balance: number
   }>
-  const raw = (snap?.raw ?? {}) as { source?: string; note?: string; warnings?: string[] }
+  const raw = (snap?.raw ?? {}) as { source?: string; note?: string; warnings?: string[]; pnl?: { expensesYtdCents?: number } }
   const warnings = raw.warnings ?? []
-  // Two different things can populate this: someone reading the live Banking
-  // tab (trustworthy, per CLAUDE.md — that IS the number Cleo Camp watches),
-  // or a pull of QuickBooks' own reports, which total the Bank-type accounts
-  // in the ledger and can disagree with the bank feed. Only warn for the
-  // second case — warning about a number that already came from the banking
-  // screen would be telling the truth backwards.
-  const fromBankingScreen = /banking screen|bank feed/i.test(raw.source ?? '')
+  // Cash intentionally dropped, 14 Sept 2026: the QuickBooks connector has no
+  // API for the live bank-feed balance (only the reconciled ledger), which
+  // read tens of thousands off the real bank balance during bookkeeping
+  // catch-up. Rather than show a number that's wrong in a way nobody can fix
+  // from here, this page shows P&L instead — revenue and expenses aren't
+  // subject to that same bank-feed-vs-ledger gap. See HANDOFF.md.
+  //
+  // expensesYtdCents has no typed column yet (this session can't run a
+  // migration — no direct DB connection available from here) so it rides in
+  // raw.pnl as a stopgap. Promote it to a real FinancialSnapshot column next
+  // time someone has local/DIRECT_URL access.
+  const expensesYtdCents =
+    typeof raw.pnl?.expensesYtdCents === 'number' ? BigInt(raw.pnl.expensesYtdCents) : null
+  const netIncomeYtdCents =
+    snap?.revenueYtdCents != null && expensesYtdCents != null
+      ? snap.revenueYtdCents - expensesYtdCents
+      : null
 
   // Figures can arrive by hand long before the Intuit connection exists — the
   // page should show what it has rather than insisting on OAuth first.
@@ -36,7 +46,7 @@ export default async function Finances() {
           <div className="flex flex-col gap-3 px-4 py-5 sm:px-5">
             <p className="text-sm text-muted">
               Tell Studio Mouse where things stand and it will keep track &mdash;
-              &ldquo;as of today we have $40,000 in the bank and $12,000 outstanding&rdquo;,
+              &ldquo;revenue this year is $200,000 and expenses are $150,000&rdquo;,
               or paste a QuickBooks summary. No setup needed.
             </p>
             <p className="text-sm text-muted">
@@ -58,12 +68,12 @@ export default async function Finances() {
 
   return (
     <Page
-      title="Cash"
+      title="Profit &amp; Loss"
       lede={
         snap
-          ? `As of ${snap.forDate.toLocaleDateString('en-US', {
+          ? `Year to date, as of ${snap.forDate.toLocaleDateString('en-US', {
               timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric',
-            })}${raw.source ? ` — ${raw.source}` : ''}.`
+            })}.`
           : 'Nothing recorded yet.'
       }
     >
@@ -88,38 +98,25 @@ export default async function Finances() {
 
       {snap ? (
         <>
-          {/* Brandon, 13 Sept: "not seeing anything on the Finances page." He
-              was right — cashCents/arCents/apCents were fetched and a money()
-              formatter existed for them, but nothing in this file ever
-              rendered a figure. Only the (always-empty) invoices list below
-              was showing. */}
-          <Card title="Position">
+          <Card title="Year to date">
             <div className="flex flex-wrap gap-3 px-4 py-4 sm:px-5">
-              <Stat label="Cash" value={money(snap.cashCents)} sub={fromBankingScreen ? 'From the QuickBooks banking screen' : 'QuickBooks — see caution below'} />
-              <Stat
-                label="Receivables"
-                value={snap.arCents === null ? 'unknown' : money(snap.arCents)}
-                sub="Wholesale isn't invoiced through QuickBooks, so this will read low"
-              />
-              <Stat label="Payables" value={money(snap.apCents)} />
+              <Stat label="Revenue" value={money(snap.revenueYtdCents)} />
+              <Stat label="Expenses" value={money(expensesYtdCents)} />
+              <Stat label="Net income" value={money(netIncomeYtdCents)} />
             </div>
-            {(snap.revenueMtdCents !== null || snap.expensesMtdCents !== null) ? (
+            {snap.revenueMtdCents !== null || snap.expensesMtdCents !== null ? (
               <div className="flex flex-wrap gap-3 border-t border-line px-4 py-4 sm:px-5">
                 {snap.revenueMtdCents !== null ? <Stat label="Revenue, month to date" value={money(snap.revenueMtdCents)} /> : null}
-                {snap.revenueYtdCents !== null ? <Stat label="Revenue, year to date" value={money(snap.revenueYtdCents)} /> : null}
                 {snap.expensesMtdCents !== null ? <Stat label="Expenses, month to date" value={money(snap.expensesMtdCents)} /> : null}
               </div>
             ) : null}
-            {!fromBankingScreen ? (
-              <div className="border-t border-line px-4 py-3 text-xs text-muted sm:px-5">
-                <p>
-                  <strong>This is QuickBooks&rsquo; ledger total for its Bank-type accounts</strong> — not
-                  the live Banking screen, which no API exposes. The two can disagree; if this jumped by
-                  more than revenue explains, check the specific account on the real screen before
-                  treating it as settled.
-                </p>
-              </div>
-            ) : null}
+            {/* Expenses YTD comes from Gross Profit − Net Operating Income
+                (QuickBooks' own "Total Expenses" reads $0.00 due to a known
+                trend-calculation bug — see lib/integrations/quickbooks.ts and
+                CLAUDE.md's "Things that have already caught us out"),
+                cross-checked against summed line items. Disagreements between
+                the two methods land in `warnings` below rather than being
+                silently resolved. */}
             {warnings.length ? (
               <ul className="border-t border-line px-4 py-3 sm:px-5">
                 {warnings.map((w, i) => (

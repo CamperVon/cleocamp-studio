@@ -243,36 +243,60 @@ overwriting a manual correction — see below); a `send_later` reminder is
 set to re-enable it 15 Sept ~9am Pacific. If it's still disabled well after
 that, something didn't fire — check and re-enable by hand.
 
-**"Cash" is defined as exactly three accounts — PERFBUS CHK, Main-cleocamp
-(8413), Sales Tax-cleocamp — not the full 5-account Balance Sheet.** Decided
-14 Sept 2026: CURRENT and SAVINGS are deliberately excluded. The routine's
-prompt encodes this now.
+**Cash was dropped from the Finances page entirely, same day (14 Sept
+2026), superseding the three-account definition above almost immediately.**
+Sequence, since it's a good example of how fast a "fix" can become the
+wrong fix: first the page showed the full 5-account ledger sum; then
+narrowed to three specific accounts (PERFBUS CHK, Main-cleocamp, Sales
+Tax-cleocamp) per Brandon; then, once it was clear the automated routine
+could only ever produce the *ledger* value for those accounts — not the
+true bank-feed balance QuickBooks itself shows, which this connector has no
+API for — Brandon said plainly he won't do the manual "check the Banking
+tab and tell Studio Mouse" workflow that would be needed to keep it
+accurate. So cash is gone from this page, full stop. Don't reintroduce it
+without a real fix for the bank-feed-API gap (see below) — narrowing which
+accounts count was never the actual problem.
 
-**Real, still-open gap: this QuickBooks connector has no API for the live
-bank-feed balance shown on QuickBooks' own Banking page — only the
-reconciled ledger.** Confirmed by searching every tool the connector
-exposes; none of them return it. The ledger can read materially higher than
-the real bank balance while bookkeeping is catching up — seen directly
-14 Sept: Main-cleocamp ledger $120,067.39 vs. its actual bank balance
-$39,837.25, a $80k gap, confirmed as expected catch-up, not an error. The
-automated nightly routine can only ever produce the ledger figure for these
-three accounts. Getting the *true* figure into `FinancialSnapshot` still
-requires a human reading the Banking page and telling Studio Mouse (or
-whoever's driving a session) directly — there's no automated fix for this
-without either Intuit exposing a bank-feed API this connector adopts, or
-browser/vision access to a logged-in QuickBooks session (deliberately not
-attempted — no credentials available, and scripting a login isn't
-appropriate here). Expect this to keep coming up; it's not a bug to
-re-diagnose each time.
+**The Finances page now shows Profit & Loss (revenue, expenses, net
+income — MTD and YTD) instead.** P&L doesn't have the bank-feed-vs-ledger
+problem — QuickBooks' own reports are the right source once the $0-expenses
+bug is worked around (see `lib/integrations/quickbooks.ts` and the
+Known Issues section below). `app/(main)/finances/page.tsx`'s title changed
+from "Cash" to "Profit & Loss"; the old "Position" card (Cash/Receivables/
+Payables) is gone, replaced by a "Year to date" card.
 
-**`app/(main)/finances/page.tsx` had a real, separate bug, now fixed on
-`main` (`e57679b`, merged into this branch 14 Sept 2026):** it fetched
-`cashCents`/`arCents`/`apCents` and defined a `money()` formatter for them,
-but never called `money()` anywhere in the JSX — only an always-empty
-"Invoices" list rendered. The Position card (Cash/Receivables/Payables) now
-actually renders, with a caution banner that's conditional on whether the
-snapshot's own `raw.source` says it came from the banking screen (exact) vs.
-the ledger (a cross-check, can differ from the interactive Banking tab).
+**Schema gap, not yet fixed: `FinancialSnapshot` has `revenueYtdCents` but
+no `expensesYtdCents` column.** `record_financials` (the chat tool) and the
+routine both compute YTD expenses but had nowhere typed to put them. As a
+stopgap, `expensesYtdCents` rides inside `raw.pnl.expensesYtdCents` (a plain
+number, cents) instead — the Finances page reads it from there, with a code
+comment explaining why. This session can't run a migration to add a real
+column (no `DIRECT_URL`, and raw TCP doesn't work from a Claude Code cloud
+session regardless — see the Neon section above). **Promote this to a real
+column next time someone has local or `DIRECT_URL` access**, and update
+`record_financials` to accept `expensesYearToDate` as a proper input the
+same way `revenueYearToDate` already is.
+
+**The QuickBooks bank-feed API gap itself is still real and unaddressed** —
+this connector has no tool for the live "Bank Balance" QuickBooks shows on
+its own Banking page, only the reconciled ledger, confirmed by checking
+every tool the connector exposes. The ledger can read tens of thousands off
+the true balance during bookkeeping catch-up (seen directly 14 Sept:
+Main-cleocamp ledger $120,067.39 vs. its actual bank balance $39,837.25).
+This is *why* cash got dropped rather than fixed — there's no automated
+path to the real number without either Intuit exposing a bank-feed API this
+connector adopts, or browser/vision access to a logged-in QuickBooks
+session (deliberately not attempted — no credentials available, scripting a
+login isn't appropriate here). If cash ever needs to come back, this gap is
+still the blocker, not something that got resolved along the way.
+
+**`app/(main)/finances/page.tsx` also had a real, separate bug earlier the
+same day, fixed on `main` (`e57679b`, merged into this branch):** it
+fetched `cashCents`/`arCents`/`apCents` and defined a `money()` formatter
+for them, but never called `money()` anywhere in the JSX. Moot now that
+cash is gone from the page, but the underlying lesson — a value fetched and
+formatted but never actually rendered — is a shape worth watching for
+elsewhere.
 
 ## Conventions
 
