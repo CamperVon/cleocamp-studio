@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { Page, Card, Empty } from '@/app/ui/primitives'
+import { Page, Card, Empty, Stat, Chip } from '@/app/ui/primitives'
 import { isConfigured } from '@/lib/integrations/quickbooks'
 
 export const dynamic = 'force-dynamic'
@@ -17,6 +17,15 @@ export default async function Finances() {
   const invoices = ((snap?.raw as any)?.invoices ?? []) as Array<{
     number: string; customer: string; date: string; total: number; balance: number
   }>
+  const raw = (snap?.raw ?? {}) as { source?: string; note?: string; warnings?: string[] }
+  const warnings = raw.warnings ?? []
+  // Two different things can populate this: someone reading the live Banking
+  // tab (trustworthy, per CLAUDE.md — that IS the number Cleo Camp watches),
+  // or a pull of QuickBooks' own reports, which total the Bank-type accounts
+  // in the ledger and can disagree with the bank feed. Only warn for the
+  // second case — warning about a number that already came from the banking
+  // screen would be telling the truth backwards.
+  const fromBankingScreen = /banking screen|bank feed/i.test(raw.source ?? '')
 
   // Figures can arrive by hand long before the Intuit connection exists — the
   // page should show what it has rather than insisting on OAuth first.
@@ -52,9 +61,9 @@ export default async function Finances() {
       title="Cash"
       lede={
         snap
-          ? `From QuickBooks, ${snap.forDate.toLocaleDateString('en-US', {
+          ? `As of ${snap.forDate.toLocaleDateString('en-US', {
               timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric',
-            })}. Pulled nightly at 7pm.`
+            })}${raw.source ? ` — ${raw.source}` : ''}.`
           : 'Nothing recorded yet.'
       }
     >
@@ -79,6 +88,50 @@ export default async function Finances() {
 
       {snap ? (
         <>
+          {/* Brandon, 13 Sept: "not seeing anything on the Finances page." He
+              was right — cashCents/arCents/apCents were fetched and a money()
+              formatter existed for them, but nothing in this file ever
+              rendered a figure. Only the (always-empty) invoices list below
+              was showing. */}
+          <Card title="Position">
+            <div className="flex flex-wrap gap-3 px-4 py-4 sm:px-5">
+              <Stat label="Cash" value={money(snap.cashCents)} sub={fromBankingScreen ? 'From the QuickBooks banking screen' : 'QuickBooks — see caution below'} />
+              <Stat
+                label="Receivables"
+                value={snap.arCents === null ? 'unknown' : money(snap.arCents)}
+                sub="Wholesale isn't invoiced through QuickBooks, so this will read low"
+              />
+              <Stat label="Payables" value={money(snap.apCents)} />
+            </div>
+            {(snap.revenueMtdCents !== null || snap.expensesMtdCents !== null) ? (
+              <div className="flex flex-wrap gap-3 border-t border-line px-4 py-4 sm:px-5">
+                {snap.revenueMtdCents !== null ? <Stat label="Revenue, month to date" value={money(snap.revenueMtdCents)} /> : null}
+                {snap.revenueYtdCents !== null ? <Stat label="Revenue, year to date" value={money(snap.revenueYtdCents)} /> : null}
+                {snap.expensesMtdCents !== null ? <Stat label="Expenses, month to date" value={money(snap.expensesMtdCents)} /> : null}
+              </div>
+            ) : null}
+            {!fromBankingScreen ? (
+              <div className="border-t border-line px-4 py-3 text-xs text-muted sm:px-5">
+                <p>
+                  <strong>This is QuickBooks&rsquo; ledger total for its Bank-type accounts</strong> — not
+                  the live Banking screen, which no API exposes. The two can disagree; if this jumped by
+                  more than revenue explains, check the specific account on the real screen before
+                  treating it as settled.
+                </p>
+              </div>
+            ) : null}
+            {warnings.length ? (
+              <ul className="border-t border-line px-4 py-3 sm:px-5">
+                {warnings.map((w, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs text-warn">
+                    <Chip tone="warn">check</Chip>
+                    <span>{w}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </Card>
+
           <Card title="Invoices">
             {invoices.length === 0 ? (
               <Empty>
