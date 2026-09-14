@@ -209,15 +209,33 @@ report is empty company-wide, because wholesale sales aren't entered into
 QuickBooks as invoices at all — the $0 is QuickBooks accurately reporting
 what it was given, not a parsing failure.
 
-**The nightly QuickBooks routine (Claude Routine / scheduled trigger) that
-fed these emails has been deleted** — confirmed via `list_triggers` on 14
-Sept 2026 (zero triggers on the account, none, ever) and confirmed by
-Brandon/the session that built it. That's why only one QuickBooks email
-ever arrived (12 Sept, once) instead of nightly, and why `FinancialSnapshot`
-sat stuck at 2 Sept for 12 days — not an app bug, an external automation
-that stopped existing. If asked to make financials "current" again, the
-routine needs to be *recreated*, not debugged — nothing in this repo can
-fix a trigger that isn't there.
+**The nightly QuickBooks routine was deleted, then recreated and verified
+working, 14 Sept 2026.** Confirmed deleted via `list_triggers` (zero on the
+account, ever) before rebuilding. Two things learned rebuilding it, both
+repo-relevant if it ever needs touching again:
+- **This org disables passing MCP connectors to a Routine's fresh-session
+  firings** (`create_trigger`'s `connectors` param errors outright: "not
+  available for this organization"; omitting it still fires connector-less
+  sessions). The workaround that actually works: bind the trigger to an
+  *existing* session that already holds the connectors (self-bind — omit
+  both `persistent_session_id` and `create_new_session_on_fire`), since
+  nothing needs to be "passed" to a session that already has them. This is
+  a platform/org constraint, not something fixable in this repo.
+- **`processInbox()` (the JSON auto-parser) only runs inside
+  `/api/cron/nightly`, once a day** — it does not fire on receipt. An email
+  landing mid-day sits as an unprocessed `InboundEmail` row, correctly,
+  until the next nightly pass. Confirmed end-to-end 14 Sept: sent a real
+  figures email, it landed unprocessed, calling `processInbox()` directly
+  (not the full nightly route — that also does Shopify sync, digests, etc.,
+  not appropriate to trigger as a side effect) processed it and wrote a real
+  `FinancialSnapshot` row for cash/AP, exactly as designed.
+
+The new routine fires nightly at 7pm Pacific (`0 2 * * *` UTC), self-bound
+to the coding session that built it — so it's tied to that session's
+lifetime, not a standalone routine. If that session is ever deleted, this
+stops firing silently, the same failure shape as before. Check
+`list_triggers` if financials go stale again rather than assuming the app
+is broken.
 
 **`app/(main)/finances/page.tsx` had a real, separate bug, now fixed on
 `main` (`e57679b`, merged into this branch 14 Sept 2026):** it fetched
