@@ -332,6 +332,24 @@ elsewhere.
 
 ## Known issues / gotchas (verified this session unless marked otherwise)
 
+- **Fixed 14 Sept 2026: `log_inventory_event` wrote the literal string
+  `"undefined"` into `deltaQty` for every COUNTED event, rejected by the
+  Decimal column — real production incident (all eight Story Dress
+  variants).** Root cause was a self-contradicting tool definition: the
+  input schema listed `deltaQty` as `required`, but the tool's own
+  description told the model "For COUNTED give countedQty — deltaQty is
+  then ignored" — so the model correctly omitted it, and every write site
+  in `lib/mouse/tools.ts` did `String(args.deltaQty)` unguarded. Fixed at
+  the root: `deltaQty` removed from `required`, `writeEvent` now derives it
+  from `countedQty` against the previous quantity (at all three write
+  sites — MATERIAL, other components by place, product variants) instead
+  of trusting it arrived, and refuses cleanly (a normal tool-result error,
+  not a corrupted write) if genuinely neither was given. Verified against
+  live Shopify data before touching anything: `get-inventory-levels`
+  confirmed all 8 variants already matched Cleo's count exactly, so nothing
+  needed re-pushing — only the missing ledger events (`deltaQty: 0`,
+  `countedQty` set) were backfilled, restoring `onHandQty`'s
+  recomputable-from-the-ledger invariant (CLAUDE.md §3).
 - **`npx tsc --noEmit` reports two pre-existing failures** —
   `app/layout.tsx` and `app/(main)/layout.tsx`, "Cannot find name
   'LayoutProps'." Confirmed via `git stash` that these exist independent of

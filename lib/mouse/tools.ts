@@ -33,13 +33,26 @@ const num = (description: string) => ({ type: 'number' as const, description })
 async function writeEvent(args: {
   componentId?: string
   productVariantId?: string
-  deltaQty: number
+  deltaQty?: number
   countedQty?: number
   type: string
   note?: string
   locationId?: string
   atVendorId?: string
 }) {
+  // deltaQty was typed as always-present and the input schema listed it as
+  // required, but the tool's own description tells the model to give
+  // countedQty instead for COUNTED and that "deltaQty is then ignored" — so
+  // the model correctly omits it, args.deltaQty is `undefined`, and every
+  // write site below did `String(args.deltaQty)` unguarded, storing the
+  // literal string "undefined" into a Decimal column and getting rejected.
+  // Bug reported 14 Sept 2026 (Story Dress counts, all eight variants).
+  // deltaQty is "carries the derived change... Always set" per its own
+  // schema doc comment — so derive it here, once, rather than trust it
+  // arrived.
+  if (args.deltaQty === undefined && args.countedQty === undefined) {
+    return { eventId: null, applied: false, error: 'Give either deltaQty or countedQty — neither was provided, so there is nothing to record.' }
+  }
   if (args.componentId) {
     const c = await db.component.findUniqueOrThrow({ where: { id: args.componentId } })
 
@@ -47,15 +60,17 @@ async function writeEvent(args: {
     // Untouched by everything below; this is the old, simple behaviour,
     // unchanged, for the one category that deliberately has no stock level.
     if (c.category === 'MATERIAL') {
+      const previous = c.onHandQty === null ? 0 : Number(c.onHandQty)
+      const resolvedDelta = args.countedQty !== undefined ? args.countedQty - previous : args.deltaQty!
+      const next = previous + resolvedDelta
       return db.$transaction(async (tx) => {
         const event = await tx.inventoryEvent.create({
           data: {
-            componentId: args.componentId, deltaQty: String(args.deltaQty),
+            componentId: args.componentId, deltaQty: String(resolvedDelta),
             countedQty: args.countedQty === undefined ? null : String(args.countedQty),
             type: args.type as never, source: 'CHAT', note: args.note ?? null,
           },
         })
-        const next = args.countedQty ?? Number(c.onHandQty) + args.deltaQty
         await tx.component.update({ where: { id: args.componentId! }, data: { onHandQty: String(next) } })
         return { eventId: event.id, name: c.name, newQty: next }
       })
@@ -87,25 +102,30 @@ async function writeEvent(args: {
     }
 
     return db.$transaction(async (tx) => {
+      // Looked up before the event write (not after, as this used to be) so
+      // deltaQty can be derived from it when only countedQty was given — see
+      // the comment at the top of writeEvent.
+      const existing = await tx.componentLocationStock.findFirst({
+        where: { componentId: args.componentId!, locationId, atVendorId },
+      })
+      const prevAtPlace = existing ? Number(existing.qty) : 0
+      const resolvedDelta = args.countedQty !== undefined ? args.countedQty - prevAtPlace : args.deltaQty!
+
       const event = await tx.inventoryEvent.create({
         data: {
-          componentId: args.componentId, deltaQty: String(args.deltaQty),
+          componentId: args.componentId, deltaQty: String(resolvedDelta),
           countedQty: args.countedQty === undefined ? null : String(args.countedQty),
           type: args.type as never, source: 'CHAT', note: args.note ?? null,
           locationId, atVendorId,
         },
       })
 
-      const existing = await tx.componentLocationStock.findFirst({
-        where: { componentId: args.componentId!, locationId, atVendorId },
-      })
-      const prevAtPlace = existing ? Number(existing.qty) : 0
       // COUNTED is an absolute statement about THIS place only — "40 at
       // Antonio's" says nothing about what might also be at the studio. The
       // grand total below is recomputed from every place afterwards rather
       // than set to this number directly, so a count at one place can never
       // silently erase stock recorded somewhere else.
-      const nextAtPlace = args.countedQty ?? prevAtPlace + args.deltaQty
+      const nextAtPlace = prevAtPlace + resolvedDelta
       if (existing) {
         await tx.componentLocationStock.update({ where: { id: existing.id }, data: { qty: String(nextAtPlace) } })
       } else {
@@ -138,11 +158,19 @@ async function writeEvent(args: {
     where: { id: args.productVariantId! },
     include: { product: true, colorway: true },
   })
-  // Null means unknown, not zero. A delta against an unknown count leaves it
-  // unknown rather than inventing a number from nowhere.
+  // resolvedDelta is what the ledger stores (deltaQty is "always set" per its
+  // schema doc comment) — derived from countedQty against the current count
+  // when that's what was given, an unknown current count treated as 0 for
+  // this purpose only. Kept separate from `next` below, which preserves
+  // null-means-unknown for the variant's own cached onHandQty: a delta
+  // against an unknown count must leave it unknown, not invent a number.
+  const resolvedDelta =
+    args.countedQty !== undefined
+      ? args.countedQty - (v.onHandQty === null ? 0 : Number(v.onHandQty))
+      : args.deltaQty!
   const next =
     args.countedQty ??
-    (v.onHandQty === null ? null : Number(v.onHandQty) + args.deltaQty)
+    (v.onHandQty === null ? null : Number(v.onHandQty) + resolvedDelta)
   const name = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
 
   let shopifyNote: string
@@ -156,7 +184,7 @@ async function writeEvent(args: {
     // compare-and-swap guard, so a stale local number fails loudly against
     // Shopify's real one rather than applying a delta that no longer holds.
     const baseline = v.onHandQty === null ? null : Number(v.onHandQty)
-    const delta = baseline === null ? null : (args.countedQty !== undefined ? args.countedQty - baseline : args.deltaQty)
+    const delta = baseline === null ? null : resolvedDelta
     if (baseline === null || delta === null) {
       shopifyNote = 'not pushed — our own count was unknown, so there was no baseline to compute a delta from. Sync from Shopify first.'
     } else if (delta === 0) {
@@ -190,7 +218,7 @@ async function writeEvent(args: {
     return await db.$transaction(async (tx) => {
       const event = await tx.inventoryEvent.create({
         data: {
-          id: eventId, productVariantId: args.productVariantId, deltaQty: String(args.deltaQty),
+          id: eventId, productVariantId: args.productVariantId, deltaQty: String(resolvedDelta),
           countedQty: args.countedQty === undefined ? null : String(args.countedQty),
           type: args.type as never, source: 'CHAT', note: args.note ?? null,
         },
@@ -272,11 +300,16 @@ export const TOOLS: Record<string, Tool> = {
                    'WHOLESALE_SHIPPED', 'STYLIST_PULL_OUT', 'STYLIST_PULL_RETURN', 'RETURNED'],
             description: 'WHOLESALE_SHIPPED and GIFTED count as demand. Stylist pulls do not.',
           },
-          deltaQty: num('Signed change. Negative for things leaving.'),
+          deltaQty: num('Signed change. Negative for things leaving. Omit for COUNTED — give countedQty instead.'),
           countedQty: num('For COUNTED only: the absolute number stated, AT THE PLACE GIVEN — not a total across every place this component lives.'),
           note: str('Who it went to, why, anything worth keeping.'),
         },
-        required: ['type', 'deltaQty'],
+        // deltaQty is deliberately not required here — COUNTED gives
+        // countedQty instead, per its own description above. It used to be
+        // required despite that, which is why the model correctly omitted it
+        // for a COUNTED call and the code stored the literal string
+        // "undefined" — see the comment at the top of writeEvent.
+        required: ['type'],
       },
     },
     run: async (i) => {
