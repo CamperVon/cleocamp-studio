@@ -190,17 +190,43 @@ different places, not one pipeline:
 The richer prose "QuickBooks figures" email (the one with revenue/expenses
 and the $0-bug workaround) doesn't match the structured-JSON shape path 1
 expects, so it falls through to ordinary inbound handling: stored in
-`InboundEmail` only, a proposal per CLAUDE.md §4, and never promoted into
-`FinancialSnapshot` automatically. **As of 13 Sept 2026 this is exactly
-what's stuck**: a 12-Sept figures email sits unconfirmed in `InboundEmail`
-(matching open `ActionItem`: "Confirm the 12 Sept QuickBooks figures before
-I record them"), while the last committed `FinancialSnapshot` row is 2 Sept
-— and the two cash figures ($80,658 vs $165,897) disagree by enough to be
-worth an actual look, not an assumption. If you're asked to "fix" financials
-looking stale, this is why — likely not a bug, more likely nobody's answered
-the open question yet. Confirm before assuming this diagnosis is still
-current; it's a data-state fact, not a code fact, and could be resolved by
-the time you read this.
+`InboundEmail` only, a proposal per CLAUDE.md §4, not promoted into
+`FinancialSnapshot` automatically.
+
+**The Sept 2 → Sept 12 cash gap ($80,658 → $165,897) is resolved, not a bug**
+(worked out across two sessions, 13–14 Sept 2026, cross-checked against
+QuickBooks' own Balance Sheet API and the stored `raw` field on each
+snapshot row): the Sept 2 figure was a partial manual read, 3 of 5 bank
+accounts, literally labeled in its own `raw.source` as "QuickBooks bank feed,
+read from the banking screen." The later figure is QuickBooks' full ledger
+total across all 5 accounts. Reconciled account-by-account, the gap is
+real and exact — Main-cleocamp alone moved +$101,531.14 in 11 days, more
+than 4× that month's entire revenue. That's a specific deposit/transfer/loan
+a human needs to identify from the actual bank statement — not something
+derivable from any API, and not a data-integrity problem in this app.
+**A/R reading $0 is also correct, not a bug**: QuickBooks' own AR aging
+report is empty company-wide, because wholesale sales aren't entered into
+QuickBooks as invoices at all — the $0 is QuickBooks accurately reporting
+what it was given, not a parsing failure.
+
+**The nightly QuickBooks routine (Claude Routine / scheduled trigger) that
+fed these emails has been deleted** — confirmed via `list_triggers` on 14
+Sept 2026 (zero triggers on the account, none, ever) and confirmed by
+Brandon/the session that built it. That's why only one QuickBooks email
+ever arrived (12 Sept, once) instead of nightly, and why `FinancialSnapshot`
+sat stuck at 2 Sept for 12 days — not an app bug, an external automation
+that stopped existing. If asked to make financials "current" again, the
+routine needs to be *recreated*, not debugged — nothing in this repo can
+fix a trigger that isn't there.
+
+**`app/(main)/finances/page.tsx` had a real, separate bug, now fixed on
+`main` (`e57679b`, merged into this branch 14 Sept 2026):** it fetched
+`cashCents`/`arCents`/`apCents` and defined a `money()` formatter for them,
+but never called `money()` anywhere in the JSX — only an always-empty
+"Invoices" list rendered. The Position card (Cash/Receivables/Payables) now
+actually renders, with a caution banner that's conditional on whether the
+snapshot's own `raw.source` says it came from the banking screen (exact) vs.
+the ledger (a cross-check, can differ from the interactive Banking tab).
 
 ## Conventions
 
@@ -254,18 +280,20 @@ the time you read this.
   specific traps documented in that file's comments: `summaryBreakdown.netOperatingIncome`
   is actually Net *Income*, not NOI; and naive leaf-summing double-counts
   because "Total for X" rows sit as siblings of the rows they total.
-- **Financial figures currently stuck unconfirmed** — see the three-paths
-  section above. Time-sensitive; re-verify rather than trust this
-  description if it's been more than a few days.
+- **The QuickBooks Routine is gone, not broken** — see the financial-figures
+  section above. If cash/revenue look stale, check `list_triggers` before
+  assuming it's a code bug; it needs recreating, not debugging.
 
 ## Active work / open data gaps (state, not code — re-verify before acting)
 
 Tracked as open `ActionItem`s in the live data as of 13 Sept 2026, not
 necessarily current by the time you read this — query the table rather than
 trust this list:
-- 12 Sept QuickBooks figures unconfirmed (above).
-- Whether wholesale invoices are entered in QuickBooks at all — A/R reads
-  $0.00, which is either true or a sign they're not being entered.
+- Whether wholesale invoices are entered in QuickBooks at all — resolved,
+  see above: they aren't, so A/R reading $0.00 is correct, not a gap.
+- Denim cost/yard for the current vendor (United Leather) is unknown — the
+  prior vendor's price doesn't carry over (CLAUDE.md §3, don't inherit a
+  replaced vendor's pricing).
 - Denim cost/yard for the current vendor (United Leather) is unknown — the
   prior vendor's price doesn't carry over (CLAUDE.md §3, don't inherit a
   replaced vendor's pricing).
