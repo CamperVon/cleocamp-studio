@@ -14,11 +14,14 @@ export default async function Finances() {
     db.quickBooksConnection.findUnique({ where: { id: 'singleton' } }),
     db.financialSnapshot.findFirst({ orderBy: { forDate: 'desc' } }),
   ])
-  const invoices = ((snap?.raw as any)?.invoices ?? []) as Array<{
-    number: string; customer: string; date: string; total: number; balance: number
-  }>
   const raw = (snap?.raw ?? {}) as { source?: string; note?: string; warnings?: string[]; pnl?: { expensesYtdCents?: number } }
   const warnings = raw.warnings ?? []
+  // Receivables and the Invoices card were both removed 15 Sept 2026 —
+  // receivables reads $0 because wholesale isn't invoiced through QuickBooks
+  // at all, and `raw.invoices` has never once been populated by anything, so
+  // the card only ever rendered an empty state explaining a number that is
+  // no longer shown. Two pieces of furniture for a room nobody uses.
+  //
   // Cash intentionally dropped, 14 Sept 2026: the QuickBooks connector has no
   // API for the live bank-feed balance (only the reconciled ledger), which
   // read tens of thousands off the real bank balance during bookkeeping
@@ -128,37 +131,6 @@ export default async function Finances() {
               </ul>
             ) : null}
           </Card>
-
-          <Card title="Invoices">
-            {invoices.length === 0 ? (
-              <Empty>
-                None recorded. Wholesale is not currently invoiced through QuickBooks &mdash;
-                that is why receivables read zero.
-              </Empty>
-            ) : (
-              <ul className="divide-y divide-line">
-                {invoices.map((v, i) => (
-                  <li key={i} className="flex items-start justify-between gap-3 px-4 py-3 sm:px-5">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">{v.customer}</p>
-                      <p className="text-xs text-muted">#{v.number} &middot; {v.date}</p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="tnum text-sm">
-                        {v.total.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                      </p>
-                      <p className={'text-xs ' + (v.balance > 0 ? 'text-warn' : 'text-faint')}>
-                        {v.balance > 0
-                          ? v.balance.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) + ' due'
-                          : 'paid'}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-
         </>
       ) : (
         <Empty>Connected, but nothing pulled yet. The nightly job will fetch it.</Empty>
