@@ -37,7 +37,7 @@ export async function buildCatalog(): Promise<string> {
       orderBy: { expectedReadyAt: 'asc' },
     }),
     db.salesSnapshot.aggregate({ _max: { date: true } }),
-    db.note.findMany({ orderBy: { createdAt: 'desc' }, take: 40 }),
+    db.note.findMany({ orderBy: { createdAt: 'desc' }, take: 201 }),
     db.calendarEvent.findMany({
       where: { date: { gte: new Date(Date.now() - 864e5) } },
       orderBy: { date: 'asc' }, take: 25,
@@ -228,8 +228,42 @@ export async function buildCatalog(): Promise<string> {
   }
 
   if (notes.length) {
+    // This was the 40 most recent notes, each cut to 260 characters, with no
+    // indication of what the note was about. Against 78 notes that meant 38
+    // never loaded, 31 more arrived half-finished mid-sentence, and the rest
+    // read as context-free sentences with the subject stripped off — all of it
+    // silent. Grouped by subject and shown in full instead, so a note about
+    // Boy Belt stays findable under Boy Belt however old it gets, and anything
+    // actually dropped is stated rather than quietly vanishing.
+    const shown = notes.slice(0, 200)
+    const dropped = notes.length - shown.length
+
+    const nameOf = new Map<string, string>()
+    for (const p of products) nameOf.set(p.id, p.name)
+    for (const c of components) nameOf.set(c.id, c.name)
+    for (const v of vendors) nameOf.set(v.id, v.name)
+
+    const groups = new Map<string, string[]>()
+    for (const n of shown) {
+      const subject = n.entityId
+        ? `${nameOf.get(n.entityId) ?? n.entityType.toLowerCase().replace(/_/g, ' ')} [${n.entityId}]`
+        : 'General'
+      const list = groups.get(subject) ?? []
+      list.push(n.content.replace(/\s+/g, ' '))
+      groups.set(subject, list)
+    }
+
     L.push('\n## Notes you have written')
-    for (const n of notes) L.push(`- ${n.content.replace(/\s+/g, ' ').slice(0, 260)}`)
+    if (dropped > 0) {
+      L.push(`(${dropped} older note${dropped === 1 ? '' : 's'} not shown — say so if asked rather than implying you have seen everything.)`)
+    }
+    // General last: entity notes are what get looked up, general ones are
+    // standing observations that read fine at the bottom.
+    const keys = [...groups.keys()].sort((a, b) => (a === 'General' ? 1 : b === 'General' ? -1 : a.localeCompare(b)))
+    for (const k of keys) {
+      L.push(`\n### ${k}`)
+      for (const c of groups.get(k)!) L.push(`- ${c}`)
+    }
   }
 
   if (people.length) {
