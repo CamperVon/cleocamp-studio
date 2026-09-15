@@ -235,8 +235,15 @@ export async function buildCatalog(): Promise<string> {
 
   if (events.length) {
     L.push('\n## Calendar, from today onward')
+    L.push('PICKUP/DELIVERY entries are goods physically moving between the studio')
+    L.push('and a vendor. They are a heads-up, not a record: never log stock off the')
+    L.push('back of one. Ask what actually moved and who has it now.')
     for (const e of events) {
-      L.push(`- ${e.date.toISOString().slice(0, 10)} ${e.title}${e.source === 'GOOGLE' ? ' (studio calendar)' : ''}`)
+      const tag =
+        e.type === 'DELIVERY_EXPECTED' ? ' [PICKUP/DELIVERY]'
+        : e.source === 'GOOGLE' ? ' (studio calendar)'
+        : ''
+      L.push(`- ${e.date.toISOString().slice(0, 10)} ${e.title}${tag}${e.notes ? ` — ${e.notes.replace(/\s+/g, ' ')}` : ''}`)
     }
   }
 

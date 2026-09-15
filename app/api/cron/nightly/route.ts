@@ -47,18 +47,37 @@ export async function GET(req: NextRequest) {
 
   // ── 1. Pull in the world ─────────────────────────────────
   await step('calendar', async () => {
-    const events = await fetchFeed()
-    for (const e of events) {
-      const existing = await db.calendarEvent.findFirst({ where: { googleEventId: e.uid } })
-      const data = {
-        googleEventId: e.uid, title: e.title, date: e.start,
-        type: 'OTHER' as const, source: 'GOOGLE' as const,
-        notes: [e.location, e.notes].filter(Boolean).join(' — ') || null,
+    // Two subscribed feeds, kept apart by type. The studio calendar is
+    // whatever is on Cleo's day; the logistics feed is goods physically
+    // moving — "Rolando Dress Pickup", "Staples size tag drop off" — which
+    // is a different question and worth Mouse being able to tell apart.
+    // A missing logistics URL is skipped, not an error: the studio feed must
+    // keep syncing whether or not the second one is configured yet.
+    const feeds: Array<{ url: string | undefined; type: 'OTHER' | 'DELIVERY_EXPECTED'; label: string }> = [
+      { url: process.env.CALENDAR_FEED_URL, type: 'OTHER', label: 'studio' },
+      { url: process.env.LOGISTICS_FEED_URL, type: 'DELIVERY_EXPECTED', label: 'logistics' },
+    ]
+
+    const counts: Record<string, number | string> = {}
+    for (const feed of feeds) {
+      if (!feed.url) {
+        counts[feed.label] = 'not configured'
+        continue
       }
-      if (existing) await db.calendarEvent.update({ where: { id: existing.id }, data })
-      else await db.calendarEvent.create({ data })
+      const events = await fetchFeed(feed.url)
+      for (const e of events) {
+        const existing = await db.calendarEvent.findFirst({ where: { googleEventId: e.uid } })
+        const data = {
+          googleEventId: e.uid, title: e.title, date: e.start,
+          type: feed.type, source: 'GOOGLE' as const,
+          notes: [e.location, e.notes].filter(Boolean).join(' — ') || null,
+        }
+        if (existing) await db.calendarEvent.update({ where: { id: existing.id }, data })
+        else await db.calendarEvent.create({ data })
+      }
+      counts[feed.label] = events.length
     }
-    return { synced: events.length }
+    return counts
   })
 
   // Shopify is the master for finished goods, so the forecast below is only
