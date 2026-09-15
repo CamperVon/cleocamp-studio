@@ -96,6 +96,35 @@ data. That must not happen again.
 - **Never size an order.** Cleo decides quantities. Studio Mouse may comment
   on a quantity using history, but does not choose one.
 
+### Getting information INTO Studio Mouse (for any Claude session)
+
+- **Never email data to `mouse@send.cleocamp.com`.** That inbox is
+  correspondence from people. Anything sent there sits unread until the
+  nightly cron, is then reasoned about as untrusted incoming mail, and
+  clutters the queue behind real mail from Brandon and vendors. It is not an
+  API. This was happening in practice — a Claude session mailed a sales
+  analysis into it on 15 Sept 2026, where it sat waiting to be read back as
+  if a person had sent it.
+- **Durable knowledge belongs in `Note`, and notes have a hard ceiling.**
+  `lib/mouse/context.ts` loads only the **40 most recent** notes and cuts each
+  to **260 characters**. A longer note saves without error and is silently
+  truncated — the "success that does nothing" shape again. Write one short,
+  decision-shaped note per fact, under 260 characters, stating the conclusion
+  rather than the data ("Small is 59% of belt orders, weight production to
+  Small/Medium" — not a table of every size). Mouse can query `SalesSnapshot`
+  itself for raw numbers.
+- **How to write one:** a Claude Code session has database access and can
+  insert directly. A claude.ai chat session cannot, and should hand the short
+  note text to a person to paste into Mouse's chat, where Mouse writes it with
+  its own `add_note` tool.
+- **Going the other way** — getting current state OUT to a claude.ai chat —
+  use Mouse's `send_context_snapshot` tool. It emails a snapshot to
+  `snapshot@send.cleocamp.com`, an address deliberately outside
+  `INBOUND_ALLOWED_MAILBOXES`, so Resend logs it (which is how Claude reads it
+  through the Resend connector) while the app's webhook ignores it. On request
+  only, never scheduled — a nightly one is stale by up to a day the moment
+  anyone reaches for it.
+
 ## 5. Working constraints
 
 - Deployment is Vercel **Hobby** — no long-running processes; cron fires once

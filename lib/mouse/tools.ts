@@ -2043,6 +2043,98 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  /**
+   * A point-in-time dump of where things stand, emailed out so a claude.ai
+   * chat session — which has no database access — can read it through the
+   * Resend connector and be current.
+   *
+   * On request only, never scheduled: a nightly snapshot is stale by up to a
+   * day the moment anyone reaches for it, and the whole point is being asked
+   * for when it matters.
+   *
+   * Goes to an address the app deliberately ignores. send.cleocamp.com has
+   * receiving enabled domain-wide, so Resend accepts and logs it (which is
+   * how Claude reads it), but `snapshot` is not in INBOUND_ALLOWED_MAILBOXES,
+   * so app/api/inbound/email drops it as "address not in use" — no
+   * InboundEmail row, nothing for the nightly pass to chew on. Sending this
+   * to mouse@ instead would put every snapshot into the queue of incoming
+   * correspondence Mouse reads overnight, which is exactly the loop this
+   * avoids.
+   */
+  send_context_snapshot: {
+    def: {
+      name: 'send_context_snapshot',
+      description:
+        'Email a snapshot of where things stand — open questions and todos, unresolved ' +
+        'alerts, and recent notes — so a Claude chat session can catch up. Use when ' +
+        'someone asks you to send/update/catch Claude up, or for a context snapshot. ' +
+        'It goes to a fixed address that exists only for this; do not send it to a ' +
+        'person, and do not offer it as a way to email anyone a report.',
+      input_schema: { type: 'object', properties: {}, required: [] },
+    },
+    run: async () => {
+      const [items, alerts, notes] = await Promise.all([
+        db.actionItem.findMany({
+          where: { resolved: false },
+          orderBy: [{ dueDate: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
+        }),
+        db.alert.findMany({ where: { resolved: false }, orderBy: { severity: 'desc' } }),
+        db.note.findMany({ orderBy: { createdAt: 'desc' }, take: 60 }),
+      ])
+
+      const day = (d: Date | null) =>
+        d ? d.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' }) : null
+
+      const L: string[] = [
+        'Where Cleo Camp stands right now. Generated on request — not a schedule, so',
+        'this is current as of the moment it was sent.',
+        '',
+        'IF YOU HAVE INFORMATION FOR STUDIO MOUSE, DO NOT EMAIL mouse@send.cleocamp.com.',
+        'That inbox is correspondence from people. Anything sent there waits for the',
+        'nightly run, gets reasoned about as untrusted incoming mail, and clutters the',
+        'queue. Instead: give the human a note under 260 characters stating the',
+        'conclusion (not the data) to paste into Mouse\'s chat. Mouse\'s context loads',
+        'only the 40 most recent notes and cuts each at 260 characters, so anything',
+        'longer is silently lost.',
+        '',
+      ]
+
+      L.push(`=== OPEN QUESTIONS AND TODOS (${items.length}) ===`)
+      for (const i of items) {
+        const due = day(i.dueDate)
+        L.push(`- [${i.kind}]${due ? ` (due ${due})` : ''} ${i.title}`)
+        if (i.detail) L.push(`    ${i.detail.replace(/\s+/g, ' ').slice(0, 300)}`)
+      }
+
+      L.push('', `=== UNRESOLVED ALERTS (${alerts.length}) ===`)
+      for (const a of alerts) L.push(`- [${a.severity}] ${a.message}`)
+
+      L.push('', `=== RECENT NOTES (${notes.length} most recent) ===`)
+      for (const n of notes) {
+        const where = n.entityId ? `${n.entityType}:${n.entityId}` : n.entityType
+        L.push(`- (${where}) ${n.content.replace(/\s+/g, ' ')}`)
+      }
+
+      const text = L.join('\n')
+      const to = 'snapshot@send.cleocamp.com'
+      const subject = `Cleo Camp context snapshot — ${new Date().toLocaleDateString('en-US', {
+        timeZone: 'America/Los_Angeles', month: 'long', day: 'numeric', year: 'numeric',
+      })}`
+
+      const { sendEmail } = await import('@/lib/email')
+      const res = await sendEmail({ subject, text, to: [to] })
+      if (!res.sent) return { sent: false, reason: res.reason }
+      return {
+        sent: true, to, subject,
+        included: { openItems: items.length, alerts: alerts.length, notes: notes.length },
+        chars: text.length,
+        tellTheUser:
+          'Sent. In a Claude chat with the Resend connector, ask it to read the latest ' +
+          'email with this subject.',
+      }
+    },
+  },
+
   send_email: {
     def: {
       name: 'send_email',
