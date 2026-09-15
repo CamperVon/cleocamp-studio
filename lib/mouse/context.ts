@@ -15,7 +15,7 @@ import { inventoryWritesEnabled } from './tools'
  * turn. Keep it deterministic: no timestamps, stable ordering.
  */
 export async function buildCatalog(): Promise<string> {
-  const [products, components, vendors, items, pos, runs, lastSale, notes, events, forecasts, alerts, people, finances, sales, wholesale, shopifySync, docDefaults, notify] = await Promise.all([
+  const [products, components, vendors, locations, items, pos, runs, lastSale, notes, events, forecasts, alerts, people, finances, sales, wholesale, shopifySync, docDefaults, notify] = await Promise.all([
     db.product.findMany({
       orderBy: { name: 'asc' },
       include: {
@@ -26,6 +26,7 @@ export async function buildCatalog(): Promise<string> {
     }),
     db.component.findMany({ orderBy: { name: 'asc' }, include: { vendor: true } }),
     db.vendor.findMany({ orderBy: { name: 'asc' } }),
+    db.location.findMany({ orderBy: { name: 'asc' } }),
     db.actionItem.findMany({ where: { resolved: false }, orderBy: { createdAt: 'asc' } }),
     db.purchaseOrder.findMany({
       where: { status: { in: ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'] } },
@@ -136,6 +137,18 @@ export async function buildCatalog(): Promise<string> {
   for (const c of components) {
     const stock = c.stockedInStudio ? `${c.onHandQty} in studio` : 'not stocked — bought per run'
     L.push(`- ${c.name} [${c.id}] · ${c.category} · ${c.vendor?.name ?? 'no vendor'}${c.vendorSku ? ` · style ${c.vendorSku}` : ''} · ${money(c.unitCostCents)}/${c.unitOfMeasure} · lead time ${c.leadTimeDays === null ? 'UNKNOWN' : c.leadTimeDays + 'd'} · ${stock}${Number(c.incomingQty) > 0 ? `, ${c.incomingQty} incoming` : ''}`)
+  }
+
+  // Without these, a component event at the studio is unloggable: writeEvent
+  // demands a locationId or atVendorId for anything that is not a studio
+  // stash, and Mouse had no way to learn the id. On 15 Sept 2026 it was told
+  // buttons were going to the studio, correctly refused to guess, and filed a
+  // question asking a person for a database id — which Cleo cannot answer.
+  L.push('\n## Places')
+  L.push('Use these ids for locationId on log_inventory_event. A vendor holding')
+  L.push('stock goes in atVendorId instead, using the vendor ids below.')
+  for (const l of locations) {
+    L.push(`- ${l.name} [${l.id}]${l.isDefault ? ' — the studio itself, the default place' : ''}`)
   }
 
   L.push('\n## Vendors')

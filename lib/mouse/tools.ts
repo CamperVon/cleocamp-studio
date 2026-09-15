@@ -532,12 +532,36 @@ export const TOOLS: Record<string, Tool> = {
         required: ['id', 'resolution'],
       },
     },
-    run: async (i) =>
-      db.actionItem.update({
+    // A bare update threw Prisma's "record not found" on a mistyped id, which
+    // told Mouse nothing it could act on — it tried twice on 15 Sept 2026,
+    // failed identically, and rightly stopped rather than retrying blindly.
+    // These ids are 25-character cuids; transcribing one wrong is an ordinary
+    // mistake, so the failure now hands back the open items to correct
+    // against instead of being a dead end.
+    run: async (i) => {
+      const found = await db.actionItem.findUnique({ where: { id: i.id }, select: { id: true, resolved: true } })
+      if (!found) {
+        const open = await db.actionItem.findMany({
+          where: { resolved: false },
+          orderBy: { createdAt: 'desc' },
+          take: 30,
+          select: { id: true, title: true },
+        })
+        return {
+          resolved: false,
+          error: `No open question or todo has the id "${i.id}" — most likely the id was copied wrong, since these are long random strings. Match the one you meant from this list and try once more. Do not invent an id.`,
+          openItems: open.map((o) => `[${o.id}] ${o.title}`),
+        }
+      }
+      if (found.resolved) {
+        return { resolved: true, alreadyResolved: true, note: 'That one was already marked resolved — nothing further to do.' }
+      }
+      return db.actionItem.update({
         where: { id: i.id },
         data: { resolved: true, resolvedAt: new Date(), resolutionNote: i.resolution },
         select: { id: true, title: true },
-      }),
+      })
+    },
   },
 
   create_todo: {
