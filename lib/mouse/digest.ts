@@ -22,7 +22,15 @@ export async function composeDigest(kind: 'DAILY' | 'WEEKLY' | 'MONTHLY'): Promi
     db.forecastResult.findMany({ include: { product: true, component: true } }),
     db.alert.findMany({ where: { resolved: false } }),
     db.actionItem.findMany({ where: { resolved: false }, take: 25, orderBy: { createdAt: 'asc' } }),
-    db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(days) } } }),
+    // DAILY means yesterday specifically — bounded on both ends, or this
+    // silently pulls in whatever of today has already synced in (same bug
+    // fixed 15 Sept 2026 on the dashboard's "Sold yesterday" tile and
+    // Mouse's Corner). WEEKLY/MONTHLY are legitimately open rolling windows
+    // through now, not a single past day, so only DAILY gets the upper bound.
+    db.salesSnapshot.aggregate({
+      _sum: { unitsSold: true },
+      where: { date: { gte: laMidnight(days), ...(kind === 'DAILY' ? { lt: laMidnight(0) } : {}) } },
+    }),
     db.purchaseOrder.findMany({
       where: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } },
       include: { vendor: true, lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },

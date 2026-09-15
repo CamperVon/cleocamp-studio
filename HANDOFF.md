@@ -332,6 +332,25 @@ elsewhere.
 
 ## Known issues / gotchas (verified this session unless marked otherwise)
 
+- **Fixed 15 Sept 2026: "Sold yesterday" (Home page stat tile, Mouse's
+  Corner brief, and the DAILY digest) silently included whatever of
+  *today* had already synced in, on top of yesterday.** All three built the
+  range as `date: { gte: laMidnight(1) }` — bounded below, never bounded
+  above — so it summed yesterday plus every `SalesSnapshot` row from today
+  so far. Confirmed on real data: showed 43 when yesterday alone was 23
+  (the other 20 was today's partial sync, already landed by the time the
+  page was checked at 5pm). Fixed by adding `lt: laMidnight(0)` to all
+  three (`app/(main)/page.tsx`, `lib/mouse/brief.ts`,
+  `lib/mouse/digest.ts` — the last one only for `kind === 'DAILY'`;
+  WEEKLY/MONTHLY are legitimately open rolling windows through now, not a
+  single past day, and keeping them unbounded is correct). **If a "last N
+  days" figure elsewhere ever looks inflated, check for this exact
+  `laMidnight(days)`-with-no-upper-bound shape before assuming the data
+  itself is wrong** — `lib/mouse/tools.ts`'s `salesTotal`/`sales` chat
+  tools were checked and are fine, since a rolling "sales in the last N
+  days, right now" window is supposed to include today so far; only a
+  query meant to represent one specific bounded past day (like
+  "yesterday") needs the upper bound.
 - **Fixed 14 Sept 2026: `log_inventory_event` wrote the literal string
   `"undefined"` into `deltaQty` for every COUNTED event, rejected by the
   Decimal column — real production incident (all eight Story Dress

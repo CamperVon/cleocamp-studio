@@ -42,7 +42,12 @@ export default async function Today() {
         include: { vendor: { select: { name: true } } },
       }),
       db.productVariant.aggregate({ _count: true, _sum: { onHandQty: true } }),
-      db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(1) } } }),
+      // Yesterday only — bounded on both ends. Missing the upper bound here
+      // meant this silently included however much of today had already
+      // synced in, overstating "yesterday" by that much (confirmed 15 Sept
+      // 2026: showed 43 when yesterday alone was 23, the other 20 being
+      // today's partial sync).
+      db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(1), lt: laMidnight(0) } } }),
       db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(7) } } }),
       db.purchaseOrder.findMany({
         where: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } },

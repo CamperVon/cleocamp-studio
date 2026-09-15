@@ -64,7 +64,10 @@ export async function composeDailyBrief(overnight?: string): Promise<{ text: str
       include: { vendor: true, lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
     }),
     db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(7) } } }),
-    db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(1) } } }),
+    // Yesterday only — bounded on both ends, same fix as app/(main)/page.tsx.
+    // Missing the upper bound here meant "Sold yesterday" in Mouse's Corner
+    // silently included today's partial sync too, overstating the figure.
+    db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(1), lt: laMidnight(0) } } }),
   ])
 
   const facts = [
