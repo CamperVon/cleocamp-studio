@@ -98,13 +98,21 @@ data. That must not happen again.
 
 ### Getting information INTO Studio Mouse (for any Claude session)
 
-- **Never email data to `mouse@send.cleocamp.com`.** That inbox is
-  correspondence from people. Anything sent there sits unread until the
-  nightly cron, is then reasoned about as untrusted incoming mail, and
-  clutters the queue behind real mail from Brandon and vendors. It is not an
-  API. This was happening in practice — a Claude session mailed a sales
-  analysis into it on 15 Sept 2026, where it sat waiting to be read back as
-  if a person had sent it.
+- **Never email *knowledge* to `mouse@send.cleocamp.com`.** That inbox is
+  correspondence — things a person sent, that a human may need to act on.
+  Standing facts mailed there sit unread until the nightly cron, get reasoned
+  about as untrusted incoming mail, and clutter the queue behind real mail
+  from Brandon and vendors. It is not an API. This happened in practice: a
+  Claude session mailed a sales analysis into it on 15 Sept 2026, where it sat
+  waiting to be read back as if a person had sent it.
+- **The exception, and it is a real one: a *proposal* belongs in that inbox.**
+  The QuickBooks routine mailing figures to `mouse@` is correct and
+  deliberate (§6, Brandon's decision) — those numbers are not knowledge to
+  store, they are a claim awaiting a human's confirmation before anything is
+  recorded, which is exactly what that pipeline is for. The test is what
+  happens next: if it should become a stored fact the moment Mouse reads it,
+  it is knowledge and belongs in a `Note`. If a person has to say yes first,
+  it is a proposal and the inbox is right.
 - **Durable knowledge belongs in `Note`, and notes have a hard ceiling.**
   `lib/mouse/context.ts` loads only the **40 most recent** notes and cuts each
   to **260 characters**. A longer note saves without error and is silently
