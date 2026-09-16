@@ -124,14 +124,17 @@ data. That must not happen again.
   happens next: if it should become a stored fact the moment Mouse reads it,
   it is knowledge and belongs in a `Note`. If a person has to say yes first,
   it is a proposal and the inbox is right.
-- **Durable knowledge belongs in `Note`, and notes have a hard ceiling.**
-  `lib/mouse/context.ts` loads only the **40 most recent** notes and cuts each
-  to **260 characters**. A longer note saves without error and is silently
-  truncated — the "success that does nothing" shape again. Write one short,
-  decision-shaped note per fact, under 260 characters, stating the conclusion
-  rather than the data ("Small is 59% of belt orders, weight production to
-  Small/Medium" — not a table of every size). Mouse can query `SalesSnapshot`
-  itself for raw numbers.
+- **Durable knowledge belongs in `Note`.** The old ceiling is gone: until
+  15 Sept 2026 `lib/mouse/context.ts` loaded only the 40 most recent notes and
+  cut each to 260 characters, silently — a longer note saved without error and
+  Mouse never saw the end of it. That truncation hid a live correction: Mouse
+  could see "$3.75/pc on top of CMT" and not the sentence after it saying
+  Brandon disputed the rate. It now loads 200, in full, grouped by subject, and
+  says out loud when there are more. Still write one decision-shaped note per
+  fact — state the conclusion, not the data ("Small is 59% of belt orders,
+  weight production to Small/Medium", not a table of every size), because a
+  wall of notes is skimmed even when nothing truncates it. Mouse can query
+  `SalesSnapshot` itself for raw numbers.
 - **How to write one:** a Claude Code session has database access and can
   insert directly. A claude.ai chat session cannot, and should hand the short
   note text to a person to paste into Mouse's chat, where Mouse writes it with
