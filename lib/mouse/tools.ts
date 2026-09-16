@@ -1948,7 +1948,12 @@ export const TOOLS: Record<string, Tool> = {
       // first. Fixed sentences, same as the document's labels — anything the
       // caller writes in `message` is theirs to put in the right language.
       const lang = asDocLanguage(po.language)
-      const signature = `\n\nBrandon Camp\nbrandon@cleocamp.com · 310-622-3898`
+      // Mouse signs as Mouse. This used to sign every covering email "Brandon
+      // Camp, brandon@cleocamp.com · 310-622-3898", so a vendor or a colleague
+      // received a message apparently written and phoned-for by Brandon that he
+      // had never seen. Replies come to mouse@send.cleocamp.com, which Mouse
+      // reads, so that is the address to give. No phone number: Cleo, 16 Sept.
+      const signature = `\n\n— Studio Mouse\nCleo Camp · mouse@send.cleocamp.com`
       const covering =
         lang === 'es'
           ? `Adjunto encontrará la orden de compra (N.º ${po.poNumber}). Favor de confirmar ` +
@@ -1959,10 +1964,21 @@ export const TOOLS: Record<string, Tool> = {
               `(N.º ${po.poNumber}). Favor de confirmar la recepción y la fecha estimada de envío.`
             : `Please see the attached purchase order (No. ${po.poNumber}). Please confirm ` +
               `receipt and expected date.`
-      const internalCovering =
-        `Attached is purchase order ${po.poNumber} for ${po.vendor.name}, as a PDF.` +
-        (po.status === 'SENT' ? '' : ' It has not been sent to them yet.')
-      const body = (i.message ? `${i.message}\n\n` : '') + (internal ? internalCovering : covering) + signature
+      // A written message REPLACES the boilerplate rather than stacking on top
+      // of it. "Hi Nicki — attached is PO 2360" followed by "Attached is
+      // purchase order 2360, as a PDF" says the same thing twice in two voices.
+      // The one line worth keeping either way is that the vendor has not had it,
+      // because that is the thing a reader would otherwise assume wrongly.
+      const notYetSent =
+        internal && po.status !== 'SENT' ? `${po.vendor.name} has not received it yet.` : ''
+      const written = String(i.message ?? '').trim()
+      const opening = written
+        ? [written, notYetSent].filter(Boolean).join('\n\n')
+        : internal
+          ? [`Attached is purchase order ${po.poNumber} for ${po.vendor.name}, as a PDF.`, notYetSent]
+              .filter(Boolean).join(' ')
+          : covering
+      const body = opening + signature
       const subject =
         lang === 'es'
           ? `Orden de Compra ${po.poNumber} — Cleo Couture LLC`
@@ -1993,6 +2009,19 @@ export const TOOLS: Record<string, Tool> = {
         attachments: [{ filename: `PO-${po.poNumber}.pdf`, content: pdf }],
       })
       if (!res.sent) return { sent: false, reason: res.reason }
+
+      // EMAIL_DRY_RUN stubs the SEND, not the consequences. Exercising this
+      // tool against a real order still moved it to SENT and stamped orderedAt,
+      // so a dry run could mark an order placed that nobody had placed — the
+      // kind of write that then looks like history. Found 16 Sept 2026 while
+      // testing against PO 2361, which happened to be SENT already and so came
+      // to no harm. A dry run is dry all the way through now.
+      if ((res as { dryRun?: boolean }).dryRun) {
+        return {
+          sent: true, to, cc, dryRun: true, markedSent: false,
+          tellTheUser: `EMAIL_DRY_RUN is set: nothing was sent and PO ${po.poNumber} was left as ${po.status.toLowerCase()}.`,
+        }
+      }
 
       // An internal send must NOT move the order to SENT. The status means the
       // supplier has it; setting it because the PDF reached a colleague would
