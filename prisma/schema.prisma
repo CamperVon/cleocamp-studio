@@ -699,8 +699,18 @@ model Note {
   content    String
   source     NoteSource @default(CHAT)
   createdAt  DateTime   @default(now())
+  /// When this note stopped being true. A note is never deleted — a price that
+  /// has changed is still the price that was quoted, and someone will want to
+  /// look it up. But a superseded fact read back as current is worse than no
+  /// note at all: on 16 Sept 2026 nine notes described what Antonio charges
+  /// and eight of them were out of date, none marked, while a $22,300 order
+  /// was being priced. Retired notes are loaded into context for a while
+  /// longer under a heading that says plainly they are no longer true, then
+  /// stop being loaded at all. The row stays either way.
+  supersededAt DateTime?
 
   @@index([entityType, entityId])
+  @@index([supersededAt])
 }
 
 // ─────────────────────────────────────────────────────────────

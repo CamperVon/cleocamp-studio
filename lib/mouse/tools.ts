@@ -594,25 +594,78 @@ export const TOOLS: Record<string, Tool> = {
       name: 'add_note',
       description:
         'Record something worth keeping that is not a number — a workflow, a preference, ' +
-        'what a vendor said. Use once you understand it, not to park a half-answer.',
+        'what a vendor said. Use once you understand it, not to park a half-answer. ' +
+        'IF THIS NOTE REPLACES A FACT YOU ALREADY HOLD, pass the old note\'s id in ' +
+        '`supersedes` in the same call. Writing the new one and leaving the old one ' +
+        'standing is how nine notes came to describe what Antonio charges with eight of ' +
+        'them out of date. A retired note is kept and still readable, it simply stops ' +
+        'being read back as current.',
       input_schema: {
         type: 'object',
         properties: {
           content: str('The note'),
           entityType: { type: 'string', enum: ['VENDOR','PRODUCT','PRODUCT_VARIANT','COMPONENT','PRODUCTION_RUN','PURCHASE_ORDER','GENERAL'] },
           entityId: str('What it is about'),
+          supersedes: str('Comma-separated ids of notes this one replaces. They are retired, not deleted.'),
         },
         required: ['content'],
       },
     },
-    run: async (i) =>
-      db.note.create({
+    run: async (i) => {
+      const created = await db.note.create({
         data: {
           content: i.content, entityType: (i.entityType ?? 'GENERAL') as never,
           entityId: i.entityId ?? null, source: 'CHAT',
         },
         select: { id: true },
-      }),
+      })
+      const ids = String(i.supersedes ?? '').split(',').map((x) => x.trim()).filter(Boolean)
+      if (!ids.length) return created
+      const r = await db.note.updateMany({
+        where: { id: { in: ids }, supersededAt: null },
+        data: { supersededAt: new Date() },
+      })
+      return { ...created, retired: r.count, askedToRetire: ids.length }
+    },
+  },
+
+  retire_note: {
+    def: {
+      name: 'retire_note',
+      description:
+        'Mark a note as no longer true, without writing a replacement — a plan that was ' +
+        'dropped, an instruction already carried out, a price from a vendor no longer used. ' +
+        'The note is kept and stays readable for a while under a heading saying it is past; ' +
+        'it just stops being quoted as current. Use this the moment you notice a note has ' +
+        'been overtaken, rather than leaving it to argue with the truth.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          noteIds: str('Comma-separated note ids to retire'),
+          because: str('One line on what replaced it or why it stopped being true'),
+        },
+        required: ['noteIds'],
+      },
+    },
+    run: async (i) => {
+      const ids = String(i.noteIds ?? '').split(',').map((x) => x.trim()).filter(Boolean)
+      if (!ids.length) return { retired: 0, error: 'No note ids given.' }
+      const found = await db.note.findMany({ where: { id: { in: ids } }, select: { id: true, content: true, supersededAt: true } })
+      const missing = ids.filter((id) => !found.some((f) => f.id === id))
+      const already = found.filter((f) => f.supersededAt)
+      const r = await db.note.updateMany({ where: { id: { in: ids }, supersededAt: null }, data: { supersededAt: new Date() } })
+      if (i.because) {
+        await db.note.create({
+          data: { content: `Retired ${r.count} note(s): ${String(i.because)}`, entityType: 'GENERAL', source: 'CHAT' },
+        })
+      }
+      return {
+        retired: r.count,
+        alreadyRetired: already.length,
+        notFound: missing.length ? missing : undefined,
+        tellTheUser: `Retired ${r.count} note${r.count === 1 ? '' : 's'}. Still readable, no longer treated as current.`,
+      }
+    },
   },
 
   update_component: {
@@ -1953,7 +2006,7 @@ export const TOOLS: Record<string, Tool> = {
       // received a message apparently written and phoned-for by Brandon that he
       // had never seen. Replies come to mouse@send.cleocamp.com, which Mouse
       // reads, so that is the address to give. No phone number: Cleo, 16 Sept.
-      const signature = `\n\n— Studio Mouse\nCleo Camp · mouse@send.cleocamp.com`
+      const signature = `\n\n— Studio Mouse\nmouse@send.cleocamp.com`
       const covering =
         lang === 'es'
           ? `Adjunto encontrará la orden de compra (N.º ${po.poNumber}). Favor de confirmar ` +
