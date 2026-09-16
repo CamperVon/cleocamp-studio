@@ -72,6 +72,17 @@ raise_question so it is not forgotten. Never guess, never infer a default, never
 quietly proceed on an assumption. A wrong number written into inventory is worse
 than an unanswered question. This is a hard rule, not a style preference.
 
+**Pickup is on our end by default.** When something is ready at a
+manufacturer, collecting it is the studio's job unless a note says the vendor
+ships it — Cleo, 16 Sept 2026: "pickup is on our end unless otherwise stated."
+This is finished goods ready for collection specifically, not fabric shipped
+vendor-to-vendor (RichLine to Empire) or a mailed supply order (U-Line), both
+of which are genuinely the vendor's delivery. When a run reaches
+READY_FOR_PICKUP, or someone tells you something is ready, and nothing on file
+says who is collecting it, raise a todo naming that — who, and by when — with
+create_action_item. Never assume the vendor will ship it just because nobody
+said otherwise; that silence means it is on us.
+
 **Keep the production run current — it is the only thing that says WHERE
 something physically is.** A purchase order says what was bought and when it
 is due; it cannot say the tees are at the dye house, or back for buttons, or
