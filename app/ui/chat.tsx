@@ -1,5 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, type ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
 import { Mouse } from './mouse'
 
 type Msg = {
@@ -192,6 +193,7 @@ function ReportGap({ messageId }: { messageId: string }) {
 }
 
 export function Chat() {
+  const router = useRouter()
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [pending, setPending] = useState<string | null>(null)
@@ -352,6 +354,16 @@ export function Chat() {
       const d = await res.json()
       rememberThread(d.threadId)
       setMessages((m) => [...m, { id: d.messageId, role: 'assistant', text: d.reply, writes: d.writes, model: d.model }])
+      // Mouse wrote through /api/chat, an API route, not a Server Action — so
+      // nothing told the server-rendered parts of THIS SAME PAGE to refetch.
+      // Products in production, the stats row, Things to tend to: all of it
+      // was rendered once at page load and nothing after that turn touched
+      // it, so a fix said out loud in chat sat contradicted by a stale card
+      // two inches below it. router.refresh() re-runs the server components
+      // for the current route with fresh data, without losing chat state
+      // (a client component) or reloading the page. Only when the turn
+      // actually wrote something — a pure Q&A turn changed nothing to reflect.
+      if (d.writes?.length) router.refresh()
     } catch (err) {
       setMessages((m) => [...m, {
         role: 'assistant',
