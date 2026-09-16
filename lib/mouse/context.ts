@@ -38,7 +38,8 @@ export async function buildCatalog(): Promise<string> {
       orderBy: { expectedReadyAt: 'asc' },
     }),
     db.salesSnapshot.aggregate({ _max: { date: true } }),
-    db.note.findMany({ orderBy: { createdAt: 'desc' }, take: 201 }),
+    // No row cap — buildCatalog budgets these by character count below.
+    db.note.findMany({ orderBy: { createdAt: 'desc' } }),
     db.calendarEvent.findMany({
       where: { date: { gte: new Date(Date.now() - 864e5) } },
       orderBy: { date: 'asc' }, take: 25,
@@ -255,7 +256,20 @@ export async function buildCatalog(): Promise<string> {
     // silent. Grouped by subject and shown in full instead, so a note about
     // Boy Belt stays findable under Boy Belt however old it gets, and anything
     // actually dropped is stated rather than quietly vanishing.
-    const shown = notes.slice(0, 200)
+    // Budget by CHARACTERS, not rows. A row cap does not bound the thing that
+    // actually costs anything: 200 one-line notes is 10k characters, 200 long
+    // ones is 180k. Today's 104 notes are 30k, and the longest single note is
+    // 931 characters — worth three short ones and no more expensive to carry.
+    // Newest first, so what drops is always the oldest, and the count of what
+    // dropped is printed below rather than left to be inferred.
+    const BUDGET = 60_000
+    const shown: typeof notes = []
+    let used = 0
+    for (const n of notes) {
+      used += n.content.length
+      if (used > BUDGET && shown.length) break
+      shown.push(n)
+    }
     const dropped = notes.length - shown.length
 
     const nameOf = new Map<string, string>()
