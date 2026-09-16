@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { laMidnight } from '@/lib/dates'
-import { poLineLabel } from '@/lib/po'
+import { poLineLabel, poUnitTotals } from '@/lib/po'
 
 /**
  * What is happening to each product, gathered in one place.
@@ -98,17 +98,24 @@ export async function buildProductionView(): Promise<ProductState[]> {
       const mine = po.lines.filter(
         (l) => (l.productVariant?.product.id ?? (l.componentId === null ? po.forProductId : null)) === pid,
       )
-      const what = mine.length
-        ? mine.map((l) => `${l.qtyOrdered} ${l.unit} ${poLineLabel(l)}`).join(', ')
-        : po.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${poLineLabel(l)}`).join(', ')
+      // A TOTAL, not a recital. Spelling out every line turned PO 2360 into a
+      // paragraph of eighteen clauses — "60 pcs Cleo Tee / Shell / 1, 50 pcs
+      // Cleo Tee / Shell / 2, ..." — which is the order sheet, not a status.
+      // The full breakdown is one tap away on the PO itself.
+      const use = mine.length ? mine : po.lines
+      const totals = poUnitTotals(use).map((t) => `${t.qty.toLocaleString()} ${t.unit}`).join(' + ')
+      const what =
+        use.length === 1
+          ? `${use[0].qtyOrdered} ${use[0].unit} ${poLineLabel(use[0])}`
+          : `${totals} across ${use.length} lines`
       const overdue = !!po.expectedAt && po.expectedAt < today && po.status !== 'PARTIALLY_RECEIVED'
       add(pid, {
         kind: 'order',
         text:
           po.status === 'DRAFT'
-            ? `PO ${po.poNumber} to ${po.vendor.name} is still a DRAFT — ${what}. Not sent, so nothing is coming from it yet.`
-            : `PO ${po.poNumber} to ${po.vendor.name}: ${what}.` +
-              (po.expectedAt ? ` Due ${day(po.expectedAt)}${overdue ? ', which has passed' : ''}.` : ' No date confirmed.'),
+            ? `PO ${po.poNumber} · ${po.vendor.name} · ${what} — DRAFT, not sent yet`
+            : `PO ${po.poNumber} · ${po.vendor.name} · ${what}` +
+              (po.expectedAt ? ` — due ${day(po.expectedAt)}${overdue ? ', passed' : ''}` : ' — no date confirmed'),
         on: po.expectedAt ?? po.orderedAt,
         flag: overdue || po.status === 'DRAFT',
         href: `/po/${po.poNumber}`,
@@ -124,8 +131,8 @@ export async function buildProductionView(): Promise<ProductState[]> {
       text:
         (r.statusSummary ?? `${r.status.toLowerCase().replace(/_/g, ' ')} at ${r.vendor?.name ?? 'a maker not yet set'}`) +
         (r.expectedReadyAt
-          ? ` Ready ${day(r.expectedReadyAt)}${r.dateConfirmed ? '' : ', not confirmed'}${late ? ' — that date has passed' : ''}.`
-          : ' No ready date.'),
+          ? ` — ready ${day(r.expectedReadyAt)}${r.dateConfirmed ? '' : ' (unconfirmed)'}${late ? ', passed' : ''}`
+          : ' — no ready date'),
       on: r.expectedReadyAt,
       flag: late,
     })
@@ -135,7 +142,10 @@ export async function buildProductionView(): Promise<ProductState[]> {
   for (const e of events) {
     add(e.productId, {
       kind: 'date',
-      text: `${day(e.date)}: ${e.title}${e.notes ? ` — ${e.notes.replace(/\s+/g, ' ')}` : ''}`,
+      // Title only. The notes behind these run to several sentences and turned
+      // each date into a paragraph; they are on the calendar for anyone who
+      // wants them.
+      text: `${day(e.date)} · ${e.title}`,
       on: e.date,
       // A calendar entry is never a flag. It records that something is due to
       // happen, and carries no field saying whether it did — "cosmo sample
@@ -174,6 +184,22 @@ export async function buildProductionView(): Promise<ProductState[]> {
     // never change.
     if (!list.some((s) => s.kind === 'order' || s.kind === 'run')) continue
     const p = byId.get(pid)!
+
+    // Where the goods PHYSICALLY are — at the cutter, at the dye house, in
+    // finishing — lives on a ProductionRun, and most products have none, so
+    // the honest answer is that nobody has said. Printing that is the point:
+    // a row that stops at "on order, due the 25th" reads as though that is the
+    // whole story, when really nothing is tracking the journey. Cleo, 17 Sept:
+    // "we do need to understand when things are at the dye house... it doesn't
+    // need to break dates, just keep us in the loop."
+    if (!list.some((s) => s.kind === 'run')) {
+      list.push({
+        kind: 'run',
+        text: 'No stage recorded — nobody has said where this physically is. Tell Mouse and it will keep it here.',
+        on: null,
+        flag: false,
+      })
+    }
     const anyUnknown = p.variants.some((v) => v.onHandQty === null)
     const onHand = anyUnknown
       ? null
