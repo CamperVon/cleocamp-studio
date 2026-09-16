@@ -191,24 +191,31 @@ export default async function Today() {
           four screens — the order on one, the arrival date on the calendar,
           the blocking question in a list, the specs in notes — joined in
           someone's head. Same rows, joined by product. */}
-      <Card
-        title="Products in production"
-        action={
-          <span className="text-xs text-faint">
+      <details className="group overflow-hidden rounded-xl border border-line bg-surface" open>
+        <summary
+          className="flex cursor-pointer list-none items-center gap-2.5 px-4 py-3 sm:px-5
+                     [&::-webkit-details-marker]:hidden"
+        >
+          <span aria-hidden className="shrink-0 text-faint transition-transform group-open:rotate-90">
+            &rsaquo;
+          </span>
+          <h2 className="flex-1 text-sm font-semibold">Products in production</h2>
+          <span className={`text-xs ${production.some((p) => p.flag) ? 'text-urgent' : 'text-faint'}`}>
             {production.filter((p) => p.flag).length
               ? `${production.filter((p) => p.flag).length} need attention`
               : `${production.length} in flight`}
           </span>
-        }
-      >
-        {production.length === 0 ? (
-          <Empty>Nothing in production.</Empty>
-        ) : (
-          <ul className="divide-y divide-line">
-            {production.map((p) => <ProductionRow key={p.id} p={p} />)}
-          </ul>
-        )}
-      </Card>
+        </summary>
+        <div className="border-t border-line">
+          {production.length === 0 ? (
+            <Empty>Nothing in production.</Empty>
+          ) : (
+            <ul className="divide-y divide-line">
+              {production.map((p) => <ProductionRow key={p.id} p={p} />)}
+            </ul>
+          )}
+        </div>
+      </details>
 
       <div className="flex flex-wrap gap-3">
         <Stat label="Sold yesterday" value={sales24._sum.unitsSold ?? 0} sub="units, from Shopify" />
