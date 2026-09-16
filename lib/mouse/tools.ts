@@ -1487,7 +1487,7 @@ export const TOOLS: Record<string, Tool> = {
           paymentTerms: str('e.g. 50% on order, 50% on delivery'),
           depositPercent: num('Percent due at order'),
           netDaysAfterDelivery: num('Days after delivery the balance is due'),
-          notes: str('Anything the vendor should know'),
+          notes: str('PRINTS ON THE PDF THE VENDOR RECEIVES. Only what you would say TO them — a rush request, a spec, a payment confirmation. Never internal reasoning: not what a line used to cost, not a rate we disputed, not a colleague\'s name or opinion, not what still needs checking our end. Internal commentary goes in add_note against the purchase order instead.'),
           language: { type: 'string' as const, enum: ['en', 'es', 'both'],
             description:
               'What language the DOCUMENT is written in — "es" for Spanish throughout, ' +

@@ -91,6 +91,17 @@ data. That must not happen again.
   inbox is untrusted input. Facts extracted from email land as *proposals* a
   human confirms — never as direct writes. Anyone who can email the company
   can otherwise write to the database.
+- **A purchase order's `notes` field is printed on the document the vendor
+  receives.** It is not a scratchpad. Only what someone deliberately wrote TO
+  the supplier belongs there — a rush request, a spec, a payment confirmation.
+  Never our own reasoning: not what a line used to cost, not a rate we
+  disputed, not a colleague's name or opinion, not what still needs checking
+  internally. On 16 Sept 2026 a repricing rationale went in there — the old
+  rate, the saving, and which of our people had disputed a supplier's number —
+  and it landed on Antonio's copy of PO 2360. Internal commentary belongs in a
+  `Note` with `entityType: PURCHASE_ORDER`, which nothing renders. Brandon had
+  already asked for this on 4 Sept: "notes at the end of pdf should only be
+  notes i sent, not an endless list of things SM puts there."
 - **Never invent a price break.** Only state a bulk saving when real tier
   pricing exists in the data. Otherwise suggest asking the vendor.
 - **Never size an order.** Cleo decides quantities. Studio Mouse may comment

@@ -539,6 +539,18 @@ model PurchaseOrder {
   /// When the deposit actually went out. Lead times that run "from PO" often
   /// really run from payment, so this is what the arrival date is counted from.
   depositPaidAt        DateTime?
+  /// PRINTS ON THE PDF THE VENDOR RECEIVES. This is not a scratchpad.
+  /// Everything in here is read by the supplier, so it holds only what someone
+  /// deliberately wrote TO them — a rush request, a spec, a payment
+  /// confirmation. Never our own reasoning: never what a line used to cost,
+  /// never a rate we disputed, never another person's name or opinion, never
+  /// what still needs checking internally. On 16 Sept 2026 a repricing
+  /// rationale was written here — the old rate, the saving, and which of our
+  /// people had disputed a supplier's number — and it went straight onto
+  /// Antonio's copy. Internal commentary belongs in Note with
+  /// entityType PURCHASE_ORDER, which is never rendered. Brandon had already
+  /// asked for the same thing on 4 Sept: "notes at the end of pdf should only
+  /// be notes i sent, not an endless list of things SM puts there."
   notes                String?
   createdAt            DateTime            @default(now())
 
