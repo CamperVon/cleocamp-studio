@@ -42,7 +42,7 @@ function ratePerDay(rows: Array<{ date: Date; unitsSold: number }>): number {
 
 export async function recomputeForecasts() {
   const since = laMidnight(56)
-  const [products, components, sales, movements] = await Promise.all([
+  const [products, components, sales, movements, openPos] = await Promise.all([
     db.product.findMany({
       where: { status: { in: ['ACTIVE', 'SAMPLING'] } },
       include: {
@@ -54,6 +54,16 @@ export async function recomputeForecasts() {
     db.salesSnapshot.findMany({ where: { date: { gte: since } } }),
     db.inventoryEvent.findMany({
       where: { createdAt: { gte: since }, type: { in: ['WHOLESALE_SHIPPED', 'GIFTED'] } },
+    }),
+    // What is already on its way. Until 16 Sept 2026 the product forecast knew
+    // only what was on the shelf, so an order placed days ago did nothing to
+    // calm it: Cleo Bag Black, Silver, Olive, Chocolate Suede and the Bean Bag
+    // all sat under "Order by" in red while every one of them was on an open
+    // Lorena PO, two of them due that Friday. The alert was telling her to do
+    // the thing she had already done.
+    db.purchaseOrder.findMany({
+      where: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } },
+      include: { lines: { include: { productVariant: { select: { productId: true } } } } },
     }),
   ])
 
@@ -69,6 +79,38 @@ export async function recomputeForecasts() {
     const list = salesByVariant.get(m.productVariantId) ?? []
     list.push({ date: m.createdAt, unitsSold: Math.abs(Number(m.deltaQty)) })
     salesByVariant.set(m.productVariantId, list)
+  }
+
+  // Outstanding FINISHED GOODS per product, and when the soonest is due.
+  //
+  // Only two kinds of line count. A line naming a variant is finished goods by
+  // definition. A described line with no component, in pieces, on an order
+  // raised for a product is finished goods too — that is how "Bean Bag — Red /
+  // Petite (new colourway, not yet in Shopify)" registers as coming before
+  // anyone sets the variant up.
+  //
+  // Everything else is explicitly NOT cover. A first pass at this counted any
+  // line on an order with a forProduct, which read PO 2361's 700 YARDS of fine
+  // rib as 700 Cleo Tees and quietly cleared the tee's order-by alert — the
+  // one product genuinely oversold, by a hundred units on Black size 1. A
+  // component line is the cloth to make the thing, never the thing. "1 lot" of
+  // hair ties is a yield nobody has counted yet, not one hair tie.
+  const incoming = new Map<string, { qty: number; due: Date | null }>()
+  for (const po of openPos) {
+    for (const l of po.lines) {
+      const isFinishedGoods =
+        l.productVariantId !== null ||
+        (l.componentId === null && l.unit.toLowerCase().startsWith('pc'))
+      if (!isFinishedGoods) continue
+      const pid = l.productVariant?.productId ?? po.forProductId
+      if (!pid) continue
+      const outstanding = Number(l.qtyOrdered) - Number(l.qtyReceived)
+      if (outstanding <= 0) continue
+      const cur = incoming.get(pid) ?? { qty: 0, due: null }
+      cur.qty += outstanding
+      if (po.expectedAt && (!cur.due || po.expectedAt < cur.due)) cur.due = po.expectedAt
+      incoming.set(pid, cur)
+    }
   }
 
   await db.forecastResult.deleteMany({})
@@ -92,7 +134,8 @@ export async function recomputeForecasts() {
       continue
     }
 
-    const daysLeft = onHand / rate
+    const onOrder = incoming.get(p.id) ?? { qty: 0, due: null }
+    const daysLeft = (onHand + onOrder.qty) / rate
     const stockout = new Date(Date.now() + daysLeft * DAY)
 
     // Chain: components must arrive, then be made, then dyed.
@@ -110,7 +153,11 @@ export async function recomputeForecasts() {
     results.push({
       kind: 'product', id: p.id, name: p.name, stockout, orderBy,
       note:
-        `Selling ${rate.toFixed(1)} a day, ${onHand} on hand — about ${(daysLeft / 7).toFixed(1)} weeks. ` +
+        `Selling ${rate.toFixed(1)} a day, ${onHand} on hand` +
+        (onOrder.qty
+          ? ` plus ${onOrder.qty} already on order${onOrder.due ? `, due ${onOrder.due.toISOString().slice(0, 10)}` : ''}`
+          : '') +
+        ` — about ${(daysLeft / 7).toFixed(1)} weeks. ` +
         `Components take ${compLead}d and production ${p.productionLeadTimeDays}d, so start by then.` +
         (missingLead ? ' One component has no lead time, so this may be optimistic.' : ''),
     })

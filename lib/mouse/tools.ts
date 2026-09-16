@@ -629,6 +629,52 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  dismiss_alert: {
+    def: {
+      name: 'dismiss_alert',
+      description:
+        'Clear an alert from "Needs you now" when it is no longer worth acting on — the ' +
+        'order it was telling someone to place has been placed, the stock it was about has ' +
+        'landed, the thing was handled off-app. Say what you are dismissing and why when you ' +
+        'report back. A dismissed alert stays down for a week; if the condition is still ' +
+        'true after that it returns, which is the point — this is for clearing noise, not ' +
+        'for hiding a real problem. If the alert is wrong because the DATA is wrong, fix the ' +
+        'data instead: an order-by alert that ignores an order already placed means the ' +
+        'purchase order is missing or not marked SENT, and dismissing it just hides that.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          alertIds: str('Comma-separated alert ids to dismiss. Ask for the list first if you do not have ids.'),
+          because: str('One line on why it no longer needs acting on — recorded as a note.'),
+        },
+        required: ['alertIds'],
+      },
+    },
+    run: async (i) => {
+      const ids = String(i.alertIds ?? '').split(',').map((x) => x.trim()).filter(Boolean)
+      if (!ids.length) return { dismissed: 0, error: 'No alert ids given.' }
+      const found = await db.alert.findMany({ where: { id: { in: ids } }, select: { id: true, message: true, resolved: true } })
+      const r = await db.alert.updateMany({
+        where: { id: { in: ids }, resolved: false },
+        data: { resolved: true, resolvedAt: new Date() },
+      })
+      if (i.because && r.count) {
+        await db.note.create({
+          data: {
+            entityType: 'GENERAL', source: 'CHAT',
+            content: `Dismissed ${r.count} alert(s): ${String(i.because)}. Cleared ${new Date().toISOString().slice(0, 10)}; they return after a week if still true.`,
+          },
+        })
+      }
+      return {
+        dismissed: r.count,
+        alreadyClear: found.filter((f) => f.resolved).length,
+        notFound: ids.filter((id) => !found.some((f) => f.id === id)),
+        tellTheUser: `Dismissed ${r.count} alert${r.count === 1 ? '' : 's'}. They stay down for a week and come back if the condition still holds.`,
+      }
+    },
+  },
+
   retire_note: {
     def: {
       name: 'retire_note',

@@ -139,13 +139,28 @@ export async function GET(req: NextRequest) {
     })
     let raised = 0
     let refreshed = 0
+    let snoozedCount = 0
 
     // Every key still true on this pass. What is missing from it gets closed
     // at the end, which is how these alerts finally clear themselves.
     const live = new Set<string>()
 
+    // Dismissing an alert has to mean something. Resolving one used to change
+    // nothing: the next pass found the condition still true and raised it
+    // again, so Mouse could not clear anything and said so. A key resolved in
+    // the last week is left alone — long enough for stock to land or an order
+    // to be placed, short enough that a real problem comes back on its own.
+    const snoozeSince = new Date(Date.now() - 7 * 864e5)
+    const snoozed = new Set(
+      (await db.alert.findMany({
+        where: { resolved: true, resolvedAt: { gte: snoozeSince } },
+        select: { dedupeKey: true },
+      })).map((a) => a.dedupeKey),
+    )
+
     const raise = async (key: string, severity: 'WARNING' | 'URGENT', message: string) => {
       live.add(key)
+      if (snoozed.has(key)) { snoozedCount++; return }
       // The partial unique index makes this idempotent: one unresolved alert
       // per condition, however many times the job runs. But swallowing the
       // duplicate also froze its TEXT on the day it was first raised — an
@@ -204,7 +219,7 @@ export async function GET(req: NextRequest) {
       },
       data: { resolved: true, resolvedAt: new Date() },
     })
-    return { raised, refreshed, cleared: cleared.count }
+    return { raised, refreshed, snoozed: snoozedCount, cleared: cleared.count }
   })
 
   // Cash used to be nagged about here: a nightly check that raised

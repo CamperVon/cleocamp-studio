@@ -241,7 +241,9 @@ export async function buildCatalog(): Promise<string> {
 
   if (alerts.length) {
     L.push('\n## Alerts you have raised, still open')
-    for (const a of alerts) L.push(`- ${a.severity}: ${a.message}`)
+    // The id is here so dismiss_alert can actually be called. Without it Mouse
+    // could see an alert, agree it was stale, and have no way to name it.
+    for (const a of alerts) L.push(`- [${a.id}] ${a.severity}: ${a.message}`)
   }
 
   if (events.length) {
