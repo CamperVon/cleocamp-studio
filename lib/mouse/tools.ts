@@ -1871,18 +1871,27 @@ export const TOOLS: Record<string, Tool> = {
     def: {
       name: 'send_purchase_order',
       description:
-        'Email a purchase order to the vendor as a real PDF attachment — a vendor has no ' +
-        'login for this app, so a link to it is a dead end for them. Brandon, 4 Sept 2026: ' +
-        '"when we say send it, it sends via email to the contact person and cc\'s Cleo and ' +
-        'Brandon" — that is exactly what this does, always, not something to ask about each ' +
-        'time. Also cc\'s anyone in that vendor\'s ccEmails (a production manager, say) — set ' +
-        'once with update_vendor, applies to every order after — plus anyone named for this ' +
-        'send specifically. Only when a person in the chat has said to send it. Moves the ' +
-        'order to SENT.',
+        'Email a purchase order as a real PDF attachment. A vendor has no login for this app, ' +
+        'so a link to it is a dead end for them. Brandon, 4 Sept 2026: "when we say send it, ' +
+        'it sends via email to the contact person and cc\'s Cleo and Brandon" — that is ' +
+        'exactly what this does, always, not something to ask about each time. Also cc\'s ' +
+        'anyone in that vendor\'s ccEmails (a production manager, say) — set once with ' +
+        'update_vendor, applies to every order after — plus anyone named for this send ' +
+        'specifically. Only when a person in the chat has said to send it. Moves the order ' +
+        'to SENT. ' +
+        'USE `to` TO SEND IT TO SOMEONE OTHER THAN THE VENDOR — a project manager who will ' +
+        'pass it on, or back to whoever asked so they can look it over. That is a normal ' +
+        'request and this tool does it; never tell someone the PDF can only go to the vendor.',
       input_schema: {
         type: 'object',
         properties: {
           poNumber: str('The PO number, e.g. 2359'),
+          to: str(
+            'Send the PDF to these addresses INSTEAD of the vendor, comma-separated. Use it ' +
+            'whenever someone asks for the order to go to a particular person rather than out ' +
+            'to the supplier. The order is NOT marked SENT and the vendor is not written to, ' +
+            'because they have not received it. Leave empty for a real send to the vendor.',
+          ),
           cc: str('Extra people to copy on just this send, comma-separated, if asked for. On top of the vendor\'s standing ccEmails, not instead of.'),
           message: str('Optional extra line for the vendor. A sensible default covers most orders.'),
         },
@@ -1895,7 +1904,22 @@ export const TOOLS: Record<string, Tool> = {
         include: { vendor: true },
       })
       if (!po) return { error: `No purchase order ${i.poNumber}` }
-      if (!po.vendor.email) {
+
+      // Sending the document to a named person is a different act from issuing
+      // the order. Cleo asked for PO 2360 to go to Nicki, the project manager,
+      // and Mouse answered that the PDF could only go to the vendor — so the
+      // thing she asked for did not happen. It can: the recipient is an
+      // override, and an internal send deliberately leaves the order alone
+      // rather than marking it SENT when the supplier has never seen it.
+      const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+      const toOverride = String(i.to ?? '').split(',').map((x) => x.trim()).filter(Boolean)
+      const badTo = toOverride.filter((a) => !EMAIL_RE.test(a))
+      if (badTo.length) {
+        return { sent: false, reason: `"${badTo.join(', ')}" doesn't look like a valid email address — check it rather than sending as-is.` }
+      }
+      const internal = toOverride.length > 0
+
+      if (!internal && !po.vendor.email) {
         return {
           sent: false,
           reason:
@@ -1924,7 +1948,10 @@ export const TOOLS: Record<string, Tool> = {
               `(N.º ${po.poNumber}). Favor de confirmar la recepción y la fecha estimada de envío.`
             : `Please see the attached purchase order (No. ${po.poNumber}). Please confirm ` +
               `receipt and expected date.`
-      const body = (i.message ? `${i.message}\n\n` : '') + covering + signature
+      const internalCovering =
+        `Attached is purchase order ${po.poNumber} for ${po.vendor.name}, as a PDF.` +
+        (po.status === 'SENT' ? '' : ' It has not been sent to them yet.')
+      const body = (i.message ? `${i.message}\n\n` : '') + (internal ? internalCovering : covering) + signature
       const subject =
         lang === 'es'
           ? `Orden de Compra ${po.poNumber} — Cleo Couture LLC`
@@ -1936,36 +1963,57 @@ export const TOOLS: Record<string, Tool> = {
       // case someone's already on the standing list.
       const vendorCc = (po.vendor.ccEmails ?? '').split(',').map((s) => s.trim()).filter(Boolean)
       const oneOffCc = String(i.cc ?? '').split(',').map((s) => s.trim()).filter(Boolean)
-      const badCc = oneOffCc.filter((a) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a))
+      const badCc = oneOffCc.filter((a) => !EMAIL_RE.test(a))
       if (badCc.length) {
         return { sent: false, reason: `"${badCc.join(', ')}" doesn't look like a valid email address — check it rather than sending as-is.` }
       }
-      const cc = [...new Set(['studio@cleocamp.com', 'brandon@cleocamp.com', ...vendorCc, ...oneOffCc])]
+      // A real send always copies Cleo and Brandon and the vendor's standing
+      // list. An internal one copies only who was asked for — the vendor's
+      // production manager has no reason to receive an order not being placed.
+      const to = internal ? toOverride : [po.vendor.email!]
+      const cc = internal
+        ? [...new Set(oneOffCc)]
+        : [...new Set(['studio@cleocamp.com', 'brandon@cleocamp.com', ...vendorCc, ...oneOffCc])]
       const { sendEmail } = await import('@/lib/email')
       const res = await sendEmail({
-        to: [po.vendor.email], cc,
+        to, cc,
         subject,
         text: body,
         attachments: [{ filename: `PO-${po.poNumber}.pdf`, content: pdf }],
       })
       if (!res.sent) return { sent: false, reason: res.reason }
 
+      // An internal send must NOT move the order to SENT. The status means the
+      // supplier has it; setting it because the PDF reached a colleague would
+      // have the app believe an order was placed that was never placed.
+      const log = db.sentEmail.create({
+        data: {
+          toAddress: to.join(', '), ccAddress: cc.join(', '),
+          subject, body,
+          resendId: (res as { id?: string }).id ?? null,
+          sentBy: internal ? 'chat (send_purchase_order, internal copy)' : 'chat (send_purchase_order)',
+        },
+      })
+      if (internal) {
+        await log
+        return {
+          sent: true, to, cc, markedSent: false,
+          tellTheUser:
+            `Sent PO ${po.poNumber} as a PDF to ${to.join(', ')}${cc.length ? `, cc ${cc.join(', ')}` : ''}. ` +
+            `${po.vendor.name} has NOT been emailed and the order is still ${po.status.toLowerCase()}.`,
+        }
+      }
+
       await db.$transaction([
         db.purchaseOrder.update({
           where: { id: po.id },
           data: { status: 'SENT', orderedAt: po.orderedAt ?? new Date() },
         }),
-        db.sentEmail.create({
-          data: {
-            toAddress: po.vendor.email, ccAddress: cc.join(', '),
-            subject, body,
-            resendId: (res as { id?: string }).id ?? null, sentBy: 'chat (send_purchase_order)',
-          },
-        }),
+        log,
       ])
 
       return {
-        sent: true, to: po.vendor.email, cc,
+        sent: true, to, cc, markedSent: true,
         tellTheUser: `Sent PO ${po.poNumber} to ${po.vendor.name} (${po.vendor.email}), cc Cleo and Brandon. Marked SENT.`,
       }
     },
