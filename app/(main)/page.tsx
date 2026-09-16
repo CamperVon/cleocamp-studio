@@ -96,10 +96,55 @@ export default async function Today() {
     console.error("Mouse's Corner failed:", e)
     return null
   })
-  const attention = alerts.length + items.length
+  // "Things to tend to" used to be one pile: alerts the app raised, questions
+  // Mouse is waiting on, and jobs a person has to do, all stacked together
+  // with a single count on top. At 58 rows it had stopped being a list anyone
+  // read. They are three different kinds of thing and only one of them is
+  // answerable by Cleo, so they are three sections now.
+  const asks = items.filter((i) => i.kind === 'QUESTION')
+  const todos = items.filter((i) => i.kind === 'TODO')
+  // GAPs are for whoever changes the code, not for Cleo. They live on /items.
+  const gaps = items.filter((i) => i.kind === 'GAP')
+  const urgent = alerts.filter((a) => a.severity === 'URGENT')
+  const rest = alerts.filter((a) => a.severity !== 'URGENT')
+  // A long list is skimmed, not read. Show the oldest few — they have waited
+  // longest — and send the tail to /items rather than printing all of it.
+  const SHOWN = 5
+
+  const hour = Number(
+    new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', hour12: false })
+      .format(new Date()),
+  )
+  // No name in the greeting. Cleo is the primary reader, but Brandon and Jane
+  // are in here too and "Morning, Cleo" greets them as the wrong person.
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  const dateLine = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles', weekday: 'long', month: 'long', day: 'numeric',
+  }).format(new Date())
 
   return (
-    <Page title="Home" lede="What needs attention, and what Studio Mouse is still waiting to learn.">
+    <Page title={greeting} lede={dateLine}>
+      {/* Anything urgent goes above everything, in its own colour. Burying an
+          oversold variant three cards down was how it stayed oversold. */}
+      {urgent.length ? (
+        <section className="overflow-hidden rounded-xl border border-urgent/30 bg-urgent-soft">
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 sm:px-5">
+            <h2 className="text-sm font-semibold text-urgent">Needs you now</h2>
+            <span className="text-xs text-urgent/70">{urgent.length}</span>
+          </div>
+          <ul className="divide-y divide-urgent/15 border-t border-urgent/20">
+            {urgent.slice(0, SHOWN).map((a) => (
+              <li key={a.id} className="px-4 py-2 text-sm text-urgent sm:px-5">{a.message}</li>
+            ))}
+          </ul>
+          {urgent.length > SHOWN ? (
+            <p className="border-t border-urgent/20 px-4 py-2 text-xs text-urgent/70 sm:px-5">
+              and {urgent.length - SHOWN} more
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       <Card
         title={
           <>
@@ -124,7 +169,7 @@ export default async function Today() {
           value={Number(variants._sum.onHandQty ?? 0)}
           sub={`across ${variants._count} variants`}
         />
-        <Stat label="To tend to" value={attention} sub="questions and todos" />
+        <Stat label="Mouse is asking" value={asks.length} sub="waiting on you" />
       </div>
       <p className="-mt-4 text-xs text-faint">
         {shopifySync
@@ -234,24 +279,80 @@ export default async function Today() {
         </div>
       </Card>
 
-      {/* Titles only — the detail is a tap away rather than a wall of text. */}
-      <Card title={`Things to tend to (${attention})`}>
-        {attention === 0 ? (
-          <Empty>Nothing outstanding.</Empty>
+      {/* Mouse's own questions. The only list on this page Cleo can clear by
+          answering, so it comes first and it is answerable in place. */}
+      <Card
+        title={
+          <>
+            <Mouse size={18} className="text-accent" />
+            Mouse is asking you
+          </>
+        }
+        action={<span className="text-xs text-faint">{asks.length}</span>}
+      >
+        {asks.length === 0 ? (
+          <Empty>Nothing to answer. Mouse knows what it needs.</Empty>
         ) : (
-          <ul className="divide-y divide-line">
-            {alerts.map((a) => (
-              <li key={a.id} className="flex items-center gap-2.5 px-4 py-2 sm:px-5">
-                <Chip tone={a.severity === 'URGENT' ? 'urgent' : 'warn'}>!</Chip>
-                <p className="min-w-0 truncate text-sm">{a.message}</p>
-              </li>
-            ))}
-            {items.map((i) => (
-              <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} />
-            ))}
-          </ul>
+          <>
+            <ul className="divide-y divide-line">
+              {asks.slice(0, SHOWN).map((i) => (
+                <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} />
+              ))}
+            </ul>
+            {asks.length > SHOWN ? (
+              <Link
+                href="/items"
+                className="block border-t border-line px-4 py-2.5 text-xs text-muted hover:bg-sunk sm:px-5"
+              >
+                {asks.length - SHOWN} more question{asks.length - SHOWN === 1 ? '' : 's'} waiting
+              </Link>
+            ) : null}
+          </>
         )}
       </Card>
+
+      {/* Jobs for a person. Nothing here is answerable by typing — it gets
+          done, or it does not, which is why it is kept apart from the asks. */}
+      <Card title="On your list" action={<span className="text-xs text-faint">{todos.length}</span>}>
+        {todos.length === 0 ? (
+          <Empty>Nothing on the list.</Empty>
+        ) : (
+          <>
+            <ul className="divide-y divide-line">
+              {todos.slice(0, SHOWN).map((i) => (
+                <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} />
+              ))}
+            </ul>
+            {todos.length > SHOWN ? (
+              <Link
+                href="/items"
+                className="block border-t border-line px-4 py-2.5 text-xs text-muted hover:bg-sunk sm:px-5"
+              >
+                {todos.length - SHOWN} more to do
+              </Link>
+            ) : null}
+          </>
+        )}
+      </Card>
+
+      {/* Warnings worth knowing but not worth stopping for. Collapsed, because
+          an always-open list of things that are merely true is wallpaper. */}
+      {rest.length ? (
+        <details className="group overflow-hidden rounded-xl border border-line bg-surface">
+          <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 sm:px-5">
+            <h2 className="flex-1 text-sm font-semibold">Worth knowing</h2>
+            <span className="text-xs text-faint">{rest.length}</span>
+          </summary>
+          <ul className="divide-y divide-line border-t border-line">
+            {rest.map((a) => (
+              <li key={a.id} className="flex items-start gap-2.5 px-4 py-2 sm:px-5">
+                <Chip tone="warn">!</Chip>
+                <p className="min-w-0 text-sm text-muted">{a.message}</p>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       <details className="group overflow-hidden rounded-xl border border-line bg-surface">
         <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 sm:px-5">
@@ -288,7 +389,10 @@ export default async function Today() {
       </Card>
 
       <p className="text-center text-xs text-faint">
-        <Link href="/items" className="underline underline-offset-2">Everything Studio Mouse is waiting on</Link>
+        <Link href="/items" className="underline underline-offset-2">
+          Everything Studio Mouse is waiting on
+        </Link>
+        {gaps.length ? <> &middot; {gaps.length} for Claude to fix in code</> : null}
       </p>
 
       <figure className="border-t border-line pt-5 text-center">
