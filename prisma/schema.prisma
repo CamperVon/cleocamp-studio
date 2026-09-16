@@ -148,6 +148,7 @@ model Product {
   bomLines       BomLine[]        @relation("ProductBom")
   productionRuns ProductionRun[]
   forecasts      ForecastResult[]
+  calendarEvents CalendarEvent[]
   purchaseOrders PurchaseOrder[]
 
   @@index([status])
@@ -919,11 +920,19 @@ model CalendarEvent {
   source           CalendarEventSource @default(STUDIO_MOUSE)
   status           String?
   notes            String?
+  /// Which product this is about, when it is about one. An entry is usually
+  /// tied to something being made — 18 skirts arriving, a pickup from the dye
+  /// house — and until 16 Sept 2026 nothing recorded which, so answering
+  /// "where is the 5to7 Skirt" meant reading every event and matching on
+  /// wording. Nullable: a studio visit or a call belongs to nobody's product.
+  productId        String?
   createdAt        DateTime            @default(now())
 
   forecastResult ForecastResult? @relation(fields: [forecastResultId], references: [id], onDelete: SetNull)
+  product        Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   @@index([date])
+  @@index([productId])
 }
 
 model FileLink {

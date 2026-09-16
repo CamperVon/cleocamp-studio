@@ -5,6 +5,8 @@ import { Page, Card, Empty, Chip, Value, Stat } from '@/app/ui/primitives'
 import { Chat } from '@/app/ui/chat'
 import { ItemRow } from '@/app/ui/item-row'
 import { InFlightRow } from '@/app/ui/in-flight-row'
+import { ProductionRow } from '@/app/ui/production-row'
+import { buildProductionView } from '@/lib/production-view'
 import { Mouse } from '@/app/ui/mouse'
 import { laMidnight, laDay } from '@/lib/dates'
 import { quoteOfTheDay } from '@/lib/quotes'
@@ -89,6 +91,10 @@ export default async function Today() {
   ]
   // Live from Shopify. Null rather than 0 if it cannot be reached — an
   // unreachable API must not read as an empty packing table.
+  const production = await buildProductionView().catch((e) => {
+    console.error('Products in production failed:', e)
+    return []
+  })
   const toShip = isConfigured() ? await fetchToShipCount().catch(() => null) : null
   const brief = await getDailyBrief().catch((e) => {
     // Never let the day's note take the whole page down with it, but do not
@@ -178,6 +184,30 @@ export default async function Today() {
         }
       >
         <Chat />
+      </Card>
+
+      {/* Directly under the chat, because it is the question Jane and Cleo
+          actually open this app to ask: where is everything. It used to take
+          four screens — the order on one, the arrival date on the calendar,
+          the blocking question in a list, the specs in notes — joined in
+          someone's head. Same rows, joined by product. */}
+      <Card
+        title="Products in production"
+        action={
+          <span className="text-xs text-faint">
+            {production.filter((p) => p.flag).length
+              ? `${production.filter((p) => p.flag).length} need attention`
+              : `${production.length} in flight`}
+          </span>
+        }
+      >
+        {production.length === 0 ? (
+          <Empty>Nothing in production.</Empty>
+        ) : (
+          <ul className="divide-y divide-line">
+            {production.map((p) => <ProductionRow key={p.id} p={p} />)}
+          </ul>
+        )}
       </Card>
 
       <div className="flex flex-wrap gap-3">

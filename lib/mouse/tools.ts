@@ -2172,6 +2172,13 @@ export const TOOLS: Record<string, Tool> = {
           date: str('ISO date, e.g. 2026-09-24'),
           type: { type: 'string', enum: ['ORDER_BY','PRODUCTION_DUE','DELIVERY_EXPECTED','PRESS_OR_EVENT','OTHER'] },
           notes: str('What it is and where the date came from'),
+          productId: str(
+            'Which product this is about — SET IT whenever the date concerns one. It is how ' +
+            'the entry reaches Products in production, where someone looks to ask where a ' +
+            'thing has got to. An entry with no product only ever appears on the calendar by ' +
+            'date. Leave empty only when it genuinely belongs to no product: a studio visit, ' +
+            'a call, a tax deadline.',
+          ),
         },
         required: ['title', 'date'],
       },
@@ -2184,7 +2191,8 @@ export const TOOLS: Record<string, Tool> = {
       if (existing) return { id: existing.id, alreadyThere: true }
       return db.calendarEvent.create({
         data: { title: i.title, date, type: (i.type ?? 'OTHER') as never,
-                source: 'STUDIO_MOUSE', notes: i.notes ?? null },
+                source: 'STUDIO_MOUSE', notes: i.notes ?? null,
+                productId: i.productId ?? null },
         select: { id: true, title: true, date: true },
       })
     },
