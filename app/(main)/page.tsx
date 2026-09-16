@@ -124,7 +124,31 @@ export default async function Today() {
 
   return (
     <Page title={greeting} lede={dateLine}>
-      {/* Anything urgent goes above everything, in its own colour. Burying an
+      {/* The quote used to sit at the very bottom in small grey italics, under
+          the supplies list and the links, where it read as a footnote nobody
+          reaches. It is the one part of this page that is not a number, so it
+          opens instead — sized to be read rather than noticed, with the mouse
+          watching from the corner. Above the alerts on purpose: it is a
+          masthead, not an item, and a banner does not delay anything. */}
+      <figure className="relative overflow-hidden rounded-xl border border-line bg-accent-soft px-6 py-8 text-center sm:px-12 sm:py-11">
+        {/* size, not a width class: the drawing is 80x46, so forcing it square
+            squashes the mouse. */}
+        <Mouse size={72} className="pointer-events-none absolute -bottom-3 -right-2 text-accent/25" />
+        <span
+          aria-hidden
+          className="pointer-events-none absolute left-2 top-1 select-none font-serif text-6xl leading-none text-accent/20 sm:left-6 sm:text-7xl"
+        >
+          &ldquo;
+        </span>
+        <blockquote className="relative mx-auto max-w-2xl font-serif text-xl italic leading-snug text-ink sm:text-3xl">
+          {quote.text}
+        </blockquote>
+        <figcaption className="relative mt-3 text-[11px] uppercase tracking-[0.18em] text-accent sm:text-xs">
+          {quote.who}
+        </figcaption>
+      </figure>
+
+      {/* Anything urgent goes above everything else, in its own colour. Burying an
           oversold variant three cards down was how it stayed oversold. */}
       {urgent.length ? (
         <section className="overflow-hidden rounded-xl border border-urgent/30 bg-urgent-soft">
@@ -395,12 +419,6 @@ export default async function Today() {
         {gaps.length ? <> &middot; {gaps.length} for Claude to fix in code</> : null}
       </p>
 
-      <figure className="border-t border-line pt-5 text-center">
-        <blockquote className="font-serif text-base italic text-muted">
-          &ldquo;{quote.text}&rdquo;
-        </blockquote>
-        <figcaption className="mt-1 text-xs tracking-wide text-faint">{quote.who}</figcaption>
-      </figure>
     </Page>
   )
 }
