@@ -1705,6 +1705,17 @@ export const TOOLS: Record<string, Tool> = {
       description:
         'Record what has happened to an order: when the deposit was paid, when it is ' +
         'expected, when it arrived, or a status change. ' +
+        'BEING TOLD SOMETHING HAPPENED IS THE INSTRUCTION TO RECORD IT. "The PO is at ' +
+        'Antonio\'s", "Lorena has it", "they got it", "that went out yesterday" are all ' +
+        'status changes — call this tool, then say what you set. Do not reply that it is ' +
+        'noted, do not ask permission to write down a fact you were just given. ' +
+        'WHICH CHANGE IT IS depends on who the order is FOR. If the place named is the ' +
+        'order\'s own vendor, they now hold the order itself: status SENT (and orderedAt, ' +
+        'if it is not already set). If the place named is somewhere the goods were shipped ' +
+        'to — fabric from RichLine delivered to Antonio\'s, say — then the GOODS have ' +
+        'landed: set receivedAt and RECEIVED, or PARTIALLY_RECEIVED if only part came. ' +
+        'Check the order\'s vendor before choosing; only ask if it is genuinely unclear ' +
+        'which of the two happened. ' +
         'IMPORTANT: when you are told a payment date and you know the lead time, work out ' +
         'the expected arrival and set it — a three week lead time paid on 3 September ' +
         'arrives about 24 September. Then put it on the calendar so it is not only in ' +
