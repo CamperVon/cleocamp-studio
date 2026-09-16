@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { buildCatalog } from '@/lib/mouse/context'
 import { SYSTEM_RULES } from '@/lib/mouse/prompt'
 import { TOOLS, TOOL_DEFS } from '@/lib/mouse/tools'
+import { refreshForecastsAndAlerts } from '@/lib/forecast'
 
 /**
  * One brain.
@@ -60,6 +61,34 @@ export const PROPOSAL_TOOLS = [
   'request_deep_analysis',
 ]
 
+/**
+ * Tools that change something recomputeForecasts() reads: a variant's count,
+ * a product's production lead time or its bill of materials, a component's
+ * lead time, or a purchase order's status/dates/lines. If a write outside
+ * this set starts feeding the forecast, add it here — this list is deliberately
+ * short and reviewable rather than "every write tool", because most writes
+ * (a vendor's contact info, a colourway rename) have no bearing on it.
+ *
+ * Cleo, 17 Sept 2026, looking at an alert that still said "Order Cleo Tee by
+ * 2026-08-25" hours after the order had gone out: "it's still acting like a
+ * dumbo." The order had been sent through THIS chat, in THIS conversation —
+ * so the fact was never more than one request away, and the alert was stale
+ * anyway, because forecasts and alerts were only ever recomputed once a day,
+ * by the nightly cron. See refreshForecastsAndAlerts in lib/forecast.ts.
+ */
+const FORECAST_RELEVANT_TOOLS = new Set([
+  'log_inventory_event',
+  'correct_inventory_event',
+  'create_product_variants',
+  'update_product',
+  'update_product_bom',
+  'update_component',
+  'create_purchase_order',
+  'update_purchase_order',
+  'update_purchase_order_lines',
+  'send_purchase_order',
+])
+
 export async function runAgent(opts: {
   /** What this run is for. Becomes the first user message. */
   instruction: string
@@ -106,7 +135,7 @@ export async function runAgent(opts: {
     { role: 'user', content: instructionContent },
   ]
 
-  return runLoop({
+  const result = await runLoop({
     create: request => client.messages.create(request),
     system, messages, tools,
     execute: (name, input) => TOOLS[name].run(input),
@@ -114,6 +143,23 @@ export async function runAgent(opts: {
     effort: opts.effort, maxRequests: maxRounds,
     maxOutputTokens: Number(process.env.MOUSE_MAX_OUTPUT_TOKENS) || 24000,
   })
+
+  // Bring the forecast and its alerts into line with whatever just changed,
+  // in this same request, rather than leaving them for the next nightly run.
+  // Every caller funnels through here — chat, an in-flight update typed
+  // against one PO, answering an open question — so this is the one place
+  // that sees all three. Best-effort: a failure here must not take down a
+  // reply that otherwise succeeded, so it is logged, not thrown.
+  const wroteForecastRelevant = result.toolCalls.some(
+    (c) => c.status === 'succeeded' && c.isWrite && FORECAST_RELEVANT_TOOLS.has(c.name),
+  )
+  if (wroteForecastRelevant) {
+    await refreshForecastsAndAlerts().catch((e) => {
+      console.error('refreshForecastsAndAlerts after a write failed:', e)
+    })
+  }
+
+  return result
 }
 
 /**

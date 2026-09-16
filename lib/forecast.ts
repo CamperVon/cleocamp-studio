@@ -219,3 +219,94 @@ export async function recomputeForecasts() {
   }
   return results
 }
+
+/**
+ * Recompute forecasts and bring the alert table into line with them.
+ *
+ * This used to live only in the nightly cron, so a fact that changed mid-day —
+ * a PO sent, a run started, a count corrected — left the forecast and every
+ * alert built on it stale until the next run. Cleo, 17 Sept 2026, looking at
+ * an "Order Cleo Tee by 2026-08-25" alert hours after the order had actually
+ * gone out: "it's still acting like a dumbo." The order-by alert was pinned
+ * to whatever was true when it was first raised, sometimes weeks ago — the
+ * SAME staleness already fixed once for the alert's own MESSAGE TEXT (16 Sept:
+ * an alert refreshed its wording on every pass but never re-asked whether it
+ * was still true until the cron's next run). Fixed the same way, moved earlier:
+ * lib/mouse/agent.ts calls this once per chat turn that wrote something
+ * forecast-relevant, so a correction is reflected before the next page load
+ * instead of sitting wrong for up to a day.
+ *
+ * Idempotent and safe to call often: alerts dedupe on their key, a snoozed one
+ * stays snoozed, and nothing here sends anything or costs money.
+ */
+export async function refreshForecastsAndAlerts(): Promise<{
+  computed: number
+  raised: number
+  refreshed: number
+  snoozed: number
+  cleared: number
+}> {
+  const results = await recomputeForecasts()
+
+  const soon = new Date(Date.now() + 7 * 864e5)
+  const forecasts = await db.forecastResult.findMany({ include: { product: true, component: true } })
+  let raised = 0
+  let refreshed = 0
+  let snoozedCount = 0
+  const live = new Set<string>()
+
+  const snoozeSince = new Date(Date.now() - 7 * 864e5)
+  const snoozed = new Set(
+    (await db.alert.findMany({
+      where: { resolved: true, resolvedAt: { gte: snoozeSince } },
+      select: { dedupeKey: true },
+    })).map((a) => a.dedupeKey),
+  )
+
+  const raise = async (key: string, severity: 'WARNING' | 'URGENT', message: string) => {
+    live.add(key)
+    if (snoozed.has(key)) { snoozedCount++; return }
+    try {
+      await db.alert.create({ data: { dedupeKey: key, severity, message } })
+      raised++
+    } catch {
+      await db.alert.updateMany({ where: { dedupeKey: key, resolved: false }, data: { severity, message } })
+      refreshed++
+    }
+  }
+
+  for (const f of forecasts) {
+    const name = f.product?.name ?? f.component?.name ?? 'something'
+    if (f.blockedReason) {
+      await raise(`blocked:${f.productId ?? f.componentId}`, 'WARNING', `Can't forecast ${name} — ${f.blockedReason}`)
+    } else if (f.recommendedOrderDate && f.recommendedOrderDate <= soon) {
+      await raise(`order:${f.productId ?? f.componentId}`, 'URGENT',
+        `Order ${name} by ${f.recommendedOrderDate.toISOString().slice(0, 10)}. ${f.note ?? ''}`.trim())
+    }
+  }
+
+  const negativeVariants = await db.productVariant.findMany({
+    where: { onHandQty: { lt: 0 } },
+    include: { product: true, colorway: true },
+  })
+  for (const v of negativeVariants) {
+    const label = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
+    await raise(`negative:${v.id}`, 'URGENT', `${label} is at ${v.onHandQty} — oversold.`)
+    live.add(`negative:${v.id}`)
+  }
+
+  const cleared = await db.alert.updateMany({
+    where: {
+      resolved: false,
+      dedupeKey: { notIn: [...live] },
+      OR: [
+        { dedupeKey: { startsWith: 'blocked:' } },
+        { dedupeKey: { startsWith: 'order:' } },
+        { dedupeKey: { startsWith: 'negative:' } },
+      ],
+    },
+    data: { resolved: true, resolvedAt: new Date() },
+  })
+
+  return { computed: results.length, raised, refreshed, snoozed: snoozedCount, cleared: cleared.count }
+}

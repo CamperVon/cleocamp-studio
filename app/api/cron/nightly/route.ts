@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { laMidnight } from '@/lib/dates'
-import { recomputeForecasts } from '@/lib/forecast'
+import { refreshForecastsAndAlerts } from '@/lib/forecast'
 import { processInbox } from '@/lib/mouse/inbox'
 import { nightlyPass } from '@/lib/mouse/nightly-pass'
 import { sendEmail } from '@/lib/email'
@@ -125,102 +125,11 @@ export async function GET(req: NextRequest) {
     return { asOf: p.asOf, cash: Number(p.cashCents) / 100, ar: Number(p.arCents) / 100 }
   })
 
-  // ── 2. Work out where things stand ───────────────────────
-  await step('forecast', async () => {
-    const results = await recomputeForecasts()
-    return { computed: results.length, blocked: results.filter((r) => r.blocked).length }
-  })
-
   // ── 3. Raise what needs raising ──────────────────────────
-  await step('alerts', async () => {
-    const soon = new Date(Date.now() + 7 * 864e5)
-    const forecasts = await db.forecastResult.findMany({
-      include: { product: true, component: true },
-    })
-    let raised = 0
-    let refreshed = 0
-    let snoozedCount = 0
-
-    // Every key still true on this pass. What is missing from it gets closed
-    // at the end, which is how these alerts finally clear themselves.
-    const live = new Set<string>()
-
-    // Dismissing an alert has to mean something. Resolving one used to change
-    // nothing: the next pass found the condition still true and raised it
-    // again, so Mouse could not clear anything and said so. A key resolved in
-    // the last week is left alone — long enough for stock to land or an order
-    // to be placed, short enough that a real problem comes back on its own.
-    const snoozeSince = new Date(Date.now() - 7 * 864e5)
-    const snoozed = new Set(
-      (await db.alert.findMany({
-        where: { resolved: true, resolvedAt: { gte: snoozeSince } },
-        select: { dedupeKey: true },
-      })).map((a) => a.dedupeKey),
-    )
-
-    const raise = async (key: string, severity: 'WARNING' | 'URGENT', message: string) => {
-      live.add(key)
-      if (snoozed.has(key)) { snoozedCount++; return }
-      // The partial unique index makes this idempotent: one unresolved alert
-      // per condition, however many times the job runs. But swallowing the
-      // duplicate also froze its TEXT on the day it was first raised — an
-      // alert would still quote a lead time or a stock figure from weeks ago
-      // while the numbers underneath it had moved. Refresh the open one
-      // instead, so what it says is as current as the fact behind it.
-      try {
-        await db.alert.create({ data: { dedupeKey: key, severity, message } })
-        raised++
-      } catch {
-        await db.alert.updateMany({
-          where: { dedupeKey: key, resolved: false },
-          data: { severity, message },
-        })
-        refreshed++
-      }
-    }
-
-    for (const f of forecasts) {
-      const name = f.product?.name ?? f.component?.name ?? 'something'
-      if (f.blockedReason) {
-        await raise(`blocked:${f.productId ?? f.componentId}`, 'WARNING',
-          `Can't forecast ${name} — ${f.blockedReason}`)
-      } else if (f.recommendedOrderDate && f.recommendedOrderDate <= soon) {
-        await raise(`order:${f.productId ?? f.componentId}`, 'URGENT',
-          `Order ${name} by ${f.recommendedOrderDate.toISOString().slice(0, 10)}. ${f.note ?? ''}`.trim())
-      }
-    }
-
-    // Negative stock means something was sold that does not exist. Never let
-    // that sit as a quietly displayed minus sign.
-    const negativeVariants = await db.productVariant.findMany({
-      where: { onHandQty: { lt: 0 } },
-      include: { product: true, colorway: true },
-    })
-    for (const v of negativeVariants) {
-      const label = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
-      await raise(`negative:${v.id}`, 'URGENT', `${label} is at ${v.onHandQty} — oversold.`)
-      live.add(`negative:${v.id}`)
-    }
-
-    // Raising was only ever half the job. An alert whose condition has gone
-    // still sat open forever: a lead time filled in, an oversold variant
-    // restocked, a product sunsetted. "Things to tend to" grew and never
-    // shrank, so the real items were buried in things already dealt with.
-    // Anything this pass did NOT re-raise is no longer true, so close it.
-    const cleared = await db.alert.updateMany({
-      where: {
-        resolved: false,
-        dedupeKey: { notIn: [...live] },
-        OR: [
-          { dedupeKey: { startsWith: 'blocked:' } },
-          { dedupeKey: { startsWith: 'order:' } },
-          { dedupeKey: { startsWith: 'negative:' } },
-        ],
-      },
-      data: { resolved: true, resolvedAt: new Date() },
-    })
-    return { raised, refreshed, snoozed: snoozedCount, cleared: cleared.count }
-  })
+  // Shared with the chat route (lib/mouse/agent.ts), which calls the same
+  // function mid-day after a write that could move a forecast, so this is
+  // now the nightly catch-all rather than the only time it ever runs.
+  await step('alerts', () => refreshForecastsAndAlerts())
 
   // Cash used to be nagged about here: a nightly check that raised
   // "cash figures are N days old" whenever the last snapshot aged past a week.
