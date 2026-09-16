@@ -39,9 +39,17 @@ export function ProductionRow({ p }: { p: ProductState }) {
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
               {p.flag ? <Mouse size={17} className="shrink-0 text-urgent" /> : null}
-              <span className="truncate text-sm font-medium">{p.name}</span>
+              {/* The rewrite that made these rows readable dropped red from the
+                  name itself along the way — only the mouse icon stayed red,
+                  so a flagged product read as normal text with a small red
+                  mark next to it rather than as a red line. */}
+              <span className={`truncate text-sm font-medium ${p.flag ? 'text-urgent' : ''}`}>{p.name}</span>
             </span>
-            <span className="mt-0.5 block truncate text-xs text-muted">{p.headline}</span>
+            {/* Red follows the whole row, not just the name and icon — a red
+                product whose summary line stayed grey read as half a warning. */}
+            <span className={`mt-0.5 block truncate text-xs ${p.flag ? 'text-urgent' : 'text-muted'}`}>
+              {p.headline}
+            </span>
           </span>
 
           <span className="shrink-0 text-right text-xs text-muted">

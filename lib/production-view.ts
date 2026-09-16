@@ -38,6 +38,8 @@ export type ProductState = {
   flag: boolean
   onHand: number | null
   asOf: Date
+  /** Soonest upcoming date across every strand — what the list sorts on. */
+  sortDate: Date | null
 }
 
 const day = (d: Date) => d.toISOString().slice(0, 10)
@@ -222,6 +224,15 @@ export async function buildProductionView(): Promise<ProductState[]> {
     if (nextDate) bits.push(`next date ${day(nextDate.on!)}`)
     if (waiting.length) bits.push(`${waiting.length} waiting on someone`)
 
+    // The date to sort on: the soonest thing still ahead — an order's due
+    // date, a run's ready date, a todo's due date, a calendar date — never a
+    // date that has already passed, since a red product is already pinned to
+    // the top regardless and a past date says nothing about what is next.
+    const upcoming = list
+      .map((s) => s.on)
+      .filter((d): d is Date => d !== null && d >= today)
+      .sort((a, b) => a.getTime() - b.getTime())[0] ?? null
+
     out.push({
       id: pid,
       name: p.name,
@@ -230,10 +241,19 @@ export async function buildProductionView(): Promise<ProductState[]> {
       flag: list.some((s) => s.flag),
       onHand,
       asOf: new Date(),
+      sortDate: upcoming,
     })
   }
 
-  // Trouble first, then alphabetical so the list does not reshuffle daily.
-  out.sort((a, b) => Number(b.flag) - Number(a.flag) || a.name.localeCompare(b.name))
+  // Red first, unchanged — a live problem outranks a calendar date. Everything
+  // else by what is coming up soonest, not alphabetically: Cleo, 17 Sept,
+  // wanted the list to read as a schedule. A product with no date on file
+  // (nothing waiting, nothing due) sorts last rather than by an accident of
+  // its name; name is only the final tiebreak, so the order does not reshuffle
+  // for no reason between two products due the same day.
+  out.sort((a, b) =>
+    Number(b.flag) - Number(a.flag) ||
+    (a.sortDate?.getTime() ?? Infinity) - (b.sortDate?.getTime() ?? Infinity) ||
+    a.name.localeCompare(b.name))
   return out
 }
