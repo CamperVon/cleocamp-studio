@@ -149,7 +149,7 @@ export default async function Today() {
       {/* What is out of the building and when it comes back. */}
       <details className="group overflow-hidden rounded-xl border border-line bg-surface" open>
         <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 sm:px-5">
-          <h2 className="text-sm font-semibold">In production &amp; on order</h2>
+          <h2 className="flex-1 text-sm font-semibold">In production &amp; on order</h2>
           <span className="text-xs text-faint">{runs.length + pos.length} in flight</span>
         </summary>
         <div className="border-t border-line">
@@ -255,7 +255,7 @@ export default async function Today() {
 
       <details className="group overflow-hidden rounded-xl border border-line bg-surface">
         <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 sm:px-5">
-          <h2 className="text-sm font-semibold">Studio supplies</h2>
+          <h2 className="flex-1 text-sm font-semibold">Studio supplies</h2>
           <span className="text-xs text-faint">{components.length} counted here</span>
         </summary>
         <ul className="divide-y divide-line border-t border-line">

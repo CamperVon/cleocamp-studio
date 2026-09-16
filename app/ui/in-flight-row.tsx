@@ -25,8 +25,11 @@ export function InFlightRow({
   return (
     <li>
       <details className="group">
+        {/* The marker is a flex item too, so the text block must take the free
+            space itself. Without flex-1, justify-between spreads three items —
+            marker, text, date — and every row's title lands at a different x. */}
         <summary className="flex cursor-pointer items-start justify-between gap-3 px-4 py-3 hover:bg-sunk sm:px-5">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">{title}</p>
             {/* Wraps rather than truncating — the journey is the useful part
                 and a phone cuts it off at exactly the wrong word. */}
