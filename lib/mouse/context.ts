@@ -296,8 +296,19 @@ export async function buildCatalog(): Promise<string> {
     L.push(
       `As of ${finances.forDate.toISOString().slice(0, 10)}: ` +
         `${finances.cashCents === null ? 'cash unknown' : '$' + (Number(finances.cashCents) / 100).toLocaleString()} in the bank, ` +
-        `${finances.apCents === null ? 'card unknown' : '$' + (Number(finances.apCents) / 100).toLocaleString()} owed on the card. ` +
-        `These do not refresh on their own.`,
+        `${finances.apCents === null ? 'card unknown' : '$' + (Number(finances.apCents) / 100).toLocaleString()} owed on the card.`,
+    )
+    // Cleo, 16 Sept: stop flagging this. The old line ended "these do not
+    // refresh on their own", which read as a standing complaint and had Mouse
+    // opening the brief with the cash figure being stale — every day, about a
+    // number that is deliberately not maintained. Cash came off the Finances
+    // page on 12 Sept because QuickBooks exposes no live bank balance. Say how
+    // old it is when asked; do not volunteer it as a problem.
+    L.push(
+      'Cash is NOT tracked here and is not expected to be current. Cleo removed it',
+      'from the Finances page deliberately. Never raise its age as an alert, a',
+      'warning, or a line in the daily brief. If she asks about cash, give the date',
+      'it is as of and leave it there.',
     )
   }
 

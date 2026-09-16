@@ -138,14 +138,30 @@ export async function GET(req: NextRequest) {
       include: { product: true, component: true },
     })
     let raised = 0
+    let refreshed = 0
+
+    // Every key still true on this pass. What is missing from it gets closed
+    // at the end, which is how these alerts finally clear themselves.
+    const live = new Set<string>()
 
     const raise = async (key: string, severity: 'WARNING' | 'URGENT', message: string) => {
+      live.add(key)
       // The partial unique index makes this idempotent: one unresolved alert
-      // per condition, however many times the job runs.
+      // per condition, however many times the job runs. But swallowing the
+      // duplicate also froze its TEXT on the day it was first raised — an
+      // alert would still quote a lead time or a stock figure from weeks ago
+      // while the numbers underneath it had moved. Refresh the open one
+      // instead, so what it says is as current as the fact behind it.
       try {
         await db.alert.create({ data: { dedupeKey: key, severity, message } })
         raised++
-      } catch { /* already open */ }
+      } catch {
+        await db.alert.updateMany({
+          where: { dedupeKey: key, resolved: false },
+          data: { severity, message },
+        })
+        refreshed++
+      }
     }
 
     for (const f of forecasts) {
@@ -168,36 +184,43 @@ export async function GET(req: NextRequest) {
     for (const v of negativeVariants) {
       const label = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
       await raise(`negative:${v.id}`, 'URGENT', `${label} is at ${v.onHandQty} — oversold.`)
+      live.add(`negative:${v.id}`)
     }
-    return { raised }
+
+    // Raising was only ever half the job. An alert whose condition has gone
+    // still sat open forever: a lead time filled in, an oversold variant
+    // restocked, a product sunsetted. "Things to tend to" grew and never
+    // shrank, so the real items were buried in things already dealt with.
+    // Anything this pass did NOT re-raise is no longer true, so close it.
+    const cleared = await db.alert.updateMany({
+      where: {
+        resolved: false,
+        dedupeKey: { notIn: [...live] },
+        OR: [
+          { dedupeKey: { startsWith: 'blocked:' } },
+          { dedupeKey: { startsWith: 'order:' } },
+          { dedupeKey: { startsWith: 'negative:' } },
+        ],
+      },
+      data: { resolved: true, resolvedAt: new Date() },
+    })
+    return { raised, refreshed, cleared: cleared.count }
   })
 
-  // Money does not refresh itself while QuickBooks is on a manual path, so the
-  // job's job is to notice when it has gone stale rather than let an old number
-  // sit there looking current.
-  await step('financeAge', async () => {
-    const snap = await db.financialSnapshot.findFirst({ orderBy: { forDate: 'desc' } })
-    if (!snap) {
-      await db.alert.create({
-        data: { dedupeKey: 'finance:none', severity: 'INFO',
-          message: 'No cash figures recorded yet. Ask Claude to pull them from QuickBooks.' },
-      }).catch(() => null)
-      return { state: 'none' }
-    }
-    const days = Math.floor((Date.now() - snap.forDate.getTime()) / 864e5)
-    if (days >= 7) {
-      await db.alert.create({
-        data: { dedupeKey: 'finance:stale', severity: 'WARNING',
-          message: `Cash figures are ${days} days old. Ask Claude to refresh them from QuickBooks.` },
-      }).catch(() => null)
-    } else {
-      // Resolve it once someone has refreshed, so the alert clears itself.
-      await db.alert.updateMany({
-        where: { dedupeKey: 'finance:stale', resolved: false },
-        data: { resolved: true, resolvedAt: new Date() },
-      })
-    }
-    return { daysOld: days }
+  // Cash used to be nagged about here: a nightly check that raised
+  // "cash figures are N days old" whenever the last snapshot aged past a week.
+  // That alert could never be satisfied. Cleo dropped cash from the Finances
+  // page on 12 Sept — QuickBooks exposes no live bank balance to any API, and
+  // the manual workflow is one she does not run — so the page is P&L only and
+  // nothing refreshes that snapshot. The job was warning, every single night,
+  // that a number nobody maintains had not been maintained.
+  // Removed 16 Sept 2026 at Cleo's request. Any still-open ones are closed.
+  await step('financeAlertCleanup', async () => {
+    const r = await db.alert.updateMany({
+      where: { resolved: false, dedupeKey: { in: ['finance:stale', 'finance:none'] } },
+      data: { resolved: true, resolvedAt: new Date() },
+    })
+    return { closed: r.count }
   })
 
   // ── 4. Calendar entries for the dates that matter ────────
