@@ -2205,6 +2205,41 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  delete_calendar_event: {
+    def: {
+      name: 'delete_calendar_event',
+      description:
+        'Remove an entry you (or an earlier session) put on the calendar — it turned out ' +
+        'wrong, or something newer has superseded it. 17 Sept 2026: Cleo said Liberty fabric ' +
+        'for the Story Dress "is not expected, it was already delivered" and asked for the ' +
+        "stale entry removed — this tool did not exist yet, so it couldn't be. Only removes " +
+        'events Mouse itself created; the subscribed studio calendar is read-only here for a ' +
+        'reason and its entries come back on the next sync regardless, so deleting one of ' +
+        'those would not even stick — say so rather than trying.',
+      input_schema: {
+        type: 'object',
+        properties: { id: str('The calendar event id') },
+        required: ['id'],
+      },
+    },
+    run: async (i) => {
+      const e = await db.calendarEvent.findUnique({ where: { id: String(i.id) } })
+      if (!e) return { deleted: false, error: `No calendar event with id "${i.id}".` }
+      if (e.source !== 'STUDIO_MOUSE') {
+        return {
+          deleted: false,
+          error:
+            `"${e.title}" came from the subscribed studio calendar (${e.source}), not from Mouse. ` +
+            `Deleting it here would not stick — the next sync brings it straight back. If it is ` +
+            `wrong, it needs correcting at the source (iCloud/Google), or say so and it can be ` +
+            `noted as stale instead.`,
+        }
+      }
+      await db.calendarEvent.delete({ where: { id: e.id } })
+      return { deleted: true, title: e.title, date: e.date.toISOString().slice(0, 10) }
+    },
+  },
+
   update_production_run: {
     def: {
       name: 'update_production_run',

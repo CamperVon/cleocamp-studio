@@ -92,6 +92,22 @@ const MACHINE_REPORTERS = [/^quickbooks@(send\.)?cleocamp\.com$/i]
  * which to believe. Nobody needed to arbitrate: the later one simply supersedes
  * the earlier.
  *
+ * KEYED ON SENDER AND DAY ALONE — subject is deliberately not part of the key.
+ * It was, at first, and that missed the actual recurring case: a second,
+ * unretired sender (still running pre-12-Sept instructions, never found —
+ * see the standing todo to track it down in claude.ai) posts its own
+ * "QuickBooks figures" email most mornings under a subject that does not
+ * match the real nightly pull's — worse, once the nightly prompt started
+ * putting a timestamp in ITS subject (to tell two same-day pulls apart for a
+ * reader), the two subjects were guaranteed to never coincide again, so the
+ * old subject-inclusive key stopped catching this pair entirely and Mouse's
+ * Corner kept reopening the same "two pulls disagree" question most nights.
+ * A pure machine reporter — this list is never a person — cannot be having a
+ * back-and-forth conversation under varying subjects, so nothing is lost by
+ * dropping subject from the key: two emails from the same reporter on the
+ * same Pacific day are the same report family regardless of wording, and
+ * only the newest is worth a human or nightlyPass reading.
+ *
  * The rows are kept and marked read, not deleted — the earlier figures are
  * still a true record of what the books said at that hour.
  */
@@ -107,7 +123,7 @@ async function supersedeRepeatReports(): Promise<number> {
   const superseded: string[] = []
   for (const m of unread) {
     if (!MACHINE_REPORTERS.some((re) => re.test(m.fromAddress))) continue
-    const key = `${m.fromAddress.toLowerCase()}|${(m.subject ?? '').trim().toLowerCase()}|${laDay(m.receivedAt)}`
+    const key = `${m.fromAddress.toLowerCase()}|${laDay(m.receivedAt)}`
     if (seen.has(key)) superseded.push(m.id)
     else seen.add(key)
   }
