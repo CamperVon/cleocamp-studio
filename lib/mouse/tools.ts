@@ -2023,7 +2023,10 @@ export const TOOLS: Record<string, Tool> = {
         'to SENT. ' +
         'USE `to` TO SEND IT TO SOMEONE OTHER THAN THE VENDOR — a project manager who will ' +
         'pass it on, or back to whoever asked so they can look it over. That is a normal ' +
-        'request and this tool does it; never tell someone the PDF can only go to the vendor.',
+        'request and this tool does it; never tell someone the PDF can only go to the vendor. ' +
+        'When this is a cut-and-sew order (its lines are finished units, not components), a ' +
+        'real send to the vendor also walks the product\'s BOM and files a dated todo for any ' +
+        "component still short of what this run needs — see planComponentKickoff.",
       input_schema: {
         type: 'object',
         properties: {
@@ -2183,9 +2186,41 @@ export const TOOLS: Record<string, Tool> = {
         log,
       ])
 
+      // Cleo, 17 Sept 2026, on why Mouse was built in the first place: "when
+      // we send a PO for bags or teas... Mouse will know what all of the
+      // components are, and what all the lead times are, and will tell us,
+      // hey, this is what you need to get going on." A cut-and-sew PO (its
+      // lines point at product variants, finished units, not components) is
+      // exactly that moment — the manufacturer now has an order and needs
+      // its trims, hardware and fabric to actually start. Walk the BOM and
+      // file a dated todo for anything still short.
+      const poWithLines = await db.purchaseOrder.findUnique({
+        where: { id: po.id },
+        include: { lines: { include: { productVariant: { select: { productId: true } } } } },
+      })
+      const qtyByProduct = new Map<string, number>()
+      for (const l of poWithLines?.lines ?? []) {
+        const pid = l.productVariant?.productId
+        if (!pid) continue
+        qtyByProduct.set(pid, (qtyByProduct.get(pid) ?? 0) + Number(l.qtyOrdered))
+      }
+      const kickoffs = []
+      for (const [pid, qty] of qtyByProduct) {
+        const { planComponentKickoff } = await import('@/lib/mouse/component-kickoff')
+        const r = await planComponentKickoff(pid, qty, { poNumber: po.poNumber, expectedAt: po.expectedAt })
+        if (r) kickoffs.push(r)
+      }
+      const newTodos = kickoffs.flatMap((k) => k.lines.filter((l) => l.created))
+
       return {
         sent: true, to, cc, markedSent: true,
-        tellTheUser: `Sent PO ${po.poNumber} to ${po.vendor.name} (${po.vendor.email}), cc Cleo and Brandon. Marked SENT.`,
+        componentKickoff: kickoffs.length ? kickoffs : undefined,
+        tellTheUser:
+          `Sent PO ${po.poNumber} to ${po.vendor.name} (${po.vendor.email}), cc Cleo and Brandon. Marked SENT.` +
+          (newTodos.length
+            ? ` Also filed ${newTodos.length} component ${newTodos.length === 1 ? 'todo' : 'todos'} this order needs to get going: ` +
+              newTodos.map((l) => `${l.componentName}${l.orderBy ? ` by ${l.orderBy.toISOString().slice(0, 10)}` : ''}`).join(', ') + '.'
+            : ''),
       }
     },
   },
