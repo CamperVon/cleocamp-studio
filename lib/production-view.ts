@@ -44,8 +44,19 @@ export type ProductState = {
 
 const day = (d: Date) => d.toISOString().slice(0, 10)
 
+// Cleo, 17 Sept 2026: "anything urgent, let's say within 3 days, should be
+// red... any outstanding issue imminent to production needs to be at top of
+// list and in red." Applied uniformly to every dated strand — an order's due
+// date, a run's ready date, a calendar date, a todo's due date — so the
+// reader learns one rule (red means now or very soon) rather than a
+// different threshold per kind. A 'waiting' item can override this per-item
+// via its own remindDaysBefore, which already existed for exactly this and
+// defaults to the same 3.
+const URGENT_WINDOW_DAYS = 3
+
 export async function buildProductionView(): Promise<ProductState[]> {
   const today = laMidnight(0)
+  const urgentCutoff = laMidnight(-URGENT_WINDOW_DAYS)
 
   const [pos, runs, events, items, products] = await Promise.all([
     db.purchaseOrder.findMany({
@@ -111,6 +122,7 @@ export async function buildProductionView(): Promise<ProductState[]> {
           ? `${use[0].qtyOrdered} ${use[0].unit} ${poLineLabel(use[0])}`
           : `${totals} across ${use.length} lines`
       const overdue = !!po.expectedAt && po.expectedAt < today && po.status !== 'PARTIALLY_RECEIVED'
+      const dueSoon = !!po.expectedAt && po.expectedAt >= today && po.expectedAt <= urgentCutoff
       add(pid, {
         kind: 'order',
         text:
@@ -119,7 +131,7 @@ export async function buildProductionView(): Promise<ProductState[]> {
             : `PO ${po.poNumber} · ${po.vendor.name} · ${what}` +
               (po.expectedAt ? ` — due ${day(po.expectedAt)}${overdue ? ', passed' : ''}` : ' — no date confirmed'),
         on: po.expectedAt ?? po.orderedAt,
-        flag: overdue || po.status === 'DRAFT',
+        flag: overdue || dueSoon || po.status === 'DRAFT',
         href: `/po/${po.poNumber}`,
       })
     }
@@ -128,6 +140,7 @@ export async function buildProductionView(): Promise<ProductState[]> {
   // ── Runs at a maker ───────────────────────────────────────
   for (const r of runs) {
     const late = !!r.expectedReadyAt && r.expectedReadyAt < today
+    const dueSoon = !!r.expectedReadyAt && r.expectedReadyAt >= today && r.expectedReadyAt <= urgentCutoff
     add(r.productId, {
       kind: 'run',
       text:
@@ -136,12 +149,19 @@ export async function buildProductionView(): Promise<ProductState[]> {
           ? ` — ready ${day(r.expectedReadyAt)}${r.dateConfirmed ? '' : ' (unconfirmed)'}${late ? ', passed' : ''}`
           : ' — no ready date'),
       on: r.expectedReadyAt,
-      flag: late,
+      flag: late || dueSoon,
     })
   }
 
   // ── Dates someone has put in the calendar ─────────────────
   for (const e of events) {
+    // A PAST calendar entry is still never a flag — it carries no field
+    // saying whether the thing happened, so "cosmo sample yardage picked up"
+    // sitting under the DELIVERY_EXPECTED type from the logistics feed cannot
+    // be told apart from a delivery that never showed. A FUTURE one within
+    // the window is a fact worth being red about regardless: it has not
+    // happened yet, so there is nothing ambiguous about flagging it.
+    const dueSoon = e.date >= today && e.date <= urgentCutoff
     add(e.productId, {
       kind: 'date',
       // Title only. The notes behind these run to several sentences and turned
@@ -149,30 +169,36 @@ export async function buildProductionView(): Promise<ProductState[]> {
       // wants them.
       text: `${day(e.date)} · ${e.title}`,
       on: e.date,
-      // A calendar entry is never a flag. It records that something is due to
-      // happen, and carries no field saying whether it did — "cosmo sample
-      // yardage picked up" is a completed pickup sitting in the past under the
-      // DELIVERY_EXPECTED type, because everything off the logistics feed gets
-      // that type. Flagging on date alone painted history red and taught the
-      // reader to ignore red. Lateness is judged where it can actually be
-      // known: an order with a status, a run with a ready date, a todo with a
-      // due date.
-      flag: false,
+      flag: dueSoon,
     })
   }
 
   // ── What is waiting on a person ───────────────────────────
   for (const i of items) {
     const overdue = !!i.dueDate && i.dueDate < today
+    // remindDaysBefore already existed for exactly this — "how soon before
+    // dueDate does this start mattering" — and defaults to the same 3 days
+    // Cleo asked for, so a todo can widen or narrow its own window without a
+    // second field.
+    const window = laMidnight(-(i.remindDaysBefore ?? URGENT_WINDOW_DAYS))
+    const dueSoon = !!i.dueDate && i.dueDate >= today && i.dueDate <= window
+    // Urgency Cleo states outright has no date to prove it, so it cannot wait
+    // to be "discovered" by date math — it counts as due NOW for sorting,
+    // which is what actually puts it at the top rather than the bottom of
+    // the red bucket (a null date would otherwise sort last, even flagged).
+    const on = i.urgent && !i.dueDate ? today : (i.dueDate ?? i.createdAt)
     add(i.entityId, {
       kind: 'waiting',
-      text: i.title + (i.dueDate ? ` (due ${day(i.dueDate)}${overdue ? ', overdue' : ''})` : ''),
-      on: i.dueDate ?? i.createdAt,
-      // An open question is NOT a red flag. Nearly every product has one, and
-      // if everything is red then red says nothing — which is exactly the noise
-      // Cleo asked us not to recreate. Red means a date has passed or an order
-      // has not gone out, never that something is merely still unknown.
-      flag: overdue,
+      text:
+        i.title +
+        (i.dueDate ? ` (due ${day(i.dueDate)}${overdue ? ', overdue' : ''})` : '') +
+        (i.urgent ? ' — marked urgent' : ''),
+      on,
+      // An open question is not, by itself, a red flag — most products have
+      // one, and if everything is red then red says nothing. Red means a
+      // date has passed, a date is close, an order has not gone out, or a
+      // person called it urgent outright.
+      flag: overdue || dueSoon || i.urgent,
       href: '/items',
     })
   }

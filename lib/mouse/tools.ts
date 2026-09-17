@@ -507,6 +507,13 @@ export const TOOLS: Record<string, Tool> = {
           detail: str('Why it matters and what it blocks'),
           entityType: { type: 'string', enum: ['VENDOR','PRODUCT','PRODUCT_VARIANT','COMPONENT','PRODUCTION_RUN','PURCHASE_ORDER','GENERAL'] },
           entityId: str('What it is about, if anything'),
+          urgent: {
+            type: 'boolean' as const,
+            description:
+              'Set true when a person called this pressing or urgent, not when you judge it ' +
+              'so yourself. On a product tied to entityId=PRODUCT, this puts it at the top of ' +
+              'Products in production and colours it red — even with no date attached.',
+          },
         },
         required: ['title'],
       },
@@ -517,6 +524,7 @@ export const TOOLS: Record<string, Tool> = {
           kind: 'QUESTION', title: i.title, detail: i.detail ?? null,
           entityType: (i.entityType ?? 'GENERAL') as never,
           entityId: i.entityId ?? null, source: 'CHAT',
+          urgent: i.urgent === true,
         },
         select: { id: true, title: true },
       }),
@@ -574,13 +582,26 @@ export const TOOLS: Record<string, Tool> = {
   create_todo: {
     def: {
       name: 'create_todo',
-      description: 'Record something a person needs to do, optionally by a date.',
+      description:
+        'Record something a person needs to do, optionally by a date. SET entityType and ' +
+        'entityId whenever it is about a specific product, vendor or order — that is the ' +
+        'only way it reaches that product\'s row on Products in production; a todo with no ' +
+        'entity only ever shows on the general items list, however product-specific its title.',
       input_schema: {
         type: 'object',
         properties: {
           title: str('What needs doing'),
           detail: str('Any detail'),
           dueDate: str('ISO date, e.g. 2026-09-15'),
+          entityType: { type: 'string', enum: ['VENDOR','PRODUCT','PRODUCT_VARIANT','COMPONENT','PRODUCTION_RUN','PURCHASE_ORDER','GENERAL'] },
+          entityId: str('What it is about, if anything — a product id puts this on that product\'s row'),
+          urgent: {
+            type: 'boolean' as const,
+            description:
+              'Set true when a person called this pressing or urgent, not when you judge it ' +
+              'so yourself. On a product tied to entityId=PRODUCT, this puts it at the top of ' +
+              'Products in production and colours it red — even with no date attached.',
+          },
         },
         required: ['title'],
       },
@@ -590,6 +611,9 @@ export const TOOLS: Record<string, Tool> = {
         data: {
           kind: 'TODO', title: i.title, detail: i.detail ?? null,
           dueDate: i.dueDate ? new Date(i.dueDate + 'T12:00:00-07:00') : null,
+          entityType: (i.entityType ?? 'GENERAL') as never,
+          entityId: i.entityId ?? null,
+          urgent: i.urgent === true,
           source: 'CHAT',
         },
         select: { id: true, title: true, dueDate: true },

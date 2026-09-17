@@ -648,6 +648,13 @@ model ActionItem {
   resolved         Boolean          @default(false)
   resolvedAt       DateTime?
   resolutionNote   String?
+  /// Stated outright, independent of any date — "this is pressing", not
+  /// inferred from a deadline. dueDate + remindDaysBefore already covers
+  /// "surface this N days before it's due"; this covers there being no date
+  /// to hang urgency on at all. Cleo, 17 Sept 2026: things imminent to
+  /// production should sort to the top and read red — not every urgent
+  /// thing has a due date to prove it.
+  urgent           Boolean          @default(false)
   /// Set once this has gone out in the "chip away" drip email, so the next
   /// day's pair never repeats it. Null just means never sent that way —
   /// unrelated to resolved, which is a person answering it.
