@@ -809,11 +809,19 @@ model NotificationSettings {
   id                    String   @id @default("singleton")
   /// The two-questions-a-day drip at the open list.
   chipAwayEnabled       Boolean  @default(true)
-  /// The 8am morning report to Brandon and Cleo.
-  amReportEnabled       Boolean  @default(true)
+  /// The 8am morning report to Brandon and Cleo — superseded by The Daily
+  /// Cheese and off since 17 Sept, kept switchable rather than deleted.
+  amReportEnabled       Boolean  @default(false)
   /// The older daily/weekly/monthly digest — superseded by the morning
   /// report and off since 3 Sept, kept switchable rather than deleted.
   digestEnabled         Boolean  @default(false)
+  /// The Daily Cheese — weekday 8am, Products in production's red items plus
+  /// any calendar entry that names Jane by name. Jane Tue-Thu, Cleo Mon/Fri
+  /// (she only works three days a week); Cleo and Brandon cc'd on her days,
+  /// Brandon cc'd (not Jane) on Cleo's. Cleo, 17 Sept 2026, after several
+  /// rounds on the copy itself: brief, full sentences, no backstory, no
+  /// questions section for now.
+  dailyCheeseEnabled    Boolean  @default(true)
   /// Forward anything arriving at a Studio Mouse mailbox on to the people
   /// who should have been cc'd. Brandon, 9 Sept 2026: "some people only
   /// respond to SM and forget to hit cc."

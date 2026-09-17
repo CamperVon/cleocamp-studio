@@ -2634,14 +2634,15 @@ export const TOOLS: Record<string, Tool> = {
         type: 'object',
         properties: {
           chipAwayEnabled: { type: 'boolean' as const, description: 'The two-questions-a-day drip at the open list' },
-          amReportEnabled: { type: 'boolean' as const, description: 'The 8am morning report to Brandon and Cleo' },
+          amReportEnabled: { type: 'boolean' as const, description: 'The 8am morning report to Brandon and Cleo, superseded by The Daily Cheese and off since 17 Sept' },
           digestEnabled: { type: 'boolean' as const, description: 'The older daily/weekly/monthly digest, off since 3 Sept' },
+          dailyCheeseEnabled: { type: 'boolean' as const, description: 'The Daily Cheese — weekday 8am, red items only, Jane Tue-Thu / Cleo Mon-Fri' },
         },
       },
     },
     run: async (i) => {
       const data: any = {}
-      for (const k of ['chipAwayEnabled', 'amReportEnabled', 'digestEnabled'] as const) {
+      for (const k of ['chipAwayEnabled', 'amReportEnabled', 'digestEnabled', 'dailyCheeseEnabled'] as const) {
         if (typeof i[k] === 'boolean') data[k] = i[k]
       }
       if (!Object.keys(data).length) return { error: 'Nothing given to change — say which emails.' }
@@ -2656,6 +2657,7 @@ export const TOOLS: Record<string, Tool> = {
           todoQuestions: row.chipAwayEnabled,
           morningReport: row.amReportEnabled,
           digest: row.digestEnabled,
+          dailyCheese: row.dailyCheeseEnabled,
         },
         tellTheUser: 'Done — takes effect from the next scheduled run. Ask any time to switch them back on.',
       }

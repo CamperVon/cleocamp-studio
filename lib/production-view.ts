@@ -52,7 +52,7 @@ const day = (d: Date) => d.toISOString().slice(0, 10)
 // different threshold per kind. A 'waiting' item can override this per-item
 // via its own remindDaysBefore, which already existed for exactly this and
 // defaults to the same 3.
-const URGENT_WINDOW_DAYS = 3
+export const URGENT_WINDOW_DAYS = 3
 
 export async function buildProductionView(): Promise<ProductState[]> {
   const today = laMidnight(0)

@@ -4,6 +4,9 @@ import { Resend } from 'resend'
 export async function sendEmail(opts: {
   subject: string
   text: string
+  /** Rendered alongside `text`. Every send still carries a plain-text part —
+   *  this only adds a designed version on top, never replaces the fallback. */
+  html?: string
   to?: string[]
   cc?: string[]
   /** Rarely needed: the From address (mouse@) is on the inbound allowlist,
@@ -37,6 +40,7 @@ export async function sendEmail(opts: {
       to: opts.to, cc: opts.cc, replyTo: opts.replyTo, subject: opts.subject,
       attachments: opts.attachments?.map((a) => a.filename),
       text: opts.text,
+      html: opts.html ? '(html body omitted from log)' : undefined,
     }, null, 2))
     return { sent: true, id: 'dry-run', dryRun: true as const }
   }
@@ -46,6 +50,7 @@ export async function sendEmail(opts: {
   }
   const res = await new Resend(key).emails.send({
     from, to, subject: opts.subject, text: opts.text,
+    ...(opts.html ? { html: opts.html } : {}),
     ...(opts.cc ? { cc: opts.cc } : {}),
     ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
     ...(opts.attachments ? { attachments: opts.attachments } : {}),

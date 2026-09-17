@@ -370,7 +370,8 @@ export async function buildCatalog(): Promise<string> {
     L.push('Switch any of these with update_notification_settings — yours to change')
     L.push('when asked, not something to log for someone else.')
     L.push(`- Two todo questions a day: ${onOff(notify.chipAwayEnabled)}`)
-    L.push(`- 8am morning report: ${onOff(notify.amReportEnabled)}`)
+    L.push(`- The Daily Cheese (weekday 8am, red items only): ${onOff(notify.dailyCheeseEnabled)}`)
+    L.push(`- 8am morning report, superseded by The Daily Cheese: ${onOff(notify.amReportEnabled)}`)
     L.push(`- Older daily/weekly digest: ${onOff(notify.digestEnabled)}`)
   }
 
