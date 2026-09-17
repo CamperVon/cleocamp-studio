@@ -11,6 +11,8 @@ import { URGENT_WINDOW_DAYS } from '@/lib/production-view'
  * rather than narrating what happened, no questions section for now, and
  * a calendar entry only counts if Jane is specifically named in it — "Call
  * with Cosmo?" doesn't belong here because Jane isn't on that call.
+ * OVERDUE itself has a two-day grace before the word is used at all — see
+ * isReallyOverdue below.
  *
  * Deliberately NOT an LLM composition, unlike composeAmReport/composeDigest.
  * Cleo's own words: "no opus overwriting or explaining or exaggerations."
@@ -24,19 +26,38 @@ const DAY = 864e5
 
 type Item = { on: Date; tag: string; sentence: string }
 
+// Cleo, 17 Sept 2026: "Overdue is so harsh. Let's only make something
+// overdue if it's 2 days late. Otherwise make it today." A date that
+// passed yesterday reads exactly like one due today — OVERDUE is reserved
+// for something that has genuinely sat unresolved a while.
+//
+// `today` is always UTC-midnight-of-the-LA-day (laMidnight), but PurchaseOrder
+// .expectedAt and ActionItem.dueDate are written as noon Pacific — 19:00 UTC,
+// via `new Date(dateString + 'T12:00:00-07:00')` — so a raw millisecond diff
+// between the two is off by most of a day and can round PO 2371 (genuinely 2
+// days late on 17 Sept, due 15 Sept) down to 1. Reconstructing `on` at UTC
+// midnight from its own ISO date first removes that offset before diffing.
+function daysLate(on: Date, today: Date): number {
+  const onMidnight = new Date(on.toISOString().slice(0, 10) + 'T00:00:00Z')
+  return Math.round((today.getTime() - onMidnight.getTime()) / DAY)
+}
+const isReallyOverdue = (on: Date, today: Date) => daysLate(on, today) >= 2
+
 function tag(on: Date, today: Date): string {
-  if (on < today) return 'OVERDUE'
-  const days = Math.round((on.getTime() - today.getTime()) / DAY)
-  if (days === 0) return 'TODAY'
-  if (days === 1) return 'TOMORROW'
+  const late = daysLate(on, today)
+  if (late >= 2) return 'OVERDUE'
+  if (late >= 0) return 'TODAY' // due today, or only 1 day late — same word either way
+  const ahead = -late
+  if (ahead === 1) return 'TOMORROW'
   return on.toISOString().slice(0, 10).toUpperCase()
 }
 
 function duePhrase(on: Date, today: Date): string {
-  if (on < today) return 'It is overdue.'
-  const days = Math.round((on.getTime() - today.getTime()) / DAY)
-  if (days === 0) return 'It is due today.'
-  if (days === 1) return 'It is due tomorrow.'
+  const late = daysLate(on, today)
+  if (late >= 2) return 'It is overdue.'
+  if (late >= 0) return 'It is due today.'
+  const ahead = -late
+  if (ahead === 1) return 'It is due tomorrow.'
   return `It is due ${on.toISOString().slice(0, 10)}.`
 }
 
@@ -69,10 +90,10 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
 
   // ── Orders ────────────────────────────────────────────────
   for (const po of pos) {
-    const overdue = !!po.expectedAt && po.expectedAt < today && po.status !== 'PARTIALLY_RECEIVED'
+    const isPast = !!po.expectedAt && po.expectedAt < today && po.status !== 'PARTIALLY_RECEIVED'
     const dueSoon = !!po.expectedAt && po.expectedAt >= today && po.expectedAt <= cutoff
     const isDraft = po.status === 'DRAFT'
-    if (!overdue && !dueSoon && !isDraft) continue
+    if (!isPast && !dueSoon && !isDraft) continue
 
     for (const l of po.lines) if (l.productVariant) coveredProductIds.add(l.productVariant.product.id)
 
@@ -82,7 +103,7 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
 
     const sentence = isDraft
       ? `PO ${po.poNumber} (${po.vendor.name}, ${what}) is still a draft. Send it or say why not.`
-      : overdue
+      : isPast && isReallyOverdue(on, today)
         ? `PO ${po.poNumber} (${po.vendor.name}, ${what}) is overdue. Confirm when it will ship.`
         : `PO ${po.poNumber} (${po.vendor.name}, ${what}). ${duePhrase(on, today)} Confirm it is on track.`
 
@@ -96,11 +117,11 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
   // three Cleo Bag colourways surfaced in the mockup.
   for (const r of runs) {
     if (!r.expectedReadyAt || coveredProductIds.has(r.productId)) continue
-    const late = r.expectedReadyAt < today
+    const isPast = r.expectedReadyAt < today
     const dueSoon = r.expectedReadyAt >= today && r.expectedReadyAt <= cutoff
-    if (!late && !dueSoon) continue
+    if (!isPast && !dueSoon) continue
     const vendor = r.vendor?.name ?? 'the maker'
-    const sentence = late
+    const sentence = isPast && isReallyOverdue(r.expectedReadyAt, today)
       ? `${r.product.name} at ${vendor} is overdue. Confirm when it will be ready.`
       : `${r.product.name} at ${vendor}. ${duePhrase(r.expectedReadyAt, today)} Confirm it is ready.`
     out.push({ on: r.expectedReadyAt, tag: tag(r.expectedReadyAt, today), sentence })
@@ -127,13 +148,13 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
   // PRODUCTION_RUN and PURCHASE_ORDER stay in; those are the actual
   // shipping-and-manufacturing ground this report is scoped to.
   for (const i of todos.filter((i) => i.entityType !== 'VENDOR')) {
-    const overdue = !!i.dueDate && i.dueDate < today
+    const isPast = !!i.dueDate && i.dueDate < today
     const window = laMidnight(-(i.remindDaysBefore ?? URGENT_WINDOW_DAYS))
     const dueSoon = !!i.dueDate && i.dueDate >= today && i.dueDate <= window
     const urgentNoDate = i.urgent && !i.dueDate
-    if (!overdue && !dueSoon && !urgentNoDate) continue
+    if (!isPast && !dueSoon && !urgentNoDate) continue
     const on = urgentNoDate ? today : (i.dueDate ?? i.createdAt)
-    const sentence = overdue
+    const sentence = isPast && isReallyOverdue(i.dueDate!, today)
       ? `${period(i.title)} It is overdue.`
       : urgentNoDate
         ? `${period(i.title)} This is urgent.`
