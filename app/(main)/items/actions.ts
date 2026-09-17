@@ -19,7 +19,7 @@ export async function answerItem(id: string, answer: string) {
       `Item [${item.id}]: ${item.title}\n` +
       `${item.detail ? `Detail: ${item.detail}\n` : ''}` +
       `\nThe answer is: ${answer.trim()}\n\n` +
-      `Resolve it with resolve_question, and apply whatever the answer implies — ` +
+      `Resolve it with resolve_item, and apply whatever the answer implies — ` +
       `write it to the right field, update the order, put a date on the calendar. ` +
       `Do not just record the words.`,
     effort: 'medium',

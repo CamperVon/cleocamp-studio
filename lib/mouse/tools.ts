@@ -522,13 +522,20 @@ export const TOOLS: Record<string, Tool> = {
       }),
   },
 
-  resolve_question: {
+  resolve_item: {
     def: {
-      name: 'resolve_question',
-      description: 'Mark an open question answered, recording the answer.',
+      name: 'resolve_item',
+      description:
+        'Close an open item from "Things to tend to" — a QUESTION once answered, or a TODO ' +
+        'once done. THE SAME TOOL DOES BOTH; do not tell anyone a todo cannot be checked off. ' +
+        '"LLC payment for 2026 paid" against a todo is exactly this call, `resolution` holding ' +
+        'what happened ("paid 17 Sept") rather than an answer to a question. Its kind does not ' +
+        'change how it is closed. Before calling it on a vague reference — "the $800 one",' +
+        ' "the skirt question" — check there is only one candidate open; several similar items ' +
+        'means asking which, not guessing.',
       input_schema: {
         type: 'object',
-        properties: { id: str('Question id'), resolution: str('The answer') },
+        properties: { id: str("The item's id"), resolution: str('What happened — the answer, or what was done') },
         required: ['id', 'resolution'],
       },
     },

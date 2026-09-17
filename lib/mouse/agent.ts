@@ -55,7 +55,7 @@ export type AgentResult = {
 export const PROPOSAL_TOOLS = [
   'query_status',
   'raise_question',
-  'resolve_question',
+  'resolve_item',
   'create_todo',
   'add_note',
   'request_deep_analysis',
