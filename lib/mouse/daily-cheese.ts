@@ -118,7 +118,15 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
   }
 
   // ── Todos ─────────────────────────────────────────────────
-  for (const i of todos) {
+  // Cleo, 17 Sept 2026, on a vendor price-confirmation todo that reached
+  // Jane: "Jane would never be confirming prices. So the staples mention is
+  // not the kind of thing to send to her." A todo scoped to a VENDOR is a
+  // pricing or relationship conversation, not a production or shipping
+  // task — that's Cleo and Brandon's to carry, on every edition of this
+  // report, not only Jane's. PRODUCT, PRODUCT_VARIANT, COMPONENT,
+  // PRODUCTION_RUN and PURCHASE_ORDER stay in; those are the actual
+  // shipping-and-manufacturing ground this report is scoped to.
+  for (const i of todos.filter((i) => i.entityType !== 'VENDOR')) {
     const overdue = !!i.dueDate && i.dueDate < today
     const window = laMidnight(-(i.remindDaysBefore ?? URGENT_WINDOW_DAYS))
     const dueSoon = !!i.dueDate && i.dueDate >= today && i.dueDate <= window
