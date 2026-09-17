@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
+import { laMidnight } from '@/lib/dates'
 import { poLineLabel } from '@/lib/po'
 import { asDocLanguage } from '@/lib/po-strings'
 
@@ -2270,7 +2271,10 @@ export const TOOLS: Record<string, Tool> = {
       description:
         'Change an existing run — its stage, expected date, maker, or reference. ' +
         'Always prefer this to creating a second run for the same job. The runs in ' +
-        'flight are listed in your context with their ids.',
+        'flight are listed in your context with their ids. When status changes, this ' +
+        'also clears any of your own past-or-today DELIVERY_EXPECTED calendar entries ' +
+        "for the product — a hand-off the run's new status shows has already happened " +
+        'does not need a calendar entry still announcing it as upcoming.',
       input_schema: {
         type: 'object',
         properties: {
@@ -2297,10 +2301,58 @@ export const TOOLS: Record<string, Tool> = {
         if (v === undefined || v === null) continue
         data[k] = k === 'expectedReadyAt' ? new Date(String(v) + 'T12:00:00-07:00') : v
       }
-      return db.productionRun.update({
+      const updated = await db.productionRun.update({
         where: { id }, data,
-        select: { id: true, status: true, expectedReadyAt: true },
+        select: { id: true, productId: true, status: true, expectedReadyAt: true },
       })
+
+      // Cleo, 17 Sept 2026: the You Dress pickup from LA Dye Masters had
+      // already happened — the run's own status was FINISHING with a
+      // statusSummary saying so — but a separate calendar entry still
+      // announced the pickup as pending "by latest" today, and sat there
+      // reading red until she pointed it out. She then asked outright: "will
+      // Mouse clean up on its own?" It did not, because nothing connected a
+      // run's status moving forward to the calendar entries it makes stale.
+      // A DELIVERY_EXPECTED entry Mouse itself wrote is exactly that kind of
+      // entry — an announcement of a hand-off — and once a run's status is
+      // updated at all, the run itself is the freshest word on where things
+      // stand, so any such entry for the same product no longer due in the
+      // future has nothing left to say that the run doesn't say better.
+      // Scoped deliberately narrow: only entries Mouse created (a synced
+      // GOOGLE entry needs correcting at its source, same as
+      // delete_calendar_event already insists), only DELIVERY_EXPECTED (the
+      // type both real incidents were), and only ones dated today or
+      // earlier — a genuinely future entry might describe something this
+      // status change hasn't reached yet and is left alone.
+      let clearedStaleDates: { title: string; date: string }[] = []
+      if (data.status && updated.productId) {
+        const stale = await db.calendarEvent.findMany({
+          where: {
+            productId: updated.productId,
+            source: 'STUDIO_MOUSE',
+            type: 'DELIVERY_EXPECTED',
+            date: { lte: laMidnight(0) },
+          },
+          select: { id: true, title: true, date: true },
+        })
+        if (stale.length) {
+          await db.calendarEvent.deleteMany({ where: { id: { in: stale.map((s) => s.id) } } })
+          clearedStaleDates = stale.map((s) => ({ title: s.title, date: s.date.toISOString().slice(0, 10) }))
+        }
+      }
+
+      return {
+        ...updated,
+        ...(clearedStaleDates.length
+          ? {
+              clearedStaleDates,
+              tellTheUser:
+                `Run updated. Also cleared ${clearedStaleDates.length} calendar ` +
+                `${clearedStaleDates.length === 1 ? 'entry' : 'entries'} this status change made stale: ` +
+                clearedStaleDates.map((s) => `"${s.title}" (${s.date})`).join(', ') + '.',
+            }
+          : {}),
+      }
     },
   },
 
