@@ -150,6 +150,44 @@ export async function buildCatalog(): Promise<string> {
     L.push(`- ${c.name} [${c.id}] · ${c.category} · ${c.vendor?.name ?? 'no vendor'}${c.vendorSku ? ` · style ${c.vendorSku}` : ''} · ${money(c.unitCostCents)}/${c.unitOfMeasure} · lead time ${c.leadTimeDays === null ? 'UNKNOWN' : c.leadTimeDays + 'd'} · ${stock}${Number(c.incomingQty) > 0 ? `, ${c.incomingQty} incoming` : ''}`)
   }
 
+  // A purchase order line names a component, or a variant, or neither — the
+  // last kind is free text, because an order is often how a new thing first
+  // exists (a colour nobody has dyed, a label nobody has printed). Those lines
+  // attach to no catalogue row, so no on-hand or incoming figure anywhere can
+  // account for them, and they are invisible to the forecast by construction.
+  //
+  // Brandon, 18 Sept 2026, after Mouse called the hang tags uncounted with an
+  // order for them outstanding: "We have a PO out for that and you should know
+  // that." The hang tags were not even this case — they had no PO row at all —
+  // but 1,600 Cosmo x Cleo labels and twenty Bean Bags were sitting in exactly
+  // this blind spot on live orders while he asked. Listing them is the cheap
+  // half of the fix: Mouse cannot count them, but it can stop saying there are
+  // none.
+  const looseLines = pos
+    .flatMap((po) =>
+      po.lines
+        .filter((l) => !l.componentId && !l.productVariantId)
+        .filter((l) => Number(l.qtyOrdered) > Number(l.qtyReceived))
+        .map((l) => ({ po, l })),
+    )
+    .sort((a, b) => a.po.poNumber.localeCompare(b.po.poNumber) || a.l.id.localeCompare(b.l.id))
+
+  if (looseLines.length) {
+    L.push('\n## On order, but attached to no catalogue row')
+    L.push('These are real outstanding quantities on real orders. They match no')
+    L.push('component or variant, so they appear in NO on-hand or incoming figure')
+    L.push('above and the forecast cannot see them. Before saying there is none of')
+    L.push('something, read this list — and if one of these is a thing that ought to')
+    L.push('exist properly, say so, rather than quietly ordering it twice.')
+    for (const { po, l } of looseLines) {
+      const left = Number(l.qtyOrdered) - Number(l.qtyReceived)
+      L.push(
+        `- ${left} ${l.unit} — ${l.description ?? 'unlabelled line'} · PO ${po.poNumber} (${po.vendor.name})` +
+          `${po.status === 'DRAFT' ? ' · STILL A DRAFT, not ordered yet' : ''}`,
+      )
+    }
+  }
+
   // Without these, a component event at the studio is unloggable: writeEvent
   // demands a locationId or atVendorId for anything that is not a studio
   // stash, and Mouse had no way to learn the id. On 15 Sept 2026 it was told
