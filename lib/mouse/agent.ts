@@ -54,6 +54,7 @@ export type AgentResult = {
  */
 export const PROPOSAL_TOOLS = [
   'query_status',
+  'check_sent_mail',
   'raise_question',
   'resolve_item',
   'create_todo',
@@ -170,6 +171,31 @@ export async function runAgent(opts: {
  * twice (plain text from the row, then again as `instruction`, this time with
  * whatever was attached).
  */
+/**
+ * An assistant turn's stored `content` is what Mouse SAID. `toolCallsJson` is
+ * what it DID. Replaying only the first is how Mouse came to tell Brandon, on
+ * 18 Sept 2026, that it had never sent an email it had in fact sent four
+ * minutes earlier — twice, and then refused him when he insisted.
+ *
+ * Reading its own prior "Sent to Jane, cc'd Brandon and Cleo" with no record of
+ * any send behind it, the likeliest reading left to it was that it had misspoken
+ * rather than acted. The tool call was on disk the whole time, in this very
+ * column, and was dropped on the way back in. So the actions ride along with
+ * the words now — a plain appended line rather than reconstructed tool blocks,
+ * which cannot desync from the text it annotates.
+ */
+function withActions(content: string, toolCallsJson: unknown): string {
+  if (!Array.isArray(toolCallsJson) || !toolCallsJson.length) return content
+  const done = (toolCallsJson as Array<{ name?: string; status?: string; input?: Record<string, unknown> }>)
+    .filter((t) => t?.name && t.status !== 'failed')
+    .map((t) => {
+      const target = t.input?.to ?? t.input?.poNumber ?? t.input?.title ?? t.input?.id
+      return target ? `${t.name} → ${String(target).slice(0, 60)}` : String(t.name)
+    })
+  if (!done.length) return content
+  return `${content}\n\n[actions actually carried out on this turn: ${done.join('; ')}]`
+}
+
 export async function chatTurn(threadId: string, message: string, attachments?: AgentAttachment[]) {
   const rows = await db.chatMessage.findMany({
     where: { threadId },
@@ -182,7 +208,7 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
     attachments,
     history: history.map((m) => ({
       role: m.role === 'USER' ? 'user' : 'assistant',
-      content: m.content,
+      content: m.role === 'USER' ? m.content : withActions(m.content, m.toolCallsJson),
     })),
   })
 }

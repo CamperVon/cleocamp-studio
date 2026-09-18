@@ -40,7 +40,58 @@ function ratePerDay(rows: Array<{ date: Date; unitsSold: number }>): number {
   return den === 0 ? 0 : num / den
 }
 
+/**
+ * Component.incomingQty is documented in the schema as "Derived from open
+ * PurchaseOrderLines — do not set directly." Nothing derived it.
+ *
+ * Found 18 Sept 2026 chasing a complaint of Brandon's: Mouse had told him hang
+ * tags were "genuinely uncounted" while an order for them sat open, and he was
+ * right that it should have known. It could not have. Main label and Size label
+ * each had 2,000 outstanding on a SENT PO and both read incomingQty 0, so every
+ * consumer of that field — this forecast, planComponentKickoff's coverage
+ * check, the "N incoming" note in Mouse's own catalogue — has been reading the
+ * shelf and calling it the whole picture. The effect is always in the same
+ * direction: things already on order look unordered, so Mouse asks for them
+ * again.
+ *
+ * Recomputed wholesale from the open lines rather than adjusted per write:
+ * self-healing, and it cannot drift the way an incremental counter does.
+ */
+export async function deriveIncomingQty(): Promise<number> {
+  const [components, openLines] = await Promise.all([
+    db.component.findMany({ select: { id: true, incomingQty: true } }),
+    db.purchaseOrderLine.findMany({
+      where: {
+        componentId: { not: null },
+        purchaseOrder: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } },
+      },
+      select: { componentId: true, qtyOrdered: true, qtyReceived: true },
+    }),
+  ])
+
+  const outstanding = new Map<string, number>()
+  for (const l of openLines) {
+    // What is still to come, not what was ordered — a partially received line
+    // has already put some of its quantity on the shelf, where onHandQty counts
+    // it. Counting the whole line again here would double it.
+    const left = Math.max(0, Number(l.qtyOrdered) - Number(l.qtyReceived))
+    if (left > 0) outstanding.set(l.componentId!, (outstanding.get(l.componentId!) ?? 0) + left)
+  }
+
+  let changed = 0
+  for (const c of components) {
+    const next = outstanding.get(c.id) ?? 0
+    if (Number(c.incomingQty) === next) continue
+    await db.component.update({ where: { id: c.id }, data: { incomingQty: next } })
+    changed++
+  }
+  return changed
+}
+
 export async function recomputeForecasts() {
+  // Before anything reads incomingQty — which this function, and the component
+  // cover it computes, both do.
+  await deriveIncomingQty()
   const since = laMidnight(56)
   const [products, components, sales, movements, openPos] = await Promise.all([
     db.product.findMany({

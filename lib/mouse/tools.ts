@@ -2507,6 +2507,49 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  check_sent_mail: {
+    def: {
+      name: 'check_sent_mail',
+      description:
+        'Look up what has actually been emailed, from the record rather than from memory. ' +
+        'USE THIS BEFORE SAYING ANYTHING ABOUT WHETHER A MESSAGE WENT OUT — especially before ' +
+        'telling someone a mail they believe they received was never sent. On 18 Sept 2026 ' +
+        'Brandon said an email had arrived; Mouse told him twice it had never been sent and ' +
+        'then refused to act on it. The row was in this table the whole time, sent four ' +
+        'minutes earlier, to the wrong address. A person reporting what is in their own inbox ' +
+        'is evidence; your recollection of your own past turns is not.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          to: str('Only mail to this address, if you are checking one recipient'),
+          days: num('How far back to look. Default 7.'),
+        },
+      },
+    },
+    run: async (i) => {
+      const since = new Date(Date.now() - (Number(i.days) > 0 ? Number(i.days) : 7) * 864e5)
+      const rows = await db.sentEmail.findMany({
+        where: {
+          createdAt: { gte: since },
+          ...(i.to ? { toAddress: { contains: String(i.to), mode: 'insensitive' as const } } : {}),
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 25,
+        select: { toAddress: true, ccAddress: true, subject: true, sentBy: true, createdAt: true },
+      })
+      return {
+        count: rows.length,
+        sent: rows.map((r) => ({
+          at: r.createdAt.toISOString(),
+          to: r.toAddress,
+          cc: r.ccAddress,
+          subject: r.subject,
+          by: r.sentBy ?? 'chat',
+        })),
+      }
+    },
+  },
+
   send_email: {
     def: {
       name: 'send_email',
@@ -2526,6 +2569,14 @@ export const TOOLS: Record<string, Tool> = {
           cc: str('Extra people to copy, comma-separated, if someone in the chat asked for it. Brandon is added automatically regardless.'),
           subject: str('Subject line'),
           body: str('The message. Plain text. Professional and straight — none of your studio voice goes outside. Sign off as "— Studio Mouse", never as Cleo Camp or as a person.'),
+          confirmed: {
+            type: 'boolean' as const,
+            description:
+              'Leave this out to DRAFT. The call then sends nothing and hands the message back ' +
+              'for you to show in full. Pass true only after a person has seen that exact text ' +
+              'in the chat and said to send it, or has told you in plain words to send without ' +
+              'reviewing it first. "Let me see a draft" means you never pass true on that turn.',
+          },
         },
         required: ['to', 'subject', 'body'],
       },
@@ -2555,8 +2606,47 @@ export const TOOLS: Record<string, Tool> = {
         people.some((p) => (p.email ?? '').toLowerCase() === to.toLowerCase()) ||
         /@(send\.)?cleocamp\.com$/i.test(to)
 
-      const { sendEmail } = await import('@/lib/email')
       const cc = [...new Set(['brandon@cleocamp.com', ...extraCc])]
+
+      // THIS CHECK USED TO RUN AND THEN SEND ANYWAY, reporting the problem as a
+      // note underneath a mail that had already gone. On 18 Sept 2026 that put a
+      // message in front of janeclabash@gmail.com — an address held nowhere in
+      // the system, read off a Note from 3 Sept that had since been superseded
+      // by Jane's real jane@cleocamp.com. Mouse dutifully observed afterwards
+      // that the address "isn't the one I hold on file." A guard that reports
+      // after the irreversible step is not a guard.
+      if (!known) {
+        return {
+          sent: false,
+          reason:
+            `"${to}" is not an address held for any vendor or person on file, so nothing was sent. ` +
+            `Do not retry with a guess. Say whose address you were reaching for and ask for the ` +
+            `right one — or, if the person in the chat gives it to you now, record it on their ` +
+            `record first (update_person / update_vendor) and then send.`,
+        }
+      }
+
+      // A DRAFT UNLESS EXPLICITLY CONFIRMED. Brandon, 18 Sept 2026, having
+      // written "Let me draft" in the same breath as asking for the email:
+      // "And I said let me seee a draft!!!" The instruction was sitting right
+      // there in the message that triggered the send. Prose in a tool
+      // description did not hold it, so the default is now structural: the
+      // first call renders the message and sends nothing.
+      if (i.confirmed !== true) {
+        return {
+          sent: false,
+          draft: true,
+          to, cc,
+          subject: String(i.subject),
+          body: String(i.body),
+          tellTheUser:
+            'Show this draft in full — recipient, cc, subject and body — and wait to be told to ' +
+            'send it. Call send_email again with confirmed: true only once a person has seen ' +
+            'this exact text and said to send it.',
+        }
+      }
+
+      const { sendEmail } = await import('@/lib/email')
       const res = await sendEmail({
         to: [to],
         cc,
@@ -2570,16 +2660,14 @@ export const TOOLS: Record<string, Tool> = {
           toAddress: to, ccAddress: cc.join(', '),
           subject: String(i.subject), body: String(i.body),
           resendId: (res as { id?: string }).id ?? null,
+          sentBy: 'chat (send_email)',
         },
       })
       return {
         sent: true,
         to,
         cc,
-        knownRecipient: known,
-        note: known
-          ? 'Replies come back to mouse@send.cleocamp.com, so you will read them.'
-          : `That address is not one held for any vendor or person on file — say so, in case it is wrong.`,
+        note: 'Replies come back to mouse@send.cleocamp.com, so you will read them.',
       }
     },
   },

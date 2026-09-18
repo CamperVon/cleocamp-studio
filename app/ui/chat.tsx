@@ -201,6 +201,12 @@ export function Chat() {
   const [restoring, setRestoring] = useState(true)
   const [files, setFiles] = useState<PendingFile[]>([])
   const [fileError, setFileError] = useState<string | null>(null)
+  // Brandon, 18 Sept 2026: "I need to be able to type in box while it's
+  // thinking. Queing the next." The box used to go dead for the whole turn,
+  // so a thought that arrived mid-answer had to be held in your head until
+  // Mouse finished. Anything sent while a turn is in flight waits here and
+  // goes the moment that turn lands.
+  const [queue, setQueue] = useState<Array<{ text: string; files: PendingFile[] }>>([])
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -313,20 +319,39 @@ export function Chat() {
     setFiles((prev) => prev.filter((_, j) => j !== i))
   }
 
-  async function send(e: { preventDefault: () => void }) {
+  function send(e: { preventDefault: () => void }) {
     e.preventDefault()
     const text = input.trim()
-    if ((!text && files.length === 0) || pending) return
+    if (!text && files.length === 0) return
     setInput('')
-    // Enter alone sent this, but the box had grown for a multi-line draft —
-    // collapse it back rather than leaving a tall empty box behind.
+    // The box grows for a multi-line draft — collapse it back rather than
+    // leaving a tall empty box behind.
     if (inputRef.current) inputRef.current.style.height = 'auto'
     const attached = files
     setFiles([])
+    // The message lands in the thread either way, so what you typed is on
+    // screen immediately whether it goes now or waits its turn.
     setMessages((m) => [
       ...m,
       { role: 'user', text: text || "Here's a document — take a look.", attachments: attached },
     ])
+    if (pending) {
+      setQueue((q) => [...q, { text, files: attached }])
+      return
+    }
+    void deliver(text, attached)
+  }
+
+  // Drains one queued message as soon as the turn in flight finishes.
+  useEffect(() => {
+    if (pending || queue.length === 0) return
+    const [next, ...rest] = queue
+    setQueue(rest)
+    void deliver(next.text, next.files)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, queue])
+
+  async function deliver(text: string, attached: PendingFile[]) {
     setPending(attached.length ? 'Reading' : 'Thinking')
 
     try {
@@ -487,7 +512,6 @@ export function Chat() {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={!!pending}
             aria-label="Attach a file"
             title="Attach an invoice or old PO"
             className="shrink-0 rounded-lg border border-line px-3.5 py-2.5 text-muted
@@ -507,17 +531,12 @@ export function Chat() {
               el.style.height = 'auto'
               el.style.height = `${Math.min(el.scrollHeight, 128)}px`
             }}
-            onKeyDown={(e) => {
-              // Enter sends; shift+enter writes a line the way it does
-              // everywhere else. Still typing a word (IME composition)
-              // shouldn't count as either.
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault()
-                send(e)
-              }
-            }}
+            // Enter writes a line. Only the Send button sends — Brandon,
+            // 18 Sept 2026: "I need to be able to hit return without it
+            // sending. Only the send button should fire." Dictated messages
+            // arrive with line breaks in them, and every one of those breaks
+            // used to fire a half-written thought at Mouse.
             placeholder="What happened?"
-            disabled={!!pending}
             rows={1}
             className="min-w-0 flex-1 resize-none rounded-lg border border-line bg-bg px-3.5 py-2.5
                        text-base leading-snug outline-none focus-visible:border-accent
@@ -525,7 +544,7 @@ export function Chat() {
           />
           <button
             type="submit"
-            disabled={!!pending || (!input.trim() && files.length === 0)}
+            disabled={!input.trim() && files.length === 0}
             className="shrink-0 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white
                        disabled:opacity-40 dark:text-[#0F1211]"
           >
