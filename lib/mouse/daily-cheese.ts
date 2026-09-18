@@ -92,8 +92,16 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
   for (const po of pos) {
     const isPast = !!po.expectedAt && po.expectedAt < today && po.status !== 'PARTIALLY_RECEIVED'
     const dueSoon = !!po.expectedAt && po.expectedAt >= today && po.expectedAt <= cutoff
-    const isDraft = po.status === 'DRAFT'
-    if (!isPast && !dueSoon && !isDraft) continue
+    // A draft is a normal working state, not a fault. Brandon, 18 Sept 2026:
+    // "Sometimes they are going to be drafts for a minute as they are being
+    // reviewed internally." Every draft used to appear here the morning after
+    // it was written, told to justify itself — PO 2378 was eight hours old and
+    // already on the list. A draft earns a mention once it has sat long enough
+    // to look forgotten rather than in progress, on the same three days
+    // everything else here uses. A draft whose own expected date is close is
+    // still caught by dueSoon above, whatever its age.
+    const staleDraft = po.status === 'DRAFT' && daysLate(po.createdAt, today) >= URGENT_WINDOW_DAYS
+    if (!isPast && !dueSoon && !staleDraft) continue
 
     for (const l of po.lines) if (l.productVariant) coveredProductIds.add(l.productVariant.product.id)
 
@@ -101,13 +109,14 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
     const what = products.length ? products.join(', ') : 'this order'
     const on = po.expectedAt ?? po.orderedAt ?? today
 
-    const sentence = isDraft
-      ? `PO ${po.poNumber} (${po.vendor.name}, ${what}) is still a draft. Send it or say why not.`
+    const sentence = staleDraft
+      ? `PO ${po.poNumber} (${po.vendor.name}, ${what}) has been a draft since ` +
+        `${po.createdAt.toISOString().slice(0, 10)} and has not gone out.`
       : isPast && isReallyOverdue(on, today)
         ? `PO ${po.poNumber} (${po.vendor.name}, ${what}) is overdue. Confirm when it will ship.`
         : `PO ${po.poNumber} (${po.vendor.name}, ${what}). ${duePhrase(on, today)} Confirm it is on track.`
 
-    out.push({ on, tag: isDraft ? 'DRAFT' : tag(on, today), sentence })
+    out.push({ on, tag: staleDraft ? 'DRAFT' : tag(on, today), sentence })
   }
 
   // ── Runs at a maker ───────────────────────────────────────

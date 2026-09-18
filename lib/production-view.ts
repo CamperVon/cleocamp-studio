@@ -123,6 +123,14 @@ export async function buildProductionView(): Promise<ProductState[]> {
           : `${totals} across ${use.length} lines`
       const overdue = !!po.expectedAt && po.expectedAt < today && po.status !== 'PARTIALLY_RECEIVED'
       const dueSoon = !!po.expectedAt && po.expectedAt >= today && po.expectedAt <= urgentCutoff
+      // Red means something is wrong. A purchase order being reviewed
+      // internally is not wrong — Brandon, 18 Sept 2026: "Sometimes they are
+      // going to be drafts for a minute as they are being reviewed
+      // internally." It still says DRAFT in its line either way; what waits
+      // for the three days is the colour.
+      const staleDraft =
+        po.status === 'DRAFT' &&
+        po.createdAt < laMidnight(URGENT_WINDOW_DAYS)
       add(pid, {
         kind: 'order',
         text:
@@ -131,7 +139,7 @@ export async function buildProductionView(): Promise<ProductState[]> {
             : `PO ${po.poNumber} · ${po.vendor.name} · ${what}` +
               (po.expectedAt ? ` — due ${day(po.expectedAt)}${overdue ? ', passed' : ''}` : ' — no date confirmed'),
         on: po.expectedAt ?? po.orderedAt,
-        flag: overdue || dueSoon || po.status === 'DRAFT',
+        flag: overdue || dueSoon || staleDraft,
         href: `/po/${po.poNumber}`,
       })
     }
