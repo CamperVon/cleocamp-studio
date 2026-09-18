@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server'
+import { after, NextResponse, type NextRequest } from 'next/server'
 import { Webhook } from 'svix'
 import { db } from '@/lib/db'
 
@@ -130,5 +130,34 @@ export async function POST(req: NextRequest) {
   // never the problem; wanting the copies at all was the wrong premise. Mail
   // still lands here and is still read on the nightly pass and in the Inbox —
   // what stopped is the copy landing in a person's inbox uninvited.
+
+  // READ IT NOW, not tonight. Brandon, 18 Sept 2026, on replying to the Daily
+  // Cheese with a correction: the mail landed here instantly and then sat
+  // untouched until the 5am cron — about twenty hours, and a Friday evening
+  // reply waited through the weekend for a Monday email. The webhook was
+  // already awake at the only moment that mattered and filed the message
+  // without reading it.
+  //
+  // after() returns the 200 first and does the work behind it, so Resend gets
+  // its fast acknowledgement and never retries on a slow model call. The
+  // nightly cron stays exactly as it was: this is the fast path, that is the
+  // net beneath it, and nothing depends on this having worked.
+  //
+  // Two messages arriving in the same instant can each read the other's mail
+  // before either finishes, and raise the same thing twice. That is left as-is
+  // deliberately: claiming rows up front would fix it by marking mail read
+  // before it has been reasoned about, and a duplicate question someone can
+  // dismiss beats a message silently swallowed by a failed run.
+  after(async () => {
+    try {
+      const { nightlyPass } = await import('@/lib/mouse/nightly-pass')
+      await nightlyPass()
+    } catch (err) {
+      // Never let this surface as a webhook failure — the mail is stored, and
+      // the cron will read it tonight regardless.
+      console.error('[inbound] read-on-arrival failed, leaving it for the cron', err)
+    }
+  })
+
   return NextResponse.json({ ok: true, stored: stored.id })
 }

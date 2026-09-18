@@ -44,6 +44,16 @@ export async function nightlyPass() {
     take: 15,
   })
 
+  // Nothing to read is not a reason to wake a model up. This used to build
+  // "(no unread mail)" and hand it to Opus at high effort anyway, which cost
+  // real money to be told there was no post. It matters more now that arriving
+  // mail triggers this as well as the cron: a second email landing moments
+  // after the first finds its own work already done, and should cost nothing
+  // to discover that.
+  if (!unread.length) {
+    return { read: 0, raised: 0, summary: null, model: null, skipped: 'no unread mail' as const }
+  }
+
   const mail = unread.length
     ? unread
         .map(
