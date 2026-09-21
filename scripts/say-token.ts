@@ -73,10 +73,13 @@ async function main() {
   console.log('the page it lands on. The computer one signs them into the app')
   console.log('as themselves for a month. Same secret behind both.')
   console.log('───────────────────────────────────────────────────────────────')
-  console.log('\nFor the Siri shortcut, the same secret goes in a header:\n')
-  console.log(`  POST ${base}/api/say?format=text`)
-  console.log(`  Authorization: Bearer ${token}`)
-  console.log('  Body: the dictated text, as plain text\n')
+  console.log('\nFor the Siri shortcut: Dictate Text, then Get Contents of')
+  console.log('URL with Show More opened — Method POST, one header, and a')
+  console.log('JSON body with a single field named "text" holding the')
+  console.log('Dictated Text variable. Then Speak Text.\n')
+  console.log(`  URL:           ${base}/api/say?format=text`)
+  console.log('  Header name:   Authorization')
+  console.log(`  Header value:  Bearer ${token}\n`)
   console.log('This is the only time either is shown. Nothing can read it back.')
 }
 

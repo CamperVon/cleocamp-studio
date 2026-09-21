@@ -32,7 +32,12 @@ export function PhoneSetup({
         phone: `${origin}/enter?k=${live}&to=say`,
         computer: `${origin}/enter?k=${live}`,
         siri: `${origin}/api/say?format=text`,
-        header: `Authorization: Bearer ${live}`,
+        // Shortcuts asks for a header's name and value in two separate boxes,
+        // so they are two separate things to copy. Handing over
+        // "Authorization: Bearer abc" as one string is not pasteable anywhere
+        // in that screen.
+        headerName: 'Authorization',
+        headerValue: `Bearer ${live}`,
       }
     : null
 
@@ -156,13 +161,41 @@ export function PhoneSetup({
             note="Open once in their browser. Signs them in as themselves for a month."
           />
           <details className="text-xs">
-            <summary className="cursor-pointer text-faint">Siri, if they want it</summary>
-            <div className="mt-2 space-y-2">
-              <p className="text-faint">
-                Shortcuts → Dictate Text → Get Contents of URL (POST, with these) → Speak Text.
-              </p>
-              <Row id={`${personId}-siri`} label="URL" value={links.siri} />
-              <Row id={`${personId}-header`} label="Header" value={links.header} />
+            <summary className="cursor-pointer text-faint">
+              Siri, if they want it &mdash; &ldquo;Hey Siri, tell Mouse&rdquo;
+            </summary>
+            <div className="mt-3 space-y-3">
+              {/* Written out step by step because the middle of it is not
+                  guessable. Get Contents of URL hides everything that matters
+                  behind Show More, and the body has to be JSON with one field
+                  named text — which is the part Brandon got stuck on. */}
+              <ol className="list-decimal space-y-1.5 pl-4 text-faint">
+                <li>Shortcuts app → <span className="text-ink">+</span> → Add Action</li>
+                <li>Search <span className="text-ink">Dictate Text</span>, add it</li>
+                <li>Add Action → search <span className="text-ink">Get Contents of URL</span>, add it</li>
+                <li>Paste the URL below into its URL box</li>
+                <li>Tap <span className="text-ink">Show More</span> on that same action</li>
+                <li>Method → <span className="text-ink">POST</span></li>
+                <li>
+                  Headers → <span className="text-ink">Add new header</span>, then paste the
+                  name and value below into the two boxes
+                </li>
+                <li>Request Body → <span className="text-ink">JSON</span></li>
+                <li>
+                  <span className="text-ink">Add new field</span> → choose{' '}
+                  <span className="text-ink">Text</span> → key is{' '}
+                  <code className="text-ink">text</code>
+                </li>
+                <li>
+                  Tap that field&rsquo;s value box and pick the{' '}
+                  <span className="text-ink">Dictated Text</span> variable from the keyboard row
+                </li>
+                <li>Add Action → search <span className="text-ink">Speak Text</span>, add it (it fills itself in)</li>
+                <li>Rename the shortcut <span className="text-ink">Tell Mouse</span> &mdash; that is what they say to Siri</li>
+              </ol>
+              <Row id={`${personId}-siri`} label="URL (step 4)" value={links.siri} />
+              <Row id={`${personId}-hname`} label="Header name (step 7)" value={links.headerName} />
+              <Row id={`${personId}-hvalue`} label="Header value (step 7)" value={links.headerValue} />
             </div>
           </details>
         </div>
