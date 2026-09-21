@@ -1,3 +1,4 @@
+import { headers } from 'next/headers'
 import { db } from '@/lib/db'
 import { Page, Card, Empty } from '@/app/ui/primitives'
 import { PhoneSetup } from './phone-setup'
@@ -5,57 +6,37 @@ import { PhoneSetup } from './phone-setup'
 export const dynamic = 'force-dynamic'
 
 /**
- * Who can tell Mouse things from their phone, and how to set someone up.
+ * Everyone's links, on the page, always.
  *
- * Behind the app's shared password, so anyone already trusted with that can
- * hand out a link without a secret travelling through a chat, an email, or a
- * person relaying it. Each link is shown once, to the browser that asked for
- * it, and is unreadable afterwards — creating a new one replaces the old.
+ * They were behind a button at first, and before that shown once at minting
+ * and never again — a reflex rather than a decision, since the token sits in
+ * plain text on the Person row and this page is already behind the admin
+ * password. Hiding it protected nothing and meant the only way to see a link
+ * again was to replace it. Brandon, 21 Sept 2026: "put the link on the links
+ * page so i can always find them."
  */
 export default async function Phones() {
   // Cleo Camp's own people only. Nicki works for Antonio's — she belongs on
   // purchase orders and in vendor notes, not on the list of who gets a key to
-  // this app. Brandon, 21 Sept 2026.
+  // this app.
   const people = await db.person.findMany({
     where: { active: true, external: false },
     select: { id: true, name: true, role: true, sayToken: true },
     orderBy: { name: 'asc' },
   })
 
+  // Absolute, because these get copied into a message and opened on a device
+  // that has no idea what this page's origin was.
+  const h = await headers()
+  const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'localhost:3000'
+  const proto = h.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https')
+  const origin = `${proto}://${host}`
+
   return (
     <Page
       title="Phones"
-      lede="Tell Mouse something without opening the app — from the car, the studio floor, anywhere."
+      lede="Give someone their own link and Mouse knows who it is talking to. Treat a link like a password."
     >
-      <Card title="How it works">
-        <div className="space-y-3 px-4 py-4 text-sm leading-relaxed sm:px-5">
-          <p>
-            Each person gets their own link, and it does two things. It signs them into the app
-            as themselves, so what they write down carries their name instead of appearing from
-            nowhere. And it sets up the dictate screen, so they can tell Mouse something without
-            opening anything &mdash; from the car, the studio floor, anywhere.
-          </p>
-          <p>
-            They open it on their phone, and then &mdash; on that same page, without going
-            anywhere else &mdash; Share &rarr; Add to Home Screen. The name comes up as{' '}
-            <strong className="font-medium">Say Cheese</strong> already. The icon remembers who
-            they are, so there is never a password to type, and the keyboard&rsquo;s microphone
-            does the talking.
-          </p>
-          <p className="text-faint">
-            Links stay readable here &mdash; use <strong className="font-medium">Show links</strong>{' '}
-            rather than making a new one, which switches off the old one on both their devices.
-            The shared password still works and always will. Anyone using it is simply anonymous,
-            the way everyone was until now, and nothing stops working for them.
-          </p>
-          <p className="text-faint">
-            The link is a password. Send it the way you would send one, and only to the person it
-            belongs to. Making a new link for someone switches off their old one straight away,
-            which is also how you take a phone away.
-          </p>
-        </div>
-      </Card>
-
       <Card title="Everyone">
         {people.length ? (
           <ul className="divide-y divide-line">
@@ -65,7 +46,8 @@ export default async function Phones() {
                   personId={p.id}
                   name={p.name}
                   role={p.role}
-                  alreadySetUp={Boolean(p.sayToken)}
+                  origin={origin}
+                  token={p.sayToken}
                 />
               </li>
             ))}
