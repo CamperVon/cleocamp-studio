@@ -30,6 +30,8 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith('/api/finances') ||
     pathname === '/say' ||
     pathname === '/api/say' ||
+    // Trading a personal link for a session cannot itself require a session.
+    pathname === '/enter' ||
     pathname === '/manifest.webmanifest'
   ) {
     return NextResponse.next()

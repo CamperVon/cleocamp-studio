@@ -27,9 +27,19 @@ export default async function Phones() {
       <Card title="How it works">
         <div className="space-y-3 px-4 py-4 text-sm leading-relaxed sm:px-5">
           <p>
-            Each person gets their own link. Opening it once on their phone saves it there, and
-            the link clears itself out of the address bar. After that it is one tap from the
-            home screen, and the keyboard&rsquo;s microphone does the talking.
+            Each person gets their own link, and it does two things. It signs them into the app
+            as themselves, so what they write down carries their name instead of appearing from
+            nowhere. And it sets up the dictate screen, so they can tell Mouse something without
+            opening anything &mdash; from the car, the studio floor, anywhere.
+          </p>
+          <p>
+            Opening it once on their phone saves both, and the link clears itself out of the
+            address bar. Then Share &rarr; Add to Home Screen. The keyboard&rsquo;s microphone
+            does the talking.
+          </p>
+          <p className="text-faint">
+            The shared password still works and always will. Anyone using it is simply anonymous,
+            the way everyone was until now, and nothing stops working for them.
           </p>
           <p className="text-faint">
             The link is a password. Send it the way you would send one, and only to the person it

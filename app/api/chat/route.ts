@@ -2,6 +2,7 @@ import { completedWrites } from '@/lib/mouse/outcomes'
 import { NextResponse, type NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { chatTurn } from '@/lib/mouse/agent'
+import { currentPersonId } from '@/lib/session'
 
 export const maxDuration = 300
 
@@ -107,9 +108,28 @@ export async function POST(req: NextRequest) {
     },
   })
 
+  // Tell Mouse who is typing, when the session says so.
+  //
+  // Somebody who signed in with the shared password is genuinely anonymous and
+  // stays that way — null here is an ordinary answer, not a failure, and
+  // nothing refuses to run for want of a name. Somebody who opened their own
+  // link is Cleo or Jane or Brandon, and Mouse can say so in what it writes
+  // instead of every note being authored by the building.
+  //
+  // The name rides on the instruction rather than being stored on the message,
+  // so the chat still shows people their own words back rather than a row of
+  // "[Cleo]" prefixes on everything they say.
+  const personId = await currentPersonId()
+  const person = personId
+    ? await db.person.findUnique({ where: { id: personId }, select: { name: true, role: true } })
+    : null
+  const authored = person
+    ? `[${person.name}${person.role ? `, ${person.role}` : ''}] ${instruction}`
+    : instruction
+
   const r = await chatTurn(
     thread.id,
-    instruction,
+    authored,
     attachments.map((a) => ({ mediaType: a.mediaType, base64: a.base64, filename: a.filename })),
   )
 

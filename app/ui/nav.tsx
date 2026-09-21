@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { signOut } from '@/app/login/actions'
 import { Wordmark } from './wordmark'
+import { db } from '@/lib/db'
+import { currentPersonId } from '@/lib/session'
 
 const LINKS = [
   { href: '/', label: 'Home' },
@@ -15,7 +17,17 @@ const LINKS = [
   { href: '/phones', label: 'Phones' },
 ]
 
-export function Nav() {
+export async function Nav() {
+  // Who the app thinks you are, shown because the answer changes what gets
+  // written down. Signed in with the shared password you are nobody in
+  // particular and everything still works; opened from your own link you are
+  // Cleo, and your name goes on what you record. Silent about it either way
+  // would leave people guessing which one they are.
+  const personId = await currentPersonId()
+  const person = personId
+    ? await db.person.findUnique({ where: { id: personId }, select: { name: true } })
+    : null
+
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-bg/85 backdrop-blur">
       <div className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-3 sm:px-6">
@@ -40,6 +52,11 @@ export function Nav() {
             </Link>
           ))}
         </nav>
+        {person ? (
+          <span className="shrink-0 text-sm text-muted" title="Signed in from your own link">
+            {person.name}
+          </span>
+        ) : null}
         <form action={signOut}>
           <button className="shrink-0 text-sm text-faint hover:text-ink">Sign out</button>
         </form>

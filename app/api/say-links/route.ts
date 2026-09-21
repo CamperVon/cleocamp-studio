@@ -31,7 +31,9 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     name: person.name,
     replaced: Boolean(person.sayToken),
-    link: `${origin}/say?k=${token}`,
+    // /enter signs them in as themselves and then forwards to the dictate
+    // page with the token, so one link sets up both doors.
+    link: `${origin}/enter?k=${token}`,
     // Everything the Siri shortcut needs, so nobody has to assemble it from
     // parts or be told what a bearer token is.
     siri: { url: `${origin}/api/say?format=text`, header: `Bearer ${token}` },
