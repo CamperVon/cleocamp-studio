@@ -77,8 +77,10 @@ async function main() {
   console.log('URL with Show More opened — Method POST and a JSON body with')
   console.log('one field named "text" holding the Dictated Text variable.')
   console.log('Then Speak Text. No headers; the URL carries the key.')
-  console.log('Name it "Say Cheese", NOT "Tell Mouse" — Siri reads "tell"')
-  console.log('plus a name as a message to that contact and sends a text.\n')
+  console.log('Name it exactly "Log Update to Studio Mouse" — tested on a')
+  console.log('real phone. Names starting "Tell" or "Say" get taken as a')
+  console.log('command to message a contact, and short ones fall through')
+  console.log('to a contact search.\n')
   console.log(`  ${base}/api/say?format=text&k=${token}\n`)
   console.log('This is the only time either is shown. Nothing can read it back.')
 }

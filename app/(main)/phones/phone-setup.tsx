@@ -162,7 +162,7 @@ export function PhoneSetup({
           />
           <details className="text-xs">
             <summary className="cursor-pointer text-faint">
-              Siri, if they want it &mdash; &ldquo;Hey Siri, tell Mouse&rdquo;
+              Siri, if they want it &mdash; &ldquo;Hey Siri, Log Update to Studio Mouse&rdquo;
             </summary>
             <div className="mt-3 space-y-3">
               <p className="text-faint">
@@ -183,21 +183,27 @@ export function PhoneSetup({
                 </li>
                 <li>Search <span className="text-ink">Speak Text</span>, add it</li>
                 <li>
-                  Name the shortcut <span className="text-ink">Say Cheese</span>, then say
-                  &ldquo;Hey Siri, Say Cheese&rdquo;
+                  Name the shortcut exactly{' '}
+                  <span className="text-ink">Log Update to Studio Mouse</span>, then say
+                  &ldquo;Hey Siri, Log Update to Studio Mouse&rdquo;
                 </li>
               </ol>
-              {/* NOT "Tell Mouse". Siri owns "tell <someone> <something>" as a
-                  messaging command, and a contact called Mouse wins it: on
-                  21 Sept 2026 that sent an empty text to the Mouse contact,
-                  which arrived in the inbox through T-Mobile's SMS-to-email
-                  gateway and got raised as a question. The shortcut never ran.
-                  A name that is not a verb plus a contact cannot be hijacked
-                  that way, and it matches the home screen icon. */}
+              {/* THIS NAME IS TESTED, on Brandon's phone, 21 Sept 2026. Do not
+                  tidy it into something shorter without testing the new one on
+                  a real phone.
+                  "Tell Mouse" sent an empty text to the Mouse contact instead
+                  of running anything — Siri owns "tell <someone> <something>"
+                  and a matching contact wins it. It reached the inbox through
+                  T-Mobile's SMS-to-email gateway and got raised as a question.
+                  "Say Cheese" and other short names kept falling through to a
+                  contact search too. What works is a name whose opening words
+                  are not a system command, which "Log Update to…" is not.
+                  Guessing at Siri's intent matching from a keyboard cost an
+                  evening; the only evidence that counts is a phone. */}
               <p className="text-faint">
-                Do not call it &ldquo;Tell Mouse&rdquo;. Siri reads &ldquo;tell&rdquo; plus a name
-                as an instruction to message that person, so if there is a Mouse in the contacts it
-                sends them a text instead of running the shortcut.
+                That exact name matters. Anything starting &ldquo;Tell&rdquo; or
+                &ldquo;Say&rdquo; gets taken as a command to message a contact, and shorter names
+                fall through to a contact search. This one is tested.
               </p>
               <Row id={`${personId}-siri`} label="URL (step 4)" value={links.siri} />
               <p className="text-faint">
