@@ -528,6 +528,9 @@ model PurchaseOrder {
   forProductId         String?
   /// Payment terms as agreed, in plain words for the PO document.
   paymentTerms         String?
+  /// Payment terms in the second language. Deliberately a stored sentence:
+  /// "50% on order, balance on delivery" mistranslated is an invoice dispute.
+  paymentTermsAlt      String?
   /// Who the vendor should confirm receipt with, one per line, for this
   /// order only. Null falls back to DocumentDefaults — which is the usual
   /// case. Here because a draft gets edited: "put Nicki on this one" is a
@@ -536,8 +539,9 @@ model PurchaseOrder {
   contactLines         String?
   /// "en", "es" or "both" — what language the document renders in, labels
   /// and dates. Defaults from the vendor's documentLanguage when not given.
-  /// Only the fixed chrome is translated by the app; notes, terms and line
-  /// text are content, written in the right language when they are written.
+  /// Only the fixed chrome is translated by the app. Notes, terms and line
+  /// text are content and live in the *Alt columns beside their originals,
+  /// written in the right language rather than translated at render time.
   /// See lib/po-strings.ts.
   language             String              @default("en")
   /// Percentage due at order rather than on delivery. RichLine take 50% up
@@ -561,6 +565,9 @@ model PurchaseOrder {
   /// asked for the same thing on 4 Sept: "notes at the end of pdf should only
   /// be notes i sent, not an endless list of things SM puts there."
   notes                String?
+  /// The same notes in the second language. Same rule as the rest: what the
+  /// vendor is asked to do is content, and content is written.
+  notesAlt             String?
   createdAt            DateTime            @default(now())
 
   vendor     Vendor              @relation(fields: [vendorId], references: [id])
@@ -590,11 +597,20 @@ model PurchaseOrderLine {
   /// of. Ignored when componentId or productVariantId is set; those carry
   /// their own name. See lib/po.ts:poLineLabel.
   description      String?
+  /// The same line in the document's second language, for a bilingual order.
+  /// Written, never machine-translated at render time — see the note on
+  /// PurchaseOrder.language and lib/po-strings.ts. Null prints the one
+  /// version, which is right for a single-language document and honest for a
+  /// bilingual one nobody has finished writing.
+  descriptionAlt   String?
   /// Quantity in the PURCHASE unit (rolls, or finished pieces for a
   /// cut-and-sew line), with the conversion recorded so incoming stock lands
   /// in the consumption unit (yards).
   qtyOrdered       Decimal @db.Decimal(12, 3)
   unit             String
+  /// "pz" beside "pcs", "iarde" beside "yards". Short enough to look trivial
+  /// and exactly the kind of thing a factory reads rather than the number.
+  unitAlt          String?
   unitCostCents    Int?
   qtyReceived      Decimal @default(0) @db.Decimal(12, 3)
 

@@ -106,6 +106,20 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
   // See the same fix, and why, in app/po/[poNumber]/page.tsx: notes is
   // exactly what was actually written, nothing synthesized per line.
   const notes: string[] = po.notes ? [po.notes] : []
+  const notesAlt: string[] = po.notesAlt ? [po.notesAlt] : []
+
+  // A bilingual document carries the order twice, not just its labels twice.
+  // Brandon, 21 Sept 2026: "These multi lingual POs need to have the actual
+  // order in both languages." Printing ITEM / ARTICOLO above a line only an
+  // English reader can act on is half a document.
+  //
+  // The second version is whatever somebody wrote into the *Alt columns. When
+  // one is missing the single version prints on its own, which is honest —
+  // better a vendor sees one language than two where the second was invented
+  // at render time. See lib/po-strings.ts on why that line is drawn here.
+  const bilingual = lang === 'en_es' || lang === 'en_it'
+  const pair = (main: string | null | undefined, alt: string | null | undefined) =>
+    bilingual && alt && alt.trim() && alt.trim() !== (main ?? '').trim() ? alt.trim() : null
 
   const lineLabel = (l: (typeof po.lines)[number]) => {
     if (l.component) {
@@ -143,7 +157,12 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
               </Text>
             ) : null}
             {po.paymentTerms ? (
-              <Text style={styles.terms}><Text style={styles.muted}>{t('terms')} </Text>{po.paymentTerms}</Text>
+              <>
+                <Text style={styles.terms}><Text style={styles.muted}>{t('terms')} </Text>{po.paymentTerms}</Text>
+                {pair(po.paymentTerms, po.paymentTermsAlt) ? (
+                  <Text style={[styles.terms, styles.muted]}>{pair(po.paymentTerms, po.paymentTermsAlt)}</Text>
+                ) : null}
+              </>
             ) : null}
           </View>
         </View>
@@ -181,10 +200,21 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
             <View key={l.id} style={styles.tr}>
               <View style={styles.tdItem}>
                 {l.productVariant?.imageUrl ? <Image src={l.productVariant.imageUrl} style={styles.thumb} /> : null}
-                <Text>{lineLabel(l)}</Text>
+                <View>
+                  <Text>{lineLabel(l)}</Text>
+                  {/* Stacked, not slashed. A line description is a sentence,
+                      and two of them joined by a slash reads as one confused
+                      sentence rather than as the same thing said twice. */}
+                  {pair(lineLabel(l), l.descriptionAlt) ? (
+                    <Text style={styles.muted}>{pair(lineLabel(l), l.descriptionAlt)}</Text>
+                  ) : null}
+                </View>
               </View>
               <Text style={styles.tdQty}>{Number(l.qtyOrdered).toLocaleString()}</Text>
-              <Text style={styles.tdUnit}>{l.unit}</Text>
+              <Text style={styles.tdUnit}>
+                {l.unit}
+                {pair(l.unit, l.unitAlt) ? ` / ${pair(l.unit, l.unitAlt)}` : ''}
+              </Text>
               <Text style={styles.tdPrice}>{l.unitCostCents !== null ? money(l.unitCostCents) : '—'}</Text>
               <Text style={styles.tdAmount}>{l.unitCostCents === null ? '—' : money(poLineAmount(Number(l.qtyOrdered), l.unitCostCents)!)}</Text>
             </View>
@@ -208,6 +238,9 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
           <View style={styles.notes}>
             <Text style={styles.addrLabel}>{t('notes')}</Text>
             {notes.map((n, i) => <Text key={i} style={{ marginBottom: 3 }}>{'• ' + n}</Text>)}
+            {bilingual
+              ? notesAlt.map((n, i) => <Text key={`alt-${i}`} style={{ marginBottom: 3 }}>{'• ' + n}</Text>)
+              : null}
           </View>
         ) : null}
 

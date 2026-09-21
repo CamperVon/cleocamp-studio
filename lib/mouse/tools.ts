@@ -1748,8 +1748,19 @@ export const TOOLS: Record<string, Tool> = {
                   '"Bean Bag — Red / Medium". No catalogue row is required to order ' +
                   'something: that is what a purchase order is for.',
                 ),
+                descriptionAlt: str(
+                  'The same line in the document\'s SECOND language, when the order is ' +
+                  'bilingual (en_es or en_it). Write it; never leave it to be translated ' +
+                  'later. Product and colourway names do not translate — "Boy Belt" and ' +
+                  '"Bianco" are what the things are called — so this is for the describing ' +
+                  'part around them: "with two extra belt holes" becomes "con due fori ' +
+                  'cintura in piu". Leave it out for a single-language order, and leave it ' +
+                  'out rather than guessing at a language you are unsure of: one version ' +
+                  'printed alone is better than a second one a factory acts on wrongly.',
+                ),
                 qty: num('Quantity in the purchase unit'),
                 unit: str('e.g. yards, rolls, buttons, pcs'),
+                unitAlt: str('The unit in the second language, for a bilingual order — "pz" beside "pcs", "iarde" beside "yards".'),
                 unitCostCents: num(
                   'Price per unit in cents. For a component, omit to use its cost on file. ' +
                   'For a variant there is no cost on file to fall back to — give the quoted ' +
@@ -1762,8 +1773,10 @@ export const TOOLS: Record<string, Tool> = {
           deliverTo: str('Where it physically goes — usually the manufacturer, not the studio. Include hours if known.'),
           expectedAt: str('ISO date it should arrive, if known'),
           paymentTerms: str('e.g. 50% on order, 50% on delivery'),
+          paymentTermsAlt: str('The same terms in the second language, for a bilingual order. Write them out; these are the words an invoice dispute turns on, so never approximate them.'),
           depositPercent: num('Percent due at order'),
           netDaysAfterDelivery: num('Days after delivery the balance is due'),
+          notesAlt: str('The same notes in the second language, for a bilingual order. Same rule as the notes themselves: only what you would say TO the vendor.'),
           notes: str('PRINTS ON THE PDF THE VENDOR RECEIVES. Only what you would say TO them — a rush request, a spec, a payment confirmation. Never internal reasoning: not what a line used to cost, not a rate we disputed, not a colleague\'s name or opinion, not what still needs checking our end. Internal commentary goes in add_note against the purchase order instead.'),
           language: { type: 'string' as const, enum: ['en', 'es', 'it', 'en_es', 'en_it'],
             description:
@@ -1823,14 +1836,17 @@ export const TOOLS: Record<string, Tool> = {
               componentId: l.componentId,
               qtyOrdered: String(l.qty),
               unit: l.unit,
+              unitAlt: l.unitAlt ?? null,
               unitCostCents: l.unitCostCents ?? c?.unitCostCents ?? null,
             }
           }
           return {
             productVariantId: l.productVariantId ?? null,
             description: l.productVariantId ? null : l.description,
+            descriptionAlt: l.productVariantId ? null : (l.descriptionAlt ?? null),
             qtyOrdered: String(l.qty),
             unit: l.unit,
+            unitAlt: l.unitAlt ?? null,
             // No component-style fallback cost exists for a finished unit —
             // give it or it prints as unconfirmed. Never guessed.
             unitCostCents: l.unitCostCents ?? null,
@@ -2008,6 +2024,8 @@ export const TOOLS: Record<string, Tool> = {
           receivedAt: str('ISO date it actually arrived'),
           status: { type: 'string', enum: ['DRAFT','SENT','PARTIALLY_RECEIVED','RECEIVED','CANCELLED'] },
           paymentTerms: str('Terms in plain words'),
+          paymentTermsAlt: str('The same terms in the second language, for a bilingual order.'),
+          notesAlt: str('The same notes in the second language, for a bilingual order.'),
           depositPercent: num('Percent due at order'),
           netDaysAfterDelivery: num('Days after delivery the balance is due'),
           contactLines: str(

@@ -60,6 +60,13 @@ export default async function PurchaseOrderDoc({
   // its own line, not folded into "notes".
   const notes: string[] = po.notes ? [po.notes] : []
 
+  // The same rule as the PDF: a bilingual document carries the ORDER twice,
+  // not only its labels. Whatever is in the *Alt columns, never a translation
+  // made here — see lib/po-strings.ts.
+  const bilingual = lang === 'en_es' || lang === 'en_it'
+  const pair = (main: string | null | undefined, alt: string | null | undefined) =>
+    bilingual && alt && alt.trim() && alt.trim() !== (main ?? '').trim() ? alt.trim() : null
+
   return (
     <main className="mx-auto max-w-[8.5in] bg-white px-10 py-12 font-serif text-[11pt] leading-relaxed text-[#14181A] print:px-0 print:py-0">
       <style>{`@page { size: letter; margin: 0.85in 0.8in; } @media print { .no-print { display: none } }`}</style>
@@ -87,7 +94,12 @@ export default async function PurchaseOrderDoc({
             </div>
           ) : null}
           {po.paymentTerms ? (
-            <div><span className="text-[#6A736F]">{t('terms')} </span>{po.paymentTerms}</div>
+            <>
+              <div><span className="text-[#6A736F]">{t('terms')} </span>{po.paymentTerms}</div>
+              {pair(po.paymentTerms, po.paymentTermsAlt) ? (
+                <div className="text-[#6A736F]">{pair(po.paymentTerms, po.paymentTermsAlt)}</div>
+              ) : null}
+            </>
           ) : null}
         </div>
       </div>
@@ -145,7 +157,12 @@ export default async function PurchaseOrderDoc({
                   // A line for something the catalogue does not hold yet — a
                   // colour nobody has dyed, a sample size. Its own text is the
                   // whole label. See lib/po.ts:poLineLabel.
-                  <div>{l.description}</div>
+                  <div>
+                    <div>{l.description}</div>
+                    {pair(l.description, l.descriptionAlt) ? (
+                      <div className="text-[#6A736F]">{pair(l.description, l.descriptionAlt)}</div>
+                    ) : null}
+                  </div>
                 ) : (
                   <div className="flex items-start gap-2.5">
                     {l.productVariant!.imageUrl ? (
@@ -169,7 +186,10 @@ export default async function PurchaseOrderDoc({
                 )}
               </td>
               <td className="py-2.5 pr-2 text-right tabular-nums">{Number(l.qtyOrdered).toLocaleString()}</td>
-              <td className="py-2.5 pr-2 text-right">{l.unit}</td>
+              <td className="py-2.5 pr-2 text-right">
+                {l.unit}
+                {pair(l.unit, l.unitAlt) ? ` / ${pair(l.unit, l.unitAlt)}` : ''}
+              </td>
               <td className="py-2.5 pr-2 text-right tabular-nums">{l.unitCostCents !== null ? money(l.unitCostCents) : '—'}</td>
               <td className="py-2.5 text-right tabular-nums">
                 {l.unitCostCents === null ? '—' : money(poLineAmount(Number(l.qtyOrdered), l.unitCostCents)!)}
@@ -197,6 +217,7 @@ export default async function PurchaseOrderDoc({
           <h2 className="mb-1.5 font-sans text-[8.5pt] uppercase tracking-[0.11em] text-[#6A736F]">{t('notes')}</h2>
           <ul className="list-disc pl-5">
             {notes.map((n, i) => <li key={i} className="mb-1">{n}</li>)}
+            {bilingual && po.notesAlt ? <li className="mb-1 text-[#6A736F]">{po.notesAlt}</li> : null}
           </ul>
         </div>
       ) : null}
