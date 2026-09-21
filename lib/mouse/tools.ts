@@ -27,6 +27,18 @@ export const inventoryWritesEnabled = () => process.env.INVENTORY_WRITES === 'on
 const num = (description: string) => ({ type: 'number' as const, description })
 
 /**
+ * Does this item ask for financial figures to be RECORDED?
+ *
+ * Matched on the title because that is what the nightly pass writes: "Record
+ * the 20 Sept QuickBooks P&L? Revenue YTD $313,973.88, ...". Kept loose on
+ * purpose. A false positive costs one explanatory message and a flag; a false
+ * negative is the silent skip this exists to stop.
+ */
+function asksForFiguresToBeRecorded(title: string): boolean {
+  return /\brecord\b/i.test(title) && /(p&l|quickbooks|revenue|financial)/i.test(title)
+}
+
+/**
  * Writing an inventory event and updating the cached quantity must happen
  * together or the two disagree. onHandQty is a materialized sum of the ledger
  * and has to stay recomputable from it. See CLAUDE.md §3.
@@ -544,7 +556,18 @@ export const TOOLS: Record<string, Tool> = {
         'means asking which, not guessing.',
       input_schema: {
         type: 'object',
-        properties: { id: str("The item's id"), resolution: str('What happened — the answer, or what was done') },
+        properties: {
+          id: str("The item's id"),
+          resolution: str('What happened — the answer, or what was done'),
+          withoutRecording: {
+            type: 'boolean' as const,
+            description:
+              'Only for a question asking that financial figures be recorded. Closes it ' +
+              'WITHOUT the figures being written — for figures that are wrong, or already ' +
+              'superseded by a later pull. Say which in the resolution. Leave it off to ' +
+              'record them, which is almost always what is meant.',
+          },
+        },
         required: ['id', 'resolution'],
       },
     },
@@ -555,7 +578,10 @@ export const TOOLS: Record<string, Tool> = {
     // mistake, so the failure now hands back the open items to correct
     // against instead of being a dead end.
     run: async (i) => {
-      const found = await db.actionItem.findUnique({ where: { id: i.id }, select: { id: true, resolved: true } })
+      const found = await db.actionItem.findUnique({
+        where: { id: i.id },
+        select: { id: true, resolved: true, title: true, createdAt: true },
+      })
       if (!found) {
         const open = await db.actionItem.findMany({
           where: { resolved: false },
@@ -572,6 +598,44 @@ export const TOOLS: Record<string, Tool> = {
       if (found.resolved) {
         return { resolved: true, alreadyResolved: true, note: 'That one was already marked resolved — nothing further to do.' }
       }
+      // A "Record the N Sept QuickBooks P&L?" question is answered by the figures
+      // being WRITTEN, not by the question going away. Until 21 Sept 2026 it could
+      // be closed without the write, and was, three nights running: the questions
+      // for 16, 17 and 18 Sept were each marked resolved while FinancialSnapshot's
+      // newest row stayed stuck on the 14th. The Finances page went on showing a
+      // six-day-old revenue figure, correctly captioned and easy to miss, and
+      // nothing anywhere reported a failure because nothing had failed — the write
+      // was simply never asked for. Brandon found it by noticing the number
+      // disagreed with QuickBooks.
+      //
+      // Same shape as the seed that seemed to work and the webhook that returned
+      // 200 and stored nothing (CLAUDE.md §6). Fixed the same way as send_email's
+      // confirmation gate: make the wrong path impossible rather than discouraged.
+      //
+      // The test is whether a snapshot was written after the question was raised,
+      // which is true exactly when record_financials ran in response to it. No
+      // date is parsed out of the title, so a reworded question still guards.
+      if (!i.withoutRecording && asksForFiguresToBeRecorded(found.title)) {
+        const written = await db.financialSnapshot.count({
+          where: { createdAt: { gte: found.createdAt } },
+        })
+        if (!written) {
+          return {
+            resolved: false,
+            error:
+              `"${found.title.slice(0, 80)}" asks for figures to be recorded, and nothing has ` +
+              'reached the financial record since it was raised. Closing it now would leave ' +
+              'the Finances page showing an older figure with nothing to say why. Call ' +
+              'record_financials with every figure named in that question — revenue, ' +
+              'operating expenses, cost of goods and net income, year to date as well as ' +
+              'month to date — and then resolve it. Anything left out keeps the figure ' +
+              'already on the page. If they are meant to be skipped, because they ' +
+              'are wrong or a later pull supersedes them, pass withoutRecording: true and ' +
+              'say which in the resolution.',
+          }
+        }
+      }
+
       return db.actionItem.update({
         where: { id: i.id },
         data: { resolved: true, resolvedAt: new Date(), resolutionNote: i.resolution },
@@ -1530,6 +1594,22 @@ export const TOOLS: Record<string, Tool> = {
           revenueMonthToDate: num('Revenue so far this month'),
           revenueYearToDate: num('Revenue so far this year'),
           expensesMonthToDate: num('Expenses so far this month'),
+          expensesYearToDate: num(
+            'OPERATING expenses so far this year, excluding cost of goods. The Finances ' +
+            'page shows this beside revenue, so a confirmation that leaves it out updates ' +
+            'revenue and leaves this tile reading the previous figure.',
+          ),
+          cogsYearToDate: num(
+            'Cost of goods sold so far this year. Separate from operating expenses and ' +
+            'subtracted before them: revenue less this is gross profit.',
+          ),
+          netIncomeYearToDate: num(
+            'Net income so far this year, as the P&L reports it. Give the figure rather ' +
+            'than leaving it to be derived — the derivation is revenue less cost of goods ' +
+            'less operating expenses less any other expenses, and a page that guesses at ' +
+            'it gets it wrong. Until 21 Sept 2026 the Finances page derived net income ' +
+            'without subtracting cost of goods at all and overstated it by $42,505.',
+          ),
           note: str('Anything worth remembering about where these came from'),
         },
         required: ['asOfDate'],
@@ -1539,26 +1619,60 @@ export const TOOLS: Record<string, Tool> = {
       const forDate = new Date(i.asOfDate + 'T00:00:00Z')
       const cents = (n: number | undefined) =>
         n === undefined || n === null ? null : BigInt(Math.round(n * 100))
-      const data = {
+      const figures = {
         cashCents: cents(i.cash),
         arCents: cents(i.receivables),
         apCents: cents(i.payables),
         revenueMtdCents: cents(i.revenueMonthToDate),
         revenueYtdCents: cents(i.revenueYearToDate),
         expensesMtdCents: cents(i.expensesMonthToDate),
-        raw: { enteredBy: 'chat', note: i.note ?? null } as never,
       }
       // Only overwrite the fields actually supplied — a partial update must not
       // blank out figures given earlier.
       const clean = Object.fromEntries(
-        Object.entries(data).filter(([, v]) => v !== null),
-      ) as typeof data
+        Object.entries(figures).filter(([, v]) => v !== null),
+      ) as Partial<typeof figures>
+
+      // YTD expenses has no column of its own yet and rides in `raw.pnl`, which
+      // app/(main)/finances/page.tsx reads for its Expenses and Net income
+      // tiles. `raw` used to be REPLACED wholesale here, so recording any
+      // figure at all quietly deleted the YTD expenses already stored and blanked
+      // two tiles on the page. Merge it, and keep whatever we were not given.
+      const prior = await db.financialSnapshot.findUnique({
+        where: { forDate },
+        select: { raw: true },
+      })
+      const priorRaw = (prior?.raw ?? {}) as Record<string, unknown>
+      const priorPnl = (priorRaw.pnl ?? {}) as Record<string, unknown>
+      // Each of these only lands if it was actually given, so a partial
+      // confirmation adds to what is stored instead of hollowing it out.
+      const ytd = {
+        expensesYtdCents: cents(i.expensesYearToDate),
+        cogsYtdCents: cents(i.cogsYearToDate),
+        netIncomeYtdCents: cents(i.netIncomeYearToDate),
+      }
+      const givenYtd = Object.fromEntries(
+        Object.entries(ytd).filter(([, v]) => v !== null).map(([k, v]) => [k, Number(v)]),
+      )
+      const raw = {
+        ...priorRaw,
+        enteredBy: 'chat',
+        note: i.note ?? priorRaw.note ?? null,
+        pnl: { ...priorPnl, ...givenYtd },
+      }
+
       await db.financialSnapshot.upsert({
         where: { forDate },
-        create: { forDate, ...clean },
-        update: clean,
+        create: { forDate, ...clean, raw: raw as never },
+        update: { ...clean, raw: raw as never },
       })
-      return { recorded: i.asOfDate, fields: Object.keys(clean).length }
+      return {
+        recorded: i.asOfDate,
+        fields: Object.keys(clean).length + Object.keys(givenYtd).length,
+        yearToDateStored: Object.fromEntries(
+          Object.entries(givenYtd).map(([k, v]) => [k, (v as number) / 100]),
+        ),
+      }
     },
   },
 

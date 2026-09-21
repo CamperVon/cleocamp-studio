@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { Page, Card, Empty, Stat, Chip } from '@/app/ui/primitives'
 import { isConfigured } from '@/lib/integrations/quickbooks'
+import { laMidnight } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,12 @@ export default async function Finances() {
     db.quickBooksConnection.findUnique({ where: { id: 'singleton' } }),
     db.financialSnapshot.findFirst({ orderBy: { forDate: 'desc' } }),
   ])
-  const raw = (snap?.raw ?? {}) as { source?: string; note?: string; warnings?: string[]; pnl?: { expensesYtdCents?: number } }
+  const raw = (snap?.raw ?? {}) as {
+    source?: string
+    note?: string
+    warnings?: string[]
+    pnl?: { expensesYtdCents?: number; cogsYtdCents?: number; netIncomeYtdCents?: number }
+  }
   const warnings = raw.warnings ?? []
   // Receivables and the Invoices card were both removed 15 Sept 2026 —
   // receivables reads $0 because wholesale isn't invoiced through QuickBooks
@@ -33,12 +39,47 @@ export default async function Finances() {
   // migration — no direct DB connection available from here) so it rides in
   // raw.pnl as a stopgap. Promote it to a real FinancialSnapshot column next
   // time someone has local/DIRECT_URL access.
-  const expensesYtdCents =
-    typeof raw.pnl?.expensesYtdCents === 'number' ? BigInt(raw.pnl.expensesYtdCents) : null
+  const bigOrNull = (n: number | undefined) => (typeof n === 'number' ? BigInt(n) : null)
+  const expensesYtdCents = bigOrNull(raw.pnl?.expensesYtdCents)
+  const cogsYtdCents = bigOrNull(raw.pnl?.cogsYtdCents)
+
+  // Net income is REPORTED, not inferred.
+  //
+  // This used to be revenue minus operating expenses, which silently left cost
+  // of goods out of the subtraction entirely. On 21 Sept 2026 that put $274,480
+  // on screen against a true $231,974.80 — overstated by the whole $42,505 of
+  // COGS, every day since the page moved to P&L on the 14th. The figure looked
+  // plausible, the arithmetic was consistent, and nothing could have caught it
+  // except checking it against the P&L, because the page was never given the
+  // numbers the real formula needs.
+  //
+  // So take the reported figure when there is one. Fall back to deriving it
+  // only with cost of goods in hand, and otherwise show nothing at all — a
+  // dash is a worse experience and a better number than a confident wrong one.
   const netIncomeYtdCents =
-    snap?.revenueYtdCents != null && expensesYtdCents != null
-      ? snap.revenueYtdCents - expensesYtdCents
+    bigOrNull(raw.pnl?.netIncomeYtdCents) ??
+    (snap?.revenueYtdCents != null && expensesYtdCents != null && cogsYtdCents != null
+      ? snap.revenueYtdCents - cogsYtdCents - expensesYtdCents
+      : null)
+
+  // How old is the figure actually on screen?
+  //
+  // The nightly pull runs at 7pm Pacific, so a figure dated yesterday is normal
+  // by morning and two days old is not. On 21 Sept 2026 this page was showing
+  // the 14th — six days, $16,558 of revenue behind QuickBooks — because three
+  // nights of figures were approved and never written (see resolve_item in
+  // lib/mouse/tools.ts). The date was on screen the whole time, in the lede,
+  // phrased as ordinary context rather than as a problem. Nobody reads a
+  // caption that has always been there.
+  //
+  // Both sides are UTC midnight of a Pacific day, so this subtracts to whole
+  // days without re-entering a timezone. Do not reformat laMidnight's output
+  // through another Pacific formatter; that double-converts.
+  const daysOld =
+    snap != null
+      ? Math.round((laMidnight(0).getTime() - snap.forDate.getTime()) / 86_400_000)
       : null
+  const stale = daysOld != null && daysOld >= 2
 
   // Figures can arrive by hand long before the Intuit connection exists — the
   // page should show what it has rather than insisting on OAuth first.
@@ -99,11 +140,29 @@ export default async function Finances() {
         </div>
       ) : null}
 
+      {stale ? (
+        <div className="rounded-xl border border-urgent bg-urgent-soft px-4 py-3 text-sm text-urgent sm:px-5">
+          <p className="font-medium">
+            These figures are {daysOld} days old. They are not today&rsquo;s.
+          </p>
+          <p className="mt-1">
+            QuickBooks is pulled every night, so something has stopped being recorded.
+            Ask Mouse to record the latest figures — there is usually a question waiting
+            in Things to tend to.
+          </p>
+        </div>
+      ) : null}
+
       {snap ? (
         <>
           <Card title="Year to date">
             <div className="flex flex-wrap gap-3 px-4 py-4 sm:px-5">
               <Stat label="Revenue" value={money(snap.revenueYtdCents)} />
+              {/* Cost of goods earns its place: without it on screen, revenue
+                  minus expenses does not come to net income and the page looks
+                  like it has made an arithmetic error. It is also the figure
+                  whose absence caused the overstatement described above. */}
+              <Stat label="Cost of goods" value={money(cogsYtdCents)} />
               <Stat label="Expenses" value={money(expensesYtdCents)} />
               <Stat label="Net income" value={money(netIncomeYtdCents)} />
             </div>
