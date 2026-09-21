@@ -28,9 +28,23 @@ export function PhoneSetup({
   const [copied, setCopied] = useState<string | null>(null)
   const [setUp, setSetUp] = useState(alreadySetUp)
 
+  // Read back the links somebody already has, without touching them. The
+  // common need is "what is Cleo's desktop link" — which used to require
+  // replacing her working one to find out.
+  async function show() {
+    if (busy) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/say-links?personId=${encodeURIComponent(personId)}`)
+      if (res.ok) setMinted((await res.json()) as Minted)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function create() {
     if (busy) return
-    if (setUp && !confirm(`${name} already has a phone set up. Making a new link switches the old one off straight away. Carry on?`)) return
+    if (setUp && !confirm(`${name} already has a link. Making a new one switches the old one off straight away, on their phone and their computer both — they will need sending the new one. Carry on?`)) return
     setBusy(true)
     try {
       const res = await fetch('/api/say-links', {
@@ -85,14 +99,24 @@ export function PhoneSetup({
         </div>
         <div className="flex gap-2">
           {setUp ? (
-            <button
-              type="button"
-              onClick={revoke}
-              disabled={busy}
-              className="rounded-lg border border-line px-3 py-2 text-sm disabled:opacity-40"
-            >
-              Switch off
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={show}
+                disabled={busy}
+                className="rounded-lg border border-line px-3 py-2 text-sm disabled:opacity-40"
+              >
+                Show links
+              </button>
+              <button
+                type="button"
+                onClick={revoke}
+                disabled={busy}
+                className="rounded-lg border border-line px-3 py-2 text-sm text-faint disabled:opacity-40"
+              >
+                Switch off
+              </button>
+            </>
           ) : null}
           <button
             type="button"
@@ -100,7 +124,7 @@ export function PhoneSetup({
             disabled={busy}
             className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white disabled:opacity-40 dark:text-[#0F1211]"
           >
-            {busy ? 'Working…' : setUp ? 'New link' : 'Create link'}
+            {busy ? 'Working…' : setUp ? 'Replace' : 'Create link'}
           </button>
         </div>
       </div>
@@ -108,9 +132,8 @@ export function PhoneSetup({
       {minted ? (
         <div className="mt-4 space-y-4 rounded-xl border border-line bg-sunk px-4 py-4">
           <p className="text-xs text-faint">
-            Shown once. It is not saved anywhere you can read it back, so if it gets lost just
-            make another.
-            {minted.replaced ? ' The previous link stopped working just now.' : ''}
+            These are {name}&rsquo;s links. Send them the way you would send a password.
+            {minted.replaced ? ' The previous ones stopped working just now.' : ''}
           </p>
 
           <div>

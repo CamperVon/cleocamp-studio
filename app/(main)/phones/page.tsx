@@ -43,6 +43,8 @@ export default async function Phones() {
             does the talking.
           </p>
           <p className="text-faint">
+            Links stay readable here &mdash; use <strong className="font-medium">Show links</strong>{' '}
+            rather than making a new one, which switches off the old one on both their devices.
             The shared password still works and always will. Anyone using it is simply anonymous,
             the way everyone was until now, and nothing stops working for them.
           </p>
