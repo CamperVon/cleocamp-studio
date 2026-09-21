@@ -15,11 +15,22 @@ export async function proxy(req: NextRequest) {
   // Two routes cannot hold a session cookie and authenticate their own way:
   // the cron route with CRON_SECRET, and the inbound-email webhook with a
   // Svix signature from Resend.
+  //
+  // The "tell Mouse" doors are the third and fourth: a personal token
+  // identifies the speaker, checked inside the route on every send. They have
+  // to be out here, because the whole point is that someone in a car can talk
+  // to Mouse without stopping to type a shared password — sending them to a
+  // login screen first would reinstate the exact friction they exist to
+  // remove. Matched EXACTLY, not by prefix: /api/say-links mints these tokens
+  // and must stay behind the password like everything else.
   if (
     pathname.startsWith('/login') ||
     pathname.startsWith('/api/cron') ||
     pathname.startsWith('/api/inbound') ||
-    pathname.startsWith('/api/finances')
+    pathname.startsWith('/api/finances') ||
+    pathname === '/say' ||
+    pathname === '/api/say' ||
+    pathname === '/manifest.webmanifest'
   ) {
     return NextResponse.next()
   }

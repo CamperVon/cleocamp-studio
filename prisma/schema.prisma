@@ -35,6 +35,14 @@ model Person {
   /// never matched either of them. Identity by inbox, not by one email field.
   aliasEmails String?
   role        String? // "Founder", "Project Manager — Manufacturing", etc.
+
+  /// Secret behind this person's "tell Mouse" doors — the Siri shortcut and
+  /// the home-screen page. The app's own login is one shared password whose
+  /// session carries no identity, so this is the only thing that says who is
+  /// speaking when an update arrives from a phone. Mint and rotate it with
+  /// scripts/say-token.ts; never print it anywhere it would be logged.
+  sayToken    String?  @unique
+
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
 

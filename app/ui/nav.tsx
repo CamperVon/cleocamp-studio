@@ -12,6 +12,7 @@ const LINKS = [
   { href: '/finances', label: 'Finances' },
   { href: '/inbox', label: 'Inbox' },
   { href: '/items', label: 'To tend to' },
+  { href: '/phones', label: 'Phones' },
 ]
 
 export function Nav() {
