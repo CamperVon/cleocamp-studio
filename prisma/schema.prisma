@@ -36,6 +36,14 @@ model Person {
   aliasEmails String?
   role        String? // "Founder", "Project Manager — Manufacturing", etc.
 
+  /// Works for somebody Cleo Camp works with, rather than for Cleo Camp.
+  /// Nicki is Antonio's project manager — real, active, on plenty of purchase
+  /// orders, and never somebody who is handed the keys to the app. Kept apart
+  /// from `active`, which means a person is still around at all: switching her
+  /// off to tidy one page would take her out of everywhere she is correctly
+  /// used.
+  external    Boolean  @default(false)
+
   /// Secret behind this person's "tell Mouse" doors — the Siri shortcut and
   /// the home-screen page. The app's own login is one shared password whose
   /// session carries no identity, so this is the only thing that says who is

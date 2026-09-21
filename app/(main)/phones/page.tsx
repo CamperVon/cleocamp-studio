@@ -13,8 +13,11 @@ export const dynamic = 'force-dynamic'
  * it, and is unreadable afterwards — creating a new one replaces the old.
  */
 export default async function Phones() {
+  // Cleo Camp's own people only. Nicki works for Antonio's — she belongs on
+  // purchase orders and in vendor notes, not on the list of who gets a key to
+  // this app. Brandon, 21 Sept 2026.
   const people = await db.person.findMany({
-    where: { active: true },
+    where: { active: true, external: false },
     select: { id: true, name: true, role: true, sayToken: true },
     orderBy: { name: 'asc' },
   })

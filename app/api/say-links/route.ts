@@ -18,9 +18,11 @@ export async function POST(req: NextRequest) {
 
   const person = await db.person.findUnique({
     where: { id: personId },
-    select: { id: true, name: true, active: true, sayToken: true },
+    select: { id: true, name: true, active: true, external: true, sayToken: true },
   })
-  if (!person || !person.active) {
+  // Hiding someone from the page is not the same as refusing them a key. The
+  // page could be stale, or the id typed by hand; the refusal belongs here.
+  if (!person || !person.active || person.external) {
     return NextResponse.json({ error: 'no such person' }, { status: 404 })
   }
 
