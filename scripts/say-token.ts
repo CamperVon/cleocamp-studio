@@ -76,7 +76,9 @@ async function main() {
   console.log('\nOptional Siri shortcut: Dictate Text, then Get Contents of')
   console.log('URL with Show More opened — Method POST and a JSON body with')
   console.log('one field named "text" holding the Dictated Text variable.')
-  console.log('Then Speak Text. No headers; the URL carries the key.\n')
+  console.log('Then Speak Text. No headers; the URL carries the key.')
+  console.log('Name it "Say Cheese", NOT "Tell Mouse" — Siri reads "tell"')
+  console.log('plus a name as a message to that contact and sends a text.\n')
   console.log(`  ${base}/api/say?format=text&k=${token}\n`)
   console.log('This is the only time either is shown. Nothing can read it back.')
 }

@@ -182,8 +182,23 @@ export function PhoneSetup({
                   <span className="text-ink">Dictated Text</span> variable
                 </li>
                 <li>Search <span className="text-ink">Speak Text</span>, add it</li>
-                <li>Name the shortcut <span className="text-ink">Tell Mouse</span></li>
+                <li>
+                  Name the shortcut <span className="text-ink">Say Cheese</span>, then say
+                  &ldquo;Hey Siri, Say Cheese&rdquo;
+                </li>
               </ol>
+              {/* NOT "Tell Mouse". Siri owns "tell <someone> <something>" as a
+                  messaging command, and a contact called Mouse wins it: on
+                  21 Sept 2026 that sent an empty text to the Mouse contact,
+                  which arrived in the inbox through T-Mobile's SMS-to-email
+                  gateway and got raised as a question. The shortcut never ran.
+                  A name that is not a verb plus a contact cannot be hijacked
+                  that way, and it matches the home screen icon. */}
+              <p className="text-faint">
+                Do not call it &ldquo;Tell Mouse&rdquo;. Siri reads &ldquo;tell&rdquo; plus a name
+                as an instruction to message that person, so if there is a Mouse in the contacts it
+                sends them a text instead of running the shortcut.
+              </p>
               <Row id={`${personId}-siri`} label="URL (step 4)" value={links.siri} />
               <p className="text-faint">
                 No headers to set &mdash; this URL carries the key. If Form or File is easier to
