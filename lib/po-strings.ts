@@ -1,5 +1,5 @@
 /**
- * Purchase-order labels in English and Spanish.
+ * Purchase-order labels in English, Spanish and Italian.
  *
  * Lorena and Santos and Empire are Los Angeles cut-and-sew shops. The person
  * who reads the order in the office and the person cutting from it on the
@@ -21,12 +21,37 @@
  * translate: "Cleo Bag" and "Earthy Chocolate Suede" are what the thing is
  * called, in any language, and a factory matching a style number against a
  * translated name would be matching against something that exists nowhere.
+ *
+ * Italian arrived 21 Sept 2026 for Cinturificiog, who make the Boy Belt.
+ * Brandon: "I need our belt POs to be in both English and Italian." Adding it
+ * meant retiring the name "both", which meant English and Spanish back when
+ * those were the only two — a name that could only ever describe one pair.
+ * It is still accepted and read as en_es, so nothing stored has to change.
  */
 
-export type DocLanguage = 'en' | 'es' | 'both'
+export type DocLanguage = 'en' | 'es' | 'it' | 'en_es' | 'en_it'
+
+/** Languages a document can be written in on its own. */
+type Single = 'en' | 'es' | 'it'
+
+/**
+ * A bilingual document is its two languages, in print order. English leads in
+ * both pairs because the order is written here and read there.
+ */
+const PAIRS: Record<'en_es' | 'en_it', [Single, Single]> = {
+  en_es: ['en', 'es'],
+  en_it: ['en', 'it'],
+}
+
+const isPair = (l: DocLanguage): l is 'en_es' | 'en_it' => l === 'en_es' || l === 'en_it'
 
 export function asDocLanguage(v: string | null | undefined): DocLanguage {
-  return v === 'es' || v === 'both' ? v : 'en'
+  // "both" is what en_es was called before Italian existed. Every vendor and
+  // order already storing it keeps working untouched.
+  if (v === 'both' || v === 'en_es') return 'en_es'
+  if (v === 'en_it') return 'en_it'
+  if (v === 'es' || v === 'it') return v
+  return 'en'
 }
 
 type Key =
@@ -50,6 +75,19 @@ const ES: Record<Key, string> = {
   total: 'Total', knownSubtotal: 'Subtotal conocido', totalUnits: 'Unidades totales', notes: 'NOTAS', style: 'Estilo',
 }
 
+const IT: Record<Key, string> = {
+  purchaseOrder: 'ORDINE DI ACQUISTO', no: 'N.', for: 'Per', date: 'Data',
+  expected: 'Consegna prevista', terms: 'Condizioni', draft: 'BOZZA — NON INVIATO',
+  vendor: 'FORNITORE', attn: 'Att.ne:', address: 'INDIRIZZO', billTo: 'FATTURARE A',
+  item: 'ARTICOLO', qty: 'Q.TÀ', unit: 'UNITÀ', price: 'PREZZO', amount: 'IMPORTO',
+  total: 'Totale', knownSubtotal: 'Subtotale noto', totalUnits: 'Unità totali', notes: 'NOTE', style: 'Modello',
+}
+
+const DICT: Record<Single, Record<Key, string>> = { en: EN, es: ES, it: IT }
+
+/** Which locale writes each language's dates. */
+const LOCALE: Record<Single, string> = { en: 'en-US', es: 'es-MX', it: 'it-IT' }
+
 /**
  * On a bilingual document, a few labels are not worth doubling: the two
  * versions are near-identical, and "Attn: / Atn: Lorena" reads as a typo
@@ -63,29 +101,30 @@ const BOTH_SINGLE: Partial<Record<Key, string>> = { attn: 'Attn:' }
  * print "Total / Total", and except the near-identical ones above.
  */
 export function label(lang: DocLanguage, key: Key): string {
-  if (lang === 'en') return EN[key]
-  if (lang === 'es') return ES[key]
+  if (!isPair(lang)) return DICT[lang][key]
   const single = BOTH_SINGLE[key]
   if (single) return single
-  return EN[key] === ES[key] ? EN[key] : `${EN[key]} / ${ES[key]}`
+  const [a, b] = PAIRS[lang]
+  const left = DICT[a][key]
+  const right = DICT[b][key]
+  return left === right ? left : `${left} / ${right}`
 }
 
 /**
  * Dates, in the document's language.
  *
- * Spanish writes "15 de septiembre de 2026" — a different shape, not just
- * different words, which is exactly the sort of thing a hand-built date string
- * gets wrong. Intl knows it. Bilingual documents print the English date and
- * the Spanish one, because a date is the field most likely to be misread and
- * the most expensive to misread.
+ * Spanish writes "15 de septiembre de 2026" and Italian "15 settembre 2026" —
+ * different shapes, not just different words, which is exactly the sort of
+ * thing a hand-built date string gets wrong. Intl knows them. Bilingual
+ * documents print both, because a date is the field most likely to be misread
+ * and the most expensive to misread.
  */
 export function formatDate(lang: DocLanguage, d: Date, timeZone = 'America/Los_Angeles'): string {
   const opts: Intl.DateTimeFormatOptions = { timeZone, month: 'long', day: 'numeric', year: 'numeric' }
-  const en = d.toLocaleDateString('en-US', opts)
-  const es = d.toLocaleDateString('es-MX', opts)
-  if (lang === 'en') return en
-  if (lang === 'es') return es
-  return `${en} / ${es}`
+  const write = (l: Single) => d.toLocaleDateString(LOCALE[l], opts)
+  if (!isPair(lang)) return write(lang)
+  const [a, b] = PAIRS[lang]
+  return `${write(a)} / ${write(b)}`
 }
 
 /**
@@ -93,12 +132,21 @@ export function formatDate(lang: DocLanguage, d: Date, timeZone = 'America/Los_A
  *
  * A bilingual document prints both, on their own lines — this is the sentence
  * telling a vendor what to do next, so on a document meant for two sets of
- * readers it needs to reach both of them. Falls back to English whenever no
- * Spanish sentence has been written: an English sentence a vendor can puzzle
- * out beats a machine-translated instruction they act on wrongly.
+ * readers it needs to reach both of them. Falls back to English whenever the
+ * other sentence has not been written: an English sentence a vendor can puzzle
+ * out beats a machine-translated instruction they act on wrongly. That is the
+ * same line this file draws everywhere — chrome translates, content does not.
  */
-export function confirmSentence(lang: DocLanguage, en: string, es: string | null | undefined): string {
-  if (lang === 'en' || !es) return en
-  if (lang === 'es') return es
-  return en === es ? en : `${en}\n${es}`
+export function confirmSentence(
+  lang: DocLanguage,
+  en: string,
+  translations: { es?: string | null; it?: string | null },
+): string {
+  const other = (l: Single) => (l === 'es' ? translations.es : l === 'it' ? translations.it : en)
+  if (lang === 'en') return en
+  if (!isPair(lang)) return other(lang) || en
+  const [, second] = PAIRS[lang]
+  const tail = other(second)
+  if (!tail || tail === en) return en
+  return `${en}\n${tail}`
 }

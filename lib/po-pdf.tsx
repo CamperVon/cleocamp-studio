@@ -246,12 +246,15 @@ export async function renderPurchaseOrderPdf(poNumber: string): Promise<Buffer |
 
 export async function renderPoSnapshot(
   po: PoForPdf,
-  defaults: { billToLines: string; confirmLine: string; confirmLineEs?: string | null; contactLines: string } | null,
+  defaults: { billToLines: string; confirmLine: string; confirmLineEs?: string | null; confirmLineIt?: string | null; contactLines: string } | null,
 ): Promise<Buffer> {
   const content: DocContent = {
     billTo: (defaults?.billToLines ?? '').split('\n').filter(Boolean),
-    // Spanish is a stored sentence, not a render-time translation.
-    confirmLine: confirmSentence(asDocLanguage(po.language), defaults?.confirmLine ?? '', defaults?.confirmLineEs),
+    // Spanish and Italian are stored sentences, not render-time translations.
+    confirmLine: confirmSentence(asDocLanguage(po.language), defaults?.confirmLine ?? '', {
+      es: defaults?.confirmLineEs,
+      it: defaults?.confirmLineIt,
+    }),
     // A per-order override wins; almost nothing sets one.
     contactLines: (po.contactLines ?? defaults?.contactLines ?? '').split('\n').filter(Boolean),
   }

@@ -105,10 +105,12 @@ A purchase order document never carries a draft label — the PDF at
 as it is. Nobody needs a special "clean copy" and there is no export step;
 if someone asks for one, tell them the normal PDF is already it.
 
-English, Spanish and bilingual POs are supported. Use the language field and
-write editable content in the requested language; keep product names,
-quantities and commercial meaning intact. Explain any specific uncertainty in
-a term; don't refuse Spanish as an unsupported capability.
+English, Spanish and Italian POs are supported, each on its own or paired with
+English side by side: "en_es" for the LA cut-and-sew shops, "en_it" for
+Cinturificiog, who make the belts. Use the language field and write editable
+content in the requested language; keep product names, quantities and
+commercial meaning intact. Explain any specific uncertainty in a term; never
+refuse a language as an unsupported capability.
 
 ## The rules that matter
 

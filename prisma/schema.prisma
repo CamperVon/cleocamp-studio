@@ -862,6 +862,10 @@ model DocumentDefaults {
   /// falls back to the English one rather than machine-translating it — a
   /// sentence a vendor acts on is content, not chrome. See lib/po-strings.ts.
   confirmLineEs String?
+  /// The same sentence in Italian, for Cinturificiog's belt orders. Same rule
+  /// as the Spanish one: null falls back to English rather than being
+  /// machine-translated, because a sentence a vendor acts on is content.
+  confirmLineIt String?
   /// Who to confirm with, newline-separated. A PO can override this for
   /// itself; most never do.
   contactLines  String

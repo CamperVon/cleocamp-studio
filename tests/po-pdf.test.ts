@@ -25,7 +25,13 @@ test('a PO renders sendable in every language, with no draft label at any status
   await mkdir(directory, { recursive: true })
   const english = await renderPoSnapshot(po, defaults)
   const spanish = await renderPoSnapshot({ ...po, language: 'es', notes: 'DATOS DE PRUEBA — NO ES UN PEDIDO REAL', paymentTerms: '50% al pedido, saldo contra entrega', lines: [{ ...po.lines[0], description: 'Tela de punto acanalado fino', unit: 'yardas' }] } as unknown as PoForPdf, defaults)
-  for (const [name, bytes] of Object.entries({ english, spanish })) {
+  // Italian arrived 21 Sept 2026 for Cinturificiog's belt orders, bilingual so
+  // the invoice still reads here. Rendered as a pair because that is the shape
+  // actually sent — a missing Italian label shows up as a bare English one
+  // sitting where "ARTICOLO" should be beside it.
+  const italian = await renderPoSnapshot({ ...po, language: 'en_it' } as unknown as PoForPdf, defaults)
+
+  for (const [name, bytes] of Object.entries({ english, spanish, italian })) {
     assert.equal(bytes.subarray(0, 5).toString(), '%PDF-')
     await writeFile(`${directory}/${name}.pdf`, bytes)
   }
@@ -38,8 +44,16 @@ test('a PO renders sendable in every language, with no draft label at any status
   // compare against any more — the document is the document.
   assert.doesNotMatch(extract('english'), /DRAFT/)
   assert.doesNotMatch(extract('spanish'), /BORRADOR|DRAFT/)
+  assert.doesNotMatch(extract('italian'), /BOZZA|DRAFT/)
 
-  for (const name of ['english', 'spanish']) {
+  // Both halves of the bilingual chrome, so neither side can quietly go
+  // missing and leave a vendor reading a label in the wrong language.
+  const it = extract('italian')
+  for (const word of ['PURCHASE ORDER', 'ORDINE DI ACQUISTO', 'ARTICOLO', 'Q.TÀ', 'PREZZO', 'IMPORTO', 'FORNITORE']) {
+    assert.ok(it.includes(word), `bilingual Italian PO is missing "${word}"`)
+  }
+
+  for (const name of ['english', 'spanish', 'italian']) {
     assert.match(extract(name), /1,200\.00/)
     assert.match(extract(name), /300/)
     assert.match(extract(name), /Cleo Tee/)

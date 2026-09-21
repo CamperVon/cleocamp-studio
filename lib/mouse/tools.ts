@@ -1036,11 +1036,13 @@ export const TOOLS: Record<string, Tool> = {
           orderMethod: str('How orders are placed'),
           paymentTerms: str('e.g. COD, Net 30'),
           leadTimeDays: num('Turnaround in days. For a range, record the longer end.'),
-          documentLanguage: { type: 'string' as const, enum: ['en', 'es', 'both'],
+          documentLanguage: { type: 'string' as const, enum: ['en', 'es', 'it', 'en_es', 'en_it'],
             description:
               'What language this vendor\'s purchase orders are written in, from now on — ' +
-              '"es", or "both" for bilingual. Set it once here rather than saying it on ' +
-              'every order. A single order can still override it.' },
+              '"es" or "it" throughout, or "en_es" / "en_it" for a bilingual document with ' +
+              'both sets of labels side by side. Set it once here rather than saying it on ' +
+              'every order. A single order can still override it. ("both" is the old name ' +
+              'for "en_es" and still works.)' },
           active: { type: 'boolean' as const, description: 'False when replaced' },
           notes: str('Replaces the existing note'),
         },
@@ -1763,11 +1765,12 @@ export const TOOLS: Record<string, Tool> = {
           depositPercent: num('Percent due at order'),
           netDaysAfterDelivery: num('Days after delivery the balance is due'),
           notes: str('PRINTS ON THE PDF THE VENDOR RECEIVES. Only what you would say TO them — a rush request, a spec, a payment confirmation. Never internal reasoning: not what a line used to cost, not a rate we disputed, not a colleague\'s name or opinion, not what still needs checking our end. Internal commentary goes in add_note against the purchase order instead.'),
-          language: { type: 'string' as const, enum: ['en', 'es', 'both'],
+          language: { type: 'string' as const, enum: ['en', 'es', 'it', 'en_es', 'en_it'],
             description:
-              'What language the DOCUMENT is written in — "es" for Spanish throughout, ' +
-              '"both" for a bilingual document with English and Spanish labels side by side, ' +
-              'which suits a shop where the office and the floor read different languages. ' +
+              'What language the DOCUMENT is written in — "es" or "it" throughout, or ' +
+              '"en_es" / "en_it" for a bilingual document with both sets of labels side by ' +
+              'side, which suits a shop where the office and the floor read different ' +
+              'languages, or a supplier abroad whose invoice has to make sense here too. ' +
               'Defaults to the vendor\'s own setting. This translates the printed labels and ' +
               'dates only: notes, payment terms, units and any line you write out yourself ' +
               'are content, so WRITE THOSE IN THE DOCUMENT\'S LANGUAGE when you write them. ' +
@@ -2013,11 +2016,12 @@ export const TOOLS: Record<string, Tool> = {
             'document from now on, use update_document_defaults instead.',
           ),
           notes: str('Anything else'),
-          language: { type: 'string' as const, enum: ['en', 'es', 'both'],
+          language: { type: 'string' as const, enum: ['en', 'es', 'it', 'en_es', 'en_it'],
             description:
-              'What language the DOCUMENT is written in — "es" for Spanish throughout, ' +
-              '"both" for a bilingual document with English and Spanish labels side by side, ' +
-              'which suits a shop where the office and the floor read different languages. ' +
+              'What language the DOCUMENT is written in — "es" or "it" throughout, or ' +
+              '"en_es" / "en_it" for a bilingual document with both sets of labels side by ' +
+              'side, which suits a shop where the office and the floor read different ' +
+              'languages, or a supplier abroad whose invoice has to make sense here too. ' +
               'Defaults to the vendor\'s own setting. This translates the printed labels and ' +
               'dates only: notes, payment terms, units and any line you write out yourself ' +
               'are content, so WRITE THOSE IN THE DOCUMENT\'S LANGUAGE when you write them. ' +
@@ -2232,16 +2236,20 @@ export const TOOLS: Record<string, Tool> = {
       // had never seen. Replies come to mouse@send.cleocamp.com, which Mouse
       // reads, so that is the address to give. No phone number: Cleo, 16 Sept.
       const signature = `\n\n— Studio Mouse\nmouse@send.cleocamp.com`
+      // The covering note follows the document's language. One sentence per
+      // language rather than a ladder of every combination, so a fourth
+      // language is one line here and not a rewrite.
+      const COVERING: Record<'en' | 'es' | 'it', string> = {
+        en: `Please see the attached purchase order (No. ${po.poNumber}). Please confirm receipt and expected date.`,
+        es: `Adjunto encontrará la orden de compra (N.º ${po.poNumber}). Favor de confirmar la recepción y la fecha estimada de envío.`,
+        it: `In allegato trova l'ordine di acquisto (N. ${po.poNumber}). La preghiamo di confermare la ricezione e la data di consegna prevista.`,
+      }
       const covering =
-        lang === 'es'
-          ? `Adjunto encontrará la orden de compra (N.º ${po.poNumber}). Favor de confirmar ` +
-            `la recepción y la fecha estimada de envío.`
-          : lang === 'both'
-            ? `Please see the attached purchase order (No. ${po.poNumber}). Please confirm ` +
-              `receipt and expected date.\n\nAdjunto encontrará la orden de compra ` +
-              `(N.º ${po.poNumber}). Favor de confirmar la recepción y la fecha estimada de envío.`
-            : `Please see the attached purchase order (No. ${po.poNumber}). Please confirm ` +
-              `receipt and expected date.`
+        lang === 'en_es'
+          ? `${COVERING.en}\n\n${COVERING.es}`
+          : lang === 'en_it'
+            ? `${COVERING.en}\n\n${COVERING.it}`
+            : COVERING[lang]
       // A written message REPLACES the boilerplate rather than stacking on top
       // of it. "Hi Nicki — attached is PO 2360" followed by "Attached is
       // purchase order 2360, as a PDF" says the same thing twice in two voices.

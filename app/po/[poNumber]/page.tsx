@@ -44,7 +44,10 @@ export default async function PurchaseOrderDoc({
   // The one standing sentence a vendor acts on. Spanish is a stored
   // sentence, not a translation made at render time — see lib/po-strings.ts
   // on why chrome translates and content does not.
-  const confirmLine = confirmSentence(lang, defaults?.confirmLine ?? '', defaults?.confirmLineEs)
+  const confirmLine = confirmSentence(lang, defaults?.confirmLine ?? '', {
+    es: defaults?.confirmLineEs,
+    it: defaults?.confirmLineIt,
+  })
   const contactLines = (po.contactLines ?? defaults?.contactLines ?? '').split('\n').filter(Boolean)
 
   // Brandon, 4 Sept 2026: "notes at the end of pdf should only be notes i
