@@ -62,9 +62,13 @@ async function main() {
   console.log('───────────────────────────────────────────────────────────────')
   console.log('SEND THEM THIS LINK. It carries the secret, so send it the way')
   console.log('you would send a password, and only to them.\n')
-  console.log(`  ${base}/say?k=${token}\n`)
+  // /enter, not /say: it signs them in as themselves and then forwards to the
+  // dictate page carrying the token, so one link sets up both doors. The API
+  // route that mints these from the Phones page was changed and this was not.
+  console.log(`  ${base}/enter?k=${token}\n`)
   console.log('Opening it once saves it to their phone; the address bar clears')
-  console.log('itself afterwards. Then: Share → Add to Home Screen.')
+  console.log('itself afterwards. Then: Share → Add to Home Screen, named')
+  console.log('"Say Cheese" — which is what the page suggests already.')
   console.log('───────────────────────────────────────────────────────────────')
   console.log('\nFor the Siri shortcut, the same secret goes in a header:\n')
   console.log(`  POST ${base}/api/say?format=text`)

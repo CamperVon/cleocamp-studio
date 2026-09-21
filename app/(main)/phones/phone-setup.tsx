@@ -126,7 +126,8 @@ export function PhoneSetup({
               {copied === 'link' ? 'Copied' : 'Copy link'}
             </button>
             <p className="mt-2 text-xs text-faint">
-              They open it once on their phone, then Share → Add to Home Screen.
+              They open it once on their phone, then Share → Add to Home Screen, and name it{' '}
+              <span className="font-medium text-ink">Say Cheese</span>.
             </p>
           </div>
 

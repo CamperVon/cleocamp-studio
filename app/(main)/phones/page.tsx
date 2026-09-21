@@ -37,8 +37,10 @@ export default async function Phones() {
           </p>
           <p>
             Opening it once on their phone saves both, and the link clears itself out of the
-            address bar. Then Share &rarr; Add to Home Screen. The keyboard&rsquo;s microphone
-            does the talking.
+            address bar. Then Share &rarr; Add to Home Screen, and call it{' '}
+            <strong className="font-medium">Say Cheese</strong> &mdash; the name is already
+            filled in, so it is usually just a tap. The keyboard&rsquo;s microphone does the
+            talking.
           </p>
           <p className="text-faint">
             The shared password still works and always will. Anyone using it is simply anonymous,
