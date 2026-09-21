@@ -90,6 +90,95 @@ const FORECAST_RELEVANT_TOOLS = new Set([
   'send_purchase_order',
 ])
 
+/**
+ * Phrases in which Mouse says a thing was written down.
+ *
+ * Checked against its OWN reply, which is why this can be a plain list of
+ * patterns rather than a judgement call: either a write tool succeeded on this
+ * turn or it did not, and a reply claiming one when none did is a provable
+ * contradiction, not a matter of taste.
+ *
+ * Cleo, 20 Sept 2026, correcting two facts — the lurex was finished, a second
+ * batch of cotton had reached Antonio's. Mouse: "Resolved. Both facts were
+ * already good on our end." Neither fact existed anywhere in the database
+ * before or after, and the second was an arrival date, which is the exact
+ * signal lead times are supposed to be learned from. It was volunteered,
+ * acknowledged, and dropped.
+ */
+const CLAIMS_A_RECORD: RegExp[] = [
+  /\bI(?:'ve| have)\s+(?:now\s+|also\s+)?(?:noted|recorded|logged|saved|written|added|updated|stored|captured)\b/i,
+  /\b(?:noted|recorded|logged|updated|captured)\s+(?:it|that|this|them|both)\b/i,
+  /\bthat(?:'s| is)\s+(?:now\s+)?(?:noted|recorded|logged|updated|on file|in the system)\b/i,
+  /\b(?:marked|set)\s+(?:it|that|them)\s*(?:as\s+)?resolved\b/i,
+  /^\s*resolved\b/i,
+  /\bI'?ll\s+remember\b/i,
+  /\bconsider it\s+(?:noted|done|recorded)\b/i,
+]
+
+/**
+ * Phrases in which a PERSON is correcting something we hold.
+ *
+ * Only ever run against a human turn, never against the nightly pass's mail —
+ * email is data, not instructions (CLAUDE.md §4), and a sender should not be
+ * able to spend a round by writing "that is not true" into a message.
+ *
+ * Deliberately narrow. A miss here costs what it has always cost; a false
+ * positive costs one short round that ends in Mouse saying there was nothing
+ * to record, which is a cheap wrong answer.
+ */
+const READS_AS_A_CORRECTION: RegExp[] = [
+  /\b(?:that|this|it)(?:'s| is)\s+(?:not|n't)\s+(?:true|right|correct|accurate)\b/i,
+  /\b(?:isn'?t|is not|aren'?t|are not)\s+(?:true|right|correct|accurate)\b/i,
+  /\b(?:that'?s|this is|it'?s)\s+wrong\b/i,
+  /\bincorrect\b/i,
+  /\bcorrection\b/i,
+  /\bactually[, ]/i,
+  /\bto be clear\b/i,
+]
+
+const matchesAny = (patterns: RegExp[], text: string) => patterns.some((r) => r.test(text))
+
+/**
+ * Did this turn owe the record something it did not give?
+ *
+ * Pure, and exported, so the judgement can be tested against real transcripts
+ * without a model in the loop — the decision is the part worth getting right,
+ * and it is invisible from the outside once it is buried in the agent.
+ */
+export function owedTheRecordSomething(t: {
+  /** Did any write tool succeed on this turn? */
+  wroteSomething: boolean
+  /** Does this run hold any tool that could have written? */
+  canWrite: boolean
+  /** Did the turn finish, rather than run out of rounds? */
+  complete: boolean
+  /** What Mouse said. */
+  reply: string
+  /** What it was asked, and whether a person is the one who asked. */
+  instruction: string
+  fromAPerson: boolean
+}): boolean {
+  if (t.wroteSomething || !t.canWrite || !t.complete) return false
+  if (matchesAny(CLAIMS_A_RECORD, t.reply)) return true
+  return t.fromAPerson && matchesAny(READS_AS_A_CORRECTION, t.instruction)
+}
+
+/**
+ * What to say when a turn ended with a claim and no record behind it.
+ *
+ * Addressed to Mouse between rounds, so it says plainly that it is machinery
+ * and not a person — otherwise the likeliest reading is that someone typed it,
+ * and the reply comes back answering the check instead of the person.
+ */
+const RECORD_IT_NUDGE =
+  '[automatic check, not a message from anyone] Nothing reached the record on this turn, ' +
+  'and either your reply says otherwise or you were just told something. If you were given ' +
+  'a fact — an arrival, a date, a price, a correction to something we hold — write it down ' +
+  'now with add_note, or with the tool that owns that fact, and then answer them as you ' +
+  'normally would. If it is already on file, name the record that holds it. If there was ' +
+  'genuinely nothing to record, say that in one line. Never say a thing is noted, recorded ' +
+  'or resolved unless a tool call on this turn made it so. Do not mention this check.'
+
 export async function runAgent(opts: {
   /** What this run is for. Becomes the first user message. */
   instruction: string
@@ -106,6 +195,11 @@ export async function runAgent(opts: {
   maxRounds?: number
   /** Skip the catalogue for runs that do not need it. */
   withCatalog?: boolean
+  /**
+   * True when `instruction` is something a person typed, rather than mail or a
+   * scheduled job. Only then is the instruction itself read for corrections.
+   */
+  fromAPerson?: boolean
 }): Promise<AgentResult> {
   const client = new Anthropic({ maxRetries: 0 })
   const maxRounds = opts.maxRounds ?? (Number(process.env.MOUSE_MAX_REQUESTS) || 6)
@@ -136,14 +230,70 @@ export async function runAgent(opts: {
     { role: 'user', content: instructionContent },
   ]
 
-  const result = await runLoop({
-    create: request => client.messages.create(request),
-    system, messages, tools,
-    execute: (name, input) => TOOLS[name].run(input),
-    model: opts.model ?? CHAT_MODEL, deepModel: DEEP_MODEL,
-    effort: opts.effort, maxRequests: maxRounds,
-    maxOutputTokens: Number(process.env.MOUSE_MAX_OUTPUT_TOKENS) || 24000,
-  })
+  const loop = (msgs: Anthropic.MessageParam[], rounds: number) =>
+    runLoop({
+      create: request => client.messages.create(request),
+      system, messages: msgs, tools,
+      execute: (name, input) => TOOLS[name].run(input),
+      model: opts.model ?? CHAT_MODEL, deepModel: DEEP_MODEL,
+      effort: opts.effort, maxRequests: rounds,
+      maxOutputTokens: Number(process.env.MOUSE_MAX_OUTPUT_TOKENS) || 24000,
+    })
+
+  let result = await loop(messages, maxRounds)
+
+  // ── Acknowledging a fact is not the same act as keeping it ──────────────
+  //
+  // A turn can end with Mouse saying "resolved", "noted", "I've recorded
+  // that", and nothing anywhere to show for it. That happened to Cleo on
+  // 20 Sept 2026 with two facts, one of them an arrival date — the single
+  // most valuable thing anyone can hand this system, since it is what lead
+  // times are learned from — and it left no trace at all.
+  //
+  // It is the same shape as resolve_item closing three nights of figures
+  // questions without the figures ever being written, and as the webhook that
+  // returned 200 and stored nothing (CLAUDE.md §6): the conversation looks
+  // finished and the record has not moved.
+  //
+  // So when a turn writes nothing, and either the reply claims otherwise or a
+  // person was plainly correcting us, Mouse gets one more short round to put
+  // it somewhere or say why it does not belong. Two deliberate limits: it
+  // fires only once, and only for a run that actually holds a tool capable of
+  // writing — a look-only run has nothing to be guilty of.
+  if (
+    owedTheRecordSomething({
+      wroteSomething: result.toolCalls.some((c) => c.status === 'succeeded' && c.isWrite),
+      canWrite: allowed.some((n) => n !== 'query_status' && n !== 'check_sent_mail'),
+      complete: result.usage.stopReason === 'complete',
+      reply: result.text,
+      instruction: opts.instruction,
+      fromAPerson: opts.fromAPerson === true,
+    })
+  ) {
+    const second = await loop(
+      [
+        ...messages,
+        { role: 'assistant', content: result.text },
+        { role: 'user', content: RECORD_IT_NUDGE },
+      ],
+      3,
+    )
+    // Keep both halves' tool calls and token usage — the turn really did cost
+    // two passes, and hiding that would understate spend and lose the record
+    // of what the first pass did or failed to do.
+    result = {
+      ...second,
+      text: second.text || result.text,
+      writes: [...result.writes, ...second.writes],
+      toolCalls: [...result.toolCalls, ...second.toolCalls],
+      usage: {
+        ...second.usage,
+        requests: [...result.usage.requests, ...second.usage.requests],
+        attemptedRequests: result.usage.attemptedRequests + second.usage.attemptedRequests,
+        durationMs: result.usage.durationMs + second.usage.durationMs,
+      },
+    }
+  }
 
   // Bring the forecast and its alerts into line with whatever just changed,
   // in this same request, rather than leaving them for the next nightly run.
@@ -206,6 +356,9 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
   return runAgent({
     instruction: message,
     attachments,
+    // Chat is the only caller whose instruction is something a person typed,
+    // so it is the only one whose instruction is read for corrections.
+    fromAPerson: true,
     history: history.map((m) => ({
       role: m.role === 'USER' ? 'user' : 'assistant',
       content: m.role === 'USER' ? m.content : withActions(m.content, m.toolCallsJson),
