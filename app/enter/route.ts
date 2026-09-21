@@ -34,7 +34,24 @@ export async function GET(req: NextRequest) {
   await createSession(person.id)
 
   const url = req.nextUrl.clone()
-  url.pathname = '/say'
-  url.search = `?k=${encodeURIComponent(token)}`
+
+  // Where the link lands depends on what it is for, because the two uses want
+  // opposite things.
+  //
+  // A phone link goes to the dictate page AND keeps the token in the address,
+  // because Add to Home Screen saves the address and that is the only thing
+  // identifying the icon afterwards.
+  //
+  // A desktop link goes to the app itself and drops the token, because the
+  // session cookie now carries the identity and there is nothing to install.
+  // Leaving a secret in a desktop address bar would only put it in history and
+  // in whatever the browser syncs, for nothing.
+  if (req.nextUrl.searchParams.get('to') === 'say') {
+    url.pathname = '/say'
+    url.search = `?k=${encodeURIComponent(token)}`
+  } else {
+    url.pathname = '/'
+    url.search = ''
+  }
   return NextResponse.redirect(url)
 }

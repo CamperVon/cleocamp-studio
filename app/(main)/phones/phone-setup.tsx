@@ -114,7 +114,7 @@ export function PhoneSetup({
           </p>
 
           <div>
-            <div className="text-xs font-medium">Send {name} this link</div>
+            <div className="text-xs font-medium">Send {name} this link for their phone</div>
             <div className="mt-1 break-all rounded-lg bg-surface px-3 py-2 font-mono text-xs">
               {minted.link}
             </div>

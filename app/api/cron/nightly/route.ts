@@ -5,6 +5,7 @@ import { laMidnight } from '@/lib/dates'
 import { refreshForecastsAndAlerts } from '@/lib/forecast'
 import { processInbox } from '@/lib/mouse/inbox'
 import { nightlyPass } from '@/lib/mouse/nightly-pass'
+import { whoSaidWhat, renderWhoSaidWhat } from '@/lib/mouse/who-said-what'
 import { sendEmail } from '@/lib/email'
 import { fetchFeed } from '@/lib/integrations/calendar'
 import { composeDigest } from '@/lib/mouse/digest'
@@ -225,6 +226,50 @@ export async function GET(req: NextRequest) {
       }
     }
     return { sent }
+  })
+
+  // ── 6b. What everyone else told Mouse ────────────────────
+  // Brandon, 21 Sept 2026, once other people could reach Mouse from their own
+  // phones: "could it email me everything other users posted, so I'm aware."
+  // Updates from four phones otherwise land correctly in the record and
+  // nobody mentions they happened.
+  await step('toldToMouse', async () => {
+    const recipients = (process.env.DIGEST_RECIPIENTS ?? '').split(',').map((r) => r.trim().toLowerCase()).filter(Boolean)
+    if (!recipients.length) return { skipped: 'no recipients configured' }
+
+    // "Other users" means other than whoever is reading it. Anyone on the
+    // recipient list already knows what they themselves said.
+    const readers = await db.person.findMany({
+      where: { email: { not: null } },
+      select: { name: true, email: true, aliasEmails: true },
+    })
+    const excludeNames = readers
+      .filter((p) => {
+        const addresses = [p.email, ...(p.aliasEmails ?? '').split(',')]
+          .map((a) => (a ?? '').trim().toLowerCase())
+          .filter(Boolean)
+        return addresses.some((a) => recipients.includes(a))
+      })
+      .map((p) => p.name)
+
+    const items = await whoSaidWhat(excludeNames)
+    // Nobody said anything is not news. An empty email every morning is how a
+    // real one stops being opened.
+    if (!items.length) return { nothing: 'no updates from anyone else' }
+
+    const { subject, text, html } = renderWhoSaidWhat(items)
+
+    // The cron fires once a day on Hobby, but a manual re-run should not send
+    // this twice. SentEmail is the record of what actually went out.
+    const already = await db.sentEmail.findFirst({
+      where: { subject, createdAt: { gte: laMidnight(0) } },
+      select: { id: true },
+    })
+    if (already) return { skipped: 'already sent today' }
+
+    if (dryRun) return { composed: items.length, subject, sent: false }
+    const res = await sendEmail({ subject, text, html })
+    return { sent: res.sent, updates: items.length, from: [...new Set(items.map((i) => i.person))] }
   })
 
   // ── 7. Chip away at the open-questions list ──────────────
