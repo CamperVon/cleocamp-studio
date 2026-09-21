@@ -207,13 +207,25 @@ export async function composeDailyCheese(): Promise<{ subject: string; text: str
   ].filter((l, idx, arr) => !(l === '' && arr[idx - 1] === '')).join('\n')
 
   const rows = items.length
+    // A table, not flexbox. Gmail and Outlook drop `display:flex` and `gap`
+    // outright, so the row collapsed back to ordinary inline flow and the tag
+    // ended up jammed against the full stop of the sentence it labels —
+    // Brandon, 21 Sept 2026: "the overdue stamps are crowding the text a bit."
+    // It looked right everywhere it was written and wrong everywhere it was
+    // read. Cell padding is the one spacing that survives every client, so the
+    // gap is carried there rather than by anything flex owns.
     ? items.map((i) => `
-        <div style="display:flex;gap:12px;align-items:flex-start;justify-content:space-between;
-                    padding:12px 14px;border-radius:10px;background:#FBECE9;border:1px solid #EFC8C0;margin-top:8px;">
-          <div style="color:#3A342A;font-size:13.5px;line-height:1.5;">${escapeHtml(i.sentence)}</div>
-          <span style="flex-shrink:0;font-size:10.5px;font-weight:700;letter-spacing:.05em;color:#fff;
-                       background:#AE3527;padding:3px 8px;border-radius:5px;white-space:nowrap;">${escapeHtml(i.tag)}</span>
-        </div>`).join('')
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+               style="border-collapse:separate;border-radius:10px;background:#FBECE9;
+                      border:1px solid #EFC8C0;margin-top:8px;">
+          <tr>
+            <td style="padding:12px 4px 12px 14px;color:#3A342A;font-size:13.5px;line-height:1.5;">${escapeHtml(i.sentence)}</td>
+            <td align="right" valign="top" style="padding:12px 14px 12px 16px;white-space:nowrap;">
+              <span style="display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.05em;color:#fff;
+                           background:#AE3527;padding:3px 8px;border-radius:5px;white-space:nowrap;">${escapeHtml(i.tag)}</span>
+            </td>
+          </tr>
+        </table>`).join('')
     : `<div style="color:#726B5E;font-size:14px;padding:8px 2px;">Nothing needs attention today.</div>`
 
   const html = `<!doctype html>
