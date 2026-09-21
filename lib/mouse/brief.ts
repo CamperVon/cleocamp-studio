@@ -51,6 +51,20 @@ British spelling. Plain prose, no markdown, no lists, no bold, no headers.`
  */
 export async function composeDailyBrief(overnight?: string): Promise<{ text: string; model: string }> {
   const forDate = laMidnight(0)
+
+  // Compose from the night's notes when we have them — the ones passed in, or
+  // failing that the ones kept from whenever today's brief was first written.
+  //
+  // Only the cron is ever handed them, and it used to hold the only copy. So
+  // rewriting the brief later in the day composed it from open items alone and
+  // silently dropped whatever the night's mail had surfaced: a shorter, calmer,
+  // plausible-looking brief missing the very things the night had found. That
+  // is the failure this project keeps meeting (CLAUDE.md §6) and it would have
+  // arrived the first time anyone asked Mouse to refresh Corner.
+  const stored = overnight
+    ? null
+    : await db.dailyBrief.findUnique({ where: { forDate }, select: { overnight: true } })
+  const notes = overnight ?? stored?.overnight ?? undefined
   const [lowStock, items, pos, sales7, sales1] = await Promise.all([
     db.productVariant.findMany({
       where: { onHandQty: { not: null } },
@@ -91,7 +105,7 @@ export async function composeDailyBrief(overnight?: string): Promise<{ text: str
     ...items.slice(0, 14).map((i) => `- ${i.title}`),
     '',
     'Note: inventory writing is currently paused for a studio count, so counts may be stale.',
-    overnight ? `\nStudio Mouse's own working notes from tonight — distill the ONE or TWO things from this that actually matter, do not summarise the whole thing:\n${overnight}` : '',
+    notes ? `\nStudio Mouse's own working notes from tonight — distill the ONE or TWO things from this that actually matter, do not summarise the whole thing:\n${notes}` : '',
   ].filter(Boolean).join('\n')
 
   const client = new Anthropic()
@@ -113,8 +127,11 @@ export async function composeDailyBrief(overnight?: string): Promise<{ text: str
   // it is asked to produce one.
   await db.dailyBrief.upsert({
     where: { forDate },
-    create: { forDate, text, model: 'claude-opus-5' },
-    update: { text, model: 'claude-opus-5' },
+    create: { forDate, text, model: 'claude-opus-5', overnight: notes ?? null },
+    // Never blank stored notes on a rewrite that was not given any: a refresh
+    // composed FROM them must not then delete them and leave the next refresh
+    // poorer than this one.
+    update: { text, model: 'claude-opus-5', ...(notes ? { overnight: notes } : {}) },
   })
   return { text, model: 'claude-opus-5' }
 }

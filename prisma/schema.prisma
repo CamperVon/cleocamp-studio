@@ -993,10 +993,19 @@ model InboundEmail {
 /// Mouse's Corner — one short assessment a day, generated on first view and
 /// kept, so it does not change every time the page is refreshed.
 model DailyBrief {
-  id        String   @id @default(cuid())
-  forDate   DateTime @unique @db.Date
-  text      String
-  model     String?
+  id      String   @id @default(cuid())
+  forDate DateTime @unique @db.Date
+  text    String
+  model   String?
+
+  /// The nightly pass's own working notes, which composeDailyBrief() distils
+  /// under Mouse's voice. Kept so the brief can be composed again later from
+  /// the same material — the cron used to hold the only copy and discard it,
+  /// which meant any regeneration quietly dropped whatever the night's mail
+  /// had turned up. Null for a day with no unread mail, and for every row
+  /// written before this column existed.
+  overnight String?
+
   createdAt DateTime @default(now())
 }
 

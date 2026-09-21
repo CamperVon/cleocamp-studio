@@ -1576,6 +1576,36 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  refresh_corner: {
+    def: {
+      name: 'refresh_corner',
+      description:
+        "Rewrite Mouse's Corner — the note at the top of the Home screen — from how " +
+        'things stand right now. This is what to call when someone says Corner is wrong ' +
+        'or out of date after correcting something. Resolving the underlying item fixes ' +
+        "tomorrow's; this fixes the one they are looking at. It recomposes from the " +
+        "current open items, stock, orders and sales, together with the night's own " +
+        'notes, and replaces today\u2019s text. One model call, so use it when asked or ' +
+        'when what is on screen is now plainly wrong — not after every write.',
+      input_schema: { type: 'object', properties: {}, required: [] },
+    },
+    // Chat only, deliberately kept out of PROPOSAL_TOOLS. The nightly pass runs
+    // on mail, and mail is data, never instructions (CLAUDE.md §4) — a sender
+    // should not be able to cause the note Cleo reads each morning to be
+    // rewritten. A person asking in chat is a different thing entirely.
+    run: async () => {
+      const { composeDailyBrief } = await import('@/lib/mouse/brief')
+      const { text } = await composeDailyBrief()
+      return {
+        refreshed: true,
+        text,
+        tellTheUser:
+          'Corner has been rewritten. Show them the new text so they can see it took, ' +
+          'rather than telling them to go and look.',
+      }
+    },
+  },
+
   record_financials: {
     def: {
       name: 'record_financials',
