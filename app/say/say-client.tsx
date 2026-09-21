@@ -43,21 +43,30 @@ export function SayClient() {
   const boxRef = useRef<HTMLTextAreaElement>(null)
   const speechRef = useRef<InstanceType<SpeechCtor> | null>(null)
 
-  // Take the secret out of the URL on first open and keep it on the device.
-  // A link in the address bar ends up in history, in screenshots and in
-  // whatever the browser syncs; a link saved to the home screen should not
-  // carry a password around forever either.
+  // THE TOKEN STAYS IN THE URL. It used to be stripped on first open, tidily,
+  // and that was wrong in a way that only shows up on a phone.
+  //
+  // Add to Home Screen saves the address you are standing on. Strip the token
+  // first and the saved icon is a bare /say that knows nobody, which is
+  // exactly what Brandon hit: "the link doesn't seem to have anything in it to
+  // differentiate users." localStorage was supposed to cover that, and cannot
+  // be relied on to — an iOS home-screen web app does not dependably share
+  // storage with the Safari tab it was created from, so the icon can open to
+  // "not set up on this phone" on the very phone that just set it up.
+  //
+  // So the address keeps the secret, which is how a standalone app with no
+  // login knows who is holding it. It is on their own phone, it was sent to
+  // them the way a password is sent, and it is revoked from the Phones page
+  // the moment anyone wants it gone. localStorage is still written, as the
+  // fallback for somebody who opens a bare /say in a browser they used before.
   useEffect(() => {
-    const url = new URL(window.location.href)
-    const fromLink = url.searchParams.get('k')
+    const fromLink = new URL(window.location.href).searchParams.get('k')
     if (fromLink) {
       try {
         localStorage.setItem(STORE, fromLink)
       } catch {
-        /* Private mode. It still works for this visit, just not the next. */
+        /* Private mode. The URL still carries it, so this visit works. */
       }
-      url.searchParams.delete('k')
-      window.history.replaceState(null, '', url.pathname)
       setToken(fromLink)
       return
     }

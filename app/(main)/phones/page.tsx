@@ -36,11 +36,11 @@ export default async function Phones() {
             opening anything &mdash; from the car, the studio floor, anywhere.
           </p>
           <p>
-            Opening it once on their phone saves both, and the link clears itself out of the
-            address bar. Then Share &rarr; Add to Home Screen, and call it{' '}
-            <strong className="font-medium">Say Cheese</strong> &mdash; the name is already
-            filled in, so it is usually just a tap. The keyboard&rsquo;s microphone does the
-            talking.
+            They open it on their phone, and then &mdash; on that same page, without going
+            anywhere else &mdash; Share &rarr; Add to Home Screen. The name comes up as{' '}
+            <strong className="font-medium">Say Cheese</strong> already. The icon remembers who
+            they are, so there is never a password to type, and the keyboard&rsquo;s microphone
+            does the talking.
           </p>
           <p className="text-faint">
             The shared password still works and always will. Anyone using it is simply anonymous,

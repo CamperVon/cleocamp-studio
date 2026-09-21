@@ -126,8 +126,10 @@ export function PhoneSetup({
               {copied === 'link' ? 'Copied' : 'Copy link'}
             </button>
             <p className="mt-2 text-xs text-faint">
-              They open it once on their phone, then Share → Add to Home Screen, and name it{' '}
-              <span className="font-medium text-ink">Say Cheese</span>.
+              They open it on their phone, then Share → Add to Home Screen{' '}
+              <em>from the page it lands on</em>. It comes up named{' '}
+              <span className="font-medium text-ink">Say Cheese</span>. That address is what
+              identifies them, so adding it from anywhere else gives an icon that knows nobody.
             </p>
           </div>
 

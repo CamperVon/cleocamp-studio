@@ -11,14 +11,25 @@ import { SayClient } from './say-client'
  * friction this exists to remove. The token is checked on every send.
  */
 /**
- * `appleWebApp.title` is what iOS pre-fills in the Add to Home Screen box, so
- * the name arrives already typed rather than depending on somebody reading an
- * instruction. Brandon, 21 Sept 2026, wanted it called Say Cheese — a sibling
- * to the Daily Cheese, and a better thing to see on a home screen at 7am than
- * "Tell Mouse". The browser tab keeps the plainer title.
+ * NO MANIFEST ON THIS PAGE, deliberately. That is not an omission.
+ *
+ * Two things go wrong when a web app manifest is linked here, and both were
+ * reported within a minute of each other. iOS prefers the manifest's
+ * short_name over `apple-mobile-web-app-title` when both are present, so Add
+ * to Home Screen pre-filled "Studio" and the Say Cheese name never appeared
+ * however clearly the instructions said it. And a manifest carries a fixed
+ * start_url — "/" — which iOS uses INSTEAD of the address you added from, so
+ * the installed icon would have opened the app root and thrown away the
+ * personal token in the URL, leaving an app that could not tell who was
+ * holding it.
+ *
+ * Without the manifest, iOS takes the name from the meta tag below and the
+ * address from the page you are standing on, which is exactly what is wanted:
+ * "Say Cheese", opening at this person's own link.
  */
 export const metadata: Metadata = {
   title: 'Tell Mouse',
+  manifest: null,
   appleWebApp: { title: 'Say Cheese', capable: true },
 }
 export const viewport: Viewport = {
