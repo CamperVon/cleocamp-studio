@@ -31,13 +31,13 @@ export function PhoneSetup({
     ? {
         phone: `${origin}/enter?k=${live}&to=say`,
         computer: `${origin}/enter?k=${live}`,
-        siri: `${origin}/api/say?format=text`,
-        // Shortcuts asks for a header's name and value in two separate boxes,
-        // so they are two separate things to copy. Handing over
-        // "Authorization: Bearer abc" as one string is not pasteable anywhere
-        // in that screen.
-        headerName: 'Authorization',
-        headerValue: `Bearer ${live}`,
+        // The secret rides in the URL rather than an Authorization header.
+        // The endpoint reads either, and the header screen in Shortcuts is
+        // buried behind Show More and asks for a name and value in two
+        // separate boxes — Brandon, 21 Sept 2026: "i don't see where you add
+        // new header name and value." A URL somebody can paste in one go
+        // removes the step instead of explaining it better.
+        siri: `${origin}/api/say?format=text&k=${live}`,
       }
     : null
 
@@ -165,37 +165,30 @@ export function PhoneSetup({
               Siri, if they want it &mdash; &ldquo;Hey Siri, tell Mouse&rdquo;
             </summary>
             <div className="mt-3 space-y-3">
-              {/* Written out step by step because the middle of it is not
-                  guessable. Get Contents of URL hides everything that matters
-                  behind Show More, and the body has to be JSON with one field
-                  named text — which is the part Brandon got stuck on. */}
+              <p className="text-faint">
+                Optional. The home screen icon already does all of this &mdash; Siri only saves
+                getting the phone out.
+              </p>
               <ol className="list-decimal space-y-1.5 pl-4 text-faint">
-                <li>Shortcuts app → <span className="text-ink">+</span> → Add Action</li>
+                <li>Shortcuts app → <span className="text-ink">+</span></li>
                 <li>Search <span className="text-ink">Dictate Text</span>, add it</li>
-                <li>Add Action → search <span className="text-ink">Get Contents of URL</span>, add it</li>
+                <li>Search <span className="text-ink">Get Contents of URL</span>, add it</li>
                 <li>Paste the URL below into its URL box</li>
-                <li>Tap <span className="text-ink">Show More</span> on that same action</li>
+                <li>Tap <span className="text-ink">Show More</span> on that action</li>
                 <li>Method → <span className="text-ink">POST</span></li>
                 <li>
-                  Headers → <span className="text-ink">Add new header</span>, then paste the
-                  name and value below into the two boxes
+                  Request Body → <span className="text-ink">JSON</span> → add one field, named{' '}
+                  <code className="text-ink">text</code>, whose value is the{' '}
+                  <span className="text-ink">Dictated Text</span> variable
                 </li>
-                <li>Request Body → <span className="text-ink">JSON</span></li>
-                <li>
-                  <span className="text-ink">Add new field</span> → choose{' '}
-                  <span className="text-ink">Text</span> → key is{' '}
-                  <code className="text-ink">text</code>
-                </li>
-                <li>
-                  Tap that field&rsquo;s value box and pick the{' '}
-                  <span className="text-ink">Dictated Text</span> variable from the keyboard row
-                </li>
-                <li>Add Action → search <span className="text-ink">Speak Text</span>, add it (it fills itself in)</li>
-                <li>Rename the shortcut <span className="text-ink">Tell Mouse</span> &mdash; that is what they say to Siri</li>
+                <li>Search <span className="text-ink">Speak Text</span>, add it</li>
+                <li>Name the shortcut <span className="text-ink">Tell Mouse</span></li>
               </ol>
               <Row id={`${personId}-siri`} label="URL (step 4)" value={links.siri} />
-              <Row id={`${personId}-hname`} label="Header name (step 7)" value={links.headerName} />
-              <Row id={`${personId}-hvalue`} label="Header value (step 7)" value={links.headerValue} />
+              <p className="text-faint">
+                No headers to set &mdash; this URL carries the key. If Form or File is easier to
+                reach than JSON in step 7, either works.
+              </p>
             </div>
           </details>
         </div>

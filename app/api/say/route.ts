@@ -40,8 +40,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'not recognised' }, { status: 401 })
   }
 
-  // Accept JSON from the page and a bare string from anything simpler, so a
-  // shortcut does not have to build a body to be understood.
+  // Take the words out of whatever shape they arrive in.
+  //
+  // The page sends JSON. A Siri shortcut sends whichever body type the person
+  // happened to tap in Shortcuts — JSON, Form, or a raw file — and there is no
+  // reason for the wrong guess to be a silent failure they cannot diagnose on
+  // a phone. All three are read here, and anything unrecognised is taken as
+  // the sentence itself, which is the friendliest possible reading.
   const raw = await req.text()
   let text = raw
   if (raw.trimStart().startsWith('{')) {
@@ -51,6 +56,11 @@ export async function POST(req: NextRequest) {
     } catch {
       /* Not JSON after all — treat the whole thing as what they said. */
     }
+  } else if (/^[^=&\s]+=/.test(raw)) {
+    // Form-encoded: text=the+cotton+arrived. Without this branch a Form body
+    // is stored verbatim, "text=the+cotton+arrived" and all.
+    const form = new URLSearchParams(raw)
+    text = form.get('text') ?? form.get('message') ?? raw
   }
   text = text.trim().slice(0, MAX_CHARS)
   if (!text) {
