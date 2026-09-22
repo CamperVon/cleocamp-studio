@@ -2190,6 +2190,9 @@ export const TOOLS: Record<string, Tool> = {
         'USE `to` TO SEND IT TO SOMEONE OTHER THAN THE VENDOR — a project manager who will ' +
         'pass it on, or back to whoever asked so they can look it over. That is a normal ' +
         'request and this tool does it; never tell someone the PDF can only go to the vendor. ' +
+        'Brandon is cc\'d on that redirected copy too, same as a real send, unless he is the ' +
+        'one it\'s going to — this used to be a real send-only default and an internal review ' +
+        'copy went to Cleo with nobody else on it, which he then had to ask for by hand. ' +
         'When this is a cut-and-sew order (its lines are finished units, not components), a ' +
         'real send to the vendor also walks the product\'s BOM and files a dated todo for any ' +
         "component still short of what this run needs — see planComponentKickoff.",
@@ -2299,11 +2302,20 @@ export const TOOLS: Record<string, Tool> = {
         return { sent: false, reason: `"${badCc.join(', ')}" doesn't look like a valid email address — check it rather than sending as-is.` }
       }
       // A real send always copies Cleo and Brandon and the vendor's standing
-      // list. An internal one copies only who was asked for — the vendor's
-      // production manager has no reason to receive an order not being placed.
+      // list. An internal one skips Cleo and the vendor's own list — the
+      // vendor's production manager has no reason to receive an order not
+      // being placed, and Cleo doesn't need cc'ing on a copy sent TO her —
+      // but Brandon is still on every PO email either way. He said so
+      // outright once for real sends (4 Sept) and again, 22 Sept, after an
+      // internal copy to Cleo went out without him on it: "you are always
+      // supposed to cc me, wtf." That's not two rules, it's one — Brandon
+      // sees every PO that goes out this door, full stop — so the internal
+      // path defaults him in too, same as oneOffCc, unless he's already the
+      // one it's addressed to.
       const to = internal ? toOverride : [po.vendor.email!]
+      const alwaysCcBrandon = to.some((a) => a.toLowerCase() === 'brandon@cleocamp.com') ? [] : ['brandon@cleocamp.com']
       const cc = internal
-        ? [...new Set(oneOffCc)]
+        ? [...new Set([...alwaysCcBrandon, ...oneOffCc])]
         : [...new Set(['studio@cleocamp.com', 'brandon@cleocamp.com', ...vendorCc, ...oneOffCc])]
       const { sendEmail } = await import('@/lib/email')
       const res = await sendEmail({
