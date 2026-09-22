@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { runAgent, PROPOSAL_TOOLS } from '@/lib/mouse/agent'
 import { htmlToText } from '@/lib/html-to-text'
+import { personFromInboundAddress } from '@/lib/mouse/identity'
 
 /**
  * The nightly think.
@@ -55,16 +56,26 @@ export async function nightlyPass() {
   }
 
   const mail = unread.length
-    ? unread
-        .map(
-          (m) =>
-            `--- from ${m.fromAddress} to ${m.toAddress}, ${m.receivedAt.toISOString().slice(0, 16)}\n` +
-            // A Gmail reply often carries only an HTML part — raw markup
-            // fed to the model here is wasted tokens and noise it has to
-            // read around. See lib/html-to-text.ts.
-            `Subject: ${m.subject ?? '(none)'}\n\n${(m.text?.trim() || (m.html ? htmlToText(m.html) : '') || '(no body)').slice(0, 4000)}`,
+    ? (
+        await Promise.all(
+          unread.map(async (m) => {
+            // A text that arrives by email comes from whatever gateway
+            // domain the carrier used, not from the person's real address —
+            // resolved here, once, so the model is told who this is rather
+            // than left to guess at a bare run of digits. See
+            // lib/mouse/identity.ts.
+            const person = await personFromInboundAddress(m.fromAddress)
+            const from = person ? `${m.fromAddress} (${person.name})` : m.fromAddress
+            return (
+              `--- from ${from} to ${m.toAddress}, ${m.receivedAt.toISOString().slice(0, 16)}\n` +
+              // A Gmail reply often carries only an HTML part — raw markup
+              // fed to the model here is wasted tokens and noise it has to
+              // read around. See lib/html-to-text.ts.
+              `Subject: ${m.subject ?? '(none)'}\n\n${(m.text?.trim() || (m.html ? htmlToText(m.html) : '') || '(no body)').slice(0, 4000)}`
+            )
+          }),
         )
-        .join('\n\n')
+      ).join('\n\n')
     : '(no unread mail)'
 
   const r = await runAgent({

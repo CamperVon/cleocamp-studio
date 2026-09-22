@@ -34,6 +34,16 @@ model Person {
   /// recognise, so "don't forward this back to whoever sent it" silently
   /// never matched either of them. Identity by inbox, not by one email field.
   aliasEmails String?
+  /// Digits only, no formatting. What identifies someone when a text lands
+  /// by email instead — a carrier's SMS-to-email gateway puts the number in
+  /// the address (3106223898@tmomail.net, or whichever domain), not the
+  /// person's name, and the gateway domain varies by carrier and sometimes
+  /// by message. Brandon, 22 Sept 2026: "if mouse receives an email-text
+  /// from any address with 310-622-3898 in it, it's from Cleo" — a
+  /// substring match on the number, not another exact address to enumerate,
+  /// which is why this is its own field rather than one more aliasEmails
+  /// entry. See personFromInboundAddress in lib/mouse/identity.ts.
+  phone       String?
   role        String? // "Founder", "Project Manager — Manufacturing", etc.
 
   /// Works for somebody Cleo Camp works with, rather than for Cleo Camp.

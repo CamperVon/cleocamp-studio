@@ -2858,18 +2858,25 @@ export const TOOLS: Record<string, Tool> = {
     def: {
       name: 'update_person_email',
       description:
-        'Set who someone actually emails from. Brandon sends from ' +
+        'Set who someone actually emails or texts from. Brandon sends from ' +
         'bc@thecampbrand.com as often as brandon@cleocamp.com, and mail forwarding ' +
         'has to recognise both as him or it treats his own forward as an outside ' +
         'reply and bounces it right back to him. Use this whenever someone mentions ' +
         'an address of theirs that is not already on file — "I also send from ' +
-        '___" — rather than letting it go unrecorded.',
+        '___" — rather than letting it go unrecorded. Also takes a phone number, for ' +
+        'when a text lands as an email instead: a carrier\'s SMS-to-email gateway puts ' +
+        'the number in the address (3106223898@tmomail.net, or whichever domain — it ' +
+        'varies by carrier and sometimes by message), so there is no one exact address ' +
+        'to add as an alias. Brandon, 22 Sept 2026: "if mouse receives an email-text ' +
+        'from any address with 310-622-3898 in it, it\'s from Cleo" — give it the ' +
+        'number and any address containing those digits is recognised as them.',
       input_schema: {
         type: 'object',
         properties: {
           name: str('Their name, e.g. "Brandon" or "Cleo" — matched against Person'),
           email: str('Their primary address'),
           aliasEmails: str('Every other address they send from, comma-separated. Replaces what is there, so include all of them.'),
+          phone: str('Their phone number, any formatting. Matches by the digits alone, as a substring — no need to know the gateway address.'),
         },
         required: ['name'],
       },
@@ -2880,11 +2887,15 @@ export const TOOLS: Record<string, Tool> = {
       const data: any = {}
       if (typeof i.email === 'string') data.email = i.email
       if (typeof i.aliasEmails === 'string') data.aliasEmails = i.aliasEmails
+      if (typeof i.phone === 'string') data.phone = i.phone.replace(/\D/g, '') || null
       if (!Object.keys(data).length) return { error: 'Nothing given to change.' }
       const row = await db.person.update({ where: { id: person.id }, data })
+      const addresses = [row.email, ...(row.aliasEmails ?? '').split(',').filter(Boolean)]
       return {
-        name: row.name, email: row.email, aliasEmails: row.aliasEmails,
-        tellTheUser: `${row.name} is now recognised at ${[row.email, ...(row.aliasEmails ?? '').split(',').filter(Boolean)].join(', ')}.`,
+        name: row.name, email: row.email, aliasEmails: row.aliasEmails, phone: row.phone,
+        tellTheUser:
+          `${row.name} is now recognised at ${addresses.join(', ')}` +
+          (row.phone ? `, and by any address containing ${row.phone}.` : '.'),
       }
     },
   },
