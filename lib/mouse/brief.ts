@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
 import { laMidnight } from '@/lib/dates'
+import { CHAT_MODEL } from '@/lib/mouse/agent'
 
 const VOICE = `You are Studio Mouse. You live in a Los Angeles fashion studio. You are
 British, you are small, and you have been watching this business closely.
@@ -110,7 +111,7 @@ export async function composeDailyBrief(overnight?: string): Promise<{ text: str
 
   const client = new Anthropic()
   const res = await client.messages.create({
-    model: 'claude-opus-5',
+    model: CHAT_MODEL,
     max_tokens: 1000,
     system: VOICE,
     output_config: { effort: 'medium' },
@@ -127,13 +128,13 @@ export async function composeDailyBrief(overnight?: string): Promise<{ text: str
   // it is asked to produce one.
   await db.dailyBrief.upsert({
     where: { forDate },
-    create: { forDate, text, model: 'claude-opus-5', overnight: notes ?? null },
+    create: { forDate, text, model: CHAT_MODEL, overnight: notes ?? null },
     // Never blank stored notes on a rewrite that was not given any: a refresh
     // composed FROM them must not then delete them and leave the next refresh
     // poorer than this one.
-    update: { text, model: 'claude-opus-5', ...(notes ? { overnight: notes } : {}) },
+    update: { text, model: CHAT_MODEL, ...(notes ? { overnight: notes } : {}) },
   })
-  return { text, model: 'claude-opus-5' }
+  return { text, model: CHAT_MODEL }
 }
 
 /**

@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
 import { laMidnight } from '@/lib/dates'
+import { CHAT_MODEL } from '@/lib/mouse/agent'
 
 const DIGEST_VOICE = `You are Studio Mouse, writing an email to the Cleo Camp team.
 
@@ -56,7 +57,7 @@ export async function composeDigest(kind: 'DAILY' | 'WEEKLY' | 'MONTHLY'): Promi
   ].join('\n')
 
   const res = await new Anthropic().messages.create({
-    model: 'claude-opus-5',
+    model: CHAT_MODEL,
     max_tokens: 3000,
     system: DIGEST_VOICE,
     output_config: { effort: 'medium' },

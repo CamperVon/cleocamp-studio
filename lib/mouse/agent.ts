@@ -18,8 +18,12 @@ import { refreshForecastsAndAlerts } from '@/lib/forecast'
  * and how hard it is allowed to think.
  */
 
-const CHAT_MODEL = 'claude-sonnet-5'
-const DEEP_MODEL = 'claude-opus-5'
+// Exported so every caller that runs a one-shot Anthropic request outside
+// runAgent's own loop — the nightly pass, Mouse's Corner, the digests — uses
+// the same default rather than a copy of the string that can drift out of
+// sync with it.
+export const CHAT_MODEL = 'claude-sonnet-5'
+export const DEEP_MODEL = 'claude-opus-5'
 
 /** A file attached to the current turn — an invoice, an old PO, a packing slip. */
 export type AgentAttachment = { mediaType: string; base64: string; filename?: string }

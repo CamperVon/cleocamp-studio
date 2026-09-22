@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { runAgent, PROPOSAL_TOOLS } from '@/lib/mouse/agent'
+import { runAgent, PROPOSAL_TOOLS, CHAT_MODEL } from '@/lib/mouse/agent'
 import { htmlToText } from '@/lib/html-to-text'
 import { personFromInboundAddress } from '@/lib/mouse/identity'
 
@@ -82,7 +82,10 @@ export async function nightlyPass() {
     instruction: `Tonight's unread mail:\n\n${mail}`,
     extraRules: RULES,
     allowedTools: PROPOSAL_TOOLS,
-    model: 'claude-opus-5',
+    // Sonnet by default (Brandon, 22 Sept 2026) — request_deep_analysis is in
+    // PROPOSAL_TOOLS, so a genuinely hard night can still escalate itself to
+    // Opus mid-run rather than paying for it on every ordinary one.
+    model: CHAT_MODEL,
     effort: 'high',
     maxRounds: 8,
   })
