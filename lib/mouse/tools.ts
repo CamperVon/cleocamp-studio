@@ -651,7 +651,15 @@ export const TOOLS: Record<string, Tool> = {
         'Record something a person needs to do, optionally by a date. SET entityType and ' +
         'entityId whenever it is about a specific product, vendor or order — that is the ' +
         'only way it reaches that product\'s row on Products in production; a todo with no ' +
-        'entity only ever shows on the general items list, however product-specific its title.',
+        'entity only ever shows on the general items list, however product-specific its title. ' +
+        'Covers several things at once (a product, its bags, another product)? Still tag the ' +
+        'one it matters most to be seen on rather than leaving it untagged — GENERAL is the ' +
+        'one place nobody is looking. CHECK FOR AN OPEN ITEM ALREADY ON THIS ENTITY FIRST. On ' +
+        '22 Sept 2026 an open, urgent "count before the delivery lands" todo sat unresolved on ' +
+        'the Story Dress row while a new, untagged "count now that it has arrived" todo went ' +
+        'up elsewhere — so the row still showed the stale, now-wrong one and not the current ' +
+        'one. New information that supersedes an open item is corrected with resolve_item in ' +
+        'the same turn, not left standing beside a second item saying the current thing.',
       input_schema: {
         type: 'object',
         properties: {
