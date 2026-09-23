@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { runAgent, PROPOSAL_TOOLS, CHAT_MODEL } from '@/lib/mouse/agent'
 import { htmlToText } from '@/lib/html-to-text'
+import { textFromAttachments } from '@/lib/inbound-body'
 import { personFromInboundAddress } from '@/lib/mouse/identity'
 
 /**
@@ -65,13 +66,30 @@ export async function nightlyPass() {
             // than left to guess at a bare run of digits. See
             // lib/mouse/identity.ts.
             const person = await personFromInboundAddress(m.fromAddress)
+            // A text sent as MMS has its words in an attachment, not the body
+            // (lib/inbound-body.ts). Fetch them once and keep them on the row.
+            if (!m.text?.trim() && !m.html?.trim()) {
+              const emailId = (m.raw as { data?: { email_id?: string } })?.data?.email_id
+              const got = await textFromAttachments(emailId, m.raw)
+              if (got) {
+                m.text = got
+                await db.inboundEmail.update({ where: { id: m.id }, data: { text: got } })
+              }
+            }
+            const unreadable = !m.text?.trim() && !m.html?.trim()
+              ? (m.raw as { data?: { attachments?: { filename?: string | null; content_type?: string }[] } })?.data?.attachments
+                  ?.filter((a) => a.content_type !== 'application/smil')
+                  .map((a) => a.filename ?? a.content_type) ?? []
+              : []
             const from = person ? `${m.fromAddress} (${person.name})` : m.fromAddress
             return (
               `--- from ${from} to ${m.toAddress}, ${m.receivedAt.toISOString().slice(0, 16)}\n` +
               // A Gmail reply often carries only an HTML part — raw markup
               // fed to the model here is wasted tokens and noise it has to
               // read around. See lib/html-to-text.ts.
-              `Subject: ${m.subject ?? '(none)'}\n\n${(m.text?.trim() || (m.html ? htmlToText(m.html) : '') || '(no body)').slice(0, 4000)}`
+              `Subject: ${m.subject ?? '(none)'}\n\n${(m.text?.trim() || (m.html ? htmlToText(m.html) : '') || (unreadable.length
+                ? `(no text could be read — it came with attachments Mouse cannot open: ${unreadable.join(', ')}. Ask the sender what it said; do not guess.)`
+                : '(no body)')).slice(0, 4000)}`
             )
           }),
         )

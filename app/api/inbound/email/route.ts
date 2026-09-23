@@ -1,6 +1,7 @@
 import { after, NextResponse, type NextRequest } from 'next/server'
 import { Webhook } from 'svix'
 import { db } from '@/lib/db'
+import { textFromAttachments } from '@/lib/inbound-body'
 
 /**
  * Inbound email — anything CC'd or forwarded to Studio Mouse.
@@ -94,6 +95,11 @@ export async function POST(req: NextRequest) {
     } catch {
       // Metadata is still worth keeping; the body can be fetched again later.
     }
+  }
+  // A text sent as MMS keeps its words in an attached text_1.txt, not the
+  // body. See lib/inbound-body.ts.
+  if (!text?.trim() && !html?.trim()) {
+    text = (await textFromAttachments(d.email_id, event)) ?? text
   }
 
   // A random key here meant a retry of a message carrying neither id found
