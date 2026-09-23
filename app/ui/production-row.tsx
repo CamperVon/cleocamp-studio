@@ -39,11 +39,13 @@ export function ProductionRow({ p }: { p: ProductState }) {
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
               {p.flag ? <Mouse size={17} className="shrink-0 text-urgent" /> : null}
-              {/* The rewrite that made these rows readable dropped red from the
-                  name itself along the way — only the mouse icon stayed red,
-                  so a flagged product read as normal text with a small red
-                  mark next to it rather than as a red line. */}
-              <span className={`truncate text-sm font-medium ${p.flag ? 'text-urgent' : ''}`}>{p.name}</span>
+              {/* The name is pink on every row, flagged or not — Brandon,
+                  23 Sept 2026: "All three in production bold titles can be
+                  pink." It used to take the warning colour when flagged; the
+                  flag still shows, in the mouse icon beside the name and the
+                  summary line under it, both of which keep the warning
+                  colour. */}
+              <span className="truncate text-sm font-medium text-accent">{p.name}</span>
             </span>
             {/* Red follows the whole row, not just the name and icon — a red
                 product whose summary line stayed grey read as half a warning. */}
