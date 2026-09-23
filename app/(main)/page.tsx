@@ -138,7 +138,7 @@ export default async function Today() {
           banner does not delay anything — true again now that what used to
           be the urgent banner right below it has moved down into Mouse's
           Corner. */}
-      <figure className="relative overflow-hidden rounded-xl border border-line bg-accent-soft px-6 py-8 text-center sm:px-12 sm:py-11">
+      <figure className="relative overflow-hidden rounded-xl border border-line bg-accent-soft px-6 py-5 text-center sm:px-12 sm:py-11">
         {/* size, not a width class: the drawing is 80x46, so forcing it square
             squashes the mouse. */}
         <Mouse size={72} className="pointer-events-none absolute -bottom-3 -right-2 text-accent/25" />

@@ -2,12 +2,12 @@ import type { ReactNode } from 'react'
 
 export function Page({ title, lede, children }: { title: string; lede?: string; children: ReactNode }) {
   return (
-    <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
-      <div className="mb-6 sm:mb-8">
+    <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-4 sm:px-6 sm:py-10">
+      <div className="mb-4 sm:mb-8">
         <h1 className="font-serif text-[30px] italic leading-tight sm:text-[38px]">{title}</h1>
         {lede ? <p className="mt-1.5 text-sm text-muted sm:text-base">{lede}</p> : null}
       </div>
-      <div className="flex flex-col gap-6 sm:gap-8">{children}</div>
+      <div className="flex flex-col gap-4 sm:gap-8">{children}</div>
     </main>
   )
 }
