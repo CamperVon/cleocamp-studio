@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Intuit_QuickBooks__company_info",
+      "mcp__Intuit_QuickBooks__profit_loss_quickbooks_account",
+      "mcp__Intuit_QuickBooks__qbo_accounting_get_ar_aging_summary",
+      "Bash(npx tsx scripts/record-quickbooks.ts:*)"
+    ]
+  }
+}

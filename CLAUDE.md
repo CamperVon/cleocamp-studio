@@ -117,10 +117,9 @@ data. That must not happen again.
   Claude session mailed a sales analysis into it on 15 Sept 2026, where it sat
   waiting to be read back as if a person had sent it.
 - **The exception, and it is a real one: a *proposal* belongs in that inbox.**
-  The QuickBooks routine mailing figures to `mouse@` is correct and
-  deliberate (§6, Brandon's decision) — those numbers are not knowledge to
-  store, they are a claim awaiting a human's confirmation before anything is
-  recorded, which is exactly what that pipeline is for. The test is what
+  If a person has to confirm something before it is recorded, mailing it to
+  `mouse@` is right. (The QuickBooks routine used to be the example; since
+  23 Sept 2026 it no longer emails at all — see §6.) The test is what
   happens next: if it should become a stored fact the moment Mouse reads it,
   it is knowledge and belongs in a `Note`. If a person has to say yes first,
   it is a proposal and the inbox is right.
@@ -219,10 +218,21 @@ Framework-level conventions from the Next.js scaffold live in `AGENTS.md`.
   quietly. Anything displaying these numbers shows the warning beside them.
 - **QuickBooks comes in through the Routine. The app's own OAuth is not used —
   decided by Brandon, 12 Sept 2026.** The claude.ai connector reaches Claude
-  Code sessions (verified 12 Sept 2026) and that is the live path: the daily
-  co-work task pulls the figures and mails them in, where they land as
-  *proposals* a human confirms, never as direct writes (§4). This is how the
-  numbers in `HANDOFF.md` were obtained.
+  Code sessions (verified 12 Sept 2026) and that is the live path.
+  **Since 23 Sept 2026 the figures are recorded without anyone approving
+  them — Brandon's call.** Emailing them in as proposals meant nobody
+  confirmed them: five pulls arrived 15–20 Sept and one was recorded. Now the
+  routine saves the connector's P&L results to files and runs
+  `scripts/record-quickbooks.ts`, which reads only the report's own top-level
+  rows (`lib/qb-report.ts`), checks them against each other to the dollar
+  (`lib/pnl-check.ts`: revenue − COGS = gross profit, gross profit − net
+  operating income = the Expenses row, MTD ≤ YTD, no overnight YTD cliff),
+  and records them only if every check passes (`lib/record-pnl.ts`). If any
+  check fails, nothing is written and an `OpenQuestion` is raised with the
+  figures and the reason. The judgement a person was being asked to make is
+  now made in code, every night — so do not loosen a check to get a night
+  through. Fix the reading instead. This is not email-borne data: the
+  routine talks to QuickBooks directly, and no inbox is involved.
   The Intuit OAuth in `lib/integrations/quickbooks.ts` is built but deliberately
   dormant. `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET` and `QBO_REDIRECT_URI` are empty
   placeholders, `QuickBooksConnection` has no row, `isConfigured()` is false and
