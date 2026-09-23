@@ -536,7 +536,7 @@ export function Chat() {
             // sending. Only the send button should fire." Dictated messages
             // arrive with line breaks in them, and every one of those breaks
             // used to fire a half-written thought at Mouse.
-            placeholder="What happened?"
+            placeholder="Say cheese…"
             rows={1}
             className="min-w-0 flex-1 resize-none rounded-lg border border-line bg-bg px-3.5 py-2.5
                        text-base leading-snug outline-none focus-visible:border-accent
