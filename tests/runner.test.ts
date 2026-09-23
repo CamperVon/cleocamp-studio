@@ -109,3 +109,36 @@ test('legacy input-only tool records are not proof of success; diagnostics remov
   assert.doesNotMatch(text, /password@example|abc|sk-ant-test123|binary|hidden/)
   assert.match(text, /1200/)
 })
+
+test('a request that runs out of room thinking, before any action, is retried once at low effort', async () => {
+  // 23 Sept 2026: a long bag update spent a whole request thinking and the
+  // turn ended with no change made and most of its budget unused.
+  const seen: Array<{ effort?: string; nudged: boolean }> = []
+  let writes = 0
+  const r = await runLoop({ ...base, maxOutputTokens: 24000,
+    create: async req => {
+      const last = req.messages.at(-1)!.content
+      seen.push({
+        effort: (req as { output_config?: { effort?: string } }).output_config?.effort,
+        nudged: Array.isArray(last) && JSON.stringify(last).includes('Start making the tool calls now'),
+      })
+      if (seen.length === 1) return { content: [], stop_reason: 'max_tokens', usage: { ...usage, output_tokens: 16000 } }
+      if (seen.length === 2) return response([toolUse('update_purchase_order')])
+      return answer
+    }, execute: async () => { writes++; return { updated: true } },
+  })
+  assert.equal(seen[0].effort, 'medium')
+  assert.deepEqual(seen[1], { effort: 'low', nudged: true })
+  assert.equal(writes, 1)
+  assert.equal(r.usage.stopReason, 'complete')
+})
+
+test('the overthinking retry happens only once', async () => {
+  let n = 0
+  const r = await runLoop({ ...base, maxOutputTokens: 64000,
+    create: async () => { n++; return { content: [], stop_reason: 'max_tokens', usage: { ...usage, output_tokens: 8000 } } },
+    execute: async () => ({}),
+  })
+  assert.equal(n, 2)
+  assert.equal(r.usage.stopReason, 'budget')
+})

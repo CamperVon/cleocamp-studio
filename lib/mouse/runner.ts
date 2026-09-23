@@ -47,6 +47,8 @@ export async function runLoop(opts: {
   let stopReason: AgentUsage['stopReason'] = 'budget'
   let attemptedRequests = 0
   let providerError: string | null = null
+  let effort = opts.effort
+  let retriedOverthinking = false
 
   for (let round = 0; round < maxRequests && spent < maxOutputTokens; round++) {
     const at = Date.now()
@@ -54,10 +56,14 @@ export async function runLoop(opts: {
     try {
       attemptedRequests++
       res = await opts.create({
-        model, max_tokens: Math.min(8000, maxOutputTokens - spent),
+        // 16k, not 8k: on 23 Sept 2026 a long bag update from Brandon (three
+        // orders, a pickup and a stock count) spent all 8,000 of a single
+        // request thinking, made no tool call, and the turn ended "reasoning
+        // limit" with two-thirds of its budget unspent.
+        model, max_tokens: Math.min(16000, maxOutputTokens - spent),
         system: opts.system, tools: opts.tools, messages,
         thinking: { type: 'adaptive' },
-        output_config: { effort: opts.effort ?? (model === opts.deepModel ? 'high' : 'medium') },
+        output_config: { effort: effort ?? (model === opts.deepModel ? 'high' : 'medium') },
       })
     } catch (e) {
       // Preserve outcomes from earlier rounds instead of losing them in a 500.
@@ -69,6 +75,36 @@ export async function runLoop(opts: {
       cacheReadTokens: res.usage.cache_read_input_tokens ?? 0,
       cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0, durationMs: Date.now() - at })
     spent += res.usage.output_tokens
+
+    // Ran out of room while still thinking, before doing anything at all.
+    // Once per turn: ask again at low effort, told to start acting and work
+    // through it a piece at a time rather than plan the whole list first.
+    // The partial response is dropped, not replayed — it holds no tool call,
+    // so nothing was done that could be repeated.
+    if (
+      res.stop_reason === 'max_tokens' &&
+      !res.content.some(b => b.type === 'tool_use') &&
+      !retriedOverthinking &&
+      maxOutputTokens - spent >= 2048
+    ) {
+      retriedOverthinking = true
+      effort = 'low'
+      const last = messages[messages.length - 1]
+      const nudge: Anthropic.TextBlockParam = {
+        type: 'text',
+        text:
+          '(Your last attempt used all its room planning and did nothing. Start making the ' +
+          'tool calls now, one item at a time, and think only as much as each step needs. ' +
+          'If something is ambiguous, record what is clear and ask about the rest.)',
+      }
+      messages[messages.length - 1] = {
+        ...last,
+        content: typeof last.content === 'string'
+          ? [{ type: 'text', text: last.content }, nudge]
+          : [...last.content, nudge],
+      }
+      continue
+    }
 
     if (res.stop_reason !== 'tool_use') {
       text = res.content.filter(b => b.type === 'text').map(b => b.text).join('\n')
