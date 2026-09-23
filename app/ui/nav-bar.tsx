@@ -75,7 +75,7 @@ export function NavBar({ personName }: { personName: string | null }) {
 
   return (
     <>
-      <header className="sticky top-0 z-20 border-b border-line bg-bg/85 backdrop-blur">
+      <header className="z-20 shrink-0 border-b border-line bg-bg/85 backdrop-blur md:sticky md:top-0">
         <div className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-3 sm:px-6">
           {/* Phone: just the mouse. The full wordmark took half the bar. */}
           <Link href="/" className="shrink-0 md:hidden" aria-label="Studio Mouse — home">
@@ -160,7 +160,7 @@ export function NavBar({ personName }: { personName: string | null }) {
         // Pale pink, the quote card's colour, so the page has pink at both
         // ends without shouting. Brandon picked this over a solid pink bar
         // and a white one with pink icons, 23 Sept 2026.
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-accent/20 bg-accent-soft md:hidden"
+        className="relative z-30 order-last shrink-0 border-t border-accent/20 bg-accent-soft md:hidden"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         aria-label="Main"
       >

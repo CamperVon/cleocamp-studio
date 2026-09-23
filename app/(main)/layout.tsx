@@ -2,13 +2,18 @@ import { Nav } from '@/app/ui/nav'
 
 export default function MainLayout({ children }: LayoutProps<"/">) {
   return (
-    <>
+    // Phone: a fixed frame, h-dvh, with the header at the top, the tab bar at
+    // the bottom and only the page between them scrolling. The tab bar used to
+    // be position: fixed over a scrolling page, and iPhone Safari drew it
+    // halfway up the screen mid-scroll while its own toolbar was collapsing
+    // (Brandon, 23 Sept 2026: "Footer should not float"). As an ordinary
+    // flex child it has nowhere to drift to. Desktop keeps the normal
+    // page scroll.
+    <div className="flex h-dvh flex-col md:h-auto md:flex-1">
       <Nav />
-      {/* Room at the bottom on a phone for the tab bar, so the last card on a
-          page is never sitting underneath it. */}
-      <div className="flex flex-1 flex-col pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain md:overflow-visible">
         {children}
       </div>
-    </>
+    </div>
   )
 }
