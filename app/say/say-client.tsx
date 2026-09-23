@@ -185,7 +185,7 @@ export function SayClient() {
           type="button"
           onClick={send}
           disabled={!text.trim() || sending}
-          className="flex-1 rounded-2xl bg-ink px-5 py-4 text-base font-semibold text-bg disabled:opacity-40"
+          className="flex-1 rounded-2xl bg-accent px-5 py-4 text-base font-semibold text-white disabled:opacity-40 dark:text-[#0F1211]"
         >
           {sending ? 'Telling Mouse…' : 'Send'}
         </button>

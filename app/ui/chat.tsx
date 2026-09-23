@@ -545,8 +545,8 @@ export function Chat() {
           <button
             type="submit"
             disabled={!input.trim() && files.length === 0}
-            className="shrink-0 rounded-lg bg-ink px-4 py-2.5 text-sm font-medium text-bg
-                       disabled:opacity-40"
+            className="shrink-0 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white
+                       disabled:opacity-40 dark:text-[#0F1211]"
           >
             Send
           </button>
