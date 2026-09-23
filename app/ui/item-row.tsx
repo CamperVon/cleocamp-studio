@@ -45,8 +45,8 @@ export function ItemRow({
               type="button"
               disabled={pending || !answer.trim()}
               onClick={() => start(async () => { await answerItem(id, answer); setDone(true) })}
-              className="shrink-0 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white
-                         disabled:opacity-40 dark:text-[#0F1211]"
+              className="shrink-0 rounded-lg bg-ink px-3 py-2 text-sm font-medium text-bg
+                         disabled:opacity-40"
             >
               {pending ? 'Saving…' : 'Answer'}
             </button>

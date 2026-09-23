@@ -299,7 +299,7 @@ export function ComponentRow({
                 type="button"
                 disabled={pending}
                 onClick={save}
-                className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:text-[#0F1211]"
+                className="rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-bg disabled:opacity-40"
               >
                 {pending ? 'Saving…' : 'Save'}
               </button>

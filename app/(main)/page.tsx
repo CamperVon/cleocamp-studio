@@ -180,7 +180,7 @@ export default async function Today() {
           <span aria-hidden className="shrink-0 text-faint transition-transform group-open:rotate-90">
             &rsaquo;
           </span>
-          <h2 className="flex-1 text-sm font-semibold">Products in production</h2>
+          <h2 className="flex-1 font-serif text-[17px] italic">Products in production</h2>
           <span className={`text-xs ${production.some((p) => p.flag) ? 'text-urgent' : 'text-faint'}`}>
             {production.filter((p) => p.flag).length
               ? `${production.filter((p) => p.flag).length} need attention`
@@ -234,7 +234,7 @@ export default async function Today() {
         <section className="overflow-hidden rounded-xl border border-line bg-surface">
           <div className="flex items-center gap-2 border-b border-line px-4 py-3 sm:px-5">
             <Mouse size={26} className="text-ink/70" />
-            <h2 className="text-sm font-semibold">Mouse&rsquo;s Corner</h2>
+            <h2 className="font-serif text-[17px] italic">Mouse&rsquo;s Corner</h2>
           </div>
           {urgent.length ? (
             <ul className="divide-y divide-urgent/15 border-b border-line bg-urgent-soft">
@@ -259,7 +259,7 @@ export default async function Today() {
       {/* What is out of the building and when it comes back. */}
       <details className="group overflow-hidden rounded-xl border border-line bg-surface" open>
         <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 sm:px-5">
-          <h2 className="flex-1 text-sm font-semibold">In production &amp; on order</h2>
+          <h2 className="flex-1 font-serif text-[17px] italic">In production &amp; on order</h2>
           <span className="text-xs text-faint">{runs.length + pos.length} in flight</span>
         </summary>
         <div className="border-t border-line">
@@ -405,7 +405,7 @@ export default async function Today() {
       {rest.length ? (
         <details className="group overflow-hidden rounded-xl border border-line bg-surface">
           <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 sm:px-5">
-            <h2 className="flex-1 text-sm font-semibold">Worth knowing</h2>
+            <h2 className="flex-1 font-serif text-[17px] italic">Worth knowing</h2>
             <span className="text-xs text-faint">{rest.length}</span>
           </summary>
           <ul className="divide-y divide-line border-t border-line">
@@ -421,7 +421,7 @@ export default async function Today() {
 
       <details className="group overflow-hidden rounded-xl border border-line bg-surface">
         <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 sm:px-5">
-          <h2 className="flex-1 text-sm font-semibold">Studio supplies</h2>
+          <h2 className="flex-1 font-serif text-[17px] italic">Studio supplies</h2>
           <span className="text-xs text-faint">{components.length} counted here</span>
         </summary>
         <ul className="divide-y divide-line border-t border-line">

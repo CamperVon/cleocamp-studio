@@ -14,6 +14,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Lets the phone tab bar pad itself clear of the home indicator with
+  // env(safe-area-inset-bottom); without this the inset always reads zero.
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#FAFAF8" },
     { media: "(prefers-color-scheme: dark)", color: "#0F1211" },

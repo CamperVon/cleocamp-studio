@@ -171,7 +171,7 @@ function ReportGap({ messageId }: { messageId: string }) {
           type="button"
           onClick={send}
           disabled={state === 'sending'}
-          className="rounded bg-accent px-2 py-1 text-[11px] font-medium text-white disabled:opacity-50 dark:text-[#0F1211]"
+          className="rounded bg-ink px-2 py-1 text-[11px] font-medium text-bg disabled:opacity-50"
         >
           {state === 'sending' ? 'Sending' : 'Send'}
         </button>
@@ -433,7 +433,7 @@ export function Chat() {
                   <p
                     className={
                       m.role === 'user'
-                        ? 'rounded-2xl rounded-br-sm bg-accent px-3.5 py-2 text-sm text-white dark:text-[#0F1211]'
+                        ? 'rounded-2xl rounded-br-sm bg-ink px-3.5 py-2 text-sm text-bg'
                         : 'whitespace-pre-wrap text-sm leading-relaxed'
                     }
                   >
@@ -545,8 +545,8 @@ export function Chat() {
           <button
             type="submit"
             disabled={!input.trim() && files.length === 0}
-            className="shrink-0 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white
-                       disabled:opacity-40 dark:text-[#0F1211]"
+            className="shrink-0 rounded-lg bg-ink px-4 py-2.5 text-sm font-medium text-bg
+                       disabled:opacity-40"
           >
             Send
           </button>

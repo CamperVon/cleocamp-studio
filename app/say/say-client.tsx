@@ -127,7 +127,7 @@ export function SayClient() {
   if (token === null) {
     return (
       <div className="mx-auto max-w-md px-5 py-16 text-center">
-        <h1 className="text-xl font-semibold">Not set up on this phone</h1>
+        <h1 className="font-serif text-2xl italic">Not set up on this phone</h1>
         <p className="mt-3 text-sm text-faint">
           This page needs a personal link before it can tell Mouse anything. Ask Brandon to send
           you one, open it once on this phone, and it will remember.
@@ -138,7 +138,7 @@ export function SayClient() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pb-8 pt-10">
-      <h1 className="text-2xl font-semibold tracking-tight">Tell Mouse</h1>
+      <h1 className="font-serif text-[30px] italic leading-tight">Tell Mouse</h1>
       <p className="mt-1 text-sm text-faint">
         Anything that happened. It gets written down and Mouse will ask if something is unclear.
       </p>
@@ -185,7 +185,7 @@ export function SayClient() {
           type="button"
           onClick={send}
           disabled={!text.trim() || sending}
-          className="flex-1 rounded-2xl bg-accent px-5 py-4 text-base font-semibold text-white disabled:opacity-40 dark:text-[#0F1211]"
+          className="flex-1 rounded-2xl bg-ink px-5 py-4 text-base font-semibold text-bg disabled:opacity-40"
         >
           {sending ? 'Telling Mouse…' : 'Send'}
         </button>

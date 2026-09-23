@@ -4,7 +4,7 @@ export function Page({ title, lede, children }: { title: string; lede?: string; 
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
       <div className="mb-6 sm:mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
+        <h1 className="font-serif text-[30px] italic leading-tight sm:text-[38px]">{title}</h1>
         {lede ? <p className="mt-1.5 text-sm text-muted sm:text-base">{lede}</p> : null}
       </div>
       <div className="flex flex-col gap-6 sm:gap-8">{children}</div>
@@ -17,7 +17,7 @@ export function Card({ title, action, children }: { title?: ReactNode; action?: 
     <section className="overflow-hidden rounded-xl border border-line bg-surface">
       {title ? (
         <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
-          <h2 className="flex items-center gap-2 text-sm font-semibold">{title}</h2>
+          <h2 className="flex items-center gap-2 font-serif text-[17px] italic">{title}</h2>
           {action}
         </div>
       ) : null}
@@ -50,7 +50,10 @@ export function Money({ cents }: { cents: number | null | undefined }) {
 
 const TONES = {
   neutral: 'bg-sunk text-muted',
-  accent: 'bg-accent-soft text-accent',
+  // Was the green, where it sat quietly. In pink every "Sent" and "do" chip
+  // turned into brand colour, which is not what the colour is for — so the
+  // accent chip is now dark ink on grey: still a step up from neutral, not pink.
+  accent: 'bg-ink/10 text-ink',
   warn: 'bg-warn-soft text-warn',
   urgent: 'bg-urgent-soft text-urgent',
 } as const

@@ -100,7 +100,7 @@ export default async function Finances() {
             </p>
             {isConfigured() ? (
               <a href="/api/quickbooks/connect"
-                className="self-start rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white dark:text-[#0F1211]">
+                className="self-start rounded-lg bg-ink px-4 py-2.5 text-sm font-medium text-bg">
                 Connect QuickBooks
               </a>
             ) : null}

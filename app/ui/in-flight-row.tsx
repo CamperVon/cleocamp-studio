@@ -75,8 +75,8 @@ export function InFlightRow({
                 type="button"
                 disabled={pending || !text.trim()}
                 onClick={() => start(async () => { await addInFlightUpdate(kind, id, text); setSaved(true) })}
-                className="shrink-0 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white
-                           disabled:opacity-40 dark:text-[#0F1211]"
+                className="shrink-0 rounded-lg bg-ink px-3 py-2 text-sm font-medium text-bg
+                           disabled:opacity-40"
               >
                 {pending ? 'Applying…' : 'Add update'}
               </button>

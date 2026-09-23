@@ -138,7 +138,7 @@ export function PhoneSetup({
             className={
               live
                 ? 'rounded-lg border border-line px-3 py-2 text-sm disabled:opacity-40'
-                : 'rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white disabled:opacity-40 dark:text-[#0F1211]'
+                : 'rounded-lg bg-ink px-3 py-2 text-sm font-medium text-bg disabled:opacity-40'
             }
           >
             {busy ? 'Working…' : live ? 'Replace' : 'Create links'}

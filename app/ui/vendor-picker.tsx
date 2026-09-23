@@ -59,7 +59,7 @@ export function VendorPicker({
           type="button"
           disabled={pending || !name.trim()}
           onClick={create}
-          className="rounded-lg bg-accent px-2 py-1.5 text-xs font-medium text-white disabled:opacity-40 dark:text-[#0F1211]"
+          className="rounded-lg bg-ink px-2 py-1.5 text-xs font-medium text-bg disabled:opacity-40"
         >
           {pending ? '…' : 'Add'}
         </button>

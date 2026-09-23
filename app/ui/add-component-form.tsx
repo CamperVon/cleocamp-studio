@@ -252,7 +252,7 @@ export function AddComponentForm({ vendors, products }: { vendors: Vendor[]; pro
           type="button"
           disabled={pending}
           onClick={save}
-          className="rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-white disabled:opacity-40 dark:text-[#0F1211]"
+          className="rounded-lg bg-ink px-3.5 py-2 text-sm font-medium text-bg disabled:opacity-40"
         >
           {pending ? 'Saving…' : 'Add component'}
         </button>
