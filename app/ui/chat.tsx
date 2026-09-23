@@ -14,6 +14,8 @@ type Msg = {
   writes?: Array<{ tool: string; summary: string }>
   model?: string
   attachments?: Array<{ filename: string }>
+  /// When the server saved it; only on messages loaded back from the thread.
+  at?: string
 }
 
 type PendingFile = { filename: string; mediaType: string; base64: string }
@@ -110,6 +112,45 @@ async function shrinkImage(file: File): Promise<PendingFile> {
 const THREAD_KEY = 'studio-mouse:thread-id'
 
 /**
+ * Wait for a reply the phone stopped listening for.
+ *
+ * iPhone Safari cancels a request in flight when you switch tab, lock the
+ * phone or leave the app, and the chat used to print the browser's own error
+ * — "Load failed" — as if it were Mouse's answer. The turn had not failed: it
+ * finished on the server and saved, twenty seconds later (Brandon, 23 Sept
+ * 2026, a Lorena packing slip). So a dropped connection now means "keep
+ * checking the thread until the reply is there", not "something went wrong".
+ *
+ * Finds the user's message by its text and waits for an assistant message
+ * after it. If the message itself never shows up, it never reached the
+ * server, and that is said plainly so it can be sent again.
+ */
+export async function awaitReply(threadId: string, sent: string, alive: () => boolean): Promise<Msg[] | 'not-received' | 'timeout'> {
+  const started = Date.now()
+  while (alive() && Date.now() - started < 5 * 60_000) {
+    await new Promise((r) => setTimeout(r, 3000))
+    try {
+      const res = await fetch(`/api/chat?threadId=${encodeURIComponent(threadId)}`, { cache: 'no-store' })
+      if (res.ok) {
+        const d = (await res.json()) as { messages: Msg[] }
+        const i = d.messages.map((m) => m.role === 'user' && m.text === sent).lastIndexOf(true)
+        if (i !== -1 && d.messages.slice(i + 1).some((m) => m.role === 'assistant')) return d.messages
+        if (i === -1 && Date.now() - started > 30_000) return 'not-received'
+      } else if (res.status === 404 && Date.now() - started > 30_000) {
+        return 'not-received'
+      }
+    } catch {
+      // Still offline or still in the background — try again next tick.
+    }
+  }
+  return 'timeout'
+}
+
+const isDroppedConnection = (err: unknown) =>
+  err instanceof TypeError ||
+  (err instanceof Error && /load failed|failed to fetch|networkerror|network connection was lost/i.test(err.message))
+
+/**
  * "Mouse can't do this" — one tap, against this reply.
  *
  * Brandon, 9 Sept 2026: "I feel like this is a game of telephone." When Mouse
@@ -197,7 +238,15 @@ export function Chat() {
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [pending, setPending] = useState<string | null>(null)
-  const [threadId, setThreadId] = useState<string | undefined>()
+  // The conversation's id. A ref, not state, so it is readable at once — a
+  // queued message delivered straight after the first must not start a
+  // second conversation because a re-render had not caught up yet.
+  const threadRef = useRef<string | undefined>(undefined)
+  const alive = useRef(true)
+  useEffect(() => {
+    alive.current = true
+    return () => { alive.current = false }
+  }, [])
   const [restoring, setRestoring] = useState(true)
   const [files, setFiles] = useState<PendingFile[]>([])
   const [fileError, setFileError] = useState<string | null>(null)
@@ -233,7 +282,18 @@ export function Chat() {
         const d = await res.json()
         if (cancelled) return
         setMessages(d.messages)
-        setThreadId(d.threadId)
+        threadRef.current = d.threadId
+        // Came back to a question Mouse is still answering — the last word in
+        // the thread is yours, from the last few minutes. Show it thinking and
+        // pick the reply up when it lands, instead of a silent dead end.
+        const last: Msg | undefined = d.messages[d.messages.length - 1]
+        if (last?.role === 'user' && last.at && Date.now() - Date.parse(last.at) < 5 * 60_000) {
+          setRestoring(false)
+          setPending('Thinking')
+          const got = await awaitReply(d.threadId, last.text, () => alive.current && !cancelled)
+          if (Array.isArray(got)) { setMessages(got); router.refresh() }
+          setPending(null)
+        }
       } catch {
         // Thread no longer exists, or couldn't be reached — start fresh
         // rather than getting stuck unable to send anything.
@@ -244,10 +304,11 @@ export function Chat() {
     }
     restore()
     return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function rememberThread(id: string) {
-    setThreadId(id)
+    threadRef.current = id
     try { localStorage.setItem(THREAD_KEY, id) } catch { /* ignore */ }
   }
 
@@ -256,7 +317,7 @@ export function Chat() {
   // the next message starts a new one instead of picking the old one back up.
   function startNewConversation() {
     setMessages([])
-    setThreadId(undefined)
+    threadRef.current = undefined
     try { localStorage.removeItem(THREAD_KEY) } catch { /* ignore */ }
   }
 
@@ -353,12 +414,17 @@ export function Chat() {
 
   async function deliver(text: string, attached: PendingFile[]) {
     setPending(attached.length ? 'Reading' : 'Thinking')
+    // Named and remembered before sending, so a reply the phone stops
+    // listening for can still be found. See awaitReply.
+    const id = threadRef.current ?? crypto.randomUUID()
+    rememberThread(id)
+    const sent = text || "Here's a document — take a look."
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId, message: text, attachments: attached }),
+        body: JSON.stringify({ threadId: id, message: text, attachments: attached }),
       })
       if (!res.ok) {
         // A 413 comes from Vercel, not from us, and answers in plain text —
@@ -390,6 +456,22 @@ export function Chat() {
       // actually wrote something — a pure Q&A turn changed nothing to reflect.
       if (d.writes?.length) router.refresh()
     } catch (err) {
+      if (isDroppedConnection(err)) {
+        const got = await awaitReply(id, sent, () => alive.current)
+        if (Array.isArray(got)) {
+          setMessages(got)
+          router.refresh()
+          return
+        }
+        if (!alive.current) return
+        setMessages((m) => [...m, {
+          role: 'assistant',
+          text: got === 'not-received'
+            ? "That didn't reach me — the connection dropped before it sent. Send it again."
+            : "I'm still working on that one. Pull down to refresh in a minute and the answer will be here.",
+        }])
+        return
+      }
       setMessages((m) => [...m, {
         role: 'assistant',
         text:

@@ -47,6 +47,7 @@ export async function GET(req: NextRequest) {
       model: m.model ?? undefined,
       attachments: m.attachments.length ? m.attachments : undefined,
       writes: completedWrites(m.toolCallsJson),
+      at: m.createdAt.toISOString(),
     })),
   })
 }
@@ -81,8 +82,15 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // The client names a new conversation itself (a random UUID) and remembers
+  // it BEFORE sending. iPhone Safari drops a request in flight the moment you
+  // switch tab or leave the app; the turn still finishes and saves here, but
+  // a first message used to learn its thread id only from the response it
+  // never got — so there was nothing to go back and fetch the reply from.
+  const clientNamed = typeof body.threadId === 'string' && /^[0-9a-f-]{36}$/i.test(body.threadId)
   const thread = body.threadId
-    ? await db.chatThread.findUnique({ where: { id: body.threadId } })
+    ? (await db.chatThread.findUnique({ where: { id: body.threadId } })) ??
+      (clientNamed ? await db.chatThread.create({ data: { id: body.threadId } }) : null)
     : await db.chatThread.create({ data: {} })
   if (!thread) return NextResponse.json({ error: 'no such thread' }, { status: 404 })
 
