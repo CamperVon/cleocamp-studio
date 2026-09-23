@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { laMidnight } from '@/lib/dates'
+import { planOrderByCalendar } from '@/lib/order-by-calendar'
 
 /**
  * The forecast.
@@ -313,6 +314,7 @@ export async function refreshForecastsAndAlerts(): Promise<{
   refreshed: number
   snoozed: number
   cleared: number
+  calendar: { removed: number; created: number }
 }> {
   const results = await recomputeForecasts()
 
@@ -376,5 +378,43 @@ export async function refreshForecastsAndAlerts(): Promise<{
     data: { resolved: true, resolvedAt: new Date() },
   })
 
-  return { computed: results.length, raised, refreshed, snoozed: snoozedCount, cleared: cleared.count }
+  const calendar = await syncOrderByCalendar()
+
+  return { computed: results.length, raised, refreshed, snoozed: snoozedCount, cleared: cleared.count, calendar }
+}
+
+/**
+ * Keep exactly one "Order X" calendar entry per forecast, at its current
+ * date — see lib/order-by-calendar.ts for why this used to pile up. Runs
+ * wherever the forecast is refreshed, so a date that moves mid-day moves on
+ * the calendar too instead of waiting for tonight.
+ */
+export async function syncOrderByCalendar(): Promise<{ removed: number; created: number }> {
+  const today = laMidnight(0)
+  const [forecasts, existing] = await Promise.all([
+    db.forecastResult.findMany({
+      where: { recommendedOrderDate: { not: null } },
+      include: { product: true, component: true },
+    }),
+    db.calendarEvent.findMany({
+      where: { source: 'STUDIO_MOUSE', type: 'ORDER_BY', date: { gte: today } },
+      select: { id: true, title: true, date: true },
+    }),
+  ])
+
+  const wanted = forecasts.map((f) => ({
+    title: `Order ${f.product?.name ?? f.component?.name ?? 'something'}`,
+    date: f.recommendedOrderDate!,
+    productId: f.productId,
+    notes: f.note,
+  }))
+  const { remove, create } = planOrderByCalendar(wanted, existing, today)
+
+  if (remove.length) await db.calendarEvent.deleteMany({ where: { id: { in: remove } } })
+  for (const w of create) {
+    await db.calendarEvent.create({
+      data: { title: w.title, date: w.date, productId: w.productId, notes: w.notes, type: 'ORDER_BY', source: 'STUDIO_MOUSE' },
+    })
+  }
+  return { removed: remove.length, created: create.length }
 }

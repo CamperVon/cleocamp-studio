@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { laMidnight } from '@/lib/dates'
-import { refreshForecastsAndAlerts } from '@/lib/forecast'
+import { refreshForecastsAndAlerts, syncOrderByCalendar } from '@/lib/forecast'
 import { processInbox } from '@/lib/mouse/inbox'
 import { nightlyPass } from '@/lib/mouse/nightly-pass'
 import { whoSaidWhat, renderWhoSaidWhat } from '@/lib/mouse/who-said-what'
@@ -149,29 +149,11 @@ export async function GET(req: NextRequest) {
   })
 
   // ── 4. Calendar entries for the dates that matter ────────
-  await step('calendarEvents', async () => {
-    const due = await db.forecastResult.findMany({
-      where: { recommendedOrderDate: { not: null } },
-      include: { product: true, component: true },
-    })
-    let made = 0
-    for (const f of due) {
-      const name = f.product?.name ?? f.component?.name ?? 'something'
-      const title = `Order ${name}`
-      const existing = await db.calendarEvent.findFirst({
-        where: { title, date: f.recommendedOrderDate!, source: 'STUDIO_MOUSE' },
-      })
-      if (existing) continue
-      await db.calendarEvent.create({
-        data: {
-          forecastResultId: f.id, title, date: f.recommendedOrderDate!,
-          type: 'ORDER_BY', source: 'STUDIO_MOUSE', notes: f.note,
-        },
-      })
-      made++
-    }
-    return { made }
-  })
+  // Used to append a fresh "Order X" entry every night and never remove the
+  // last one — 116 had piled up by 23 Sept 2026. Now reconciled to one entry
+  // per forecast at its current date; the alerts step above already did this
+  // via refreshForecastsAndAlerts, so this is the logged no-op confirmation.
+  await step('calendarEvents', () => syncOrderByCalendar())
 
   // ── 6. Send what is due today ────────────────────────────
   // Every switch below is a row in NotificationSettings, not a constant —
