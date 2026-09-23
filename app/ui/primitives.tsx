@@ -17,7 +17,7 @@ export function Card({ title, action, children }: { title?: ReactNode; action?: 
     <section className="overflow-hidden rounded-xl border border-line bg-surface">
       {title ? (
         <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
-          <h2 className="flex items-center gap-2 font-serif text-[17px] italic">{title}</h2>
+          <h2 className="flex items-center gap-2 font-serif text-[17px] italic text-accent">{title}</h2>
           {action}
         </div>
       ) : null}

@@ -31,7 +31,7 @@ export function MonthGrid({
 
   return (
     <div>
-      <p className="mb-2 text-xs font-medium">{monthName}</p>
+      <p className="mb-2 font-serif text-sm italic text-accent">{monthName}</p>
       <div className="grid grid-cols-7 gap-y-1 text-center">
         {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
           <span key={i} className="pb-1 text-[10px] text-faint">{d}</span>

@@ -33,7 +33,7 @@ export function CollapsibleCard({
         }`}
       >
         <span className="inline-block w-3 shrink-0 text-faint">{open ? '▾' : '▸'}</span>
-        <h2 className="flex items-center gap-2 font-serif text-[17px] italic">{title}</h2>
+        <h2 className="flex items-center gap-2 font-serif text-[17px] italic text-accent">{title}</h2>
       </button>
       {open ? children : null}
     </section>
