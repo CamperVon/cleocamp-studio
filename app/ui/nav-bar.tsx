@@ -157,7 +157,10 @@ export function NavBar({ personName }: { personName: string | null }) {
 
       {/* ── Phone: tab bar ─────────────────────────────────────── */}
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-bg/95 backdrop-blur md:hidden"
+        // Pale pink, the quote card's colour, so the page has pink at both
+        // ends without shouting. Brandon picked this over a solid pink bar
+        // and a white one with pink icons, 23 Sept 2026.
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-accent/20 bg-accent-soft md:hidden"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         aria-label="Main"
       >
@@ -170,7 +173,7 @@ export function NavBar({ personName }: { personName: string | null }) {
                 href={l.href}
                 aria-current={here ? 'page' : undefined}
                 onClick={() => setMoreOpen(false)}
-                className={`flex flex-1 flex-col items-center gap-1 pb-2 pt-2.5 text-[11px] ${here ? 'text-accent' : 'text-faint'}`}
+                className={`flex flex-1 flex-col items-center gap-1 pb-2 pt-2.5 text-[11px] ${here ? 'font-semibold text-accent' : 'text-ink/65'}`}
               >
                 {l.icon}
                 {l.short ?? l.label}
@@ -181,7 +184,7 @@ export function NavBar({ personName }: { personName: string | null }) {
             type="button"
             onClick={() => setMoreOpen((o) => !o)}
             aria-expanded={moreOpen}
-            className={`flex flex-1 flex-col items-center gap-1 pb-2 pt-2.5 text-[11px] ${moreOpen || inMore ? 'text-accent' : 'text-faint'}`}
+            className={`flex flex-1 flex-col items-center gap-1 pb-2 pt-2.5 text-[11px] ${moreOpen || inMore ? 'font-semibold text-accent' : 'text-ink/65'}`}
           >
             <IconMore />
             More
