@@ -301,7 +301,7 @@ export default async function Today() {
                     (p.forProduct ? ` · for the ${p.forProduct.name}` : '')
                   }
                   right={p.expectedAt ? day(p.expectedAt) : 'ETA unconfirmed'}
-                  history={notes.filter((n) => n.entityId === p.id).map((n) => n.content)}
+                  history={notes.filter((n) => n.entityId === p.id || n.entityId === p.poNumber).map((n) => n.content)}
                 />
               ))}
             </ul>
