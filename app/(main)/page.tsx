@@ -134,8 +134,10 @@ export default async function Today() {
           the supplies list and the links, where it read as a footnote nobody
           reaches. It is the one part of this page that is not a number, so it
           opens instead — sized to be read rather than noticed, with the mouse
-          watching from the corner. Above the alerts on purpose: it is a
-          masthead, not an item, and a banner does not delay anything. */}
+          watching from the corner. It is a masthead, not an item, and a
+          banner does not delay anything — true again now that what used to
+          be the urgent banner right below it has moved down into Mouse's
+          Corner. */}
       <figure className="relative overflow-hidden rounded-xl border border-line bg-accent-soft px-6 py-8 text-center sm:px-12 sm:py-11">
         {/* size, not a width class: the drawing is 80x46, so forcing it square
             squashes the mouse. */}
@@ -153,27 +155,6 @@ export default async function Today() {
           {quote.who}
         </figcaption>
       </figure>
-
-      {/* Anything urgent goes above everything else, in its own colour. Burying an
-          oversold variant three cards down was how it stayed oversold. */}
-      {urgent.length ? (
-        <section className="overflow-hidden rounded-xl border border-urgent/30 bg-urgent-soft">
-          <div className="flex items-center justify-between gap-3 px-4 py-2.5 sm:px-5">
-            <h2 className="text-sm font-semibold text-urgent">Needs you now</h2>
-            <span className="text-xs text-urgent/70">{urgent.length}</span>
-          </div>
-          <ul className="divide-y divide-urgent/15 border-t border-urgent/20">
-            {urgent.slice(0, SHOWN).map((a) => (
-              <li key={a.id} className="px-4 py-2 text-sm text-urgent sm:px-5">{a.message}</li>
-            ))}
-          </ul>
-          {urgent.length > SHOWN ? (
-            <p className="border-t border-urgent/20 px-4 py-2 text-xs text-urgent/70 sm:px-5">
-              and {urgent.length - SHOWN} more
-            </p>
-          ) : null}
-        </section>
-      ) : null}
 
       <Card
         title={
@@ -238,17 +219,40 @@ export default async function Today() {
           : 'Shopify counts have never synced — ask Mouse to run sync_shopify.'}
       </p>
 
-      {brief ? (
+      {/* Oversold variants used to get their own red banner above everything
+          else on the page — Brandon, 22 Sept 2026: with Products in
+          production carrying its own red flags now, a second banner doing
+          the same visual job felt like duplicate scaffolding. It isn't
+          quite the same signal (this is a stock count gone negative, that
+          is a late PO or run), so it moves in here rather than dissolving
+          into the brief's prose: the brief is deliberately compressed —
+          "one good fact beats three supporting ones" — and would likely
+          fold six oversold SKUs into one sentence, losing the exact
+          number someone needs to act on. Kept as a list for that reason,
+          not folded into the paragraphs below it. */}
+      {urgent.length || brief ? (
         <section className="overflow-hidden rounded-xl border border-line bg-surface">
           <div className="flex items-center gap-2 border-b border-line px-4 py-3 sm:px-5">
             <Mouse size={26} className="text-ink/70" />
             <h2 className="text-sm font-semibold">Mouse&rsquo;s Corner</h2>
           </div>
-          <div className="flex flex-col gap-3 px-4 py-3.5 text-sm leading-relaxed sm:px-5">
-            {brief.text.split(/\n\s*\n/).map((para, i) => (
-              <p key={i}>{para.trim()}</p>
-            ))}
-          </div>
+          {urgent.length ? (
+            <ul className="divide-y divide-urgent/15 border-b border-line bg-urgent-soft">
+              {urgent.slice(0, SHOWN).map((a) => (
+                <li key={a.id} className="px-4 py-2 text-sm text-urgent sm:px-5">{a.message}</li>
+              ))}
+              {urgent.length > SHOWN ? (
+                <li className="px-4 py-2 text-xs text-urgent/70 sm:px-5">and {urgent.length - SHOWN} more</li>
+              ) : null}
+            </ul>
+          ) : null}
+          {brief ? (
+            <div className="flex flex-col gap-3 px-4 py-3.5 text-sm leading-relaxed sm:px-5">
+              {brief.text.split(/\n\s*\n/).map((para, i) => (
+                <p key={i}>{para.trim()}</p>
+              ))}
+            </div>
+          ) : null}
         </section>
       ) : null}
 
