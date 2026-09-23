@@ -72,7 +72,7 @@ export default async function PurchaseOrders() {
               <p className="font-medium">PO {p.poNumber} &middot; {p.vendor.name}</p>
               <Chip tone={STATUS[p.status].tone}>{STATUS[p.status].label}</Chip>
             </div>
-            <Money cents={total} />
+            <Money cents={total} currency={p.currency} />
           </div>
         </a>
         <p className="mt-1 truncate text-sm text-muted">

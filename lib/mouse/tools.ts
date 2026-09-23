@@ -1782,6 +1782,12 @@ export const TOOLS: Record<string, Tool> = {
           expectedAt: str('ISO date it should arrive, if known'),
           paymentTerms: str('e.g. 50% on order, 50% on delivery'),
           paymentTermsAlt: str('The same terms in the second language, for a bilingual order. Write them out; these are the words an invoice dispute turns on, so never approximate them.'),
+          currency: { type: 'string' as const, enum: ['USD', 'EUR', 'GBP'],
+            description:
+              'What currency every price on this order is in. It prints on the document — a ' +
+              'European supplier quoting in euros gets an order in euros, not dollars. ' +
+              'Leave it out and it follows this vendor\'s previous orders (or USD for a new ' +
+              'vendor).' },
           depositPercent: num('Percent due at order'),
           netDaysAfterDelivery: num('Days after delivery the balance is due'),
           notesAlt: str('The same notes in the second language, for a bilingual order. Same rule as the notes themselves: only what you would say TO the vendor.'),
@@ -1931,6 +1937,9 @@ export const TOOLS: Record<string, Tool> = {
           netDaysAfterDelivery: netDays,
           notes: i.notes ?? null,
           language,
+          currency: i.currency ?? (await db.purchaseOrder.findFirst({
+            where: { vendorId: i.vendorId }, orderBy: { createdAt: 'desc' }, select: { currency: true },
+          }))?.currency ?? 'USD',
           lines: { create: lines },
         },
         include: {
@@ -2037,6 +2046,12 @@ export const TOOLS: Record<string, Tool> = {
           paymentTerms: str('Terms in plain words'),
           paymentTermsAlt: str('The same terms in the second language, for a bilingual order.'),
           notesAlt: str('The same notes in the second language, for a bilingual order.'),
+          currency: { type: 'string' as const, enum: ['USD', 'EUR', 'GBP'],
+            description:
+              'What currency every price on this order is in. It prints on the document — a ' +
+              'European supplier quoting in euros gets an order in euros, not dollars. ' +
+              'Changing it does not convert anything — it relabels the prices already there, ' +
+              'so set it when the numbers are right and only the symbol is wrong.' },
           depositPercent: num('Percent due at order'),
           netDaysAfterDelivery: num('Days after delivery the balance is due'),
           contactLines: str(
@@ -2098,12 +2113,28 @@ export const TOOLS: Record<string, Tool> = {
         'productVariantId also match, when you have one to hand. Give only the field(s) ' +
         'that changed, the rest of that line is untouched. newDescription rewrites a ' +
         'described line; setProductVariantId turns one into a real catalogue line, which ' +
-        'is what pulls the product photo onto the document. Only works on a ' +
-        'DRAFT; a sent order is a real document already in someone else\'s hands.',
+        'is what pulls the product photo onto the document. ' +
+        'A SENT OR DELIVERED ORDER CAN BE REVISED TOO, when a person asks for it — a price ' +
+        'that was wrong on the document, an invoice that came in at a different rate, a ' +
+        'quantity that changed after the fact. Brandon, 23 Sept 2026: "If I need a PO ' +
+        'edited after delivery, that needs to be an option." Set revisingSentOrder: true ' +
+        'to do it; the change is made, and what each line used to say is kept as an ' +
+        'internal note so the history is not lost. The copy the vendor already has is ' +
+        'NOT changed by this — the document they hold still shows the old figures, and ' +
+        'the PDFs already sent are kept as they were. So after revising, say plainly ' +
+        'that their copy is out of date and offer to send the revised one; do not send ' +
+        'it unless asked. Never refuse a revision a person has asked for because the ' +
+        'order has gone out. Cancelled orders stay as they are.',
       input_schema: {
         type: 'object',
         properties: {
           poNumber: str('The PO number, e.g. 2359'),
+          revisingSentOrder: {
+            type: 'boolean' as const,
+            description:
+              'Required to change an order that is no longer a draft (sent, part-received or ' +
+              'received). Only when a person has asked for the change.',
+          },
           lines: {
             type: 'array' as const,
             description: 'One entry per line being changed',
@@ -2139,9 +2170,19 @@ export const TOOLS: Record<string, Tool> = {
         include: { lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
       })
       if (!po) return { error: `No purchase order ${i.poNumber}` }
-      if (po.status !== 'DRAFT') {
-        return { error: `PO ${po.poNumber} is ${po.status}, not DRAFT — a sent order can't be edited in place.` }
+      const revising = po.status !== 'DRAFT'
+      if (po.status === 'CANCELLED') {
+        return { error: `PO ${po.poNumber} is cancelled — nothing to revise.` }
       }
+      if (revising && i.revisingSentOrder !== true) {
+        return {
+          error:
+            `PO ${po.poNumber} is ${po.status}, not a draft. If a person asked for this change, ` +
+            `call again with revisingSentOrder: true — it will be made, and the old figures kept ` +
+            `as an internal note.`,
+        }
+      }
+      const was: string[] = []
 
       const results: string[] = []
       for (const l of i.lines as any[]) {
@@ -2183,8 +2224,34 @@ export const TOOLS: Record<string, Tool> = {
           data.description = null
         }
         if (Object.keys(data).length === 0) continue
+        if (revising) {
+          const cur = po.currency === 'EUR' ? '\u20ac' : po.currency === 'GBP' ? '\u00a3' : '$'
+          const before = [
+            data.qtyOrdered !== undefined ? `qty ${existing.qtyOrdered} ${existing.unit}` : null,
+            data.unit !== undefined ? `unit ${existing.unit}` : null,
+            data.unitCostCents !== undefined
+              ? `price ${existing.unitCostCents === null ? 'none' : cur + (existing.unitCostCents / 100).toFixed(2)}` : null,
+            data.description !== undefined ? `wording "${existing.description ?? poLineLabel(existing)}"` : null,
+          ].filter(Boolean)
+          was.push(`${poLineLabel(existing)}: was ${before.join(', ')}`)
+        }
         await db.purchaseOrderLine.update({ where: { id: existing.id }, data })
         results.push(`updated ${named}`)
+      }
+
+      // Internal only — Note with entityType PURCHASE_ORDER is never printed.
+      // The old figures belong here, never in the order's own notes, which
+      // the vendor reads (CLAUDE.md §4).
+      if (revising && was.length) {
+        await db.note.create({
+          data: {
+            entityType: 'PURCHASE_ORDER', entityId: po.poNumber, source: 'SYSTEM',
+            content:
+              `PO ${po.poNumber} revised after it was ${po.status.toLowerCase().replace('_', ' ')}, ` +
+              `${new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', year: 'numeric' })}. ` +
+              `${was.join('; ')}. The vendor's copy still shows the old figures unless it was re-sent.`,
+          },
+        })
       }
 
       const updated = await db.purchaseOrder.findFirst({
@@ -2192,7 +2259,13 @@ export const TOOLS: Record<string, Tool> = {
         include: { lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
       })
       const total = updated!.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
-      return { poNumber: po.poNumber, results, newTotalDollars: (total / 100).toFixed(2) }
+      return {
+        poNumber: po.poNumber, results,
+        newTotal: `${po.currency} ${(total / 100).toFixed(2)}`,
+        ...(revising
+          ? { revised: true, vendorCopy: 'The vendor still holds the old version. Say so, and offer to send the revised PDF — do not send unless asked.' }
+          : {}),
+      }
     },
   },
 

@@ -1,4 +1,4 @@
-import { poAmounts, poLineAmount, poUnitTotals } from '@/lib/po'
+import { poAmounts, poLineAmount, poMoney, poUnitTotals } from '@/lib/po'
 import path from 'node:path'
 import { Document, Page, Text, View, Image, Font, StyleSheet, renderToBuffer } from '@react-pdf/renderer'
 import { db } from '@/lib/db'
@@ -47,8 +47,6 @@ Font.register({
 // so a word that doesn't fit wraps whole onto the next line instead.
 Font.registerHyphenationCallback((word) => [word])
 
-const money = (c: number) =>
-  '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const styles = StyleSheet.create({
   page: { padding: 48, fontSize: 10, fontFamily: 'PTSerif', color: '#14181A' },
@@ -215,8 +213,8 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
                 {l.unit}
                 {pair(l.unit, l.unitAlt) ? ` / ${pair(l.unit, l.unitAlt)}` : ''}
               </Text>
-              <Text style={styles.tdPrice}>{l.unitCostCents !== null ? money(l.unitCostCents) : '—'}</Text>
-              <Text style={styles.tdAmount}>{l.unitCostCents === null ? '—' : money(poLineAmount(Number(l.qtyOrdered), l.unitCostCents)!)}</Text>
+              <Text style={styles.tdPrice}>{l.unitCostCents !== null ? poMoney(l.unitCostCents, po.currency) : '—'}</Text>
+              <Text style={styles.tdAmount}>{l.unitCostCents === null ? '—' : poMoney(poLineAmount(Number(l.qtyOrdered), l.unitCostCents)!, po.currency)}</Text>
             </View>
           ))}
         </View>
@@ -231,7 +229,7 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
         ))}
         <View style={styles.totalRow}>
           <Text style={{ width: 100 }}>{t(total.incomplete ? 'knownSubtotal' : 'total')}</Text>
-          <Text style={{ width: 90, textAlign: 'right' }}>{money(total.knownCents)}</Text>
+          <Text style={{ width: 90, textAlign: 'right' }}>{poMoney(total.knownCents, po.currency)}</Text>
         </View>
 
         {notes.length ? (

@@ -586,6 +586,10 @@ model PurchaseOrder {
   /// The same notes in the second language. Same rule as the rest: what the
   /// vendor is asked to do is content, and content is written.
   notesAlt             String?
+  /// ISO currency every price on this order is in — "USD" or "EUR". Until
+  /// 23 Sept 2026 every PO printed "$" whatever it was priced in, so the belts
+  /// for Cinturificio G went to Italy reading $35 when the price was €35.
+  currency             String              @default("USD")
   createdAt            DateTime            @default(now())
 
   vendor     Vendor              @relation(fields: [vendorId], references: [id])

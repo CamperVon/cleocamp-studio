@@ -43,9 +43,10 @@ export function Value({ value, unit }: { value: unknown; unit?: string }) {
   )
 }
 
-export function Money({ cents }: { cents: number | null | undefined }) {
+export function Money({ cents, currency = 'USD' }: { cents: number | null | undefined; currency?: string }) {
   if (cents === null || cents === undefined) return <Value value={null} />
-  return <span className="tnum">${(cents / 100).toFixed(2)}</span>
+  const symbol = currency === 'EUR' ? '\u20ac' : currency === 'GBP' ? '\u00a3' : currency === 'USD' ? '$' : `${currency} `
+  return <span className="tnum">{symbol}{(cents / 100).toFixed(2)}</span>
 }
 
 const TONES = {

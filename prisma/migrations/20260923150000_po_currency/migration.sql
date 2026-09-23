@@ -1,0 +1,1 @@
+ALTER TABLE "PurchaseOrder" ADD COLUMN "currency" TEXT NOT NULL DEFAULT 'USD';

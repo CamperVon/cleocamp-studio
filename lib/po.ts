@@ -46,3 +46,13 @@ export function poLineLabel(l: {
   if (!v) return l.description || 'unknown item'
   return [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
 }
+
+/**
+ * A PO price in the order's own currency. Every PO printed "$" until 23 Sept
+ * 2026, whatever it was priced in — belts from Italy went out at "$35" when
+ * the price was €35.
+ */
+export function poMoney(cents: number, currency: string = 'USD'): string {
+  const symbol = currency === 'EUR' ? '\u20ac' : currency === 'GBP' ? '\u00a3' : currency === 'USD' ? '$' : `${currency} `
+  return symbol + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}

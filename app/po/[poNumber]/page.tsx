@@ -1,4 +1,4 @@
-import { poAmounts, poLineAmount, poUnitTotals } from '@/lib/po'
+import { poAmounts, poLineAmount, poMoney, poUnitTotals } from '@/lib/po'
 import { notFound } from 'next/navigation'
 import { db } from '@/lib/db'
 import { asDocLanguage, confirmSentence, formatDate, label, type DocLanguage } from '@/lib/po-strings'
@@ -13,8 +13,6 @@ export const dynamic = 'force-dynamic'
  * notes that say what needs confirming. Print to PDF from the browser; that
  * keeps one template rather than a script and a page drifting apart.
  */
-const money = (c: number) =>
-  '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 export default async function PurchaseOrderDoc({
   params,
@@ -190,9 +188,9 @@ export default async function PurchaseOrderDoc({
                 {l.unit}
                 {pair(l.unit, l.unitAlt) ? ` / ${pair(l.unit, l.unitAlt)}` : ''}
               </td>
-              <td className="py-2.5 pr-2 text-right tabular-nums">{l.unitCostCents !== null ? money(l.unitCostCents) : '—'}</td>
+              <td className="py-2.5 pr-2 text-right tabular-nums">{l.unitCostCents !== null ? poMoney(l.unitCostCents, po.currency) : '—'}</td>
               <td className="py-2.5 text-right tabular-nums">
-                {l.unitCostCents === null ? '—' : money(poLineAmount(Number(l.qtyOrdered), l.unitCostCents)!)}
+                {l.unitCostCents === null ? '—' : poMoney(poLineAmount(Number(l.qtyOrdered), l.unitCostCents)!, po.currency)}
               </td>
             </tr>
           ))}
@@ -208,7 +206,7 @@ export default async function PurchaseOrderDoc({
         ))}
         <div className="flex justify-between border-t border-[#14181A] pt-2 text-[12.5pt]">
           <span>{t(total.incomplete ? 'knownSubtotal' : 'total')}</span>
-          <span className="tabular-nums">{money(total.knownCents)}</span>
+          <span className="tabular-nums">{poMoney(total.knownCents, po.currency)}</span>
         </div>
       </div>
 

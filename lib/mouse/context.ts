@@ -233,6 +233,7 @@ export async function buildCatalog(): Promise<string> {
         `- PO ${p.poNumber} to ${p.vendor.name}: ${lines}` +
           (p.forProduct ? ` for the ${p.forProduct.name}` : '') +
           ` · ${p.status}` +
+          (p.currency !== 'USD' ? ` · priced in ${p.currency}` : '') +
           (p.paymentTerms ? ` · ${p.paymentTerms}` : '') +
           (p.depositPercent
             ? (p.depositPaidAt ? ` · deposit paid ${p.depositPaidAt.toISOString().slice(0, 10)}` : ' · deposit NOT yet paid')
