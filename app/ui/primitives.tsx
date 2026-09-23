@@ -55,7 +55,8 @@ const TONES = {
   // accent chip is now dark ink on grey: still a step up from neutral, not pink.
   accent: 'bg-ink/10 text-ink',
   warn: 'bg-warn-soft text-warn',
-  urgent: 'bg-urgent-soft text-urgent',
+  // A solid red mark, like the dot beside an oversold line — not a tinted pill.
+  urgent: 'bg-urgent text-white dark:text-[#0F1211]',
 } as const
 
 export function Chip({ tone = 'neutral', children }: { tone?: keyof typeof TONES; children: ReactNode }) {

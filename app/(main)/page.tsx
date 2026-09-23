@@ -237,12 +237,15 @@ export default async function Today() {
             <h2 className="font-serif text-[17px] italic text-accent">Mouse&rsquo;s Corner</h2>
           </div>
           {urgent.length ? (
-            <ul className="divide-y divide-urgent/15 border-b border-line bg-urgent-soft">
+            <ul className="divide-y divide-line border-b border-line">
               {urgent.slice(0, SHOWN).map((a) => (
-                <li key={a.id} className="px-4 py-2 text-sm text-urgent sm:px-5">{a.message}</li>
+                <li key={a.id} className="flex items-baseline gap-2.5 px-4 py-2 text-sm sm:px-5">
+                  <span aria-hidden className="h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full bg-urgent" />
+                  <span>{markTheNumber(a.message)}</span>
+                </li>
               ))}
               {urgent.length > SHOWN ? (
-                <li className="px-4 py-2 text-xs text-urgent/70 sm:px-5">and {urgent.length - SHOWN} more</li>
+                <li className="px-4 py-2 pl-8 text-xs text-muted sm:pl-9">and {urgent.length - SHOWN} more</li>
               ) : null}
             </ul>
           ) : null}
@@ -331,7 +334,7 @@ export default async function Today() {
             ))}
             {dueSoon.map((t) => (
               <li key={t.id} className="flex items-baseline gap-3 px-4 py-2.5 sm:px-5">
-                <span className="w-24 shrink-0 text-xs text-warn">{day(t.dueDate!)}</span>
+                <span className="w-24 shrink-0 text-xs text-accent">{day(t.dueDate!)}</span>
                 <p className="min-w-0 truncate text-sm">{t.title}</p>
               </li>
             ))}
@@ -461,5 +464,25 @@ export default async function Today() {
       </p>
 
     </Page>
+  )
+}
+
+/**
+ * Red on the one part of an alert someone acts on — the oversold count, or
+ * the order-by date — with the rest in ordinary black. Brandon picked this
+ * over a whole red line, 23 Sept 2026. Nothing matched: the plain message.
+ */
+function markTheNumber(message: string) {
+  const m = /(is at )(-?\d+)|(by )(\d{4}-\d{2}-\d{2})/.exec(message)
+  if (!m) return message
+  const lead = m[1] ?? m[3]
+  const hit = m[2] ?? m[4]
+  const at = m.index + lead.length
+  return (
+    <>
+      {message.slice(0, at)}
+      <span className="font-semibold text-urgent">{hit}</span>
+      {message.slice(at + hit.length)}
+    </>
   )
 }

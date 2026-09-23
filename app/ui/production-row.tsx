@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import { Mouse } from './mouse'
 import type { ProductState, Strand } from '@/lib/production-view'
 
 const LABEL: Record<Strand['kind'], string> = {
@@ -38,7 +37,10 @@ export function ProductionRow({ p }: { p: ProductState }) {
 
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
-              {p.flag ? <Mouse size={17} className="shrink-0 text-urgent" /> : null}
+              {/* A red dot, as beside the oversold lines in Mouse's Corner. The
+                  red mouse drawing used here before is a thin line, and at
+                  this size next to a pink name it read as pink. */}
+              {p.flag ? <span aria-label="needs attention" className="h-1.5 w-1.5 shrink-0 rounded-full bg-urgent" /> : null}
               {/* The name is pink on every row, flagged or not — Brandon,
                   23 Sept 2026: "All three in production bold titles can be
                   pink." It used to take the warning colour when flagged; the
@@ -47,9 +49,11 @@ export function ProductionRow({ p }: { p: ProductState }) {
                   colour. */}
               <span className="truncate text-sm font-medium text-accent">{p.name}</span>
             </span>
-            {/* Red follows the whole row, not just the name and icon — a red
-                product whose summary line stayed grey read as half a warning. */}
-            <span className={`mt-0.5 block truncate text-xs ${p.flag ? 'text-urgent' : 'text-muted'}`}>
+            {/* The red is the dot beside the name and the flagged labels
+                below — black text, red markers, the same rule as the oversold
+                lines in Mouse's Corner. A whole red line read as orange noise
+                once the palette changed. */}
+            <span className="mt-0.5 block truncate text-xs text-muted">
               {p.headline}
             </span>
           </span>
@@ -78,11 +82,11 @@ export function ProductionRow({ p }: { p: ProductState }) {
                 {LABEL[s.kind]}
               </span>
               {s.href ? (
-                <Link href={s.href} className={`min-w-0 hover:underline ${s.flag ? 'text-urgent' : 'text-muted'}`}>
+                <Link href={s.href} className={`min-w-0 hover:underline ${s.flag ? 'text-ink' : 'text-muted'}`}>
                   {s.text}
                 </Link>
               ) : (
-                <span className={`min-w-0 ${s.flag ? 'text-urgent' : 'text-muted'}`}>{s.text}</span>
+                <span className={`min-w-0 ${s.flag ? 'text-ink' : 'text-muted'}`}>{s.text}</span>
               )}
             </li>
           ))}

@@ -10,9 +10,12 @@
    quote, section headings and the calendar's dates. Brandon: "Black pink is
    good," then "the header sections can be pink. And maybe the calendar too."
 
-   Urgent moved from a pinkish red to rust on peach at the same time, so a
-   problem never reads as brand colour. Red-ish still only ever means
-   something is wrong. */
+   Urgent is a true dark red, used sparingly: black text with a red marker
+   and the number that matters in red, never a tinted block. It went to rust
+   on peach first, to keep a pinkish-red warning off a pink page, and read as
+   orange ("Not sure about the orange"); Brandon picked this over red-on-grey
+   and a red edge, 23 Sept 2026. urgent-soft is a plain light grey now, for
+   the few boxes that still need a background at all. */
 :root {
   --bg:       #FAFAF8;
   --surface:  #FFFFFF;
@@ -23,8 +26,8 @@
   --line:     #E2E3DF;
   --accent:   #B83A6E;
   --accent-soft: #F7E6EC;
-  --urgent:   #9A3A12;
-  --urgent-soft: #FBEEE2;
+  --urgent:   #A61B1B;
+  --urgent-soft: #F4F3F1;
   --warn:     #8A6520;
   --warn-soft: #F7EFDF;
 }
@@ -40,8 +43,8 @@
     --line:     #2A302E;
     --accent:   #E58AAE;
     --accent-soft: #2A1A21;
-    --urgent:   #E3A07A;
-    --urgent-soft: #2A1E15;
+    --urgent:   #EF8A80;
+    --urgent-soft: #1E2321;
     --warn:     #D3AC6A;
     --warn-soft: #272014;
   }

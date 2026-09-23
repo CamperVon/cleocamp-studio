@@ -17,7 +17,9 @@ export function MonthGrid({
 
   const byDay = new Map<number, 'event' | 'due'>()
   for (const m of marked) {
-    // A deadline outranks a meeting when both land on the same square.
+    // A deadline outranks a meeting when both land on the same square. Both
+    // dots are pink now (Brandon: "maybe the calendar too"), so this only
+    // decides which one the square remembers, not what it looks like.
     if (m.kind === 'due' || !byDay.has(m.day)) byDay.set(m.day, m.kind)
   }
 
@@ -53,7 +55,7 @@ export function MonthGrid({
               <span
                 className={
                   'h-1 w-1 rounded-full ' +
-                  (kind === 'due' ? 'bg-warn' : kind === 'event' ? 'bg-accent' : 'bg-transparent')
+                  (kind ? 'bg-accent' : 'bg-transparent')
                 }
               />
             </span>
