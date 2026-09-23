@@ -7,9 +7,12 @@ import type { PnlPeriod } from '@/lib/pnl-check'
  * What the nightly QuickBooks routine runs, in place of emailing the figures
  * in for someone to confirm.
  *
- *   npx tsx scripts/record-quickbooks.ts --as-of 2026-09-22 \
+ *   npx tsx scripts/record-quickbooks.ts \
  *     --ytd /path/to/ytd-report.json --mtd /path/to/mtd-report.json \
- *     [--receivables 0]
+ *     [--receivables 0] [--as-of 2026-09-22]
+ *
+ * --as-of defaults to today in Los Angeles, so the routine never has to work
+ * out a date itself (or run a shell command to do it).
  *
  * Each report file is the Intuit connector's profit_loss_quickbooks_account
  * result, whole and unedited (or, for a short inline one, its six top-level
@@ -28,11 +31,11 @@ function arg(name: string): string | undefined {
 }
 
 async function main() {
-  const asOfDate = arg('as-of')
+  const asOfDate = arg('as-of') ?? new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date())
   const ytdPath = arg('ytd')
   const mtdPath = arg('mtd')
-  if (!asOfDate || !ytdPath || !mtdPath) {
-    throw new Error('Usage: --as-of YYYY-MM-DD --ytd <report.json> --mtd <report.json> [--receivables N]')
+  if (!ytdPath || !mtdPath) {
+    throw new Error('Usage: --ytd <report.json> --mtd <report.json> [--receivables N] [--as-of YYYY-MM-DD]')
   }
   // A report the connector returned in full (usually saved to a file for the
   // routine, because it is large) is read by pnlFromConnectorReport. A short
