@@ -2,6 +2,7 @@ import { after, NextResponse, type NextRequest } from 'next/server'
 import { Webhook } from 'svix'
 import { db } from '@/lib/db'
 import { textFromAttachments } from '@/lib/inbound-body'
+import { isSupportMail } from '@/lib/support/core'
 
 /**
  * Inbound email — anything CC'd or forwarded to Studio Mouse.
@@ -156,6 +157,12 @@ export async function POST(req: NextRequest) {
   // dismiss beats a message silently swallowed by a failed run.
   after(async () => {
     try {
+      // Customer mail first, and by a different reader: see lib/support/pass.ts.
+      if (isSupportMail(to)) {
+        const { supportPass } = await import('@/lib/support/pass')
+        await supportPass()
+        return
+      }
       const { nightlyPass } = await import('@/lib/mouse/nightly-pass')
       await nightlyPass()
     } catch (err) {

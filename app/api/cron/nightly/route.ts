@@ -101,6 +101,14 @@ export async function GET(req: NextRequest) {
   // correspondence, and should not be reasoned about.
   await step('balances', () => processInbox())
 
+  // Customer mail to support@, read by a Mouse with no tools — before the
+  // pass below, which must never see it. Catches anything the read-on-arrival
+  // in the inbound webhook missed. See lib/support/pass.ts.
+  await step('support', async () => {
+    const { supportPass } = await import('@/lib/support/pass')
+    return supportPass()
+  })
+
   // Then one pass over everything else, with the same brain the chat uses.
   await step('think', async () => {
     const r = await nightlyPass()

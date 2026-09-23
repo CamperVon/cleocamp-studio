@@ -433,5 +433,24 @@ export async function buildCatalog(): Promise<string> {
     L.push(`- [${i.id}] ${i.kind}: ${i.title}`)
   }
 
+  // Customer support — counts only. The words of a customer email are never
+  // put in front of this Mouse, which has write tools; anyone on the internet
+  // can write to support@. The cases themselves are on the Support tab.
+  const support = await db.supportCase.groupBy({
+    by: ['category', 'urgency'],
+    where: { status: 'OPEN', category: { not: 'SPAM' } },
+    _count: true,
+  })
+  if (support.length) {
+    const total = support.reduce((n, g) => n + g._count, 0)
+    const fires = support.filter((g) => g.urgency === 'NOW').reduce((n, g) => n + g._count, 0)
+    L.push('\n## Customer support (support@cleocamp.com)')
+    L.push(
+      `${total} open case${total === 1 ? '' : 's'}${fires ? `, ${fires} marked urgent` : ''}: ` +
+        support.map((g) => `${g._count} ${g.category.toLowerCase().replace(/_/g, ' ')}${g.urgency === 'NOW' ? ' (urgent)' : ''}`).join(', ') +
+        '. You cannot read or answer these — they are on the Support tab (/support). Nothing is sent to customers yet.',
+    )
+  }
+
   return L.join('\n')
 }

@@ -102,6 +102,17 @@ data. That must not happen again.
   `Note` with `entityType: PURCHASE_ORDER`, which nothing renders. Brandon had
   already asked for this on 4 Sept: "notes at the end of pdf should only be
   notes i sent, not an endless list of things SM puts there."
+- **Customer email is the least trusted input there is.** support@cleocamp.com
+  is a Google group forwarding to support@send.cleocamp.com; anyone on the
+  internet can write to it. Since 23 Sept 2026 it is read by
+  `lib/support/pass.ts`, whose model has NO tools — it returns a category, an
+  urgency and a summary, and code does the order lookup, threading, fire rules
+  and alert. Customer mail must never reach a Mouse that can write: the
+  nightly pass and the chat's inbox tool both exclude it, and Mouse's context
+  gets case counts only, never a customer's words. Nothing is sent to a
+  customer without a person approving it in the app (Brandon, Cleo or Jane;
+  replies sign as Jane) — never approved by replying to an email, which anyone
+  can fake. Money (discount codes, refunds, exchanges) always needs that tap.
 - **Never invent a price break.** Only state a bulk saving when real tier
   pricing exists in the data. Otherwise suggest asking the vendor.
 - **Never size an order.** Cleo decides quantities. Studio Mouse may comment

@@ -1203,3 +1203,89 @@ model WholesaleShipmentLine {
 
   @@index([shipmentId])
 }
+
+/// Customer support, phase 1 (23 Sept 2026): listen, sort, alert — nothing is
+/// sent to a customer from here yet. Mail to support@cleocamp.com (a Google
+/// group) lands at support@send.cleocamp.com and becomes one of these.
+///
+/// A customer email is the least trusted thing the app reads: anyone on the
+/// internet can write to support@. So the model that reads it has NO tools —
+/// it classifies and summarises, and code does the order lookup. Nothing in a
+/// customer's words can reach inventory, orders or a send. See lib/support/.
+enum SupportCategory {
+  WRONG_ITEM
+  DAMAGED
+  WHERE_IS_MY_ORDER
+  RETURN_EXCHANGE
+  SIZING_QUESTION
+  PRODUCT_QUESTION
+  ORDER_CHANGE
+  WHOLESALE
+  PRESS
+  COMPLIMENT
+  SPAM
+  OTHER
+}
+
+/// NOW: tell the three of them straight away. TODAY: on the Support tab and
+/// in the morning. DIGEST: the morning summary is enough.
+enum SupportUrgency {
+  NOW
+  TODAY
+  DIGEST
+}
+
+enum SupportStatus {
+  OPEN
+  WAITING_ON_CUSTOMER
+  WAITING_ON_RETURN
+  RESOLVED
+}
+
+model SupportCase {
+  id              String          @id @default(cuid())
+  customerEmail   String
+  customerName    String?
+  subject         String?
+  category        SupportCategory @default(OTHER)
+  urgency         SupportUrgency  @default(TODAY)
+  status          SupportStatus   @default(OPEN)
+  /// One or two sentences, written by the model from the customer's words.
+  /// Shown to people only — never fed to a Mouse that has tools, because it
+  /// is derived from untrusted text.
+  summary         String?
+  /// Shopify order name, "#1042", matched by code from the customer's address
+  /// or an order number in the email — never by the model.
+  shopifyOrderName String?
+  shopifyOrderId   String?
+  /// What the order looked like when it was matched: items, status, tracking.
+  orderSnapshot   Json?
+  alertedAt       DateTime?
+  lastMessageAt   DateTime        @default(now())
+  resolvedAt      DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  messages        SupportMessage[]
+
+  @@index([status, urgency])
+  @@index([customerEmail])
+}
+
+enum SupportDirection {
+  INBOUND
+  OUTBOUND
+  NOTE
+}
+
+model SupportMessage {
+  id             String           @id @default(cuid())
+  caseId         String
+  direction      SupportDirection
+  fromAddress    String?
+  body           String
+  inboundEmailId String?          @unique
+  createdAt      DateTime         @default(now())
+  case           SupportCase      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, createdAt])
+}

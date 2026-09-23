@@ -3302,7 +3302,10 @@ export const TOOLS: Record<string, Tool> = {
         return { totalUnits: agg._sum.unitsSold ?? 0, sinceDate: since.toISOString().slice(0, 10), days: i.days ?? 56 }
       }
       return db.inboundEmail.findMany({
-        where: { receivedAt: { gte: since } },
+        // Never customer mail: this Mouse has write tools, and anyone on the
+        // internet can write to support@. Support cases are read by
+        // lib/support/pass.ts, which has none.
+        where: { receivedAt: { gte: since }, NOT: { toAddress: { contains: 'support@' } } },
         orderBy: { receivedAt: 'desc' }, take: 20,
         select: { id: true, fromAddress: true, toAddress: true, subject: true, text: true, receivedAt: true },
       })

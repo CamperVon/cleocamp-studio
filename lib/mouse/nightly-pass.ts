@@ -41,7 +41,10 @@ appears as Mouse's Corner in the morning, so make it worth reading.`
 
 export async function nightlyPass() {
   const unread = await db.inboundEmail.findMany({
-    where: { processedAt: null },
+    // Customer mail to support@ is read by lib/support/pass.ts instead — a
+    // Mouse with no tools. This one can write, so a stranger's email must
+    // never reach it. See lib/support/core.ts.
+    where: { processedAt: null, NOT: { toAddress: { contains: 'support@' } } },
     orderBy: { receivedAt: 'asc' },
     take: 15,
   })

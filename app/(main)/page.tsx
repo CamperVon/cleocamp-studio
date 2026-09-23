@@ -30,7 +30,7 @@ function sinceLabel(d: Date): string {
 }
 
 export default async function Today() {
-  const [items, alerts, links, components, variants, sales24, sales7, pos, runs, notes, events, shopifySync] =
+  const [items, alerts, links, components, variants, sales24, sales7, pos, runs, notes, events, shopifySync, support] =
     await Promise.all([
       db.actionItem.findMany({
         where: { resolved: false },
@@ -71,6 +71,8 @@ export default async function Today() {
         take: 8,
       }),
       db.shopifySyncStatus.findUnique({ where: { id: 'singleton' } }),
+      // Customer support cases still with us, by how soon they need a person.
+      db.supportCase.groupBy({ by: ['urgency'], where: { status: 'OPEN', category: { not: 'SPAM' } }, _count: true }),
     ])
 
   const dueSoonAll = items.filter((i) => i.dueDate)
@@ -112,6 +114,8 @@ export default async function Today() {
   // GAPs are for whoever changes the code, not for Cleo. They live on /items.
   const gaps = items.filter((i) => i.kind === 'GAP')
   const urgent = alerts.filter((a) => a.severity === 'URGENT')
+  const supportFires = support.find((g) => g.urgency === 'NOW')?._count ?? 0
+  const supportToday = support.find((g) => g.urgency === 'TODAY')?._count ?? 0
   const rest = alerts.filter((a) => a.severity !== 'URGENT')
   // A long list is skimmed, not read. Show the oldest few — they have waited
   // longest — and send the tail to /items rather than printing all of it.
@@ -235,12 +239,23 @@ export default async function Today() {
           fold six oversold SKUs into one sentence, losing the exact
           number someone needs to act on. Kept as a list for that reason,
           not folded into the paragraphs below it. */}
-      {urgent.length || brief ? (
+      {urgent.length || brief || supportFires + supportToday > 0 ? (
         <section className="overflow-hidden rounded-xl border border-line bg-surface">
           <div className="flex items-center gap-2 border-b border-line px-4 py-3 sm:px-5">
             <Mouse size={26} className="text-ink/70" />
             <h2 className="font-serif text-[17px] italic text-accent">Mouse&rsquo;s Corner</h2>
           </div>
+          {supportFires + supportToday > 0 ? (
+            <a href="/support" className="flex items-baseline gap-2.5 border-b border-line px-4 py-2 text-sm hover:bg-sunk sm:px-5">
+              <span aria-hidden className={`h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full ${supportFires ? 'bg-urgent' : 'bg-transparent'}`} />
+              <span>
+                Customer support:{' '}
+                {supportFires ? <span className="font-semibold text-urgent">{supportFires} {supportFires === 1 ? 'fire' : 'fires'}</span> : null}
+                {supportFires && supportToday ? ', ' : ''}
+                {supportToday ? `${supportToday} for today` : ''} &rarr;
+              </span>
+            </a>
+          ) : null}
           {urgent.length ? (
             <ul className="divide-y divide-line border-b border-line">
               {urgent.slice(0, SHOWN).map((a) => (

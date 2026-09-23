@@ -39,6 +39,7 @@ const DAILY: Item[] = [
 ]
 
 const OCCASIONAL: Item[] = [
+  { href: '/support', label: 'Support' },
   { href: '/components', label: 'Components' },
   { href: '/vendors', label: 'Vendors' },
   { href: '/wholesale', label: 'Wholesale' },
