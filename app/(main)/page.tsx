@@ -198,22 +198,27 @@ export default async function Today() {
         </div>
       </details>
 
-      <div className="flex flex-wrap gap-3">
-        <Stat label="Sold yesterday" value={sales24._sum.unitsSold ?? 0} sub="units, from Shopify" />
-        <Stat label="Sold this week" value={sales7._sum.unitsSold ?? 0} sub="last 7 days" />
+      {/* A grid, not flex-wrap: flex sized each tile to its own text, so on a
+          phone one label wrapped and pushed its number a line below its
+          neighbours'. Three then two on a phone, all five in a row above that. */}
+      <div className="grid grid-cols-6 gap-3 sm:grid-cols-5">
+        <Stat className="col-span-2 sm:col-span-1" label="Yesterday" value={sales24._sum.unitsSold ?? 0} sub="units sold, from Shopify" />
+        <Stat className="col-span-2 sm:col-span-1" label="This week" value={sales7._sum.unitsSold ?? 0} sub="units sold, last 7 days" />
         <Stat
+          className="col-span-2 sm:col-span-1"
           label="To ship"
-          value={toShip === null ? <span className="text-faint italic">unknown</span> : toShip}
+          value={toShip === null ? <span className="text-base italic text-faint">unknown</span> : toShip}
           sub={toShip === null ? 'Shopify unreachable' : 'unfulfilled orders'}
         />
         <Stat
+          className="col-span-3 sm:col-span-1"
           label="Finished goods"
           value={Number(variants._sum.onHandQty ?? 0)}
           sub={`across ${variants._count} variants`}
         />
-        <Stat label="Mouse is asking" value={asks.length} sub="waiting on you" />
+        <Stat className="col-span-3 sm:col-span-1" label="Mouse is asking" value={asks.length} sub="waiting on you" />
       </div>
-      <p className="-mt-4 text-xs text-faint">
+      <p className="-mt-2 text-xs text-faint sm:-mt-4">
         {shopifySync
           ? `Shopify counts synced ${sinceLabel(shopifySync.lastSyncedAt)} — automatically overnight and each morning, or ask Mouse to refresh anytime.`
           : 'Shopify counts have never synced — ask Mouse to run sync_shopify.'}
