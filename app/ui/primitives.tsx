@@ -71,7 +71,7 @@ export function Stat({ label, value, sub }: { label: string; value: ReactNode; s
   return (
     <div className="flex-1 rounded-xl border border-line bg-surface px-4 py-3">
       <p className="text-xs text-faint">{label}</p>
-      <p className="tnum mt-0.5 text-2xl font-semibold leading-none">{value}</p>
+      <p className="tnum mt-0.5 text-2xl font-semibold leading-none text-accent">{value}</p>
       {sub ? <p className="mt-1 text-xs text-muted">{sub}</p> : null}
     </div>
   )
