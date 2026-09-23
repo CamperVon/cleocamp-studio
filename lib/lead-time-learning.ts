@@ -19,13 +19,47 @@ import { observedLeadDays, worthAsking, questionFor, type LeadTimeCandidate } fr
  * number written to a plan is worse than an unanswered question. This
  * raises a QUESTION naming the exact figure and lets a person say yes. The
  * maths and wording are in lib/lead-time-core.ts, tested apart from this.
+ *
+ * Shared with lib/production-lead-learning.ts, which asks the same
+ * question of a production run's own startedAt/receivedAt against a
+ * product's productionLeadTimeDays.
  */
 
-async function alreadyAsked(entityType: 'VENDOR' | 'COMPONENT', entityId: string, poNumber: string) {
+/**
+ * `sourceLabel` doubles as the dedupe key — checked against the DETAIL, not
+ * the title, because a candidate with a recorded number already on file
+ * gets a title of just "X's lead time may have changed" with the source
+ * named only in the body. The same source should never ask about the same
+ * entity twice; a different source drifting on it is a second, independent
+ * data point and gets its own question.
+ */
+async function alreadyAsked(entityType: LeadTimeCandidate['entityType'], entityId: string, sourceLabel: string) {
   return db.actionItem.findFirst({
-    where: { entityType, entityId, kind: 'QUESTION', title: { contains: `PO ${poNumber}` } },
+    where: { entityType, entityId, kind: 'QUESTION', detail: { contains: sourceLabel } },
     select: { id: true },
   })
+}
+
+/** Runs every candidate through worthAsking/dedupe and raises what's left. */
+export async function raiseLeadTimeQuestions(
+  candidates: LeadTimeCandidate[],
+  observedDays: number,
+  sourceLabel: string,
+  startLabel: string,
+  start: Date,
+  end: Date,
+): Promise<string[]> {
+  const raised: string[] = []
+  for (const c of candidates) {
+    if (!worthAsking(c.recorded, observedDays)) continue
+    if (await alreadyAsked(c.entityType, c.entityId, sourceLabel)) continue
+    const { title, detail } = questionFor(c, observedDays, sourceLabel, startLabel, start, end)
+    await db.actionItem.create({
+      data: { kind: 'QUESTION', entityType: c.entityType, entityId: c.entityId, title, detail, source: 'SYSTEM' },
+    })
+    raised.push(title)
+  }
+  return raised
 }
 
 /**
@@ -64,16 +98,6 @@ export async function checkLeadTimeDrift(poId: string): Promise<string[]> {
   }
 
   const start = po.depositPaidAt ?? po.orderedAt!
-  const startLabel = po.depositPaidAt ? 'the deposit' as const : 'the order' as const
-  const raised: string[] = []
-  for (const c of candidates) {
-    if (!worthAsking(c.recorded, observedDays)) continue
-    if (await alreadyAsked(c.entityType, c.entityId, po.poNumber)) continue
-    const { title, detail } = questionFor(c, observedDays, po.poNumber, startLabel, start, po.receivedAt!)
-    await db.actionItem.create({
-      data: { kind: 'QUESTION', entityType: c.entityType, entityId: c.entityId, title, detail, source: 'SYSTEM' },
-    })
-    raised.push(title)
-  }
-  return raised
+  const startLabel = po.depositPaidAt ? 'the deposit' : 'the order'
+  return raiseLeadTimeQuestions(candidates, observedDays, `PO ${po.poNumber}`, startLabel, start, po.receivedAt!)
 }

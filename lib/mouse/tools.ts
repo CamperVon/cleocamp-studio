@@ -2512,7 +2512,12 @@ export const TOOLS: Record<string, Tool> = {
         'flight are listed in your context with their ids. When status changes, this ' +
         'also clears any of your own past-or-today DELIVERY_EXPECTED calendar entries ' +
         "for the product — a hand-off the run's new status shows has already happened " +
-        'does not need a calendar entry still announcing it as upcoming.',
+        'does not need a calendar entry still announcing it as upcoming. ' +
+        'Setting status to IN_PRODUCTION or RECEIVED for the first time on a run also ' +
+        'records when — this is what teaches the product its real production lead time. ' +
+        'The first time a run actually reaches RECEIVED, the real gap gets checked against ' +
+        "the product's recorded lead time and may hand back leadTimeQuestions — mention " +
+        'those in your reply, they are new, not something already open.',
       input_schema: {
         type: 'object',
         properties: {
@@ -2534,15 +2539,39 @@ export const TOOLS: Record<string, Tool> = {
       },
     },
     run: async ({ id, ...rest }) => {
+      const existing = await db.productionRun.findUnique({
+        where: { id }, select: { status: true, startedAt: true, receivedAt: true },
+      })
+      if (!existing) return { error: `No production run ${id}` }
+
       const data: any = {}
       for (const [k, v] of Object.entries(rest)) {
         if (v === undefined || v === null) continue
         data[k] = k === 'expectedReadyAt' ? new Date(String(v) + 'T12:00:00-07:00') : v
       }
+
+      // Where lead-time learning gets its dates from — see
+      // lib/production-lead-learning.ts. Set once, the first time each is
+      // reached, never moved afterward by a later edit to the same run.
+      // startedAt only on the specific transition INTO IN_PRODUCTION, not
+      // "IN_PRODUCTION or anything later" — a run whose status jumps
+      // straight from PLANNED to READY_FOR_PICKUP in one edit has no real
+      // startedAt to learn from, and guessing one would be exactly the
+      // silently-wrong number this whole feature exists to avoid.
+      const now = new Date()
+      if (data.status === 'IN_PRODUCTION' && !existing.startedAt) data.startedAt = now
+      if (data.status === 'RECEIVED' && !existing.receivedAt) data.receivedAt = now
+
       const updated = await db.productionRun.update({
         where: { id }, data,
         select: { id: true, productId: true, status: true, expectedReadyAt: true },
       })
+
+      let leadTimeQuestions: string[] = []
+      if (data.receivedAt && !existing.receivedAt) {
+        const { checkProductionLeadDrift } = await import('@/lib/production-lead-learning')
+        leadTimeQuestions = await checkProductionLeadDrift(id).catch(() => [])
+      }
 
       // Cleo, 17 Sept 2026: the You Dress pickup from LA Dye Masters had
       // already happened — the run's own status was FINISHING with a
@@ -2590,6 +2619,7 @@ export const TOOLS: Record<string, Tool> = {
                 clearedStaleDates.map((s) => `"${s.title}" (${s.date})`).join(', ') + '.',
             }
           : {}),
+        ...(leadTimeQuestions.length ? { leadTimeQuestions } : {}),
       }
     },
   },
