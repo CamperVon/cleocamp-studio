@@ -1,5 +1,6 @@
 'use client'
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { addInFlightUpdate } from '@/app/(main)/in-flight-actions'
 
 /**
@@ -21,6 +22,13 @@ export function InFlightRow({
   const [text, setText] = useState('')
   const [pending, start] = useTransition()
   const [saved, setSaved] = useState(false)
+  const [reply, setReply] = useState<string | null>(null)
+  const router = useRouter()
+  const apply = () => start(async () => {
+    setReply(await addInFlightUpdate(kind, id, text))
+    setSaved(true)
+    router.refresh()
+  })
 
   return (
     <li>
@@ -54,7 +62,7 @@ export function InFlightRow({
 
           {saved ? (
             <p className="text-xs text-accent">
-              Applied. Reload to see the dates move.
+              {reply ?? 'Applied.'}
             </p>
           ) : (
             <div className="flex flex-wrap gap-2">
@@ -67,14 +75,14 @@ export function InFlightRow({
                            outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/25"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && text.trim() && !pending) {
-                    start(async () => { await addInFlightUpdate(kind, id, text); setSaved(true) })
+                    apply()
                   }
                 }}
               />
               <button
                 type="button"
                 disabled={pending || !text.trim()}
-                onClick={() => start(async () => { await addInFlightUpdate(kind, id, text); setSaved(true) })}
+                onClick={apply}
                 className="shrink-0 rounded-lg bg-ink px-3 py-2 text-sm font-medium text-bg
                            disabled:opacity-40"
               >
