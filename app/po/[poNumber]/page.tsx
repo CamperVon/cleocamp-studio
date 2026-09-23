@@ -1,5 +1,6 @@
 import { poAmounts, poLineAmount, poMoney, poUnitTotals } from '@/lib/po'
 import { notFound } from 'next/navigation'
+import { PdfButton } from './pdf-button'
 import { db } from '@/lib/db'
 import { asDocLanguage, confirmSentence, formatDate, label, type DocLanguage } from '@/lib/po-strings'
 
@@ -226,12 +227,7 @@ export default async function PurchaseOrderDoc({
       </div>
 
       <div className="no-print mt-10 flex flex-wrap items-start gap-5 border-t border-[#DEDFDB] pt-4 text-[9pt] text-[#8B9491]">
-        <a
-          href={`/po/${po.poNumber}/pdf`}
-          className="rounded border border-[#14181A]/20 px-3 py-1.5 font-sans text-[9pt] text-[#14181A] no-underline hover:bg-black/5"
-        >
-          Download PDF
-        </a>
+        <PdfButton poNumber={po.poNumber} />
         <span>or print this page from your browser.</span>
       </div>
     </main>
