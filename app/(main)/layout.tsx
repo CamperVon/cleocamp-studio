@@ -1,4 +1,5 @@
 import { Nav } from '@/app/ui/nav'
+import { ScrollFrame } from '@/app/ui/scroll-frame'
 
 export default function MainLayout({ children }: LayoutProps<"/">) {
   return (
@@ -11,9 +12,7 @@ export default function MainLayout({ children }: LayoutProps<"/">) {
     // page scroll.
     <div className="flex h-dvh flex-col md:h-auto md:flex-1">
       <Nav />
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain md:overflow-visible">
-        {children}
-      </div>
+      <ScrollFrame>{children}</ScrollFrame>
     </div>
   )
 }
