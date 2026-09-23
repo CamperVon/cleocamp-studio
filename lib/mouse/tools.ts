@@ -2021,7 +2021,10 @@ export const TOOLS: Record<string, Tool> = {
         'IMPORTANT: when you are told a payment date and you know the lead time, work out ' +
         'the expected arrival and set it — a three week lead time paid on 3 September ' +
         'arrives about 24 September. Then put it on the calendar so it is not only in ' +
-        'your head.',
+        'your head. ' +
+        'The first time receivedAt actually lands on an order, this also checks the real ' +
+        'gap against the recorded lead time and may hand back leadTimeQuestions — mention ' +
+        'those in your reply, they are new, not something already open.',
       input_schema: {
         type: 'object',
         properties: {
@@ -2067,9 +2070,19 @@ export const TOOLS: Record<string, Tool> = {
       }
       const updated = await db.purchaseOrder.update({
         where: { id: po.id }, data,
-        select: { poNumber: true, status: true, expectedAt: true, depositPaidAt: true },
+        select: { id: true, poNumber: true, status: true, expectedAt: true, depositPaidAt: true, receivedAt: true },
       })
-      return updated
+
+      // Learn from this delivery the moment it lands — only the first time
+      // receivedAt is actually set on this order, not on a later edit to the
+      // same PO. See lib/lead-time-learning.ts.
+      let leadTimeQuestions: string[] = []
+      if (data.receivedAt && !po.receivedAt) {
+        const { checkLeadTimeDrift } = await import('@/lib/lead-time-learning')
+        leadTimeQuestions = await checkLeadTimeDrift(updated.id).catch(() => [])
+      }
+
+      return leadTimeQuestions.length ? { ...updated, leadTimeQuestions } : updated
     },
   },
 

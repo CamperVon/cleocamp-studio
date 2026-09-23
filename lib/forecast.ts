@@ -93,11 +93,12 @@ export async function recomputeForecasts() {
   // cover it computes, both do.
   await deriveIncomingQty()
   const since = laMidnight(56)
-  const [products, components, sales, movements, openPos] = await Promise.all([
+  const [products, components, sales, movements, openPos, dyeHouses] = await Promise.all([
     db.product.findMany({
       where: { status: { in: ['ACTIVE', 'SAMPLING'] } },
       include: {
         variants: true,
+        colorways: true,
         bomLines: { include: { component: { include: { vendor: true } } } },
       },
     }),
@@ -116,7 +117,12 @@ export async function recomputeForecasts() {
       where: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } },
       include: { lines: { include: { productVariant: { select: { productId: true } } } } },
     }),
+    // For the dye leg below. Only one exists today (LA Dye Masters) but
+    // nothing here assumes that stays true.
+    db.vendor.findMany({ where: { role: 'DYE_HOUSE', active: true } }),
   ])
+  const dyeLeadDays = Math.max(0, ...dyeHouses.map((v) => v.leadTimeDays ?? 0))
+  const dyeHouseMissingLead = dyeHouses.length > 0 && dyeHouses.every((v) => v.leadTimeDays === null)
 
   const salesByVariant = new Map<string, Array<{ date: Date; unitsSold: number }>>()
   for (const s of sales) {
@@ -189,10 +195,18 @@ export async function recomputeForecasts() {
     const daysLeft = (onHand + onOrder.qty) / rate
     const stockout = new Date(Date.now() + daysLeft * DAY)
 
-    // Chain: components must arrive, then be made, then dyed.
+    // Chain: components must arrive, then be made, then — for a colourway
+    // that goes to an external dye house rather than being matched in-house
+    // — dyed. Colorway.dyeHouseName is the signal (Colorway.inHouseMatch
+    // means no external trip); the dye house's own leadTimeDays is a
+    // SEPARATE stage on top of the manufacturer's, never inside it — see
+    // the vendor's own note. This was a dead stub until 23 Sept 2026:
+    // Cleo Tee's order-by date was landing about 3 weeks late for every
+    // run that needed dyeing, silently.
     const compLead = Math.max(0, ...p.bomLines.map((b) => b.component.leadTimeDays ?? 0))
     const missingLead = p.bomLines.some((b) => b.component.leadTimeDays === null)
-    const dye = p.bomLines.length ? 0 : 0
+    const needsDyeing = p.colorways.some((c) => c.active && c.dyeHouseName && !c.inHouseMatch)
+    const dye = needsDyeing ? dyeLeadDays : 0
     if (p.productionLeadTimeDays === null) {
       results.push({ kind: 'product', id: p.id, name: p.name, stockout,
         note: `About ${(daysLeft / 7).toFixed(1)} weeks of cover at ${rate.toFixed(1)} a day.`,
@@ -209,8 +223,11 @@ export async function recomputeForecasts() {
           ? ` plus ${onOrder.qty} already on order${onOrder.due ? `, due ${onOrder.due.toISOString().slice(0, 10)}` : ''}`
           : '') +
         ` — about ${(daysLeft / 7).toFixed(1)} weeks. ` +
-        `Components take ${compLead}d and production ${p.productionLeadTimeDays}d, so start by then.` +
-        (missingLead ? ' One component has no lead time, so this may be optimistic.' : ''),
+        `Components take ${compLead}d and production ${p.productionLeadTimeDays}d` +
+        (needsDyeing ? ` plus ${dye}d dyeing` : '') +
+        `, so start by then.` +
+        (missingLead ? ' One component has no lead time, so this may be optimistic.' : '') +
+        (needsDyeing && dyeHouseMissingLead ? ' The dye house has no lead time on file, so this may be optimistic.' : ''),
     })
   }
 
