@@ -1,9 +1,18 @@
 import { db } from '@/lib/db'
-import { Page, Card, Empty, Chip } from '@/app/ui/primitives'
+import { Page, Card, Empty } from '@/app/ui/primitives'
+import { ItemRow } from '@/app/ui/item-row'
 import { packageGap } from '@/lib/gap'
 import { GapCard } from '@/app/ui/gap-card'
 
 export const dynamic = 'force-dynamic'
+
+// Outside the component, as on Home: a server page reading the clock is fine,
+// but the lint rule for components cannot tell it apart from a re-render.
+function dueLabel(d: Date | null): string | null {
+  if (!d) return null
+  const label = d.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' })
+  return d.getTime() < Date.now() - 864e5 ? `was due ${label}` : `due ${label}`
+}
 
 export default async function Items() {
   const items = await db.actionItem.findMany({
@@ -14,6 +23,8 @@ export default async function Items() {
   // nobody here can action in the list of things they must. They sit below,
   // waiting on a code change.
   const open = items.filter((i) => !i.resolved && i.kind !== 'GAP')
+  const asks = open.filter((i) => i.kind === 'QUESTION')
+  const todos = open.filter((i) => i.kind !== 'QUESTION')
   const done = items.filter((i) => i.resolved && i.kind !== 'GAP')
   const gaps = await Promise.all(items.filter((i) => !i.resolved && i.kind === 'GAP').map(packageGap))
 
@@ -22,27 +33,26 @@ export default async function Items() {
       title="To tend to"
       lede="Everything Studio Mouse is waiting on — questions it needs answered and todos people have set."
     >
-      <Card title={`Open (${open.length})`}>
-        {open.length === 0 ? (
-          <Empty>Nothing outstanding.</Empty>
+      {/* The same tappable rows as Home, not a printout of them: answer or
+          dismiss right here. Until 24 Sept 2026 this page listed the very
+          same items as plain text, so Home could clear them and the page
+          named for them could not. */}
+      <Card title={`Mouse is asking (${asks.length})`}>
+        {asks.length === 0 ? (
+          <Empty>Nothing to answer. Mouse knows what it needs.</Empty>
         ) : (
           <ul className="divide-y divide-line">
-            {open.map((i) => (
-              <li key={i.id} className="flex items-start gap-3 px-4 py-3.5 sm:px-5">
-                <Chip tone={i.kind === 'TODO' ? 'accent' : 'neutral'}>
-                  {i.kind === 'TODO' ? 'TO DO' : 'ASKING'}
-                </Chip>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">{i.title}</p>
-                  {i.detail ? <p className="mt-0.5 text-sm text-muted">{i.detail}</p> : null}
-                  {i.dueDate ? (
-                    <p className="mt-1 text-xs text-warn">
-                      Due {i.dueDate.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' })}
-                    </p>
-                  ) : null}
-                </div>
-              </li>
-            ))}
+            {asks.map((i) => <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} due={dueLabel(i.dueDate)} />)}
+          </ul>
+        )}
+      </Card>
+
+      <Card title={`On your list (${todos.length})`}>
+        {todos.length === 0 ? (
+          <Empty>Nothing on the list.</Empty>
+        ) : (
+          <ul className="divide-y divide-line">
+            {todos.map((i) => <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} due={dueLabel(i.dueDate)} />)}
           </ul>
         )}
       </Card>
