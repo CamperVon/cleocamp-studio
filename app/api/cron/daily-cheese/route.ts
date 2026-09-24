@@ -36,7 +36,9 @@ export async function GET(req: NextRequest) {
     dow === 1 || dow === 5 // Monday or Friday
       ? { to: ['cleo@cleocamp.com'], cc: ['brandon@cleocamp.com'] }
       : dow >= 2 && dow <= 4 // Tuesday, Wednesday, Thursday
-        ? { to: ['jane@cleocamp.com'], cc: ['cleo@cleocamp.com', 'brandon@cleocamp.com'] }
+        // Cleo reads studio@, not cleo@ — she asked for Jane-day copies there
+        // (Brandon, 24 Sept 2026).
+        ? { to: ['jane@cleocamp.com'], cc: ['studio@cleocamp.com', 'brandon@cleocamp.com'] }
         : null // weekend — nothing scheduled
   if (!recipients) return NextResponse.json({ skipped: 'weekend' })
 
