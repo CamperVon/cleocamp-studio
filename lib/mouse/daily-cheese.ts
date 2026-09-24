@@ -172,6 +172,16 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
   }
 
   out.sort((a, b) => a.on.getTime() - b.on.getTime())
+
+  // Customer replies Mouse has drafted, waiting on a person's tap. First in
+  // the list: a customer is waiting on each one. Brandon, 24 Sept 2026.
+  const waiting = await db.supportCase.count({ where: { status: 'OPEN', category: { not: 'SPAM' }, draftReply: { not: null } } })
+  if (waiting) {
+    out.unshift({
+      on: today, tag: 'SUPPORT',
+      sentence: `${waiting} customer ${waiting === 1 ? 'reply is' : 'replies are'} drafted and waiting for a yes on the Support page (admin.cleocamp.com/support).`,
+    })
+  }
   return out
 }
 

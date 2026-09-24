@@ -30,7 +30,7 @@ function sinceLabel(d: Date): string {
 }
 
 export default async function Today() {
-  const [items, alerts, links, components, variants, sales24, sales7, pos, runs, notes, events, shopifySync, support] =
+  const [items, alerts, links, components, variants, sales24, sales7, pos, runs, notes, events, shopifySync, support, repliesWaiting] =
     await Promise.all([
       db.actionItem.findMany({
         where: { resolved: false },
@@ -73,6 +73,8 @@ export default async function Today() {
       db.shopifySyncStatus.findUnique({ where: { id: 'singleton' } }),
       // Customer support cases still with us, by how soon they need a person.
       db.supportCase.groupBy({ by: ['urgency'], where: { status: 'OPEN', category: { not: 'SPAM' } }, _count: true }),
+      // Replies drafted and waiting on someone's tap to go out.
+      db.supportCase.count({ where: { status: 'OPEN', category: { not: 'SPAM' }, draftReply: { not: null } } }),
     ])
 
   const dueSoonAll = items.filter((i) => i.dueDate)
@@ -239,20 +241,27 @@ export default async function Today() {
           fold six oversold SKUs into one sentence, losing the exact
           number someone needs to act on. Kept as a list for that reason,
           not folded into the paragraphs below it. */}
-      {urgent.length || brief || supportFires + supportToday > 0 ? (
+      {urgent.length || brief || supportFires + supportToday + repliesWaiting > 0 ? (
         <section className="overflow-hidden rounded-xl border border-line bg-surface">
           <div className="flex items-center gap-2 border-b border-line px-4 py-3 sm:px-5">
             <Mouse size={26} className="text-ink/70" />
             <h2 className="font-serif text-[17px] italic text-accent">Mouse&rsquo;s Corner</h2>
           </div>
-          {supportFires + supportToday > 0 ? (
+          {supportFires + supportToday + repliesWaiting > 0 ? (
             <a href="/support" className="flex items-baseline gap-2.5 border-b border-line px-4 py-2 text-sm hover:bg-sunk sm:px-5">
               <span aria-hidden className={`h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full ${supportFires ? 'bg-urgent' : 'bg-transparent'}`} />
               <span>
                 Customer support:{' '}
                 {supportFires ? <span className="font-semibold text-urgent">{supportFires} {supportFires === 1 ? 'fire' : 'fires'}</span> : null}
                 {supportFires && supportToday ? ', ' : ''}
-                {supportToday ? `${supportToday} for today` : ''} &rarr;
+                {supportToday ? `${supportToday} for today` : ''}
+                {(supportFires || supportToday) && repliesWaiting ? ' · ' : ''}
+                {repliesWaiting ? (
+                  <span className="font-semibold text-accent">
+                    {repliesWaiting} {repliesWaiting === 1 ? 'reply' : 'replies'} waiting for a yes
+                  </span>
+                ) : null}{' '}
+                &rarr;
               </span>
             </a>
           ) : null}

@@ -30,6 +30,7 @@ export async function draftForCase(caseId: string): Promise<void> {
     .map((m) => `${m.direction === 'INBOUND' ? 'CUSTOMER' : 'US'} (${m.createdAt.toISOString().slice(0, 10)}):\n${m.body.slice(0, 2500)}`)
     .join('\n---\n')
 
+  const stock = await stockFacts(order).catch(() => '')
   let raw = ''
   try {
     const startedAt = Date.now()
@@ -44,6 +45,7 @@ export async function draftForCase(caseId: string): Promise<void> {
           `Today is ${new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', year: 'numeric', month: 'long', day: 'numeric' })}.\n` +
           `Customer: ${c.customerName ?? 'name unknown'} <${c.customerEmail}>. Sorted as: ${c.category}.\n\n` +
           `ORDER FACTS (from Shopify, checked by code):\n${orderFacts(order)}\n\n` +
+          (stock ? `STOCK FACTS for items not yet shipped (from our records):\n${stock}\n\n` : '') +
           `<conversation>\n${thread.slice(-9000)}\n</conversation>\n\n` +
           `Draft the reply to the customer's latest email.`,
       }],
@@ -71,4 +73,57 @@ export async function draftForCase(caseId: string): Promise<void> {
       draftedAt: new Date(),
     },
   })
+}
+
+/**
+ * What the studio knows about getting each unshipped item to the customer:
+ * how many are in stock, and when more are expected. Brandon, 24 Sept 2026,
+ * after Tracy's reply said nothing about her Black / 1 tee being sold 118
+ * ahead of stock: Mouse should say that itself.
+ *
+ * Read from our own records by code and handed to the drafter as facts. An
+ * expected date is marked as confirmed or not, and the policy lets the draft
+ * give it only as an estimate.
+ */
+export async function stockFacts(order: OrderSnapshot | null): Promise<string> {
+  const open = (order?.items ?? []).filter((i) => (i.unfulfilled ?? 0) > 0 && i.variantId)
+  if (!open.length) return ''
+  const ids = open.map((i) => i.variantId!.split('/').pop()!)
+  const variants = await db.productVariant.findMany({
+    where: { shopifyVariantId: { in: ids } },
+    select: { id: true, shopifyVariantId: true, onHandQty: true, productId: true },
+  })
+  const productIds = [...new Set(variants.map((v) => v.productId))]
+  const [pos, runs] = await Promise.all([
+    db.purchaseOrder.findMany({
+      where: {
+        status: { in: ['SENT', 'PARTIALLY_RECEIVED'] },
+        // Only orders that bring the finished item itself — a line for this
+        // exact variant. A fabric or label PO tagged to the same product
+        // (RichLine, L&L) says nothing about when a tee reaches a customer.
+        lines: { some: { productVariantId: { in: variants.map((v) => v.id) } } },
+      },
+      select: { poNumber: true, expectedAt: true, lines: { select: { productVariantId: true } } },
+    }),
+    db.productionRun.findMany({
+      where: { productId: { in: productIds }, status: { notIn: ['RECEIVED', 'CANCELLED'] } },
+      select: { productId: true, expectedReadyAt: true, dateConfirmed: true, status: true },
+    }),
+  ])
+  const day = (d: Date) => d.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'long', day: 'numeric' })
+
+  return open.map((i) => {
+    const v = variants.find((x) => x.shopifyVariantId === i.variantId!.split('/').pop())
+    const label = `${i.title}${i.variant ? ` (${i.variant})` : ''}`
+    if (!v) return `- ${label}: not in our records — no stock facts.`
+    const onHand = v.onHandQty === null ? null : Number(v.onHandQty)
+    const stock = onHand === null ? 'stock not counted' : onHand > 0 ? `${onHand} in stock — can ship` : 'none in stock (sold ahead of stock)'
+    const dates = [
+      ...runs.filter((r) => r.productId === v.productId && r.expectedReadyAt)
+        .map((r) => `a production run ${r.status.toLowerCase().replace(/_/g, ' ')}, ready ${day(r.expectedReadyAt!)}${r.dateConfirmed ? '' : ' (estimate, not confirmed)'}`),
+      ...pos.filter((p) => p.expectedAt && p.lines.some((l) => l.productVariantId === v.id))
+        .map((p) => `PO ${p.poNumber} expected ${day(p.expectedAt!)} (estimate)`),
+    ]
+    return `- ${label}: ${stock}.${onHand !== null && onHand > 0 ? '' : dates.length ? ` More coming: ${dates.join('; ')}.` : ' No date on file for more.'}`
+  }).join('\n')
 }
