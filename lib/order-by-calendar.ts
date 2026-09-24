@@ -14,7 +14,15 @@
  * history nobody reads here, and synced or manual entries are never touched.
  * A forecast whose date has already passed gets no entry at all; the "Order
  * X by <date>" alert is where an overdue one belongs, not a date in the past.
+ *
+ * Nor does one more than a year out. On 24 Sept 2026 the calendar carried
+ * "Order Size label" on 21 Nov 2162: 12,690 labels against 0.3 a day, because
+ * only the Story Dress listed a size label per unit. The sum was right and
+ * the input was not, and a date that far off is not a plan anyone acts on.
+ * Past a year the forecast still holds the date; the calendar just does not
+ * pretend it is an appointment.
  */
+export const ORDER_BY_HORIZON_DAYS = 365
 
 export type WantedEntry = { title: string; date: Date; productId: string | null; notes: string | null }
 export type ExistingEntry = { id: string; title: string; date: Date }
@@ -27,8 +35,9 @@ export function planOrderByCalendar(
   today: Date,
 ): { remove: string[]; create: WantedEntry[] } {
   const want = new Map<string, WantedEntry>()
+  const horizon = new Date(today.getTime() + ORDER_BY_HORIZON_DAYS * 864e5)
   for (const w of wanted) {
-    if (w.date < today) continue
+    if (w.date < today || w.date > horizon) continue
     want.set(w.title, w)
   }
 

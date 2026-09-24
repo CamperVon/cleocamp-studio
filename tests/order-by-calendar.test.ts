@@ -54,3 +54,14 @@ test('past entries are left alone as history', () => {
   const plan = planOrderByCalendar([], [{ id: 'old', title: 'Order Cleo Tee', date: d('2026-09-13') }], today)
   assert.deepEqual(plan.remove, [])
 })
+
+test('a date more than a year out gets no entry, and an existing one is removed', () => {
+  // 24 Sept 2026: "Order Size label" on 21 Nov 2162.
+  const plan = planOrderByCalendar(
+    [want('Order Size label', '2162-11-21'), want('Order Story Dress', '2027-09-01')],
+    [{ id: 'x', title: 'Order Size label', date: d('2162-11-21') }],
+    today,
+  )
+  assert.deepEqual(plan.remove, ['x'])
+  assert.deepEqual(plan.create.map((c) => c.title), ['Order Story Dress'])
+})
