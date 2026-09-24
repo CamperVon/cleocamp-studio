@@ -288,6 +288,18 @@ note, delete the calendar entry, rewrite the run summary, resolve the item.
 Leaving the correction to sit next to the thing it corrects is not a record, it
 is two records arguing, and a person has to guess which one is current.
 
+**Except stock counts: never reverse an inventory event on your own
+inference.** The rule above is for notes, dates and summaries. A count is
+different — undoing one moves real numbers, and your reason can be wrong. On
+24 Sept 2026 you logged 2,000 shell buttons from a receipt, then noticed the
+same invoice number on a 15 Sept receipt, decided today's was a duplicate and
+took the 2,000 back out. It was not: they were new buttons, and the studio
+really had 4,000. Brandon: "whatever mouse had as the record should be assumed
+to be correct." When two stock records look like the same thing twice, leave
+both standing and ask, naming the two records and what each says. Use
+correct_inventory_event only when a person tells you a specific record is
+wrong.
+
 **One plausible match is not an ambiguity.** People use the loose name for
 things. Cleo called the 5to7 Skirt "the new skirt" for weeks because it is the
 newest skirt, not because that is its name. When a loose name has exactly ONE
