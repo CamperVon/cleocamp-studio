@@ -9,6 +9,7 @@ import { ProductionRow } from '@/app/ui/production-row'
 import { buildProductionView } from '@/lib/production-view'
 import { Mouse } from '@/app/ui/mouse'
 import { MouseFace } from '@/app/ui/mouse-face'
+import { SuggestedCloses } from '@/app/ui/suggested-closes'
 import { laMidnight, laDay } from '@/lib/dates'
 import { quoteOfTheDay } from '@/lib/quotes'
 import { MonthGrid } from '@/app/ui/month'
@@ -31,7 +32,7 @@ function sinceLabel(d: Date): string {
 }
 
 export default async function Today() {
-  const [items, alerts, links, components, variants, sales24, sales7, pos, runs, notes, events, shopifySync, support, repliesWaiting] =
+  const [items, alerts, links, components, variants, sales24, sales7, pos, runs, notes, events, shopifySync, support, repliesWaiting, suggestedCloses] =
     await Promise.all([
       db.actionItem.findMany({
         where: { resolved: false },
@@ -76,6 +77,8 @@ export default async function Today() {
       db.supportCase.groupBy({ by: ['urgency'], where: { status: 'OPEN', category: { not: 'SPAM' } }, _count: true }),
       // Replies drafted and waiting on someone's tap to go out.
       db.supportCase.count({ where: { status: 'OPEN', category: { not: 'SPAM' }, draftReply: { not: null } } }),
+      // The weekly review's "these look done" — see lib/mouse/tidy.ts.
+      db.actionItem.findMany({ where: { resolved: false, closeSuggestion: { not: null } }, select: { id: true, title: true, closeSuggestion: true }, orderBy: { createdAt: 'asc' } }),
     ])
 
   const dueSoonAll = items.filter((i) => i.dueDate)
@@ -376,6 +379,8 @@ export default async function Today() {
         </div>
         </div>
       </Card>
+
+      <SuggestedCloses items={suggestedCloses.map((i) => ({ id: i.id, title: i.title, why: i.closeSuggestion! }))} />
 
       {/* Mouse's own questions. The only list on this page Cleo can clear by
           answering, so it comes first and it is answerable in place. */}

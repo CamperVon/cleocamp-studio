@@ -163,3 +163,12 @@ test('tool results with dates and Decimals come out as plain JSON a chat turn ca
   assert.equal(out[0].fn, undefined)
   assert.doesNotThrow(() => JSON.parse(JSON.stringify(out)))
 })
+
+test('the weekly review only suggests real open items, once each, with a reason', async () => {
+  const { parseSuggestions } = await import('../lib/mouse/tidy')
+  const open = new Set(['a', 'b'])
+  const got = parseSuggestions('Here:\n[{"id":"a","why":"PO 2363 was cancelled."},{"id":"a","why":"dup"},{"id":"zzz","why":"not open"},{"id":"b","why":""}]', open)
+  assert.deepEqual(got, [{ id: 'a', why: 'PO 2363 was cancelled.' }])
+  assert.deepEqual(parseSuggestions('nothing to close', open), [])
+  assert.deepEqual(parseSuggestions('[]', open), [])
+})

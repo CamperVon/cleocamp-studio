@@ -176,6 +176,14 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
   // Customer replies Mouse has drafted, waiting on a person's tap. First in
   // the list: a customer is waiting on each one. Brandon, 24 Sept 2026.
   const waiting = await db.supportCase.count({ where: { status: 'OPEN', category: { not: 'SPAM' }, draftReply: { not: null } } })
+  // The weekly review's suggestions (Monday), until someone taps them.
+  const looksDone = await db.actionItem.count({ where: { resolved: false, closeSuggestion: { not: null } } })
+  if (looksDone) {
+    out.unshift({
+      on: today, tag: 'TIDY',
+      sentence: `Mouse thinks ${looksDone} item${looksDone === 1 ? ' is' : 's are'} already done — one tap to close or keep each, on Home.`,
+    })
+  }
   if (waiting) {
     out.unshift({
       on: today, tag: 'SUPPORT',

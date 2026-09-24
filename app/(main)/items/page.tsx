@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { Page, Card, Empty } from '@/app/ui/primitives'
 import { ItemRow } from '@/app/ui/item-row'
+import { SuggestedCloses } from '@/app/ui/suggested-closes'
 import { packageGap } from '@/lib/gap'
 import { GapCard } from '@/app/ui/gap-card'
 
@@ -33,6 +34,11 @@ export default async function Items() {
       title="To tend to"
       lede="Everything Studio Mouse is waiting on — questions it needs answered and todos people have set."
     >
+      <SuggestedCloses
+        showReview
+        items={open.filter((i) => i.closeSuggestion).map((i) => ({ id: i.id, title: i.title, why: i.closeSuggestion! }))}
+      />
+
       {/* The same tappable rows as Home, not a printout of them: answer or
           dismiss right here. Until 24 Sept 2026 this page listed the very
           same items as plain text, so Home could clear them and the page

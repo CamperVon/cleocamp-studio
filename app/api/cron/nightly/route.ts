@@ -329,6 +329,16 @@ export async function GET(req: NextRequest) {
     return { sent: next.map((q) => q.title), remainingAfter }
   })
 
+  // ── 7b. Monday: read the whole to-tend-to list for what looks done ──
+  // Suggestions only, for a person to tap — see lib/mouse/tidy.ts. Before
+  // the 8am Daily Cheese, which leads with them.
+  await step('tidy', async () => {
+    if (laMidnight(0).getUTCDay() !== 1) return { skipped: 'not Monday' }
+    if (dryRun) return { skipped: 'dry run' }
+    const { reviewOpenItems } = await import('@/lib/mouse/tidy')
+    return reviewOpenItems()
+  })
+
   // ── 8. Clear old content nobody needs kept ────────────────
   // A cheap no-op most nights — see lib/mouse/storage-cleanup.ts for the
   // ~60-day gate. dryRun previews counts without touching anything, same as

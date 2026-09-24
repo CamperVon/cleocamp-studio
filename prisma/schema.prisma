@@ -694,6 +694,14 @@ model ActionItem {
   resolved         Boolean          @default(false)
   resolvedAt       DateTime?
   resolutionNote   String?
+  /// The weekly review's view that this item is already done or moot, and
+  /// why, from what is on file (lib/mouse/tidy.ts). Only a suggestion: a
+  /// person taps Close or Keep. Brandon, 24 Sept 2026, after 20 of 67 open
+  /// items turned out to be answered, past or pointless and nothing had said.
+  closeSuggestion   String?
+  closeSuggestedAt  DateTime?
+  /// Someone said "keep it open" to a suggestion — not suggested again for a month.
+  keptOpenAt        DateTime?
   /// Stated outright, independent of any date — "this is pressing", not
   /// inferred from a deadline. dueDate + remindDaysBefore already covers
   /// "surface this N days before it's due"; this covers there being no date
