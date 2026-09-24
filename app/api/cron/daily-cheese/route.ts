@@ -34,10 +34,9 @@ export async function GET(req: NextRequest) {
   const dow = laMidnight(0).getUTCDay()
   const recipients =
     dow === 1 || dow === 5 // Monday or Friday
-      ? { to: ['cleo@cleocamp.com'], cc: ['brandon@cleocamp.com'] }
+      ? { to: ['studio@cleocamp.com'], cc: ['brandon@cleocamp.com'] }
       : dow >= 2 && dow <= 4 // Tuesday, Wednesday, Thursday
-        // Cleo reads studio@, not cleo@ — she asked for Jane-day copies there
-        // (Brandon, 24 Sept 2026).
+        // Cleo's address is studio@, never cleo@ — Brandon, 24 Sept 2026.
         ? { to: ['jane@cleocamp.com'], cc: ['studio@cleocamp.com', 'brandon@cleocamp.com'] }
         : null // weekend — nothing scheduled
   if (!recipients) return NextResponse.json({ skipped: 'weekend' })

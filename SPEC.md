@@ -354,7 +354,7 @@ Brandon and Cleo, narrated rather than a table dump.
 superseded by Mouse's Corner and the morning report, which were more accurate.
 The code is intact behind `digestEnabled` rather than deleted.
 
-Recipients are `brandon@cleocamp.com` and `cleo@cleocamp.com`. Not team@ —
+Recipients are `brandon@cleocamp.com` and `studio@cleocamp.com` (Cleo's address — never cleo@, which she does not read; Brandon, 24 Sept 2026). Not team@ —
 that is a group address that cannot receive external mail, so anything sent
 there bounces.
 

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { matchInboundAddress, type IdentityCandidate } from '../lib/mouse/identity'
 
 const cleo: IdentityCandidate = {
-  id: 'per_cleo', name: 'Cleo', email: 'cleo@cleocamp.com',
-  aliasEmails: 'studio@cleocamp.com', phone: '3106223898',
+  id: 'per_cleo', name: 'Cleo', email: 'studio@cleocamp.com',
+  aliasEmails: 'cleo@cleocamp.com', phone: '3106223898',
 }
 const brandon: IdentityCandidate = {
   id: 'per_brandon', name: 'Brandon', email: 'brandon@cleocamp.com',
