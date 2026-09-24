@@ -110,7 +110,7 @@ export function SupportCase({ c }: { c: CaseView }) {
                 className={`rounded border px-3 py-2 text-sm ${m.direction === 'NOTE' ? 'border-dashed border-line text-muted' : 'border-line bg-bg'}`}
               >
                 <p className="mb-1 text-[11px] text-faint">
-                  {m.direction === 'NOTE' ? `Note${m.fromAddress ? ` — ${m.fromAddress}` : ''}` : m.direction === 'INBOUND' ? 'Customer' : 'Sent'} · {day(m.at)}
+                  {m.direction === 'NOTE' ? `Note${m.fromAddress ? ` — ${m.fromAddress}` : ''}` : m.direction === 'INBOUND' ? 'Customer' : `Sent${m.fromAddress ? ` — ${m.fromAddress}` : ''}`} · {day(m.at)}
                 </p>
                 <p className="whitespace-pre-wrap break-words">{m.body}</p>
               </li>

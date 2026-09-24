@@ -324,6 +324,18 @@ export function Chat() {
   async function onFilesChosen(e: React.ChangeEvent<HTMLInputElement>) {
     const chosen = Array.from(e.target.files ?? [])
     e.target.value = '' // let picking the same file twice re-fire onChange
+    await addFiles(chosen)
+  }
+
+  // A screenshot pasted or dragged into the message box. Until 24 Sept 2026
+  // only the paperclip attached anything: Brandon pasted a receipt three
+  // times, each message went without it, and Mouse kept asking "which
+  // buttons?" — the image never left the browser and nothing said so.
+  function filesFrom(list: DataTransfer | null): File[] {
+    return Array.from(list?.files ?? []).filter((f) => f.size > 0)
+  }
+
+  async function addFiles(chosen: File[]) {
     if (!chosen.length) return
     setFileError(null)
 
@@ -607,6 +619,15 @@ export function Chat() {
           <textarea
             ref={inputRef}
             value={input}
+            onPaste={(e) => {
+              const pasted = filesFrom(e.clipboardData)
+              if (pasted.length) { e.preventDefault(); void addFiles(pasted) }
+            }}
+            onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }}
+            onDrop={(e) => {
+              const dropped = filesFrom(e.dataTransfer)
+              if (dropped.length) { e.preventDefault(); void addFiles(dropped) }
+            }}
             onChange={(e) => {
               setInput(e.target.value)
               const el = e.target

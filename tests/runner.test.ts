@@ -153,3 +153,13 @@ test('one-hour cache writes are counted apart from five-minute ones', async () =
   assert.equal(r.usage.requests[0].cacheWriteTokens, 30)
   assert.equal(r.usage.requests[0].cacheWrite1hTokens, 25)
 })
+
+test('tool results with dates and Decimals come out as plain JSON a chat turn can be saved with', async () => {
+  const { diagnosticValue } = await import('../lib/mouse/outcomes')
+  const { Prisma } = await import('../generated/prisma/client')
+  const out = diagnosticValue([{ deltaQty: new Prisma.Decimal('2200'), createdAt: new Date('2026-09-12T10:00:00Z'), fn: () => 1 }]) as Array<Record<string, unknown>>
+  assert.equal(out[0].deltaQty, '2200')
+  assert.equal(out[0].createdAt, '2026-09-12T10:00:00.000Z')
+  assert.equal(out[0].fn, undefined)
+  assert.doesNotThrow(() => JSON.parse(JSON.stringify(out)))
+})
