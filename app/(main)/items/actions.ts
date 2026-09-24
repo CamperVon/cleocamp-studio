@@ -9,9 +9,9 @@ import { requireComplete } from '@/lib/mouse/runner'
  * answer implies. Routing it through the agent means telling it the dye house
  * takes two weeks both resolves the question and writes the lead time.
  */
-export async function answerItem(id: string, answer: string) {
+export async function answerItem(id: string, answer: string): Promise<string | null> {
   const item = await db.actionItem.findUnique({ where: { id } })
-  if (!item || !answer.trim()) return
+  if (!item || !answer.trim()) return null
 
   const result = await runAgent({
     instruction:
@@ -21,7 +21,7 @@ export async function answerItem(id: string, answer: string) {
       `\nThe answer is: ${answer.trim()}\n\n` +
       `Resolve it with resolve_item, and apply whatever the answer implies — ` +
       `write it to the right field, update the order, put a date on the calendar. ` +
-      `Do not just record the words.`,
+      `Do not just record the words. End with one short sentence saying exactly what you changed.`,
     effort: 'medium',
   })
   requireComplete(result)
@@ -36,6 +36,31 @@ export async function answerItem(id: string, answer: string) {
     })
   }
   refresh()
+  // Shown where the answer was typed, so a misreading is seen at once.
+  return result.text.trim().split('\n').filter(Boolean).slice(-1)[0] ?? null
+}
+
+/**
+ * Where a product physically is, told from its row on Home. Routed through
+ * Mouse, like an order's update box, so it lands on a production run and the
+ * calendar rather than as loose text.
+ */
+export async function tellProductStage(productId: string, text: string): Promise<string | null> {
+  if (!text.trim()) return null
+  const p = await db.product.findUnique({ where: { id: productId }, select: { id: true, name: true } })
+  if (!p) return null
+  const result = await runAgent({
+    instruction:
+      `An update about where the ${p.name} [${p.id}] physically is in production.\n\n` +
+      `The update is: ${text.trim()}\n\n` +
+      `Record it on the right production run — update the run if one exists for this product, ` +
+      `create one if not — with its stage and any date given. If it changes when something ` +
+      `arrives, put that on the calendar. End with one short sentence saying exactly what you changed.`,
+    effort: 'medium',
+  })
+  requireComplete(result)
+  refresh()
+  return result.text.trim().split('\n').filter(Boolean).slice(-1)[0] ?? null
 }
 
 /** Only meaningful inside a request; called directly from a script it throws. */

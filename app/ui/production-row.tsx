@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import type { ProductState, Strand } from '@/lib/production-view'
+import { StrandReply } from './strand-reply'
 
 const LABEL: Record<Strand['kind'], string> = {
   order: 'Order',
@@ -81,7 +82,15 @@ export function ProductionRow({ p }: { p: ProductState }) {
               >
                 {LABEL[s.kind]}
               </span>
-              {s.href ? (
+              {s.itemId || s.askStage ? (
+                // Tap to answer in place — see strand-reply.tsx.
+                <StrandReply
+                  text={s.text}
+                  itemId={s.itemId}
+                  productId={s.askStage ? p.id : undefined}
+                  className={s.flag ? 'text-ink' : 'text-muted'}
+                />
+              ) : s.href ? (
                 <Link href={s.href} className={`min-w-0 hover:underline ${s.flag ? 'text-ink' : 'text-muted'}`}>
                   {s.text}
                 </Link>

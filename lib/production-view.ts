@@ -27,6 +27,10 @@ export type Strand = {
   /** Overdue, or blocking something. */
   flag: boolean
   href?: string
+  /** A 'waiting' strand's ActionItem — lets the row answer it in place. */
+  itemId?: string
+  /** Set on the "no stage recorded" line, so it can take an update in place. */
+  askStage?: boolean
 }
 
 export type ProductState = {
@@ -208,6 +212,7 @@ export async function buildProductionView(): Promise<ProductState[]> {
       // person called it urgent outright.
       flag: overdue || dueSoon || i.urgent,
       href: '/items',
+      itemId: i.id,
     })
   }
 
@@ -234,6 +239,7 @@ export async function buildProductionView(): Promise<ProductState[]> {
         text: 'No stage recorded — nobody has said where this physically is. Tell Mouse and it will keep it here.',
         on: null,
         flag: false,
+        askStage: true,
       })
     }
     const anyUnknown = p.variants.some((v) => v.onHandQty === null)
