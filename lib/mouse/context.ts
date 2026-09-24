@@ -39,18 +39,12 @@ export async function buildCatalog(): Promise<string> {
     }),
     db.salesSnapshot.aggregate({ _max: { date: true } }),
     // No row cap — buildCatalog budgets these by character count below.
-    // Retired notes come too, but only while they are recent enough to be worth
-    // looking up; they are printed separately and clearly marked as past.
+    // Current notes only. Retired ones were printed in full under their own
+    // heading until 24 Sept 2026 (for 90 days, then 14). The day 71 were
+    // retired in one tidy, the catalogue got LARGER. They are for looking an
+    // old figure up on purpose, which query_status "retiredNotes" does.
     db.note.findMany({
-      where: {
-        OR: [
-          { supersededAt: null },
-          // 14 days, down from 90 on 24 Sept 2026: retired notes were 3% of
-          // every request and are only for looking an old figure up on
-          // purpose. Older ones are one query_status call away ("retiredNotes").
-          { supersededAt: { gte: new Date(Date.now() - 14 * 864e5) } },
-        ],
-      },
+      where: { supersededAt: null },
       orderBy: { createdAt: 'desc' },
     }),
     db.calendarEvent.findMany({
@@ -330,23 +324,13 @@ export async function buildCatalog(): Promise<string> {
     // Newest first, so what drops is always the oldest, and the count of what
     // dropped is printed below rather than left to be inferred.
     const BUDGET = 60_000
-    // Live notes first and always. A retired one only earns space once every
-    // current note has it, because the whole failure being fixed here is a
-    // stale fact crowding out or outvoting the true one.
-    const live = notes.filter((n) => !n.supersededAt)
-    const retired = notes.filter((n) => n.supersededAt)
+    const live = notes
     const shown: typeof notes = []
     let used = 0
     for (const n of live) {
       used += n.content.length
       if (used > BUDGET && shown.length) break
       shown.push(n)
-    }
-    const shownRetired: typeof notes = []
-    for (const n of retired) {
-      used += n.content.length
-      if (used > BUDGET) break
-      shownRetired.push(n)
     }
     const dropped = live.length - shown.length
 
@@ -366,8 +350,9 @@ export async function buildCatalog(): Promise<string> {
     }
 
     L.push('\n## Notes you have written')
-    L.push('Everything under this heading is CURRENT. Anything retired is below,')
-    L.push('under its own heading, and must never be quoted as though it still held.')
+    L.push('Everything under this heading is CURRENT. Retired notes are not shown;')
+    L.push('to look one up on purpose ("what did we used to pay?"), use query_status')
+    L.push('with what "retiredNotes" — and never quote one as though it still held.')
     if (dropped > 0) {
       L.push(`(${dropped} older note${dropped === 1 ? '' : 's'} not shown — say so if asked rather than implying you have seen everything.)`)
     }
@@ -379,19 +364,6 @@ export async function buildCatalog(): Promise<string> {
       for (const c of groups.get(k)!) L.push(`- ${c}`)
     }
 
-    if (shownRetired.length) {
-      L.push('\n## NO LONGER TRUE — superseded notes, kept only for reference')
-      L.push('These were replaced. Do NOT answer from them, do not average them')
-      L.push('against a current note, and do not treat several old ones agreeing')
-      L.push('as weight against one new one. They are here so an old figure can')
-      L.push('be looked up on purpose — "what did we used to pay?" — nothing else.')
-      for (const n of shownRetired) {
-        const when = n.supersededAt!.toISOString().slice(0, 10)
-        const subject = n.entityId ? nameOf.get(n.entityId) ?? n.entityType.toLowerCase().replace(/_/g, ' ') : 'General'
-        L.push(`- [retired ${when}] (${subject}) ${n.content.replace(/\s+/g, ' ')}`)
-      }
-    }
-    L.push('\nNotes retired more than 14 days ago are not shown. To look one up on purpose, use query_status with what "retiredNotes".')
   }
 
   if (people.length) {
