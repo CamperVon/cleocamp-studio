@@ -117,7 +117,14 @@ data. That must not happen again.
   a customer, and nothing changes in Shopify, without a person tapping it in
   the app (Brandon, Cleo or Jane; replies sign "Kindly, Cleo Studio") — never
   approved by replying to an email, which anyone can fake. Money (discount
-  codes, refunds, exchanges) always needs that tap.
+  codes, refunds, exchanges) always needs that tap. **One exception, approved
+  by Brandon 24 Sept 2026:** a fixed "your email arrived" note (`autoAckText`
+  in `lib/support/reply.ts`), once per customer ever, never to spam, fires,
+  forwards or machine addresses. It is fixed text — never let a model write
+  or vary it. Old customer mail forwarded to support@ by Brandon, Cleo, Jane
+  or studio@ is treated as the original customer's (Brandon: "will all be
+  safe"); mail from those addresses that is not a forward is a team reply,
+  filed as a note.
 - **Never invent a price break.** Only state a bulk saving when real tier
   pricing exists in the data. Otherwise suggest asking the vendor.
 - **Never size an order.** Cleo decides quantities. Studio Mouse may comment

@@ -4,12 +4,13 @@ import { htmlToText } from '@/lib/html-to-text'
 import { sendEmail } from '@/lib/email'
 import { CHAT_MODEL } from '@/lib/mouse/agent'
 import {
-  CATEGORIES, CATEGORY_LABEL, customerAddress, finalUrgency, isSupportMail, normalizeSubject, orderNumbersIn,
+  CATEGORIES, CATEGORY_LABEL, customerAddress, finalUrgency, forwardedOrigin, isSupportMail, normalizeSubject, orderNumbersIn,
   parseVerdict, stripGroupFooter, type Verdict,
 } from '@/lib/support/core'
 import { findOrder, type OrderSnapshot } from '@/lib/support/orders'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
 import { draftForCase } from '@/lib/support/draft'
+import { autoAckText, isMachineSender, shapeOfName, SUPPORT_FROM, SUPPORT_REPLY_TO } from '@/lib/support/reply'
 
 /**
  * Read support@ mail into cases: listen, sort, alert, and (phase 2, 24 Sept
@@ -132,11 +133,25 @@ export async function supportPass() {
 
   for (const m of mail) {
     const data = (m.raw as { data?: { reply_to?: string | string[] } })?.data
-    const { email, name } = customerAddress(m.fromAddress, data?.reply_to)
-    const body = stripGroupFooter(m.text?.trim() || (m.html ? htmlToText(m.html) : '') || '')
+    const sender = customerAddress(m.fromAddress, data?.reply_to)
+    let { email, name } = sender
+    let body = stripGroupFooter(m.text?.trim() || (m.html ? htmlToText(m.html) : '') || '')
+    let subject = m.subject
 
     const teammate = teamBy.get(email)
-    if (teammate) {
+    // A teammate forwarding an old customer email in: the case is the
+    // customer's. Everything below then runs exactly as if the customer had
+    // written to support@ — except the alert and the auto-reply, since the
+    // one who forwarded it already knows, and the customer wrote days ago.
+    const origin = teammate ? forwardedOrigin(body) : null
+    const forwardedBy = origin ? teammate : null
+    if (origin) {
+      email = origin.email
+      name = origin.name
+      body = origin.body
+      subject = origin.subject ?? (m.subject ?? '').replace(/^\s*(fwd?|fw)\s*:\s*/i, '')
+    }
+    if (teammate && !origin) {
       const norm = normalizeSubject(m.subject)
       const match = norm
         ? (await db.supportCase.findMany({ where: { lastMessageAt: { gte: new Date(Date.now() - 30 * 864e5) } }, orderBy: { lastMessageAt: 'desc' }, take: 50 }))
@@ -151,8 +166,9 @@ export async function supportPass() {
       continue
     }
 
-    let c = await findCase(email, m.subject)
-    const quoted = orderNumbersIn(`${m.subject ?? ''}\n${body}`)
+    let c = await findCase(email, subject)
+    const isNew = !c
+    const quoted = orderNumbersIn(`${subject ?? ''}\n${body}`)
     const lookup = c?.shopifyOrderName && !quoted.length
       ? { order: (c.orderSnapshot as OrderSnapshot | null) ?? null, note: null }
       : await findOrder(email, quoted)
@@ -165,10 +181,10 @@ export async function supportPass() {
           select: { body: true },
         })).map((x) => x.body.slice(0, 800))
       : []
-    const verdict = await classify(body, m.subject, lookup.order, earlier)
+    const verdict = await classify(body, subject, lookup.order, earlier)
     const urgency = finalUrgency({
       verdict,
-      text: `${m.subject ?? ''}\n${body}`,
+      text: `${subject ?? ''}\n${body}`,
       inboundCount: earlier.length + 1,
       orderCreatedAt: lookup.order?.createdAt ?? null,
       orderFulfilled: lookup.order ? (lookup.order.fulfillmentStatus ?? '').toUpperCase() !== 'UNFULFILLED' : undefined,
@@ -195,7 +211,7 @@ export async function supportPass() {
           data: {
             ...fields,
             customerEmail: email,
-            subject: m.subject,
+            subject,
             // Spam is filed closed: kept, never in anyone's way.
             status: verdict.category === 'SPAM' ? 'RESOLVED' : 'OPEN',
             resolvedAt: verdict.category === 'SPAM' ? new Date() : null,
@@ -207,6 +223,9 @@ export async function supportPass() {
       create: { caseId: c.id, direction: 'INBOUND', fromAddress: email, body: body || '(empty message)', inboundEmailId: m.id, createdAt: m.receivedAt },
       update: {},
     })
+    if (forwardedBy) {
+      await db.supportMessage.create({ data: { caseId: c.id, direction: 'NOTE', fromAddress: forwardedBy, body: `Forwarded into the app by ${forwardedBy} from their own inbox.` } })
+    }
     if (lookup.note && !c.shopifyOrderName) {
       await db.supportMessage.create({ data: { caseId: c.id, direction: 'NOTE', body: lookup.note } })
     }
@@ -214,7 +233,7 @@ export async function supportPass() {
     // Once per case per half-day, so a customer sending five emails in a
     // row is one alert, not five.
     let alerted = false
-    if (urgency === 'NOW' && (!c.alertedAt || Date.now() - c.alertedAt.getTime() > 12 * 3600e3)) {
+    if (urgency === 'NOW' && !forwardedBy && (!c.alertedAt || Date.now() - c.alertedAt.getTime() > 12 * 3600e3)) {
       await alertTeam(c)
       await db.supportCase.update({ where: { id: c.id }, data: { alertedAt: new Date() } })
       alerted = true
@@ -225,8 +244,40 @@ export async function supportPass() {
     // card offers "Draft a reply" instead.
     if (verdict.category !== 'SPAM') await draftForCase(c.id).catch((e) => console.error('[support] draft', e))
 
+    // The one fixed note that goes without a tap — see autoAckText.
+    if (!forwardedBy && isNew && verdict.category !== 'SPAM' && urgency !== 'NOW') {
+      await autoAck(c.id, email, shapeOfName(name ?? verdict.customerName), subject, m.messageId).catch((e) => console.error('[support] auto-reply', e))
+    }
+
     await db.inboundEmail.update({ where: { id: m.id }, data: { processedAt: new Date() } })
     handled.push({ caseId: c.id, category: verdict.category, urgency, alerted })
   }
   return { read: mail.length, handled }
+}
+
+/**
+ * "Your email arrived" — once per customer, ever (Brandon, 24 Sept 2026: "once
+ * per customer and that's it"). The only send to a customer without a
+ * person's tap, so it is fixed text, marked Auto-Submitted so other
+ * auto-responders do not answer it, and never sent to a machine address.
+ */
+async function autoAck(caseId: string, email: string, firstName: string | null, subject: string | null, inboundMessageId: string | null) {
+  if (isMachineSender(email)) return
+  const before = await db.supportMessage.count({
+    where: { direction: 'OUTBOUND', fromAddress: 'Auto-reply', case: { customerEmail: email } },
+  })
+  if (before) return
+  const text = autoAckText(firstName)
+  const mid = inboundMessageId && !inboundMessageId.startsWith('derived:')
+    ? (inboundMessageId.startsWith('<') ? inboundMessageId : `<${inboundMessageId}>`)
+    : null
+  const res = await sendEmail({
+    from: SUPPORT_FROM, to: [email], replyTo: SUPPORT_REPLY_TO,
+    subject: subject ? (/^\s*re:/i.test(subject) ? subject : `Re: ${subject}`) : 'We have your email',
+    text,
+    headers: { 'Auto-Submitted': 'auto-replied', ...(mid ? { 'In-Reply-To': mid, References: mid } : {}) },
+  })
+  if (res.sent) {
+    await db.supportMessage.create({ data: { caseId, direction: 'OUTBOUND', fromAddress: 'Auto-reply', body: text } })
+  }
 }

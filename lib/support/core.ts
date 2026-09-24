@@ -167,3 +167,31 @@ export function finalUrgency(args: {
   if (verdict.category === 'WRONG_ITEM' || verdict.category === 'DAMAGED') raise('TODAY')
   return u
 }
+
+/**
+ * The customer inside a forward. When Cleo, Brandon, Jane or studio@ forwards
+ * an old customer email to support@ (Brandon, 24 Sept 2026: "forwarded emails
+ * from cleo, brandon or jane or studio will all be safe"), the case belongs to
+ * whoever the forwarded message was FROM, not to the teammate who forwarded
+ * it. Gmail's "---------- Forwarded message ---------" and Apple Mail's
+ * "Begin forwarded message:" are both read. Returns null when the email is
+ * not a forward, or names no sender — then it is just a teammate writing.
+ */
+export function forwardedOrigin(body: string): { email: string; name: string | null; subject: string | null; body: string } | null {
+  const marker = body.search(/-{5,}\s*Forwarded message\s*-{5,}|Begin forwarded message:/i)
+  if (marker < 0) return null
+  const rest = body.slice(marker).replace(/^.*\n/, '')
+  // The header block: lines up to the first blank line after "From:".
+  const from = rest.match(/^\s*>?\s*From:\s*(.+)$/im)?.[1]?.trim()
+  if (!from) return null
+  const addr = from.match(/<([^>\s]+@[^>\s]+)>/)?.[1] ?? from.match(/([^\s<>"]+@[^\s<>"]+)/)?.[1]
+  if (!addr) return null
+  // Strip the quotes around a display name, not the apostrophe in O'Connell.
+  const name = from.replace(/<[^>]*>/, '').replace(/"/g, '').trim().replace(/^'(.*)'$/, '$1') || null
+  const subject = rest.match(/^\s*>?\s*Subject:\s*(.+)$/im)?.[1]?.trim() ?? null
+  // Everything after the header block is the customer's message (with any
+  // earlier thread quoted under it, which the reader is given too).
+  const headerEnd = rest.search(/\n\s*\n/)
+  const inner = (headerEnd >= 0 ? rest.slice(headerEnd) : rest).trim()
+  return { email: addr.toLowerCase(), name: name && name !== addr ? name : null, subject, body: inner }
+}

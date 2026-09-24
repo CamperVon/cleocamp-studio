@@ -6,7 +6,7 @@ import { Prisma } from '@/generated/prisma/client'
 import { sendEmail } from '@/lib/email'
 import { draftForCase } from '@/lib/support/draft'
 import { freshOrder, removeUnshippedUnits, setShippingAddress } from '@/lib/support/orders'
-import { addressChangeProblems, unfilled, type DraftAddress } from '@/lib/support/reply'
+import { addressChangeProblems, SUPPORT_FROM, SUPPORT_REPLY_TO, unfilled, type DraftAddress } from '@/lib/support/reply'
 
 const STATUSES = ['OPEN', 'WAITING_ON_CUSTOMER', 'WAITING_ON_RETURN', 'RESOLVED'] as const
 type Status = (typeof STATUSES)[number]
@@ -40,8 +40,6 @@ export async function addCaseNote(id: string, text: string) {
 // on the server, rather than trusting that the button was disabled. Never
 // triggered by an email: anyone can fake one (CLAUDE.md §4).
 
-const SUPPORT_FROM = process.env.SUPPORT_FROM || 'Cleo Studio <support@send.cleocamp.com>'
-const SUPPORT_REPLY_TO = 'support@cleocamp.com'
 
 type Result = { ok: true } | { ok: false; error: string }
 
@@ -68,9 +66,12 @@ export async function sendReply(id: string, text: string): Promise<Result> {
 
   // Thread onto the customer's own last message when we know its id.
   const last = c.messages[0]?.inboundEmailId
-    ? await db.inboundEmail.findUnique({ where: { id: c.messages[0].inboundEmailId }, select: { messageId: true } })
+    ? await db.inboundEmail.findUnique({ where: { id: c.messages[0].inboundEmailId }, select: { messageId: true, fromAddress: true } })
     : null
-  const mid = last?.messageId && !last.messageId.startsWith('derived:')
+  // A forward from the team carries the teammate's message id, which the
+  // customer never saw — threading onto it would only confuse their inbox.
+  const fromCustomer = !!last && last.fromAddress.toLowerCase().includes(c.customerEmail.toLowerCase())
+  const mid = fromCustomer && last?.messageId && !last.messageId.startsWith('derived:')
     ? (last.messageId.startsWith('<') ? last.messageId : `<${last.messageId}>`)
     : null
   const subject = c.subject ? (/^\s*re:/i.test(c.subject) ? c.subject : `Re: ${c.subject}`) : 'Your Cleo Camp order'

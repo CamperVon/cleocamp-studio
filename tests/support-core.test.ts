@@ -64,3 +64,16 @@ test('fires are decided in code, whatever the model said', () => {
   // Spam is never a fire, even if it shouts.
   assert.equal(finalUrgency({ verdict: v('SPAM', 'NOW'), text: 'LEGAL ACTION fraud', inboundCount: 5 }), 'DIGEST')
 })
+
+test('a forward from the team belongs to the customer inside it', async () => {
+  const { forwardedOrigin } = await import('../lib/support/core')
+  const gmail = `FYI\n\n---------- Forwarded message ---------\nFrom: Kay O'Connell <oconnell.kay@gmail.com>\nDate: Tue, Sep 15, 2026 at 2:06 PM\nSubject: Re: exchange\nTo: Cleo Camp <studio@cleocamp.com>\n\n\nHi!\n\nCan I put the white and pink tees in the mail as soon as I get back?\n\nKay`
+  const o = forwardedOrigin(gmail)
+  assert.equal(o?.email, 'oconnell.kay@gmail.com')
+  assert.equal(o?.name, "Kay O'Connell")
+  assert.equal(o?.subject, 'Re: exchange')
+  assert.match(o!.body, /^Hi!/)
+  const apple = `Begin forwarded message:\n\nFrom: nhhwang@gmail.com\nSubject: Return request for order #2076\nDate: September 16, 2026\n\nWould you please process a refund?`
+  assert.equal(forwardedOrigin(apple)?.email, 'nhhwang@gmail.com')
+  assert.equal(forwardedOrigin('Just a note from Cleo, no forward here.'), null)
+})

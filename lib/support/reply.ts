@@ -184,3 +184,43 @@ export function orderFacts(order: OrderSnapshot | null): string {
   )
   return lines.join('\n')
 }
+
+/** Customer replies go out as Cleo Studio from support@, answered back into the group. */
+export const SUPPORT_FROM = process.env.SUPPORT_FROM || 'Cleo Studio <support@send.cleocamp.com>'
+export const SUPPORT_REPLY_TO = 'support@cleocamp.com'
+
+/**
+ * The one message that reaches a customer without a person's tap: a fixed
+ * "your email arrived" note, sent once per customer, ever. Brandon approved
+ * this exact text on 24 Sept 2026 ("just a general we will get back to you
+ * to buy us some time" — no return advice, no promised time). No model writes
+ * it, and nothing the customer wrote is repeated in it except a first name
+ * that passes shapeOfName.
+ */
+export function autoAckText(firstName: string | null): string {
+  return [
+    `Hi ${firstName ?? 'there'},`,
+    '',
+    'Thank you for writing to us. Just a quick note to say your email arrived safely.',
+    '',
+    "Cleo Camp is a very small team, and every message is read by one of us. We'll be back to you as soon as we can.",
+    '',
+    'Kindly,',
+    'Cleo Studio',
+  ].join('\n')
+}
+
+/** A first name fit to put in an email: letters only, short. Anything else becomes "there". */
+export function shapeOfName(name: string | null | undefined): string | null {
+  const first = (name ?? '').trim().split(/\s+/)[0] ?? ''
+  return /^[\p{L}][\p{L}'-]{0,24}$/u.test(first) ? first : null
+}
+
+/**
+ * Addresses that must never get the auto-reply: machines and lists. Replying
+ * to an auto-responder is how two of them end up mailing each other forever.
+ */
+export function isMachineSender(email: string): boolean {
+  return /^(no-?reply|do-?not-?reply|mailer-daemon|postmaster|bounces?|notifications?|alerts?|news(letter)?|marketing|info|support|hello|team)[+@._-]/i.test(email) ||
+    /@(.*\.)?(shopify(email)?\.com|mailchimp|sendgrid|amazonses\.com|google\.com|facebookmail\.com|intuit\.com)/i.test(email)
+}
