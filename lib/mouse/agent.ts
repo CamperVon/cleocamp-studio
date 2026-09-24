@@ -410,7 +410,7 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
     fromAPerson: true,
     history: history.map((m) => ({
       role: m.role === 'USER' ? 'user' : 'assistant',
-      content: m.role === 'USER' ? m.content : withActions(m.content, m.toolCallsJson),
+      content: m.role === 'USER' ? m.content : withActions(stripForgedActions(m.content), m.toolCallsJson),
     })),
   })
 }
