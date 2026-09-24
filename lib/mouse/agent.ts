@@ -5,6 +5,7 @@ import { buildCatalog } from '@/lib/mouse/context'
 import { SYSTEM_RULES } from '@/lib/mouse/prompt'
 import { TOOLS, TOOL_DEFS } from '@/lib/mouse/tools'
 import { refreshForecastsAndAlerts } from '@/lib/forecast'
+import { recordUsage } from '@/lib/mouse/usage'
 
 /**
  * One brain.
@@ -186,6 +187,8 @@ const RECORD_IT_NUDGE =
 export async function runAgent(opts: {
   /** What this run is for. Becomes the first user message. */
   instruction: string
+  /** Which door this came through, for the usage log — "chat", "nightly-pass", … */
+  source: string
   /** Prior turns, for chat. Omit for one-shot runs. */
   history?: Anthropic.MessageParam[]
   /** Files attached to this turn only — not replayed on later turns. */
@@ -210,11 +213,30 @@ export async function runAgent(opts: {
   const allowed = opts.allowedTools ?? Object.keys(TOOLS)
   const tools = TOOL_DEFS.filter((t) => allowed.includes(t.name))
 
+  // ── Two caches, not one ──────────────────────────────────────────────────
+  //
+  // Every request opens with about 85,000 tokens before the message itself:
+  // the tool descriptions, these rules and the catalogue. Until 24 Sept 2026
+  // all of it sat behind a single five-minute cache mark at the end of the
+  // catalogue. The catalogue changes whenever anything is written, and chat
+  // turns are usually more than five minutes apart, so in the week before,
+  // not one turn reused the previous turn's cache: every turn paid to write
+  // the whole lot again, and those writes were 80% of the chat bill.
+  //
+  // The tools and the rules are the same text on every run, so they now get
+  // a mark of their own with the one-hour lifetime. A write at that lifetime
+  // costs 2x input rather than 1.25x, and it pays for itself the first time
+  // it is read back. The catalogue keeps its own five-minute mark
+  // after it. Nothing Mouse sees has changed, only what is paid for twice.
+  // The per-caller extra rules sit between the two marks. They vary by
+  // caller, and appending them to the rules would split the shared entry.
+  // The longer lifetime has to come first (an API rule), which this order
+  // satisfies.
   const system: Anthropic.TextBlockParam[] = [
-    { type: 'text', text: SYSTEM_RULES + (opts.extraRules ? `\n\n${opts.extraRules}` : '') },
+    { type: 'text', text: SYSTEM_RULES, cache_control: { type: 'ephemeral', ttl: '1h' } },
   ]
+  if (opts.extraRules) system.push({ type: 'text', text: opts.extraRules })
   if (opts.withCatalog !== false) {
-    // Cached — it is the expensive part and barely changes between runs.
     system.push({
       type: 'text',
       text: `# What you currently know\n\n${await buildCatalog()}`,
@@ -299,6 +321,8 @@ export async function runAgent(opts: {
     }
   }
 
+  await recordUsage(opts.source, result.usage.requests)
+
   // Bring the forecast and its alerts into line with whatever just changed,
   // in this same request, rather than leaving them for the next nightly run.
   // Every caller funnels through here — chat, an in-flight update typed
@@ -350,7 +374,7 @@ function withActions(content: string, toolCallsJson: unknown): string {
   return `${content}\n\n[actions actually carried out on this turn: ${done.join('; ')}]`
 }
 
-export async function chatTurn(threadId: string, message: string, attachments?: AgentAttachment[]) {
+export async function chatTurn(threadId: string, message: string, attachments?: AgentAttachment[], source = 'chat') {
   const rows = await db.chatMessage.findMany({
     where: { threadId },
     orderBy: { createdAt: 'desc' },
@@ -359,6 +383,7 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
   const history = rows.reverse().slice(0, -1)
   return runAgent({
     instruction: message,
+    source,
     attachments,
     // Chat is the only caller whose instruction is something a person typed,
     // so it is the only one whose instruction is read for corrections.

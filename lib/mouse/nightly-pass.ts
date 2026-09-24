@@ -39,7 +39,7 @@ Do not raise something already open — check what you know first.
 End with two or three sentences on where things stand overall. That is what
 appears as Mouse's Corner in the morning, so make it worth reading.`
 
-export async function nightlyPass() {
+export async function nightlyPass(source = 'nightly-pass') {
   const unread = await db.inboundEmail.findMany({
     // Customer mail to support@ is read by lib/support/pass.ts instead — a
     // Mouse with no tools. This one can write, so a stranger's email must
@@ -100,6 +100,7 @@ export async function nightlyPass() {
     : '(no unread mail)'
 
   const r = await runAgent({
+    source,
     instruction: `Tonight's unread mail:\n\n${mail}`,
     extraRules: RULES,
     allowedTools: PROPOSAL_TOOLS,

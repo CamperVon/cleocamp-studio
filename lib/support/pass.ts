@@ -8,6 +8,7 @@ import {
   parseVerdict, stripGroupFooter, type Verdict,
 } from '@/lib/support/core'
 import { findOrder, type OrderSnapshot } from '@/lib/support/orders'
+import { recordUsage, usageOf } from '@/lib/mouse/usage'
 
 /**
  * Read support@ mail into cases. Phase 1: listen, sort, alert. Nothing here
@@ -49,6 +50,7 @@ async function classify(text: string, subject: string | null, order: OrderSnapsh
       order.items.map((i) => `${i.quantity} × ${i.title}${i.variant ? ` (${i.variant})` : ''}`).join(', ')
     : 'No order found.'
   try {
+    const startedAt = Date.now()
     const res = await new Anthropic().messages.create({
       model: CHAT_MODEL,
       max_tokens: 400,
@@ -61,6 +63,7 @@ async function classify(text: string, subject: string | null, order: OrderSnapsh
           `<customer_email subject="${(subject ?? '').replace(/"/g, "'").slice(0, 200)}">\n${text.slice(0, 6000)}\n</customer_email>`,
       }],
     })
+    await recordUsage('support', [usageOf(CHAT_MODEL, res.usage, startedAt)])
     return parseVerdict(res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join(''))
   } catch {
     // No model, no verdict: a person looks at it today rather than nobody.

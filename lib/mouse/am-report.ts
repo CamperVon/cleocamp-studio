@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { buildCatalog } from './context'
+import { recordUsage, usageOf } from '@/lib/mouse/usage'
 
 /**
  * The 8am report to Brandon and Cleo — see app/api/cron/am-report/route.ts.
@@ -60,6 +61,7 @@ export async function composeAmReport(): Promise<{ subject: string; text: string
 
   const catalog = await buildCatalog()
 
+  const startedAt = Date.now()
   const res = await new Anthropic().messages.create({
     model: 'claude-opus-5',
     max_tokens: 3000,
@@ -70,6 +72,7 @@ export async function composeAmReport(): Promise<{ subject: string; text: string
       content: `Write this morning's report from everything below.\n\n${catalog}`,
     }],
   })
+  await recordUsage('am-report', [usageOf('claude-opus-5', res.usage, startedAt)])
   const raw = res.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text).join('\n').trim()

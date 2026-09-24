@@ -57,6 +57,7 @@ export async function addInFlightUpdate(
   })
 
   const result = await runAgent({
+    source: 'in-flight',
     instruction:
       `An update about one specific thing in flight.\n\n${subject}\n\n` +
       `The update is: ${text.trim()}\n\n` +

@@ -164,7 +164,7 @@ export async function POST(req: NextRequest) {
         return
       }
       const { nightlyPass } = await import('@/lib/mouse/nightly-pass')
-      await nightlyPass()
+      await nightlyPass('mail-on-arrival')
     } catch (err) {
       // Never let this surface as a webhook failure — the mail is stored, and
       // the cron will read it tonight regardless.

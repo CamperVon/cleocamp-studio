@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
 import { laMidnight } from '@/lib/dates'
 import { CHAT_MODEL } from '@/lib/mouse/agent'
+import { recordUsage, usageOf } from '@/lib/mouse/usage'
 
 const VOICE = `You are Studio Mouse. You live in a Los Angeles fashion studio. You are
 British, you are small, and you have been watching this business closely.
@@ -110,6 +111,7 @@ export async function composeDailyBrief(overnight?: string): Promise<{ text: str
   ].filter(Boolean).join('\n')
 
   const client = new Anthropic()
+  const startedAt = Date.now()
   const res = await client.messages.create({
     model: CHAT_MODEL,
     max_tokens: 1000,
@@ -117,6 +119,7 @@ export async function composeDailyBrief(overnight?: string): Promise<{ text: str
     output_config: { effort: 'medium' },
     messages: [{ role: 'user', content: `Here is where things stand today.\n\n${facts}` }],
   })
+  await recordUsage('brief', [usageOf(CHAT_MODEL, res.usage, startedAt)])
   const text = res.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text)

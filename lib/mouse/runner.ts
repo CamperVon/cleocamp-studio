@@ -2,7 +2,10 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { classifyResult, completedWrites, diagnosticValue, type ToolOutcome } from './outcomes'
 
 export type RequestUsage = {
-  model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; durationMs: number
+  model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number
+  /** The part of cacheWriteTokens written with the one-hour lifetime (billed 2x input, not 1.25x). */
+  cacheWrite1hTokens: number
+  durationMs: number
 }
 export type AgentUsage = {
   requests: RequestUsage[]
@@ -73,7 +76,8 @@ export async function runLoop(opts: {
     }
     requests.push({ model, inputTokens: res.usage.input_tokens, outputTokens: res.usage.output_tokens,
       cacheReadTokens: res.usage.cache_read_input_tokens ?? 0,
-      cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0, durationMs: Date.now() - at })
+      cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0,
+      cacheWrite1hTokens: res.usage.cache_creation?.ephemeral_1h_input_tokens ?? 0, durationMs: Date.now() - at })
     spent += res.usage.output_tokens
 
     // Ran out of room while still thinking, before doing anything at all.

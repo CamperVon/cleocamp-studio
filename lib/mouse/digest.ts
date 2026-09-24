@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
 import { laMidnight } from '@/lib/dates'
 import { CHAT_MODEL } from '@/lib/mouse/agent'
+import { recordUsage, usageOf } from '@/lib/mouse/usage'
 
 const DIGEST_VOICE = `You are Studio Mouse, writing an email to the Cleo Camp team.
 
@@ -56,6 +57,7 @@ export async function composeDigest(kind: 'DAILY' | 'WEEKLY' | 'MONTHLY'): Promi
     ...items.map((i) => `- ${i.title}`),
   ].join('\n')
 
+  const startedAt = Date.now()
   const res = await new Anthropic().messages.create({
     model: CHAT_MODEL,
     max_tokens: 3000,
@@ -63,5 +65,6 @@ export async function composeDigest(kind: 'DAILY' | 'WEEKLY' | 'MONTHLY'): Promi
     output_config: { effort: 'medium' },
     messages: [{ role: 'user', content: `Write the ${kind.toLowerCase()} note.\n\n${facts}` }],
   })
+  await recordUsage('digest', [usageOf(CHAT_MODEL, res.usage, startedAt)])
   return res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('\n').trim()
 }

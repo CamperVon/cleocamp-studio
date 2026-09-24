@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
 
   await db.chatMessage.create({ data: { threadId, role: 'USER', content: instruction } })
 
-  const r = await chatTurn(threadId, instruction)
+  const r = await chatTurn(threadId, instruction, undefined, 'say')
 
   await db.chatMessage.create({
     data: {

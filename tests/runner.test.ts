@@ -142,3 +142,14 @@ test('the overthinking retry happens only once', async () => {
   assert.equal(n, 2)
   assert.equal(r.usage.stopReason, 'budget')
 })
+
+test('one-hour cache writes are counted apart from five-minute ones', async () => {
+  const u = { ...usage, cache_creation_input_tokens: 30, cache_creation: { ephemeral_5m_input_tokens: 5, ephemeral_1h_input_tokens: 25 } } as Anthropic.Usage
+  const r = await runLoop({
+    create: async () => ({ content: [{ type: 'text', text: 'ok', citations: null } as Anthropic.TextBlock], stop_reason: 'end_turn', usage: u }),
+    system: [], messages: [{ role: 'user', content: 'hi' }], tools: [], execute: async () => null,
+    model: 'm', deepModel: 'd',
+  })
+  assert.equal(r.usage.requests[0].cacheWriteTokens, 30)
+  assert.equal(r.usage.requests[0].cacheWrite1hTokens, 25)
+})

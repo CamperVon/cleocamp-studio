@@ -1289,3 +1289,27 @@ model SupportMessage {
 
   @@index([caseId, createdAt])
 }
+
+/// One row per model request, from every place Mouse runs — chat, Say, the
+/// answer boxes, the nightly pass, mail read on arrival, the brief, the 8am
+/// report, the support reader. Until 24 Sept 2026 only chat turns kept their
+/// token counts, so half the bill could not be traced to anything. Counts
+/// only: never prompts, replies or credentials.
+model ModelUsage {
+  id                 String   @id @default(cuid())
+  createdAt          DateTime @default(now())
+  /// Which door the run came through, e.g. "chat", "nightly-pass", "am-report".
+  source             String
+  model              String
+  inputTokens        Int
+  outputTokens       Int
+  cacheReadTokens    Int
+  /// All cache writes, both lifetimes. cacheWrite1hTokens is the part of it
+  /// written with the one-hour lifetime, which costs 2x input instead of 1.25x.
+  cacheWriteTokens   Int
+  cacheWrite1hTokens Int      @default(0)
+  durationMs         Int?
+
+  @@index([createdAt])
+  @@index([source, createdAt])
+}
