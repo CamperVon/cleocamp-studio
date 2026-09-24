@@ -6,6 +6,7 @@ import { SYSTEM_RULES } from '@/lib/mouse/prompt'
 import { TOOLS, TOOL_DEFS } from '@/lib/mouse/tools'
 import { refreshForecastsAndAlerts } from '@/lib/forecast'
 import { recordUsage } from '@/lib/mouse/usage'
+import { withNotesOnWhatChanged } from '@/lib/mouse/stale-notes'
 
 /**
  * One brain.
@@ -276,7 +277,7 @@ export async function runAgent(opts: {
     runLoop({
       create: request => client.messages.create(request),
       system, messages: msgs, tools,
-      execute: (name, input) => TOOLS[name].run(input),
+      execute: async (name, input) => withNotesOnWhatChanged(name, input, await TOOLS[name].run(input)),
       model: opts.model ?? CHAT_MODEL, deepModel: DEEP_MODEL,
       effort: opts.effort, maxRequests: rounds,
       maxOutputTokens: Number(process.env.MOUSE_MAX_OUTPUT_TOKENS) || 24000,
