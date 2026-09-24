@@ -9,10 +9,12 @@ import {
 } from '@/lib/support/core'
 import { findOrder, type OrderSnapshot } from '@/lib/support/orders'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
+import { draftForCase } from '@/lib/support/draft'
 
 /**
- * Read support@ mail into cases. Phase 1: listen, sort, alert. Nothing here
- * sends anything to a customer.
+ * Read support@ mail into cases: listen, sort, alert, and (phase 2, 24 Sept
+ * 2026) draft a reply. Nothing here sends anything to a customer — a draft
+ * waits on the case until a person taps Send.
  *
  * The model that reads a customer's email is given NO tools. It returns a
  * category, an urgency and a one-line summary, and code does everything else
@@ -141,6 +143,7 @@ export async function supportPass() {
       text: `${m.subject ?? ''}\n${body}`,
       inboundCount: earlier.length + 1,
       orderCreatedAt: lookup.order?.createdAt ?? null,
+      orderFulfilled: lookup.order ? (lookup.order.fulfillmentStatus ?? '').toUpperCase() !== 'UNFULFILLED' : undefined,
     })
 
     const fields = {
@@ -188,6 +191,11 @@ export async function supportPass() {
       await db.supportCase.update({ where: { id: c.id }, data: { alertedAt: new Date() } })
       alerted = true
     }
+
+    // Phase 2: a reply drafted for a person to read, edit and send. Best
+    // effort — the case is already filed, and a failed draft just means the
+    // card offers "Draft a reply" instead.
+    if (verdict.category !== 'SPAM') await draftForCase(c.id).catch((e) => console.error('[support] draft', e))
 
     await db.inboundEmail.update({ where: { id: m.id }, data: { processedAt: new Date() } })
     handled.push({ caseId: c.id, category: verdict.category, urgency, alerted })

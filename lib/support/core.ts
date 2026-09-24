@@ -5,8 +5,8 @@
  * Mail to support@cleocamp.com is a Google group that forwards to
  * support@send.cleocamp.com, where Resend hands it to the app. Brandon,
  * 23 Sept 2026: Mouse should monitor customer email, flag fires, and later
- * answer on the team's behalf with approval — signed by Jane, approved by
- * Brandon, Cleo or Jane.
+ * answer on the team's behalf with approval, approved by Brandon, Cleo or
+ * Jane. Replies sign "Kindly, Cleo Studio" (24 Sept 2026) — see reply.ts.
  */
 
 export const SUPPORT_MAILBOX = 'support'
@@ -159,6 +159,10 @@ export function finalUrgency(args: {
     const days = ((args.now ?? new Date()).getTime() - Date.parse(args.orderCreatedAt)) / 864e5
     if (days > 14) raise('NOW')
   }
+  // A change to an order that has not shipped races the packing table:
+  // labels are printed as orders are packed (Brandon, 24 Sept 2026), so once
+  // it is packed the change is too late.
+  if (verdict.category === 'ORDER_CHANGE' && args.orderFulfilled === false) raise('NOW')
   // Wrong or damaged is always at least today.
   if (verdict.category === 'WRONG_ITEM' || verdict.category === 'DAMAGED') raise('TODAY')
   return u

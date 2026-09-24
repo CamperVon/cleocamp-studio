@@ -1,6 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
-import { addCaseNote, setCaseStatus } from '@/app/(main)/support/actions'
+import { addCaseNote, applyAddressAndReply, redraftReply, sendReply, setCaseStatus } from '@/app/(main)/support/actions'
+import { mentionsDiscount, unfilled } from '@/lib/support/reply'
 
 type Msg = { id: string; direction: 'INBOUND' | 'OUTBOUND' | 'NOTE'; fromAddress: string | null; body: string; at: string }
 type Order = {
@@ -22,7 +23,21 @@ export type CaseView = {
   order: Order
   age: string
   messages: Msg[]
+  draft: {
+    reply: string | null
+    needs: string | null
+    address: { to: Addr; from: Addr | null; problems: string[] } | null
+    at: string
+  } | null
 }
+
+type Addr = {
+  name: string | null; address1: string | null; address2: string | null
+  city: string | null; provinceCode: string | null; zip: string | null; countryCode: string | null
+}
+
+const addrLines = (a: Addr | null) =>
+  a ? [a.name, a.address1, a.address2, [a.city, a.provinceCode, a.zip].filter(Boolean).join(' ')].filter(Boolean) : ['—']
 
 const STATUS_LABEL = {
   OPEN: 'Open',
@@ -37,7 +52,8 @@ const day = (iso: string) =>
 /**
  * One customer conversation. Everything here is for the team: what the
  * customer said, their order, and where the case stands. Nothing on this card
- * sends anything to the customer — that is phase 2, and it will need a tap.
+ * sends anything to the customer except the Send buttons in the reply box,
+ * each a person's tap (phase 2, 24 Sept 2026).
  */
 export function SupportCase({ c }: { c: CaseView }) {
   const [pending, start] = useTransition()
@@ -55,7 +71,7 @@ export function SupportCase({ c }: { c: CaseView }) {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">
               {c.who}
-              <span className="font-normal text-muted"> · {c.category}{c.orderName ? ` · ${c.orderName}` : ''}</span>
+              <span className="font-normal text-muted"> · {c.category}{c.orderName ? ` · ${c.orderName}` : ''}{c.draft?.reply && c.status !== 'RESOLVED' ? ' · reply drafted' : ''}</span>
             </p>
             <p className="text-xs leading-snug text-muted">{c.summary ?? c.subject ?? '(no summary)'}</p>
           </div>
@@ -101,6 +117,8 @@ export function SupportCase({ c }: { c: CaseView }) {
             ))}
           </ul>
 
+          {c.status !== 'RESOLVED' ? <ReplyBox c={c} /> : null}
+
           <div className="flex flex-wrap gap-2">
             {c.status !== 'WAITING_ON_CUSTOMER' && c.status !== 'RESOLVED' ? (
               <button type="button" disabled={pending} onClick={() => move('WAITING_ON_CUSTOMER')} className="rounded border border-line px-2.5 py-1.5 text-xs">
@@ -142,5 +160,108 @@ export function SupportCase({ c }: { c: CaseView }) {
         </div>
       </details>
     </li>
+  )
+}
+
+/**
+ * The drafted reply. Editable; sent only by a tap. The server re-checks the
+ * gaps and, for an address change, the order itself — the disabled buttons
+ * here are a convenience, not the guard.
+ */
+function ReplyBox({ c }: { c: CaseView }) {
+  const d = c.draft
+  const [text, setText] = useState(d?.reply ?? '')
+  const [msg, setMsg] = useState<string | null>(null)
+  const [pending, start] = useTransition()
+
+  if (!d) {
+    return (
+      <div className="rounded border border-dashed border-line px-3 py-2 text-xs text-muted">
+        No reply drafted yet.{' '}
+        <button type="button" disabled={pending} onClick={() => start(() => redraftReply(c.id))} className="underline">
+          {pending ? 'Drafting…' : 'Draft a reply'}
+        </button>
+      </div>
+    )
+  }
+  if (!d.reply) {
+    return (
+      <p className="rounded border border-dashed border-line px-3 py-2 text-xs text-muted">
+        Mouse: no reply needed — close it once you have read it.
+      </p>
+    )
+  }
+
+  const gaps = unfilled(text)
+  const a = d.address
+  const canMove = !!a && !a.problems.length
+  const blocked = pending || !!gaps.length || !text.trim()
+  const run = (fn: () => Promise<{ ok: true } | { ok: false; error: string }>) =>
+    start(async () => {
+      setMsg(null)
+      const r = await fn()
+      setMsg(r.ok ? 'Sent.' : r.error)
+    })
+
+  return (
+    <div className="flex flex-col gap-2 rounded border border-line bg-bg px-3 py-2.5">
+      <p className="text-[11px] text-faint">Reply drafted by Mouse. Nothing is sent until you tap Send. Signs as Cleo Studio.</p>
+
+      {d.needs ? <p className="text-xs font-medium text-urgent">Needs you: {d.needs}</p> : null}
+      {mentionsDiscount(text) ? <p className="text-xs text-muted">Includes the CLEOFRIEND code (10% off).</p> : null}
+
+      {a ? (
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <p className="text-faint">Ships to now</p>
+            {addrLines(a.from).map((l, i) => <p key={i} className="text-muted">{l}</p>)}
+          </div>
+          <div>
+            <p className="text-faint">Customer asks for</p>
+            {addrLines(a.to).map((l, i) => <p key={i} className="font-medium">{l}</p>)}
+          </div>
+          <p className={`col-span-2 ${a.problems.length ? 'text-urgent' : 'text-muted'}`}>
+            {a.problems.length
+              ? a.problems.join(' ')
+              : 'Checks passed: sent from the email on the order, and it has not shipped. Checked again when you tap.'}
+          </p>
+        </div>
+      ) : null}
+
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={Math.min(14, Math.max(6, text.split('\n').length + 1))}
+        className="w-full rounded border border-line bg-bg px-2.5 py-2 text-sm leading-relaxed"
+      />
+      {gaps.length ? <p className="text-xs text-urgent">Fill in {gaps.map((g) => `[${g}]`).join(', ')} before sending.</p> : null}
+
+      <div className="flex flex-wrap gap-2">
+        {canMove ? (
+          <button
+            type="button" disabled={blocked}
+            onClick={() => run(() => applyAddressAndReply(c.id, text))}
+            className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-bg disabled:opacity-40"
+          >
+            {pending ? 'Working…' : 'Update address & send'}
+          </button>
+        ) : null}
+        <button
+          type="button" disabled={blocked}
+          onClick={() => run(() => sendReply(c.id, text))}
+          className={`rounded px-2.5 py-1.5 text-xs font-medium disabled:opacity-40 ${canMove ? 'border border-line' : 'bg-accent text-bg'}`}
+        >
+          {canMove ? 'Send reply only' : pending ? 'Sending…' : 'Send reply'}
+        </button>
+        <button
+          type="button" disabled={pending}
+          onClick={() => start(async () => { await redraftReply(c.id); setMsg('Redrafted — reload to see it.') })}
+          className="rounded border border-line px-2.5 py-1.5 text-xs text-muted"
+        >
+          Redraft
+        </button>
+      </div>
+      {msg ? <p className="text-xs text-muted">{msg}</p> : null}
+    </div>
   )
 }

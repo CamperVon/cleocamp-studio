@@ -30,7 +30,8 @@ async function loadCases() {
 
 /**
  * Customer email to support@cleocamp.com, sorted by Mouse. Phase 1 (23 Sept
- * 2026): nothing is sent to customers from here.
+ * 2026) sorted and alerted; phase 2 (24 Sept) drafts a reply that a person
+ * edits and sends with a tap.
  */
 export default async function Support() {
   const cases = await loadCases()
@@ -48,6 +49,9 @@ export default async function Support() {
     order: (c.orderSnapshot as CaseView['order']) ?? null,
     age: age(c.lastMessageAt),
     messages: c.messages.map((m) => ({ id: m.id, direction: m.direction, fromAddress: m.fromAddress, body: m.body, at: m.createdAt.toISOString() })),
+    draft: c.draftedAt
+      ? { reply: c.draftReply, needs: c.draftNeeds, address: (c.draftAddress as NonNullable<CaseView['draft']>['address']) ?? null, at: c.draftedAt.toISOString() }
+      : null,
   })
 
   const open = cases.filter((c) => c.status === 'OPEN')
@@ -60,7 +64,7 @@ export default async function Support() {
   ]
 
   return (
-    <Page title="Support" lede="Customer email to support@cleocamp.com, sorted by Mouse. Nothing is sent to customers from here yet.">
+    <Page title="Support" lede="Customer email to support@cleocamp.com, sorted by Mouse, with a reply drafted. Nothing reaches a customer until someone taps Send.">
       {groups.map((g) =>
         g.items.length || g.empty ? (
           <Card key={g.title} title={`${g.title}${g.items.length ? ` (${g.items.length})` : ''}`}>

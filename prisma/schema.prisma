@@ -1260,6 +1260,17 @@ model SupportCase {
   shopifyOrderId   String?
   /// What the order looked like when it was matched: items, status, tracking.
   orderSnapshot   Json?
+  /// The reply Mouse drafted for a person to read, edit and send — never sent
+  /// on its own. Written by a model with no tools from the customer's words,
+  /// so it is only ever shown to a person, who taps Send.
+  draftReply      String?
+  /// What a person has to add or decide before the draft can go, in one line
+  /// ("the ship date"). Null when it is ready as written.
+  draftNeeds      String?
+  /// An address change the customer asked for, as fields, with the checks
+  /// code ran on it. Applied to Shopify only by a person's tap.
+  draftAddress    Json?
+  draftedAt       DateTime?
   alertedAt       DateTime?
   lastMessageAt   DateTime        @default(now())
   resolvedAt      DateTime?

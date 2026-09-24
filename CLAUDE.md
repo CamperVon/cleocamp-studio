@@ -109,10 +109,15 @@ data. That must not happen again.
   urgency and a summary, and code does the order lookup, threading, fire rules
   and alert. Customer mail must never reach a Mouse that can write: the
   nightly pass and the chat's inbox tool both exclude it, and Mouse's context
-  gets case counts only, never a customer's words. Nothing is sent to a
-  customer without a person approving it in the app (Brandon, Cleo or Jane;
-  replies sign as Jane) — never approved by replying to an email, which anyone
-  can fake. Money (discount codes, refunds, exchanges) always needs that tap.
+  gets case counts only, never a customer's words. Since 24 Sept 2026 a second
+  toolless model (`lib/support/draft.ts`) drafts a reply from the policy in
+  `lib/support/reply.ts`; code decides whether an address change may be
+  applied (sender = the order's email, not yet shipped, complete address),
+  re-checked against a fresh read of the order at the tap. Nothing is sent to
+  a customer, and nothing changes in Shopify, without a person tapping it in
+  the app (Brandon, Cleo or Jane; replies sign "Kindly, Cleo Studio") — never
+  approved by replying to an email, which anyone can fake. Money (discount
+  codes, refunds, exchanges) always needs that tap.
 - **Never invent a price break.** Only state a bulk saving when real tier
   pricing exists in the data. Otherwise suggest asking the vendor.
 - **Never size an order.** Cleo decides quantities. Studio Mouse may comment
