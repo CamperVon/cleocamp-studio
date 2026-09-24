@@ -8,6 +8,7 @@ import { InFlightRow } from '@/app/ui/in-flight-row'
 import { ProductionRow } from '@/app/ui/production-row'
 import { buildProductionView } from '@/lib/production-view'
 import { Mouse } from '@/app/ui/mouse'
+import { MouseFace } from '@/app/ui/mouse-face'
 import { laMidnight, laDay } from '@/lib/dates'
 import { quoteOfTheDay } from '@/lib/quotes'
 import { MonthGrid } from '@/app/ui/month'
@@ -165,7 +166,7 @@ export default async function Today() {
       <Card
         title={
           <>
-            <Mouse size={20} className="text-ink/70" />
+            <MouseFace size={22} />
             Studio Mouse
           </>
         }
@@ -244,7 +245,7 @@ export default async function Today() {
       {urgent.length || brief || supportFires + supportToday + repliesWaiting > 0 ? (
         <section className="overflow-hidden rounded-xl border border-line bg-surface">
           <div className="flex items-center gap-2 border-b border-line px-4 py-3 sm:px-5">
-            <Mouse size={26} className="text-ink/70" />
+            <MouseFace size={28} />
             <h2 className="font-serif text-[17px] italic text-accent">Mouse&rsquo;s Corner</h2>
           </div>
           {supportFires + supportToday + repliesWaiting > 0 ? (
@@ -381,7 +382,7 @@ export default async function Today() {
       <Card
         title={
           <>
-            <Mouse size={18} className="text-accent" />
+            <MouseFace size={20} />
             Mouse is asking you
           </>
         }

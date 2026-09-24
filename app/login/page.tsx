@@ -2,7 +2,7 @@
 import { useActionState } from 'react'
 import { use } from 'react'
 import { signIn } from './actions'
-import { Wordmark } from '@/app/ui/wordmark'
+import Image from 'next/image'
 
 export default function LoginPage({
   searchParams,
@@ -16,7 +16,23 @@ export default function LoginPage({
     <main className="flex min-h-dvh items-center justify-center px-6 py-16">
       <div className="w-full max-w-sm">
         <div className="mb-9">
-          <h1><Wordmark size="lg" /></h1>
+          {/* The whole mouse, disco ball and all (Brandon, 24 Sept 2026) —
+              the first thing anyone sees. The face alone is used everywhere
+              else; see app/ui/mouse-face.tsx. */}
+          <Image
+            src="/mouse/studio-mouse.jpg"
+            alt="Studio Mouse, a pink pom-pom mouse holding up a disco ball"
+            width={720}
+            height={960}
+            priority
+            className="mb-7 h-auto w-44 rounded-2xl shadow-sm sm:w-52"
+          />
+          <h1
+            className="font-serif text-3xl italic text-ink"
+            style={{ letterSpacing: '0.16em' }}
+          >
+            Studio Mouse
+          </h1>
           <p className="mt-3 text-sm tracking-wide text-muted">Cleo Camp Studio Admin</p>
         </div>
 

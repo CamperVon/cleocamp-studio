@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { Mouse } from './mouse'
+import { MouseFace } from './mouse-face'
 
 type Msg = {
   /// The persisted ChatMessage id, once the turn has been saved. Absent on
@@ -512,7 +512,7 @@ export function Chat() {
       <div ref={scrollRef} className="max-h-[50dvh] min-h-[7rem] overflow-y-auto px-4 py-3 sm:max-h-[36rem] sm:min-h-[20rem] sm:px-5">
         {restoring ? null : messages.length === 0 ? (
           <div className="flex items-center gap-3 py-1">
-            <Mouse size={30} className="shrink-0 text-faint" />
+            <MouseFace size={30} />
             <p className="text-sm text-muted">
               Tell me what happened and I&rsquo;ll keep track. &ldquo;Shipped 5 large pinks to
               Caf&eacute; Forgot&rdquo;, ask what&rsquo;s running low, or attach an invoice or old

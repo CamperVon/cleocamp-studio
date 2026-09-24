@@ -255,6 +255,8 @@ export async function composeDailyCheese(): Promise<{ subject: string; text: str
 <body>
   <div class="card"><div class="body">
     <div class="mark">
+      <img src="https://admin.cleocamp.com/mouse/studio-mouse-email.jpg" width="132" height="176" alt="Studio Mouse"
+           style="display:block;margin:0 auto 14px;border-radius:12px;border:0;">
       <div class="name">The Daily Cheese</div>
       <div class="quote">&ldquo;${escapeHtml(quote.text)}&rdquo;<cite>${escapeHtml(quote.who)}</cite></div>
     </div>

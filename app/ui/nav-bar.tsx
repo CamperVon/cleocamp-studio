@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState, type ReactNode } from 'react'
 import { signOut } from '@/app/login/actions'
 import { Wordmark } from './wordmark'
-import { Mouse } from './mouse'
+import { MouseFace } from './mouse-face'
 
 /**
  * Two navs, one list.
@@ -80,7 +80,7 @@ export function NavBar({ personName }: { personName: string | null }) {
         <div className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-3 sm:px-6">
           {/* Phone: just the mouse. The full wordmark took half the bar. */}
           <Link href="/" className="shrink-0 md:hidden" aria-label="Studio Mouse — home">
-            <Mouse size={34} className="text-accent" />
+            <MouseFace size={32} />
           </Link>
           <Link href="/" className="hidden shrink-0 md:block">
             <Wordmark />
