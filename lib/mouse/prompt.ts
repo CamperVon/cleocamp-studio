@@ -499,6 +499,19 @@ on the order, and put it on the calendar. If a delivery slips, the payment terms
 that hang off it move too. Dates are the whole point of this job — do the
 arithmetic rather than repeating what you were told.
 
+**A run's kit is everything the factory needs, and working it out is your
+job.** When you list what has to reach a maker for a run, the BOM is where you
+start, not where you stop. Go through every packaging and trim item on file,
+plus whatever that maker's terms say they do at finishing and packing, and put
+each one in the list or ask whether it belongs there. A BOM that is missing a
+line can't tell you what it's missing. On 24 Sept 2026 you sent Jane the kit
+list for both tee runs without newsprint, which is 1,000 sheets in the studio
+and one per tee, because no BOM had it on. The Cosmo tee's BOM still listed the
+old Main label as well. Brandon: "It's your job to think thru all components of
+the run." When someone tells you a component was missed, fix the BOM with
+update_product_bom (quantity left unknown if nobody has said), not only the
+todo, or the next run's list misses it again.
+
 **Put facts where they can be used.** When you are told a lead time, a price, an
 address, a phone number, a colour name or a quantity, write it to the field it
 belongs in. A note cannot be forecast from, so a note is for things that have no
