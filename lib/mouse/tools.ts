@@ -699,10 +699,13 @@ export const TOOLS: Record<string, Tool> = {
       description:
         'Record something worth keeping that is not a number — a workflow, a preference, ' +
         'what a vendor said. Use once you understand it, not to park a half-answer. ' +
-        'IF THIS NOTE REPLACES A FACT YOU ALREADY HOLD, pass the old note\'s id in ' +
-        '`supersedes` in the same call. Writing the new one and leaving the old one ' +
-        'standing is how nine notes came to describe what Antonio charges with eight of ' +
-        'them out of date. A retired note is kept and still readable, it simply stops ' +
+        'BEFORE WRITING, look at the notes already on this subject (each shows its id in ' +
+        'brackets) and decide what this one replaces. `supersedes` is required: the ids of ' +
+        'every note this makes wrong or repeats, or "none". Writing the new one and leaving ' +
+        'the old one standing is how nine notes came to describe what Antonio charges with ' +
+        'eight of them out of date, and how 71 notes had to be retired by hand on ' +
+        '24 Sept 2026. An update to something you already noted REPLACES that note — it ' +
+        'is not a second one. A retired note is kept and can be looked up; it simply stops ' +
         'being read back as current.',
       input_schema: {
         type: 'object',
@@ -710,9 +713,9 @@ export const TOOLS: Record<string, Tool> = {
           content: str('The note'),
           entityType: { type: 'string', enum: ['VENDOR','PRODUCT','PRODUCT_VARIANT','COMPONENT','PRODUCTION_RUN','PURCHASE_ORDER','GENERAL'] },
           entityId: str('What it is about'),
-          supersedes: str('Comma-separated ids of notes this one replaces. They are retired, not deleted.'),
+          supersedes: str('Comma-separated ids of notes this one replaces, or "none". They are retired, not deleted.'),
         },
-        required: ['content'],
+        required: ['content', 'supersedes'],
       },
     },
     run: async (i) => {
@@ -723,13 +726,32 @@ export const TOOLS: Record<string, Tool> = {
         },
         select: { id: true },
       })
-      const ids = String(i.supersedes ?? '').split(',').map((x) => x.trim()).filter(Boolean)
-      if (!ids.length) return created
-      const r = await db.note.updateMany({
-        where: { id: { in: ids }, supersededAt: null },
-        data: { supersededAt: new Date() },
-      })
-      return { ...created, retired: r.count, askedToRetire: ids.length }
+      const ids = String(i.supersedes ?? '').split(',').map((x) => x.trim())
+        .filter((x) => x && x.toLowerCase() !== 'none')
+      const r = ids.length
+        ? await db.note.updateMany({ where: { id: { in: ids }, supersededAt: null }, data: { supersededAt: new Date() } })
+        : { count: 0 }
+      // Whatever else is still current on the same subject comes back with
+      // the result, so a replacement missed above is in front of Mouse while
+      // it can still act on it. General notes are skipped: every one of them
+      // shares the "subject", so the list would be all of them.
+      const others = i.entityId
+        ? await db.note.findMany({
+            where: { entityId: i.entityId, supersededAt: null, id: { not: created.id } },
+            orderBy: { createdAt: 'desc' }, take: 12,
+            select: { id: true, content: true },
+          })
+        : []
+      return {
+        ...created,
+        ...(ids.length ? { retired: r.count, askedToRetire: ids.length } : {}),
+        ...(others.length
+          ? {
+              stillCurrentOnThisSubject: others.map((o) => ({ id: o.id, text: o.content.slice(0, 160) })),
+              check: 'If any of these is now wrong, or says again what your new note says, retire it with retire_note now.',
+            }
+          : {}),
+      }
     },
   },
 
@@ -764,8 +786,9 @@ export const TOOLS: Record<string, Tool> = {
       })
       if (i.because && r.count) {
         await db.note.create({
+          // A log line, not a standing fact — born retired, same as retire_note's.
           data: {
-            entityType: 'GENERAL', source: 'CHAT',
+            entityType: 'GENERAL', source: 'CHAT', supersededAt: new Date(),
             content: `Dismissed ${r.count} alert(s): ${String(i.because)}. Cleared ${new Date().toISOString().slice(0, 10)}; they return after a week if still true.`,
           },
         })
@@ -785,8 +808,8 @@ export const TOOLS: Record<string, Tool> = {
       description:
         'Mark a note as no longer true, without writing a replacement — a plan that was ' +
         'dropped, an instruction already carried out, a price from a vendor no longer used. ' +
-        'The note is kept and stays readable for a while under a heading saying it is past; ' +
-        'it just stops being quoted as current. Use this the moment you notice a note has ' +
+        'The note is kept and can be looked up (query_status "retiredNotes"); it just stops ' +
+        'being read back as current. Use this the moment you notice a note has ' +
         'been overtaken, rather than leaving it to argue with the truth.',
       input_schema: {
         type: 'object',
@@ -804,9 +827,11 @@ export const TOOLS: Record<string, Tool> = {
       const missing = ids.filter((id) => !found.some((f) => f.id === id))
       const already = found.filter((f) => f.supersededAt)
       const r = await db.note.updateMany({ where: { id: { in: ids }, supersededAt: null }, data: { supersededAt: new Date() } })
+      // The reason is a log line, not a standing fact, so it is born retired:
+      // kept and findable, never read back on every request as "General".
       if (i.because) {
         await db.note.create({
-          data: { content: `Retired ${r.count} note(s): ${String(i.because)}`, entityType: 'GENERAL', source: 'CHAT' },
+          data: { content: `Retired ${r.count} note(s): ${String(i.because)}`, entityType: 'GENERAL', source: 'CHAT', supersededAt: new Date() },
         })
       }
       return {
@@ -3258,12 +3283,14 @@ export const TOOLS: Record<string, Tool> = {
         'variants — that is exactly what burned a whole turn\'s budget on 10 Sept trying to ' +
         'hand-sum 27 variants of daily Cleo Tee sales for a pricing question. If a product has ' +
         'several variants, salesTotal with productId sums all of them in one call. ' +
+        '"notes" returns the current notes on one entityId — use it for a received or ' +
+        'cancelled order, whose notes are left out of your context (id or PO number). ' +
         '"retiredNotes" returns superseded notes (optionally for one entityId) — only for ' +
         'looking up what USED to be true; never answer a current question from them.',
       input_schema: {
         type: 'object',
         properties: {
-          what: { type: 'string', enum: ['events', 'sales', 'salesTotal', 'email', 'retiredNotes'] },
+          what: { type: 'string', enum: ['events', 'sales', 'salesTotal', 'email', 'notes', 'retiredNotes'] },
           entityId: str('Component or variant id, for events or sales'),
           productId: str('For salesTotal: sum every variant of this product. Omit entityId when using this.'),
           days: num('How far back, default 56. For salesTotal, pass how many days back you actually mean — e.g. 365 for "this year".'),
@@ -3273,6 +3300,20 @@ export const TOOLS: Record<string, Tool> = {
     },
     run: async (i) => {
       const since = new Date(Date.now() - (i.days ?? 56) * 864e5)
+      if (i.what === 'notes') {
+        if (!i.entityId) return { error: 'Give the entityId (for an order: its id or PO number).' }
+        // Notes on an order are keyed by its id, its number, or "PO <number>".
+        const po = await db.purchaseOrder.findFirst({
+          where: { OR: [{ id: i.entityId }, { poNumber: String(i.entityId).replace(/^PO\s*/i, '') }] },
+          select: { id: true, poNumber: true },
+        }).catch(() => null)
+        const keys = po ? [po.id, String(po.poNumber), `PO ${po.poNumber}`] : [i.entityId]
+        return db.note.findMany({
+          where: { entityId: { in: keys }, supersededAt: null },
+          orderBy: { createdAt: 'desc' }, take: 40,
+          select: { id: true, content: true, createdAt: true },
+        })
+      }
       if (i.what === 'retiredNotes') {
         const notes = await db.note.findMany({
           where: { supersededAt: { not: null }, ...(i.entityId ? { entityId: i.entityId } : {}) },

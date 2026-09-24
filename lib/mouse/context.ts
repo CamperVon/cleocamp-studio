@@ -324,7 +324,12 @@ export async function buildCatalog(): Promise<string> {
     // Newest first, so what drops is always the oldest, and the count of what
     // dropped is printed below rather than left to be inferred.
     const BUDGET = 60_000
-    const live = notes
+    // Notes on an order that is finished — received, cancelled or gone — are
+    // its history, not something to act on. 13 of them were still read on
+    // every request on 24 Sept 2026. They stay current and one lookup away.
+    const openPo = new Set(pos.flatMap((p) => [p.id, String(p.poNumber), `PO ${p.poNumber}`]))
+    const onClosedPo = notes.filter((n) => n.entityType === 'PURCHASE_ORDER' && n.entityId && !openPo.has(n.entityId))
+    const live = notes.filter((n) => !onClosedPo.includes(n))
     const shown: typeof notes = []
     let used = 0
     for (const n of live) {
@@ -345,7 +350,10 @@ export async function buildCatalog(): Promise<string> {
         ? `${nameOf.get(n.entityId) ?? n.entityType.toLowerCase().replace(/_/g, ' ')} [${n.entityId}]`
         : 'General'
       const list = groups.get(subject) ?? []
-      list.push(n.content.replace(/\s+/g, ' '))
+      // The id is what add_note's `supersedes` and retire_note take. Without
+      // it on the page, replacing a note meant a lookup first, so it was
+      // almost never done and notes piled up one per update instead.
+      list.push(`[${n.id}] ${n.content.replace(/\s+/g, ' ')}`)
       groups.set(subject, list)
     }
 
@@ -353,6 +361,11 @@ export async function buildCatalog(): Promise<string> {
     L.push('Everything under this heading is CURRENT. Retired notes are not shown;')
     L.push('to look one up on purpose ("what did we used to pay?"), use query_status')
     L.push('with what "retiredNotes" — and never quote one as though it still held.')
+    L.push('Each note starts with its id in brackets: the id add_note\'s `supersedes`')
+    L.push('and retire_note take.')
+    if (onClosedPo.length) {
+      L.push(`(${onClosedPo.length} note${onClosedPo.length === 1 ? '' : 's'} on received or cancelled orders not shown — query_status with what "notes" and the order's id or number.)`)
+    }
     if (dropped > 0) {
       L.push(`(${dropped} older note${dropped === 1 ? '' : 's'} not shown — say so if asked rather than implying you have seen everything.)`)
     }

@@ -236,13 +236,31 @@ export async function recomputeForecasts() {
   for (const c of components) {
     const usedIn = products.filter((p) => p.bomLines.some((b) => b.componentId === c.id))
     let perDay = 0
+    // Products that are selling and use this, with no quantity per unit on
+    // file (0 means unknown). Leaving them out used to make the rate quietly
+    // too low: on 24 Sept 2026 only the Story Dress counted toward size
+    // labels, the Cleo Tee sat at 0, and the calendar said to reorder in the
+    // year 2162. A date built on part of the usage is worse than no date.
+    const unknownQty: string[] = []
     for (const p of usedIn) {
       const line = p.bomLines.find((b) => b.componentId === c.id)!
       const qty = Number(line.qtyPerUnit)
-      if (qty === 0) continue
+      if (qty === 0) {
+        if ((productDemand.get(p.id) ?? 0) > 0) unknownQty.push(p.name)
+        continue
+      }
       perDay += (productDemand.get(p.id) ?? 0) * qty
     }
+    // Nothing known at all: no rate, no date, nothing misleading — as before.
     if (perDay <= 0) continue
+    if (unknownQty.length) {
+      results.push({
+        kind: 'component', id: c.id, name: c.name,
+        note: `Usage known only in part: about ${perDay.toFixed(1)} ${c.unitOfMeasure} a day, not counting ${unknownQty.join(', ')}.`,
+        blocked: `${unknownQty.join(', ')} ${unknownQty.length === 1 ? 'uses' : 'use'} it and ${unknownQty.length === 1 ? 'is' : 'are'} selling, but how many per unit is not on file, so any date would be too late.`,
+      })
+      continue
+    }
 
     const available = Number(c.onHandQty) + Number(c.incomingQty)
     if (!c.stockedInStudio) {
