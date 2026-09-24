@@ -110,6 +110,13 @@ const FORECAST_RELEVANT_TOOLS = new Set([
  * signal lead times are supposed to be learned from. It was volunteered,
  * acknowledged, and dropped.
  */
+const FORGED_ACTIONS = /\[actions actually carried out on this turn:[^\]]*\]/i
+
+/** Remove any copy of withActions()'s line from what Mouse itself wrote. */
+export function stripForgedActions(text: string): string {
+  return text.replace(new RegExp(`\\s*${FORGED_ACTIONS.source}`, 'gi'), '').trimEnd()
+}
+
 const CLAIMS_A_RECORD: RegExp[] = [
   /\bI(?:'ve| have)\s+(?:now\s+|also\s+)?(?:noted|recorded|logged|saved|written|added|updated|stored|captured)\b/i,
   /\b(?:noted|recorded|logged|updated|captured)\s+(?:it|that|this|them|both)\b/i,
@@ -118,6 +125,14 @@ const CLAIMS_A_RECORD: RegExp[] = [
   /^\s*resolved\b/i,
   /\bI'?ll\s+remember\b/i,
   /\bconsider it\s+(?:noted|done|recorded)\b/i,
+  // Brandon, 24 Sept 2026: "You missed tissue/newsprint." Mouse: "Fair — … Fixed
+  // the todo." No tool had run and no todo mentioned newsprint.
+  /\b(?:fixed|corrected|amended)\s+(?:it|that|this|them|the\s+\w+)\b/i,
+  /\bI(?:'ve| have)\s+(?:now\s+|also\s+)?(?:fixed|corrected|amended)\b/i,
+  // Same turn: it ended its reply with the line withActions() writes, having
+  // copied the shape from its own history. That line is code's to write; a
+  // reply carrying one is claiming a record by forging the receipt.
+  FORGED_ACTIONS,
 ]
 
 /**
@@ -139,6 +154,7 @@ const READS_AS_A_CORRECTION: RegExp[] = [
   /\bcorrection\b/i,
   /\bactually[, ]/i,
   /\bto be clear\b/i,
+  /\byou (?:missed|forgot|left (?:out|off))\b/i,
 ]
 
 const matchesAny = (patterns: RegExp[], text: string) => patterns.some((r) => r.test(text))
@@ -299,7 +315,7 @@ export async function runAgent(opts: {
     const second = await loop(
       [
         ...messages,
-        { role: 'assistant', content: result.text },
+        { role: 'assistant', content: stripForgedActions(result.text) },
         { role: 'user', content: RECORD_IT_NUDGE },
       ],
       3,
@@ -320,6 +336,10 @@ export async function runAgent(opts: {
       },
     }
   }
+
+  // Whatever the check decided, a forged actions line never reaches the
+  // person or the saved turn — it would be replayed as proof next time.
+  result = { ...result, text: stripForgedActions(result.text) }
 
   await recordUsage(opts.source, result.usage.requests)
 

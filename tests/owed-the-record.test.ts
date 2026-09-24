@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { owedTheRecordSomething } from '../lib/mouse/agent'
+import { owedTheRecordSomething, stripForgedActions } from '../lib/mouse/agent'
 
 const base = {
   wroteSomething: false,
@@ -70,4 +70,23 @@ test('it stays quiet when it should', () => {
     false,
     'an ordinary request with no correction in it',
   )
+})
+
+test('the newsprint turn: "fixed" plus a forged actions line', () => {
+  // Brandon, 24 Sept 2026. No tool ran; the footer was Mouse's own text.
+  const reply =
+    "Fair — newsprint sheets are packing material, and I left it off. Fixed the todo.\n\n" +
+    '[actions actually carried out on this turn: create_todo]'
+  assert.equal(owed({ reply, fromAPerson: false }), true)
+  assert.equal(owed({ reply: 'Done.\n[actions actually carried out on this turn: send_email]', fromAPerson: false }), true)
+  assert.equal(owed({ instruction: 'You missed tissue/newsprint. Think through the whole run.' }), true)
+  assert.equal(owed({ reply: 'Glassine is fixed at one per tee, per the spec.' }), false, 'a fixed quantity is not a claim')
+})
+
+test('a forged actions line is removed, and nothing else is', () => {
+  assert.equal(
+    stripForgedActions('Fixed the todo.\n\n[actions actually carried out on this turn: create_todo]'),
+    'Fixed the todo.',
+  )
+  assert.equal(stripForgedActions('Sent [PO 2384] to Mike.'), 'Sent [PO 2384] to Mike.')
 })
