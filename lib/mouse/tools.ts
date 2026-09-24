@@ -3257,11 +3257,13 @@ export const TOOLS: Record<string, Tool> = {
         '(is it trending up, did a day spike), never for arithmetic across many days or ' +
         'variants — that is exactly what burned a whole turn\'s budget on 10 Sept trying to ' +
         'hand-sum 27 variants of daily Cleo Tee sales for a pricing question. If a product has ' +
-        'several variants, salesTotal with productId sums all of them in one call.',
+        'several variants, salesTotal with productId sums all of them in one call. ' +
+        '"retiredNotes" returns superseded notes (optionally for one entityId) — only for ' +
+        'looking up what USED to be true; never answer a current question from them.',
       input_schema: {
         type: 'object',
         properties: {
-          what: { type: 'string', enum: ['events', 'sales', 'salesTotal', 'email'] },
+          what: { type: 'string', enum: ['events', 'sales', 'salesTotal', 'email', 'retiredNotes'] },
           entityId: str('Component or variant id, for events or sales'),
           productId: str('For salesTotal: sum every variant of this product. Omit entityId when using this.'),
           days: num('How far back, default 56. For salesTotal, pass how many days back you actually mean — e.g. 365 for "this year".'),
@@ -3271,6 +3273,14 @@ export const TOOLS: Record<string, Tool> = {
     },
     run: async (i) => {
       const since = new Date(Date.now() - (i.days ?? 56) * 864e5)
+      if (i.what === 'retiredNotes') {
+        const notes = await db.note.findMany({
+          where: { supersededAt: { not: null }, ...(i.entityId ? { entityId: i.entityId } : {}) },
+          orderBy: { supersededAt: 'desc' }, take: 40,
+          select: { id: true, content: true, entityType: true, entityId: true, createdAt: true, supersededAt: true },
+        })
+        return { note: 'RETIRED — these are no longer true.', notes }
+      }
       if (i.what === 'events') {
         return db.inventoryEvent.findMany({
           where: {

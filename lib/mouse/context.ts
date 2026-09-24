@@ -45,7 +45,10 @@ export async function buildCatalog(): Promise<string> {
       where: {
         OR: [
           { supersededAt: null },
-          { supersededAt: { gte: new Date(Date.now() - 90 * 864e5) } },
+          // 14 days, down from 90 on 24 Sept 2026: retired notes were 3% of
+          // every request and are only for looking an old figure up on
+          // purpose. Older ones are one query_status call away ("retiredNotes").
+          { supersededAt: { gte: new Date(Date.now() - 14 * 864e5) } },
         ],
       },
       orderBy: { createdAt: 'desc' },
@@ -134,11 +137,24 @@ export async function buildCatalog(): Promise<string> {
     }
     if (p.variants.length) {
       L.push('variants (on hand / sold last 8 weeks):')
+      // A product still in development can have ten variants that all read
+      // "UNKNOWN on hand, 0 sold" — the 5to7 Skirt did, on every request.
+      // Those are listed together on one line, ids kept so they can still be
+      // written to. Never-counted and counted-at-zero stay separate lines:
+      // they are different facts.
+      const idle = { uncounted: [] as string[], zero: [] as string[] }
       for (const v of p.variants) {
         const name = [v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'default'
+        const n = sold.get(v.id) ?? 0
+        if (n === 0 && (v.onHandQty === null || Number(v.onHandQty) === 0)) {
+          idle[v.onHandQty === null ? 'uncounted' : 'zero'].push(`${name} [${v.id}]`)
+          continue
+        }
         const oh = v.onHandQty === null ? 'UNKNOWN' : String(v.onHandQty)
-        L.push(`  - ${name}: ${oh} on hand, ${sold.get(v.id) ?? 0} sold [${v.id}]`)
+        L.push(`  - ${name}: ${oh} on hand, ${n} sold [${v.id}]`)
       }
+      if (idle.uncounted.length) L.push(`  - UNKNOWN on hand, 0 sold: ${idle.uncounted.join(', ')}`)
+      if (idle.zero.length) L.push(`  - 0 on hand, 0 sold: ${idle.zero.join(', ')}`)
     }
   }
 
@@ -375,6 +391,7 @@ export async function buildCatalog(): Promise<string> {
         L.push(`- [retired ${when}] (${subject}) ${n.content.replace(/\s+/g, ' ')}`)
       }
     }
+    L.push('\nNotes retired more than 14 days ago are not shown. To look one up on purpose, use query_status with what "retiredNotes".')
   }
 
   if (people.length) {
