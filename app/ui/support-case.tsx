@@ -184,7 +184,11 @@ function ReplyBox({ c }: { c: CaseView }) {
       </div>
     )
   }
-  if (!d.reply) {
+  // "No reply needed" only when the drafter said so AND flagged nothing. A
+  // null reply WITH a need (on 24 Sept a test with no matching order came
+  // back that way) is a draft that failed, not a case to close: the person
+  // gets an empty box to write in, under what is missing.
+  if (!d.reply && !d.needs) {
     return (
       <p className="rounded border border-dashed border-line px-3 py-2 text-xs text-muted">
         Mouse: no reply needed — close it once you have read it.
