@@ -118,10 +118,38 @@ export async function supportPass() {
   const mail = unread.filter((m) => isSupportMail(m.toAddress))
   const handled: Array<{ caseId: string; category: string; urgency: string; alerted: boolean }> = []
 
+  // The team's own addresses. Jane gets every support email and Cleo answers
+  // some from Gmail; a reply-all that copies support@ comes back through the
+  // group looking exactly like customer mail. Read as a customer, it would
+  // open a case "from" Cleo and draft a reply to her. So team mail is filed
+  // on the matching case as a note — what we told the customer — and nothing
+  // else happens. (Testing needs an address outside the team for that reason.)
+  const team = await db.person.findMany({ where: { active: true, external: false }, select: { name: true, email: true, aliasEmails: true } })
+  const teamBy = new Map<string, string>()
+  for (const t of team) {
+    for (const a of [t.email, ...(t.aliasEmails ?? '').split(',')]) if (a?.trim()) teamBy.set(a.trim().toLowerCase(), t.name)
+  }
+
   for (const m of mail) {
     const data = (m.raw as { data?: { reply_to?: string | string[] } })?.data
     const { email, name } = customerAddress(m.fromAddress, data?.reply_to)
     const body = stripGroupFooter(m.text?.trim() || (m.html ? htmlToText(m.html) : '') || '')
+
+    const teammate = teamBy.get(email)
+    if (teammate) {
+      const norm = normalizeSubject(m.subject)
+      const match = norm
+        ? (await db.supportCase.findMany({ where: { lastMessageAt: { gte: new Date(Date.now() - 30 * 864e5) } }, orderBy: { lastMessageAt: 'desc' }, take: 50 }))
+            .find((x) => normalizeSubject(x.subject) === norm)
+        : null
+      if (match) {
+        await db.supportMessage.create({
+          data: { caseId: match.id, direction: 'NOTE', fromAddress: teammate, body: `Replied from their own email, outside the app:\n\n${body.slice(0, 4000)}` },
+        })
+      }
+      await db.inboundEmail.update({ where: { id: m.id }, data: { processedAt: new Date() } })
+      continue
+    }
 
     let c = await findCase(email, m.subject)
     const quoted = orderNumbersIn(`${m.subject ?? ''}\n${body}`)

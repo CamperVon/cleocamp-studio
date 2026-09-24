@@ -14,7 +14,8 @@ export type OrderSnapshot = {
   fulfillmentStatus: string | null
   total: string | null
   email: string | null
-  items: Array<{ title: string; variant: string | null; quantity: number }>
+  /** id/unfulfilled/variantId are absent on snapshots from before 24 Sept 2026. */
+  items: Array<{ title: string; variant: string | null; quantity: number; id?: string; unfulfilled?: number; variantId?: string | null }>
   tracking: Array<{ company: string | null; number: string | null; url: string | null }>
   /** Where it is going. Optional: snapshots taken before 24 Sept 2026 lack it. */
   shipTo?: ShipTo | null
@@ -33,7 +34,7 @@ type Node = {
   displayFinancialStatus: string | null
   displayFulfillmentStatus: string | null
   totalPriceSet: { shopMoney: { amount: string; currencyCode: string } } | null
-  lineItems: { nodes: Array<{ title: string; variantTitle: string | null; quantity: number }> }
+  lineItems: { nodes: Array<{ id: string; title: string; variantTitle: string | null; quantity: number; unfulfilledQuantity: number; variant: { id: string } | null }> }
   fulfillments: Array<{ trackingInfo: Array<{ company: string | null; number: string | null; url: string | null }> }>
   shippingAddress: (Omit<ShipTo, 'countryCode'> & { countryCodeV2: string | null }) | null
 }
@@ -41,7 +42,7 @@ type Node = {
 const ORDER_FIELDS = `
   id name createdAt email displayFinancialStatus displayFulfillmentStatus
   totalPriceSet { shopMoney { amount currencyCode } }
-  lineItems(first: 20) { nodes { title variantTitle quantity } }
+  lineItems(first: 20) { nodes { id title variantTitle quantity unfulfilledQuantity variant { id } } }
   fulfillments(first: 5) { trackingInfo(first: 3) { company number url } }
   shippingAddress { name address1 address2 city provinceCode zip countryCodeV2 }
 `
@@ -55,7 +56,10 @@ function snapshot(n: Node): OrderSnapshot {
     fulfillmentStatus: n.displayFulfillmentStatus,
     total: n.totalPriceSet ? `${n.totalPriceSet.shopMoney.amount} ${n.totalPriceSet.shopMoney.currencyCode}` : null,
     email: n.email,
-    items: n.lineItems.nodes.map((l) => ({ title: l.title, variant: l.variantTitle, quantity: l.quantity })),
+    items: n.lineItems.nodes.map((l) => ({
+      title: l.title, variant: l.variantTitle, quantity: l.quantity,
+      id: l.id, unfulfilled: l.unfulfilledQuantity, variantId: l.variant?.id ?? null,
+    })),
     tracking: n.fulfillments.flatMap((f) => f.trackingInfo),
     shipTo: n.shippingAddress
       ? {
@@ -127,4 +131,67 @@ export async function setShippingAddress(id: string, a: ShipTo): Promise<{ ok: t
   )
   const errs = d.orderUpdate.userErrors
   return errs.length ? { ok: false, error: errs.map((e) => e.message).join('; ') } : { ok: true }
+}
+
+/**
+ * Take the not-yet-shipped units of one line off an order, back into stock.
+ *
+ * Shopify will not cancel part of an order once any of it has shipped — which
+ * is what cost Brandon fifteen minutes on #2423, 24 Sept 2026 — but an order
+ * EDIT can remove unfulfilled units, and that is what takes the item off the
+ * packing list. Refunding alone leaves it there. The refund itself is not
+ * sent here: money is a person's tap in Shopify (CLAUDE.md §4).
+ * Needs write_order_edits.
+ */
+export async function removeUnshippedUnits(
+  orderId: string, lineItemId: string, variantId: string | null, staffNote: string,
+): Promise<{ ok: true; removed: number; refundOwed: string | null } | { ok: false; error: string }> {
+  type Calc = { id: string; title: string; variantTitle: string | null; quantity: number; editableQuantity: number; variant: { id: string } | null }
+  const begin = await shopifyGraphQL<{ orderEditBegin: { calculatedOrder: { id: string; lineItems: { nodes: Calc[] } } | null; userErrors: Array<{ message: string }> } }>(
+    `mutation($id: ID!) { orderEditBegin(id: $id) { calculatedOrder { id lineItems(first: 50) { nodes { id title variantTitle quantity editableQuantity variant { id } } } } userErrors { field message } } }`,
+    { id: orderId },
+  )
+  const calc = begin.orderEditBegin.calculatedOrder
+  if (!calc || begin.orderEditBegin.userErrors.length) {
+    return { ok: false, error: begin.orderEditBegin.userErrors.map((e) => e.message).join('; ') || 'Shopify would not open the order for editing.' }
+  }
+  const line = matchCalculatedLine(lineItemId, variantId, calc.lineItems.nodes)
+  if (!line) return { ok: false, error: 'Could not find that item in the order edit — do it in Shopify (Edit order).' }
+  if (line.editableQuantity < 1) return { ok: false, error: 'Nothing unshipped left on that item.' }
+
+  const set = await shopifyGraphQL<{ orderEditSetQuantity: { userErrors: Array<{ message: string }> } }>(
+    `mutation($id: ID!, $lineItemId: ID!, $quantity: Int!) { orderEditSetQuantity(id: $id, lineItemId: $lineItemId, quantity: $quantity, restock: true) { calculatedLineItem { id quantity } userErrors { field message } } }`,
+    { id: calc.id, lineItemId: line.id, quantity: line.quantity - line.editableQuantity },
+  )
+  if (set.orderEditSetQuantity.userErrors.length) {
+    return { ok: false, error: set.orderEditSetQuantity.userErrors.map((e) => e.message).join('; ') }
+  }
+  const commit = await shopifyGraphQL<{ orderEditCommit: { order: { totalOutstandingSet: { shopMoney: { amount: string; currencyCode: string } } } | null; userErrors: Array<{ message: string }> } }>(
+    `mutation($id: ID!, $note: String) { orderEditCommit(id: $id, notifyCustomer: false, staffNote: $note) { order { id totalOutstandingSet { shopMoney { amount currencyCode } } } userErrors { field message } } }`,
+    { id: calc.id, note: staffNote.slice(0, 250) },
+  )
+  if (commit.orderEditCommit.userErrors.length) {
+    return { ok: false, error: commit.orderEditCommit.userErrors.map((e) => e.message).join('; ') }
+  }
+  const out = commit.orderEditCommit.order?.totalOutstandingSet.shopMoney
+  // Outstanding goes negative when the customer has paid for more than the
+  // order now holds: that is the refund owed.
+  const owed = out && Number(out.amount) < 0 ? `${Math.abs(Number(out.amount)).toFixed(2)} ${out.currencyCode}` : null
+  return { ok: true, removed: line.editableQuantity, refundOwed: owed }
+}
+
+/**
+ * The edit's copy of a line. Shopify gives the edit its own ids; the number
+ * at the end usually matches the order's line, so that is tried first, then
+ * the variant — but only if exactly one editable line has it, never a guess.
+ */
+export function matchCalculatedLine<T extends { id: string; editableQuantity: number; variant: { id: string } | null }>(
+  lineItemId: string, variantId: string | null, lines: T[],
+): T | null {
+  const num = (gid: string) => gid.split('/').pop()
+  const byId = lines.find((l) => num(l.id) === num(lineItemId))
+  if (byId) return byId
+  if (!variantId) return null
+  const byVariant = lines.filter((l) => l.variant?.id === variantId && l.editableQuantity > 0)
+  return byVariant.length === 1 ? byVariant[0] : null
 }

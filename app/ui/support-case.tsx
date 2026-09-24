@@ -1,12 +1,12 @@
 'use client'
 import { useState, useTransition } from 'react'
-import { addCaseNote, applyAddressAndReply, redraftReply, sendReply, setCaseStatus } from '@/app/(main)/support/actions'
+import { addCaseNote, applyAddressAndReply, redraftReply, removeUnshippedItem, sendReply, setCaseStatus } from '@/app/(main)/support/actions'
 import { mentionsDiscount, unfilled } from '@/lib/support/reply'
 
 type Msg = { id: string; direction: 'INBOUND' | 'OUTBOUND' | 'NOTE'; fromAddress: string | null; body: string; at: string }
 type Order = {
   name: string; createdAt: string; financialStatus: string | null; fulfillmentStatus: string | null; total: string | null
-  items: Array<{ title: string; variant: string | null; quantity: number }>
+  items: Array<{ title: string; variant: string | null; quantity: number; id?: string; unfulfilled?: number }>
   tracking: Array<{ company: string | null; number: string | null; url: string | null }>
 } | null
 
@@ -91,7 +91,7 @@ export function SupportCase({ c }: { c: CaseView }) {
                 {c.order.total ? ` · ${c.order.total}` : ''}
               </p>
               {c.order.items.map((i, n) => (
-                <p key={n}>{i.quantity} × {i.title}{i.variant ? ` — ${i.variant}` : ''}</p>
+                <OrderLine key={n} caseId={c.id} item={i} open={c.status !== 'RESOLVED'} />
               ))}
               {c.order.tracking.map((t, n) =>
                 t.url ? (
@@ -262,6 +262,48 @@ function ReplyBox({ c }: { c: CaseView }) {
         </button>
       </div>
       {msg ? <p className="text-xs text-muted">{msg}</p> : null}
+    </div>
+  )
+}
+
+/**
+ * One item on the order. An item that has not shipped can be taken off —
+ * Shopify will not cancel part of a partly-shipped order, but it will remove
+ * the unshipped units, which is what gets them off the packing list. Asks
+ * first; the refund stays a person's tap in Shopify.
+ */
+function OrderLine({ caseId, item, open }: {
+  caseId: string
+  item: { title: string; variant: string | null; quantity: number; id?: string; unfulfilled?: number }
+  open: boolean
+}) {
+  const [pending, start] = useTransition()
+  const [msg, setMsg] = useState<string | null>(null)
+  const label = `${item.title}${item.variant ? ` — ${item.variant}` : ''}`
+  const removable = open && !!item.id && !!item.unfulfilled
+  return (
+    <div>
+      <p>
+        {item.quantity} × {label}
+        {item.unfulfilled === 0 ? <span className="text-faint"> · shipped</span> : item.unfulfilled ? <span className="text-faint"> · not shipped</span> : null}
+        {removable ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => {
+              if (!window.confirm(`Take ${item.unfulfilled} × ${label} off this order? It comes off the packing list and goes back into stock. You send the refund in Shopify.`)) return
+              start(async () => {
+                const r = await removeUnshippedItem(caseId, item.id!)
+                setMsg(r.ok ? (r.note ?? 'Removed.') : r.error)
+              })
+            }}
+            className="ml-2 underline"
+          >
+            {pending ? 'Removing…' : 'Remove (not shipped)'}
+          </button>
+        ) : null}
+      </p>
+      {msg ? <p className="text-ink">{msg}</p> : null}
     </div>
   )
 }

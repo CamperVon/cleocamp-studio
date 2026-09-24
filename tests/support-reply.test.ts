@@ -66,3 +66,28 @@ test('a change to an order not yet shipped is a fire; after shipping it is not r
   assert.equal(finalUrgency({ verdict: v, text: '', inboundCount: 1, orderFulfilled: false }), 'NOW')
   assert.equal(finalUrgency({ verdict: v, text: '', inboundCount: 1, orderFulfilled: true }), 'TODAY')
 })
+
+test('the order edit\'s copy of a line is found by id, else by a unique variant, never guessed', async () => {
+  const { matchCalculatedLine } = await import('../lib/support/orders')
+  const lines = [
+    { id: 'gid://shopify/CalculatedLineItem/111', editableQuantity: 1, variant: { id: 'v-black' } },
+    { id: 'gid://shopify/CalculatedLineItem/222', editableQuantity: 0, variant: { id: 'v-pink' } },
+  ]
+  assert.equal(matchCalculatedLine('gid://shopify/LineItem/111', 'v-black', lines)?.id, lines[0].id)
+  assert.equal(matchCalculatedLine('gid://shopify/LineItem/999', 'v-black', lines)?.id, lines[0].id)
+  const twin = [...lines, { id: 'gid://shopify/CalculatedLineItem/333', editableQuantity: 1, variant: { id: 'v-black' } }]
+  assert.equal(matchCalculatedLine('gid://shopify/LineItem/999', 'v-black', twin), null)
+  assert.equal(matchCalculatedLine('gid://shopify/LineItem/999', null, lines), null)
+})
+
+test('the drafter is told which items shipped, so it offers a cancel only where one is possible', () => {
+  const facts = orderFacts({
+    ...order, fulfillmentStatus: 'PARTIALLY_FULFILLED',
+    items: [
+      { title: 'Cleo Tee', variant: 'Black / 2', quantity: 1, unfulfilled: 1 },
+      { title: 'Cleo Tee - Hot Pink', variant: 'Hot Pink / 2', quantity: 1, unfulfilled: 0 },
+    ],
+  })
+  assert.match(facts, /Black \/ 2\) — NOT shipped/)
+  assert.match(facts, /Hot Pink \/ 2\) — shipped/)
+})

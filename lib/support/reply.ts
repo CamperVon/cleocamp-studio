@@ -38,6 +38,12 @@ ${RETURN_ADDRESS}
   with their name and order number inside the package.
 - Once it arrives we process the refund, or ship the replacement.
 
+CANCELLING PART OF AN ORDER
+- An item that has NOT shipped can be cancelled: it is refunded in full to the
+  original payment, with no restocking fee (it never left). A person removes it
+  and sends the refund before your reply goes, so write it as done.
+- An item that HAS shipped cannot be cancelled — it is a return, as above.
+
 LATE ORDERS AND UNHAPPY CUSTOMERS
 - Apologise simply and say what is being done.
 - You MAY offer the code CLEOFRIEND for 10% off a future order, to a customer
@@ -150,7 +156,9 @@ export function orderFacts(order: OrderSnapshot | null): string {
   if (!order) return 'No order is matched to this customer.'
   const lines = [
     `Order ${order.name}, placed ${order.createdAt.slice(0, 10)}. Payment: ${order.financialStatus ?? 'unknown'}. Shipping status: ${order.fulfillmentStatus ?? 'unknown'}.`,
-    `Items: ${order.items.map((i) => `${i.quantity} × ${i.title}${i.variant ? ` (${i.variant})` : ''}`).join(', ') || 'none listed'}.`,
+    `Items: ${order.items.map((i) => `${i.quantity} × ${i.title}${i.variant ? ` (${i.variant})` : ''}${
+      i.unfulfilled === undefined ? '' : i.unfulfilled === 0 ? ' — shipped' : i.unfulfilled === i.quantity ? ' — NOT shipped' : ` — ${i.unfulfilled} not shipped`
+    }`).join(', ') || 'none listed'}.`,
   ]
   const tracking = order.tracking.map((t) => ({ ...t, link: trackingUrl(t) })).filter((t) => t.number || t.link)
   lines.push(

@@ -5,7 +5,7 @@ import { currentPersonId } from '@/lib/session'
 import { Prisma } from '@/generated/prisma/client'
 import { sendEmail } from '@/lib/email'
 import { draftForCase } from '@/lib/support/draft'
-import { freshOrder, setShippingAddress } from '@/lib/support/orders'
+import { freshOrder, removeUnshippedUnits, setShippingAddress } from '@/lib/support/orders'
 import { addressChangeProblems, unfilled, type DraftAddress } from '@/lib/support/reply'
 
 const STATUSES = ['OPEN', 'WAITING_ON_CUSTOMER', 'WAITING_ON_RETURN', 'RESOLVED'] as const
@@ -151,4 +151,50 @@ export async function redraftReply(id: string): Promise<void> {
   if (!(await approver())) return
   await draftForCase(id)
   revalidatePath('/support')
+}
+
+/**
+ * Take an item that has not shipped off the customer's order, at their
+ * request. Same guard as an address change: the case must be from the email
+ * the order was placed with, checked on a fresh read. The refund is NOT sent
+ * here — the case note says what is owed and a person refunds it in Shopify.
+ */
+export async function removeUnshippedItem(id: string, lineItemId: string): Promise<Result & { note?: string }> {
+  const who = await approver()
+  if (!who) return { ok: false, error: 'Sign in again — only the team can do this.' }
+  const c = await db.supportCase.findUnique({ where: { id } })
+  if (!c?.shopifyOrderId) return { ok: false, error: 'No order on this case.' }
+
+  let fresh
+  try {
+    fresh = await freshOrder(c.shopifyOrderId)
+  } catch (e) {
+    return { ok: false, error: `Could not read the order from Shopify: ${e instanceof Error ? e.message.slice(0, 160) : String(e)}` }
+  }
+  if (!fresh) return { ok: false, error: 'Shopify has no such order.' }
+  if (!fresh.email || fresh.email.toLowerCase() !== c.customerEmail.toLowerCase()) {
+    return { ok: false, error: `This case is not from the email on the order${fresh.email ? ` (${fresh.email})` : ''}. If you are sure, do it in Shopify: Edit order.` }
+  }
+  const item = fresh.items.find((i) => i.id === lineItemId)
+  if (!item || !item.unfulfilled) return { ok: false, error: 'That item has shipped, or is no longer on the order.' }
+
+  const label = `${item.unfulfilled} × ${item.title}${item.variant ? ` — ${item.variant}` : ''}`
+  let r
+  try {
+    r = await removeUnshippedUnits(c.shopifyOrderId, lineItemId, item.variantId ?? null, `Removed ${label} (not shipped) at the customer's request — ${who.name}, via Studio support.`)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: false, error: /access|scope|denied|permission/i.test(msg) ? 'Shopify would not let the app edit orders yet (write_order_edits). Nothing was changed.' : `Shopify refused: ${msg.slice(0, 160)}` }
+  }
+  if (!r.ok) return { ok: false, error: r.error }
+
+  const note = `Removed ${label} from ${c.shopifyOrderName} — it had not shipped, and is back in stock.` +
+    (r.refundOwed ? ` Refund owed: ${r.refundOwed}. Send it in Shopify (the order's Refund button); no restocking fee, it never shipped.` : ' No refund shows as owed — check the order in Shopify.')
+  const after = await freshOrder(c.shopifyOrderId).catch(() => null)
+  await db.$transaction([
+    db.supportMessage.create({ data: { caseId: id, direction: 'NOTE', fromAddress: who.name, body: note } }),
+    ...(after ? [db.supportCase.update({ where: { id }, data: { orderSnapshot: after as unknown as Prisma.InputJsonValue } })] : []),
+  ])
+  revalidatePath('/support')
+  return { ok: true, note }
 }
