@@ -184,6 +184,41 @@ export function saleState(onSite: boolean, v: { availableForSale: boolean; inven
   return v.inventoryPolicy === 'CONTINUE' ? 'sold out, but can be ordered now as a pre-order and ships when more arrive' : 'sold out'
 }
 
+/** Sizes a customer mentions: "size 1", "a 2", "size small". Pure. */
+export function sizesIn(text: string): string[] {
+  const words: Record<string, string> = { zero: '0', one: '1', two: '2', three: '3' }
+  const found = [...text.toLowerCase().matchAll(/\bsize\s*(?:is\s*)?(\d|zero|one|two|three|x?s|m|l|small|medium|large|extra small|petite)\b/g)]
+    .map((m) => words[m[1]] ?? m[1])
+  return [...new Set(found)]
+}
+
+/**
+ * For each size the customer named, the colours of the same product that can
+ * ship now. Brandon, 25 Sept 2026, on Gasira asking for black and white in a
+ * size 1 before 8 October: "a smart mouse would see if any colors are in
+ * stock in her size." Worked out here rather than left to the drafter to spot
+ * in a list. Pure.
+ */
+export function inStockInSize(products: CatalogProduct[], sizes: string[]): string[] {
+  const family = (title: string) => title.split(/\s[-—–]\s/)[0].trim()
+  const lines: string[] = []
+  for (const fam of [...new Set(products.map((p) => family(p.title)))]) {
+    for (const size of sizes) {
+      const colours = products
+        .filter((p) => family(p.title) === fam && p.status === 'ACTIVE')
+        .flatMap((p) => p.variants.nodes)
+        .filter((v) => v.availableForSale && (v.inventoryQuantity ?? 0) > 0)
+        .filter((v) => v.title.split(' / ').map((x) => x.trim().toLowerCase()).slice(1).includes(size) ||
+          (!v.title.includes(' / ') && v.title.toLowerCase() === size))
+        .map((v) => v.title.split(' / ')[0].trim())
+      lines.push(colours.length
+        ? `- ${fam} in stock now in size ${size}, ships right away: ${[...new Set(colours)].join(', ')}.`
+        : `- ${fam}: nothing in stock in size ${size} right now.`)
+    }
+  }
+  return lines
+}
+
 export async function catalogFacts(text: string): Promise<string> {
   if (!isConfigured()) return ''
   const t = text
@@ -198,7 +233,9 @@ export async function catalogFacts(text: string): Promise<string> {
     select: { id: true, productId: true, shopifyVariantId: true },
   })
   const more = await restockDates(ours)
-  return named.map((p) => {
+  const sizes = sizesIn(text)
+  const now = sizes.length ? inStockInSize(named, sizes) : []
+  return [...now, ...named.map((p) => {
     const onSite = p.status === 'ACTIVE'
     const sizes = p.variants.nodes.map((v) => {
       const inStock = (v.inventoryQuantity ?? 0) > 0
@@ -208,7 +245,7 @@ export async function catalogFacts(text: string): Promise<string> {
       return `${v.title}: ${state}${inStock ? '' : dates.length ? ` (more coming: ${dates.join('; ')})` : ' (no restock date on file)'}`
     })
     return `- ${p.title}${onSite ? '' : ' — not on the website right now'}: ${sizes.join('; ')}.`
-  }).join('\n')
+  })].join('\n')
 }
 
 /**

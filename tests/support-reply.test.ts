@@ -193,3 +193,20 @@ test('a product question gets the catalog, not a request for an order (JJ, red C
   assert.match(saleState(true, { availableForSale: true, inventoryPolicy: 'CONTINUE', inventoryQuantity: -121 }), /pre-order/)
   assert.equal(saleState(true, { availableForSale: true, inventoryPolicy: 'DENY', inventoryQuantity: 17 }), 'in stock')
 })
+
+test('other colours in stock in her size are worked out, not left to be spotted (Gasira, size 1)', async () => {
+  const { sizesIn, inStockInSize } = await import('../lib/support/draft')
+  assert.deepEqual(sizesIn('It is unclear if there are any currently in stock (in a size 1) or if they are pre-order'), ['1'])
+  assert.deepEqual(sizesIn('Is the red Cleo tee available in size 1?'), ['1'])
+  assert.deepEqual(sizesIn('Where is my order?'), [])
+  const v = (title: string, q: number, sale = true, policy = 'DENY') => ({ id: title, title, availableForSale: sale, inventoryPolicy: policy, inventoryQuantity: q })
+  const shop = [
+    { title: 'Cleo Tee', status: 'ACTIVE', variants: { nodes: [v('Black / 1', -121, true, 'CONTINUE'), v('White / 1', -52, true, 'CONTINUE')] } },
+    { title: 'Cleo Tee - Shell', status: 'ACTIVE', variants: { nodes: [v('Shell / 1', 17), v('Shell / 2', 27)] } },
+    { title: 'Cleo Tee - Hot Pink', status: 'ACTIVE', variants: { nodes: [v('Hot Pink / 1', 122, true, 'CONTINUE')] } },
+    { title: 'Cleo Tee - Ruby Red', status: 'UNLISTED', variants: { nodes: [v('Red / 1', 0, false)] } },
+    { title: 'Cleo Tee - Splish', status: 'ACTIVE', variants: { nodes: [v('Splish / 3', 0, true, 'CONTINUE')] } },
+  ]
+  assert.deepEqual(inStockInSize(shop, ['1']), ['- Cleo Tee in stock now in size 1, ships right away: Shell, Hot Pink.'])
+  assert.deepEqual(inStockInSize(shop, ['3']), ['- Cleo Tee: nothing in stock in size 3 right now.'])
+})
