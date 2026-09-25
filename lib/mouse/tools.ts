@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { chooseDeliverTo } from '@/lib/po-deliver-to'
+import { DUPLICATE_WINDOW_MS, isRepeatOf } from '@/lib/inventory-duplicate'
 import { laMidnight } from '@/lib/dates'
 import { poLineLabel } from '@/lib/po'
 import { asDocLanguage } from '@/lib/po-strings'
@@ -343,6 +344,14 @@ export const TOOLS: Record<string, Tool> = {
           deltaQty: num('Signed change. Negative for things leaving. Omit for COUNTED — give countedQty instead.'),
           countedQty: num('For COUNTED only: the absolute number stated, AT THE PLACE GIVEN — not a total across every place this component lives.'),
           note: str('Who it went to, why, anything worth keeping.'),
+          separateDelivery: {
+            type: 'boolean' as const,
+            description:
+              'Only when this exact change (same item, place, type and quantity) was already ' +
+              'logged in the last day AND the person has told you this is a second, separate ' +
+              'one. Never set it to "make sure" something went through: if you are unsure ' +
+              'whether you logged it, look with query_status events.',
+          },
         },
         // deltaQty is deliberately not required here — COUNTED gives
         // countedQty instead, per its own description above. It used to be
@@ -371,6 +380,29 @@ export const TOOLS: Record<string, Tool> = {
             'Inventory writing is paused until the studio count is done. Recorded as a ' +
             'todo so it can be applied afterwards — tell the user it was noted but not applied.',
           todoId: item.id,
+        }
+      }
+      if (i.separateDelivery !== true && i.type !== 'COUNTED' && typeof i.deltaQty === 'number') {
+        const recent = await db.inventoryEvent.findMany({
+          where: {
+            componentId: i.componentId ?? null, productVariantId: i.productVariantId ?? null,
+            type: i.type, createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, componentId: true, productVariantId: true, locationId: true, atVendorId: true, type: true, deltaQty: true, createdAt: true, note: true },
+        })
+        const same = recent.find((e) => isRepeatOf(i, { ...e, deltaQty: Number(e.deltaQty) }))
+        if (same) {
+          const when = same.createdAt.toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit' })
+          return {
+            applied: false,
+            duplicateOf: same.id,
+            error:
+              `Not logged: this exact change (${i.type} ${i.deltaQty}) was already logged for this item at ${when} today ` +
+              `("${same.note ?? ''}"), and applied everywhere it goes, Shopify included. It is DONE; do not log it again. ` +
+              `Tell the person it was already recorded at ${when}. Only if they say this is a second, separate ` +
+              `delivery of the same amount, call again with separateDelivery: true.`,
+          }
         }
       }
       return writeEvent(i)

@@ -385,9 +385,18 @@ export async function runAgent(opts: {
  */
 function withActions(content: string, toolCallsJson: unknown): string {
   if (!Array.isArray(toolCallsJson) || !toolCallsJson.length) return content
-  const done = (toolCallsJson as Array<{ name?: string; status?: string; input?: Record<string, unknown> }>)
+  const done = (toolCallsJson as Array<{ name?: string; status?: string; input?: Record<string, unknown>; result?: Record<string, unknown> }>)
     .filter((t) => t?.name && t.status !== 'failed')
     .map((t) => {
+      // A stock change is spelled out in full: item, change, new count and
+      // where it was pushed. "log_inventory_event" alone was too thin to
+      // trust — on 25 Sept 2026 Mouse, asked "Meaning you updated Shopify?",
+      // decided it had not and logged the same 8 bean bags a second time.
+      const r = t.result
+      if (r && typeof r.name === 'string' && r.newQty !== undefined) {
+        const delta = t.input?.countedQty !== undefined ? `counted ${t.input.countedQty}` : `${t.input?.type ?? ''} ${Number(t.input?.deltaQty) > 0 ? '+' : ''}${t.input?.deltaQty ?? ''}`
+        return `${t.name} → ${r.name}: ${delta.trim()}, now ${r.newQty}${r.shopify ? `, ${String(r.shopify).slice(0, 60)}` : ''}`
+      }
       const target = t.input?.to ?? t.input?.poNumber ?? t.input?.title ?? t.input?.id
       return target ? `${t.name} → ${String(target).slice(0, 60)}` : String(t.name)
     })
