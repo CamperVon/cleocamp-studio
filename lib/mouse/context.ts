@@ -356,6 +356,27 @@ export async function buildCatalog(): Promise<string> {
     }
     const dropped = live.length - shown.length
 
+    // A note that states a count goes stale the moment a newer count or
+    // delivery is logged for the same thing, and it reads just as confidently.
+    // On 25 Sept 2026 Mouse quoted a 16 Sept note (2,100 Main labels) over the
+    // 4,010 in the ledger. Such notes are marked here, in front of Mouse, with
+    // the date of the count that overtook them. Marked, not retired: telling
+    // a count note from a standing rule by its wording is guesswork ("always
+    // use the TOTAL number of handles … in counts" is a rule), and guessing
+    // wrong would throw away something a person said.
+    const COUNT_WORDS = /\b(count|counted|counts|on hand|in (the )?studio|physical(ly)?|in stock)\b/i
+    const countKinds = { type: { in: ['COUNTED', 'RECEIVED', 'CORRECTION'] as ('COUNTED' | 'RECEIVED' | 'CORRECTION')[] }, source: { not: 'SYSTEM' as const } }
+    const [byComponent, byVariant] = await Promise.all([
+      db.inventoryEvent.groupBy({ by: ['componentId'], where: { ...countKinds, componentId: { not: null } }, _max: { createdAt: true } }),
+      db.inventoryEvent.groupBy({ by: ['productVariantId'], where: { ...countKinds, productVariantId: { not: null } }, _max: { createdAt: true } }),
+    ])
+    const latestCount = new Map<string, Date>()
+    const bump = (id: string, d: Date | null) => { if (d && (!latestCount.has(id) || latestCount.get(id)! < d)) latestCount.set(id, d) }
+    for (const g of byComponent) bump(g.componentId!, g._max.createdAt)
+    const productOf = new Map(products.flatMap((p) => p.variants.map((v) => [v.id, p.id] as const)))
+    for (const g of byVariant) { bump(g.productVariantId!, g._max.createdAt); bump(productOf.get(g.productVariantId!) ?? '', g._max.createdAt) }
+    const laDay = (d: Date) => d.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' })
+
     const nameOf = new Map<string, string>()
     for (const p of products) nameOf.set(p.id, p.name)
     for (const c of components) nameOf.set(c.id, c.name)
@@ -370,7 +391,11 @@ export async function buildCatalog(): Promise<string> {
       // The id is what add_note's `supersedes` and retire_note take. Without
       // it on the page, replacing a note meant a lookup first, so it was
       // almost never done and notes piled up one per update instead.
-      list.push(`[${n.id}] ${n.content.replace(/\s+/g, ' ')}`)
+      const overtaken = n.entityId ? latestCount.get(n.entityId) : undefined
+      const stale = overtaken && overtaken > n.createdAt && COUNT_WORDS.test(n.content)
+        ? ` (WRITTEN BEFORE THE LATEST COUNT, ${laDay(overtaken)}: if this note says how many there are, that number is out of date — use the on-hand figure above)`
+        : ''
+      list.push(`[${n.id}] ${n.content.replace(/\s+/g, ' ')}${stale}`)
       groups.set(subject, list)
     }
 
