@@ -1303,6 +1303,10 @@ model SupportMessage {
   fromAddress    String?
   body           String
   inboundEmailId String?          @unique
+  /// On a reply a person sent: Mouse's draft as it stood when they tapped
+  /// Send, so what they changed is on record and later drafts can learn the
+  /// studio's own phrasing. Null when no draft existed or on other messages.
+  draftedText    String?
   createdAt      DateTime         @default(now())
   case           SupportCase      @relation(fields: [caseId], references: [id], onDelete: Cascade)
 

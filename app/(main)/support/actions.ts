@@ -83,7 +83,7 @@ export async function sendReply(id: string, text: string): Promise<Result> {
   if (!res.sent) return { ok: false, error: `Not sent: ${'reason' in res ? res.reason : 'unknown error'}` }
 
   await db.$transaction([
-    db.supportMessage.create({ data: { caseId: id, direction: 'OUTBOUND', fromAddress: who.name, body } }),
+    db.supportMessage.create({ data: { caseId: id, direction: 'OUTBOUND', fromAddress: who.name, body, draftedText: c.draftReply } }),
     db.supportCase.update({
       where: { id },
       data: {

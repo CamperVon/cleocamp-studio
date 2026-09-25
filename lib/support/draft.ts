@@ -30,7 +30,7 @@ export async function draftForCase(caseId: string): Promise<void> {
     .map((m) => `${m.direction === 'INBOUND' ? 'CUSTOMER' : 'US'} (${m.createdAt.toISOString().slice(0, 10)}):\n${m.body.slice(0, 2500)}`)
     .join('\n---\n')
 
-  const stock = await stockFacts(order).catch(() => '')
+  const [stock, examples] = await Promise.all([stockFacts(order).catch(() => ''), recentReplies(caseId).catch(() => '')])
   let raw = ''
   try {
     const startedAt = Date.now()
@@ -46,6 +46,7 @@ export async function draftForCase(caseId: string): Promise<void> {
           `Customer: ${c.customerName ?? 'name unknown'} <${c.customerEmail}>. Sorted as: ${c.category}.\n\n` +
           `ORDER FACTS (from Shopify, checked by code):\n${orderFacts(order)}\n\n` +
           (stock ? `STOCK FACTS for items not yet shipped (from our records):\n${stock}\n\n` : '') +
+          (examples ? `${examples}\n\n` : '') +
           `<conversation>\n${thread.slice(-9000)}\n</conversation>\n\n` +
           `Draft the reply to the customer's latest email.`,
       }],
@@ -126,4 +127,36 @@ export async function stockFacts(order: OrderSnapshot | null): Promise<string> {
     ]
     return `- ${label}: ${stock}.${onHand !== null && onHand > 0 ? '' : dates.length ? ` More coming: ${dates.join('; ')}.` : ' No date on file for more.'}`
   }).join('\n')
+}
+
+/**
+ * Replies the team actually sent to other customers, newest first, as
+ * examples of how the studio writes. Brandon, 25 Sept 2026: "Does Mouse learn
+ * from any human edits we make to the CS emails?" It did not: the drafter saw
+ * only the written policy, and the draft was thrown away on Send. Now the
+ * final text of each sent reply is the example, and where a person changed
+ * Mouse's draft that is said, because those are the replies that show what the
+ * policy alone gets wrong.
+ *
+ * These are the team's own words, not a customer's, so they add nothing
+ * untrusted. Only phrasing is to be taken from them; every fact in them
+ * belongs to another customer.
+ */
+export async function recentReplies(caseId: string, take = 8): Promise<string> {
+  const sent = await db.supportMessage.findMany({
+    where: { direction: 'OUTBOUND', caseId: { not: caseId }, NOT: { fromAddress: 'Auto-reply' } },
+    orderBy: { createdAt: 'desc' },
+    take,
+    select: { body: true, draftedText: true },
+  })
+  if (!sent.length) return ''
+  const edited = (m: { body: string; draftedText: string | null }) =>
+    m.draftedText !== null && m.draftedText.trim() !== m.body.trim()
+  return [
+    'HOW THE STUDIO ACTUALLY WRITES: replies the team sent to other customers, newest first. ' +
+      'Match their voice, length and phrasing. Take NO facts from them (names, orders, dates, items): ' +
+      'those belong to other customers. Where a reply says a person rewrote the draft, their version ' +
+      'is the one to learn from.',
+    ...sent.map((m, i) => `--- Example ${i + 1}${edited(m) ? ' (a person rewrote the draft before sending)' : ''}\n${m.body.slice(0, 1500)}`),
+  ].join('\n')
 }
