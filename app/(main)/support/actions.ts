@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { currentPersonId } from '@/lib/session'
 import { Prisma } from '@/generated/prisma/client'
 import { sendEmail } from '@/lib/email'
+import { grantedScopes } from '@/lib/integrations/shopify'
 import { draftForCase } from '@/lib/support/draft'
 import { cancelAndRefund, freshOrder, removeUnshippedUnits, setShippingAddress } from '@/lib/support/orders'
 import { addressChangeProblems, claimsNotYetDone, SUPPORT_FROM, SUPPORT_REPLY_TO, unfilled, type DraftAddress } from '@/lib/support/reply'
@@ -65,6 +66,25 @@ export async function addCaseNote(id: string, text: string) {
 
 
 type Result = { ok: true } | { ok: false; error: string }
+
+/**
+ * A permission refusal, said precisely: what Shopify said, and which
+ * permissions the store has actually granted the app, so a missing grant
+ * is visible instead of guessed at.
+ */
+async function permissionError(action: string, needs: string, shopifySaid: string): Promise<string> {
+  const scopes = await grantedScopes()
+  const has = scopes ? scopes.split(',').map((x) => x.trim()) : null
+  return (
+    `Shopify would not let the app ${action}. Shopify said: "${shopifySaid.slice(0, 160)}". ` +
+    (has
+      ? has.includes(needs)
+        ? `The app does hold ${needs}, so this is something else; check the order in Shopify. `
+        : `The app's access right now: ${has.join(', ') || 'none'}. It needs ${needs}: accept the app's updated permissions in Shopify. `
+      : '') +
+    'Nothing was changed or sent.'
+  )
+}
 
 async function approver() {
   const id = await currentPersonId()
@@ -169,7 +189,7 @@ export async function applyAddressAndReply(id: string, text: string): Promise<Re
     return {
       ok: false,
       error: /access|scope|denied|permission/i.test(msg)
-        ? 'Shopify would not let the app edit orders — it needs the "write orders" permission. Nothing was changed or sent.'
+        ? await permissionError('edit this order', 'write_orders', msg)
         : `Shopify refused the change: ${msg.slice(0, 160)}. Nothing was sent.`,
     }
   }
@@ -222,7 +242,7 @@ export async function cancelOrderAndReply(id: string, text: string): Promise<Res
       return {
         ok: false,
         error: /access|scope|denied|permission/i.test(msg)
-          ? 'Shopify would not let the app cancel orders. It needs the "write orders" permission. Nothing was cancelled or sent.'
+          ? await permissionError('cancel this order', 'write_orders', msg)
           : `Shopify refused the cancellation: ${msg.slice(0, 160)}. Nothing was sent.`,
       }
     }
@@ -276,7 +296,7 @@ export async function removeUnshippedItem(id: string, lineItemId: string): Promi
     r = await removeUnshippedUnits(c.shopifyOrderId, lineItemId, item.variantId ?? null, `Removed ${label} (not shipped) at the customer's request — ${who.name}, via Studio support.`)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    return { ok: false, error: /access|scope|denied|permission/i.test(msg) ? 'Shopify would not let the app edit orders yet (write_order_edits). Nothing was changed.' : `Shopify refused: ${msg.slice(0, 160)}` }
+    return { ok: false, error: /access|scope|denied|permission/i.test(msg) ? await permissionError('edit this order', 'write_order_edits', msg) : `Shopify refused: ${msg.slice(0, 160)}` }
   }
   if (!r.ok) return { ok: false, error: r.error }
 

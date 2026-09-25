@@ -36,7 +36,7 @@ function config() {
 
 // Cached per warm serverless instance. Refreshed a minute early so a request
 // can't be issued against a token that expires mid-flight.
-let cached: { token: string; expiresAt: number } | null = null
+let cached: { token: string; expiresAt: number; scope: string | null } | null = null
 
 export async function getAccessToken(): Promise<string> {
   if (cached && Date.now() < cached.expiresAt) return cached.token
@@ -66,6 +66,7 @@ export async function getAccessToken(): Promise<string> {
   }
   cached = {
     token: body.access_token,
+    scope: body.scope ?? null,
     expiresAt: Date.now() + ((body.expires_in ?? 86_399) - 60) * 1000,
   }
   return cached.token
@@ -296,4 +297,21 @@ export async function fetchToShipCount(): Promise<number> {
     `{ ordersCount(query: "fulfillment_status:unfulfilled AND status:open") { count } }`,
   )
   return d.ordersCount.count
+}
+
+/**
+ * The permissions the store has actually granted this app, as Shopify stated
+ * them when it issued the current token. Releasing a new app version with more
+ * scopes in the Dev Dashboard does not grant them: the store has to accept the
+ * update. On 25 Sept 2026 an address change on #2467 failed with a permission
+ * error after write_orders had been "added", and the message could not say
+ * which permissions the app really held. Now it can.
+ */
+export async function grantedScopes(): Promise<string | null> {
+  try {
+    await getAccessToken()
+  } catch {
+    return null
+  }
+  return cached?.scope ?? null
 }
