@@ -4,7 +4,7 @@ import { htmlToText } from '@/lib/html-to-text'
 import { sendEmail } from '@/lib/email'
 import { CHAT_MODEL } from '@/lib/mouse/agent'
 import {
-  CATEGORIES, CATEGORY_LABEL, customerAddress, finalUrgency, forwardedOrigin, isSupportMail, normalizeSubject, orderNumbersIn,
+  CATEGORIES, CATEGORY_LABEL, customerAddress, finalUrgency, forwardedOrigin, isSupportMail, normalizeSubject, orderNumbersIn, unansweredCount,
   parseVerdict, stripGroupFooter, type Verdict,
 } from '@/lib/support/core'
 import { findOrder, type OrderSnapshot } from '@/lib/support/orders'
@@ -100,7 +100,7 @@ async function alertTeam(c: { id: string; customerName: string | null; customerE
   const label = CATEGORY_LABEL[c.category as keyof typeof CATEGORY_LABEL] ?? c.category
   await sendEmail({
     to,
-    subject: `Urgent support email: ${label}${c.shopifyOrderName ? ` — ${c.shopifyOrderName}` : ''}`,
+    subject: `Pressing: ${label}${c.shopifyOrderName ? ` — ${c.shopifyOrderName}` : ''}`,
     text:
       `${who} wrote to support@${c.subject ? ` — "${c.subject}"` : ''}.\n\n` +
       `${c.summary ?? '(Mouse could not summarise it — open the case to read it.)'}\n\n` +
@@ -181,11 +181,18 @@ export async function supportPass() {
           select: { body: true },
         })).map((x) => x.body.slice(0, 800))
       : []
+    const thread = c
+      ? await db.supportMessage.findMany({
+          where: { caseId: c.id, direction: { in: ['INBOUND', 'OUTBOUND'] } },
+          orderBy: { createdAt: 'asc' },
+          select: { direction: true, fromAddress: true },
+        })
+      : []
     const verdict = await classify(body, subject, lookup.order, earlier)
     const urgency = finalUrgency({
       verdict,
       text: `${subject ?? ''}\n${body}`,
-      inboundCount: earlier.length + 1,
+      inboundCount: unansweredCount(thread),
       orderCreatedAt: lookup.order?.createdAt ?? null,
       orderFulfilled: lookup.order ? (lookup.order.fulfillmentStatus ?? '').toUpperCase() !== 'UNFULFILLED' : undefined,
     })

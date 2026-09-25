@@ -56,9 +56,12 @@ export default async function Support() {
 
   const open = cases.filter((c) => c.status === 'OPEN')
   const groups: Array<{ title: string; items: typeof cases; empty?: string }> = [
-    { title: 'Urgent', items: open.filter((c) => c.urgency === 'NOW'), empty: 'Nothing urgent.' },
-    { title: 'Today', items: open.filter((c) => c.urgency === 'TODAY') },
-    { title: 'Can wait', items: open.filter((c) => c.urgency === 'DIGEST') },
+    // Pressing is only what also sends the alert email (lib/support/core.ts
+    // finalUrgency). Everything else open is one list, most urgent first:
+    // Brandon, 25 Sept 2026, "only 'Fire' alerts go there. Then a section for
+    // everything else."
+    { title: 'Pressing', items: open.filter((c) => c.urgency === 'NOW'), empty: 'Nothing pressing.' },
+    { title: 'Everything else', items: [...open.filter((c) => c.urgency === 'TODAY'), ...open.filter((c) => c.urgency === 'DIGEST')] },
     { title: 'Waiting', items: cases.filter((c) => c.status === 'WAITING_ON_CUSTOMER' || c.status === 'WAITING_ON_RETURN') },
     { title: 'Closed in the last two weeks', items: cases.filter((c) => c.status === 'RESOLVED') },
   ]

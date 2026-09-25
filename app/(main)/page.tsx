@@ -121,7 +121,7 @@ export default async function Today() {
   const gaps = items.filter((i) => i.kind === 'GAP')
   const urgent = alerts.filter((a) => a.severity === 'URGENT')
   const supportFires = support.find((g) => g.urgency === 'NOW')?._count ?? 0
-  const supportToday = support.find((g) => g.urgency === 'TODAY')?._count ?? 0
+  const supportToday = support.filter((g) => g.urgency !== 'NOW').reduce((n, g) => n + g._count, 0)
   const rest = alerts.filter((a) => a.severity !== 'URGENT')
   // A long list is skimmed, not read. Show the oldest few — they have waited
   // longest — and send the tail to /items rather than printing all of it.
@@ -256,9 +256,9 @@ export default async function Today() {
               <span aria-hidden className={`h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full ${supportFires ? 'bg-urgent' : 'bg-transparent'}`} />
               <span>
                 Customer support:{' '}
-                {supportFires ? <span className="font-semibold text-urgent">{supportFires} urgent</span> : null}
+                {supportFires ? <span className="font-semibold text-urgent">{supportFires} pressing</span> : null}
                 {supportFires && supportToday ? ', ' : ''}
-                {supportToday ? `${supportToday} for today` : ''}
+                {supportToday ? `${supportToday} to answer` : ''}
                 {(supportFires || supportToday) && repliesWaiting ? ' · ' : ''}
                 {repliesWaiting ? (
                   <span className="font-semibold text-accent">

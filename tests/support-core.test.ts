@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  customerAddress, finalUrgency, isSupportMail, normalizeSubject, orderNumbersIn, parseVerdict, stripGroupFooter,
+  customerAddress, finalUrgency, isSupportMail, normalizeSubject, orderNumbersIn, parseVerdict, stripGroupFooter, unansweredCount,
 } from '../lib/support/core'
 
 test('support mail is told apart from Mouse’s own inbox', () => {
@@ -76,4 +76,13 @@ test('a forward from the team belongs to the customer inside it', async () => {
   const apple = `Begin forwarded message:\n\nFrom: nhhwang@gmail.com\nSubject: Return request for order #2076\nDate: September 16, 2026\n\nWould you please process a refund?`
   assert.equal(forwardedOrigin(apple)?.email, 'nhhwang@gmail.com')
   assert.equal(forwardedOrigin('Just a note from Cleo, no forward here.'), null)
+})
+
+test('the third-email alert counts only what is unanswered (Leah, 25 Sept)', () => {
+  const m = (direction: string, fromAddress: string | null) => ({ direction, fromAddress })
+  // Wrote, auto-reply, Brandon answered, then two more: this new one is the 2nd unanswered.
+  assert.equal(unansweredCount([m('INBOUND', 'leah'), m('OUTBOUND', 'Auto-reply'), m('OUTBOUND', 'Brandon'), m('INBOUND', 'leah')]), 2)
+  // The auto-reply is not an answer: three unanswered in a row still counts as three.
+  assert.equal(unansweredCount([m('INBOUND', 'x'), m('OUTBOUND', 'Auto-reply'), m('INBOUND', 'x')]), 3)
+  assert.equal(unansweredCount([]), 1)
 })

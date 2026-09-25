@@ -152,7 +152,8 @@ export function finalUrgency(args: {
   if (/\b(charge\s?back|dispute[ds]?|lawyer|attorney|legal action|small claims|bbb|better business bureau|fraud|scam|report(ing)? you)\b/i.test(text)) raise('NOW')
   // Wholesale and press are opportunities with a clock on them.
   if (verdict.category === 'WHOLESALE' || verdict.category === 'PRESS') raise('NOW')
-  // The third email on the same case without an answer.
+  // The third email since the team last answered. Counts only what has gone
+  // unanswered — see unansweredCount.
   if (args.inboundCount >= 3) raise('NOW')
   // Where's my order, on an order more than two weeks old.
   if (verdict.category === 'WHERE_IS_MY_ORDER' && args.orderCreatedAt) {
@@ -194,4 +195,25 @@ export function forwardedOrigin(body: string): { email: string; name: string | n
   const headerEnd = rest.search(/\n\s*\n/)
   const inner = (headerEnd >= 0 ? rest.slice(headerEnd) : rest).trim()
   return { email: addr.toLowerCase(), name: name && name !== addr ? name : null, subject, body: inner }
+}
+
+/**
+ * How many customer emails are waiting on the team, counting the one just
+ * arrived: everything inbound since a person last replied. The auto-reply is
+ * not a reply — it says only that the email arrived.
+ *
+ * This used to count every inbound message on the case. On 25 Sept 2026 Leah
+ * wrote once, Brandon answered, and she sent two more four minutes later;
+ * three in all, so an alert went to the whole team about a discount-code
+ * question that had been answered minutes before. Brandon: "This is not
+ * worthy of fire email."
+ */
+export function unansweredCount(messages: { direction: string; fromAddress: string | null }[]): number {
+  let n = 1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.direction === 'OUTBOUND' && m.fromAddress !== 'Auto-reply') break
+    if (m.direction === 'INBOUND') n++
+  }
+  return n
 }
