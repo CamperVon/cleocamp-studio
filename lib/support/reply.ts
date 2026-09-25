@@ -27,8 +27,10 @@ Cleo Studio
 No exclamation marks beyond one at the start. No corporate phrases.
 
 RETURNS AND EXCHANGES
-- Within 14 days of delivery. Be human about it: someone a little past that with
-  a reason (travelling, away until a date) gets a yes, without comment.
+- Within 7 days of delivery (or of buying in person), unworn — the window on
+  the website since 25 Sept 2026. Be human about it: someone a little past
+  that with a reason (travelling, away until a date) gets a yes, without
+  comment.
 - The customer pays to send it back. We never send a return label and never pay
   return shipping. Say so plainly only if they ask about a label or cost.
 - Returns for a REFUND carry a 10% restocking fee, taken off the refund. Say so

@@ -433,7 +433,7 @@ function ReviewFlag({ c }: { c: CaseView }) {
   }
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="self-start text-xs text-muted underline">
+      <button type="button" onClick={() => setOpen(true)} className="self-start text-xs font-medium text-accent underline">
         ⚑ Mouse got this wrong — flag for Brandon &amp; Claude
       </button>
     )
