@@ -106,3 +106,29 @@ test('quoted history is cut from customer messages', async () => {
   const onlyQuote = '\nOn Mon, Sep 1, 2026 at 9:00 AM Cleo wrote:\n> hello\n> there'
   assert.equal(trimQuoted(onlyQuote).trimmed, false)
 })
+
+test('a forward of the team\'s own reply names the customer it went to (Abby)', async () => {
+  const { forwardedOrigin } = await import('../lib/support/core')
+  const fwd = `---------- Forwarded message ---------\nFrom: Cleo Camp <studio@cleocamp.com>\nDate: Fri, Sep 25, 2026 at 3:32 PM\nSubject: Re: Cleo Top\nTo: Abby p <abbypayneee@gmail.com>\n\n\nOh my god Abby I'm sorry this email sat here for so long.\n\nXO\nCleo\n\nOn Fri, Aug 7, 2026 at 2:24 PM Abby p <abbypayneee@gmail.com> wrote:\n\n> Hello!`
+  const o = forwardedOrigin(fwd)
+  assert.equal(o?.email, 'studio@cleocamp.com')
+  assert.equal(o?.to, 'abbypayneee@gmail.com')
+  assert.equal(o?.toName, 'Abby p')
+  // The "wrote:" line further down is not the header's To.
+  const noTo = `---------- Forwarded message ---------\nFrom: Kay <kay@gmail.com>\nSubject: hi\n\nTo: whom it may concern, x@y.com`
+  assert.equal(forwardedOrigin(noTo)?.to, null)
+})
+
+test('a customer writing from another address is matched by name, never by number alone', async () => {
+  const { namesMatch } = await import('../lib/support/core')
+  // Serena: first name.
+  assert.equal(namesMatch('Serena', 'js12847@nyu.edu', ['Serena Song', null]), true)
+  // Corinne from work and from the family address: surname in the address.
+  assert.equal(namesMatch('Corinne', 'corinnelammers@paulhastings.com', ['Cori Lammers']), true)
+  assert.equal(namesMatch(null, 'eandclammers@msn.com', ['Cori Lammers']), true)
+  // Someone else quoting the number.
+  assert.equal(namesMatch('Dana', 'dana@x.com', ['Serena Song', 'Serena Song']), false)
+  assert.equal(namesMatch(null, 'js12847@nyu.edu', ['Serena Song']), false)
+  // A short surname is too easy to hit by accident.
+  assert.equal(namesMatch(null, 'bookworm@x.com', ['Amy Ko']), false)
+})

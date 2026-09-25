@@ -1311,6 +1311,10 @@ model SupportMessage {
   /// Send, so what they changed is on record and later drafts can learn the
   /// studio's own phrasing. Null when no draft existed or on other messages.
   draftedText    String?
+  /// On a team note: the address it was emailed to (Jane runs support), set
+  /// only once the email went. The page marks these so it is plain which
+  /// notes she has been sent.
+  emailedTo      String?
   createdAt      DateTime         @default(now())
   case           SupportCase      @relation(fields: [caseId], references: [id], onDelete: Cascade)
 

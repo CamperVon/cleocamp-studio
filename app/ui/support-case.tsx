@@ -1,13 +1,14 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { addCaseNote, applyAddressAndReply, cancelOrderAndReply, redraftReply, removeUnshippedItem, sendReply, setCaseStatus } from '@/app/(main)/support/actions'
-import { claimsNotYetDone, mentionsDiscount, unfilled } from '@/lib/support/reply'
+import { claimsNotYetDone, mentionsDiscount, partlyShipped, refundIssued, unfilled, unshippedLines } from '@/lib/support/reply'
 import { trimQuoted } from '@/lib/support/core'
 
-type Msg = { id: string; direction: 'INBOUND' | 'OUTBOUND' | 'NOTE'; fromAddress: string | null; body: string; at: string }
+type Msg = { id: string; direction: 'INBOUND' | 'OUTBOUND' | 'NOTE'; fromAddress: string | null; body: string; at: string; emailedTo?: string | null }
 type Order = {
   name: string; createdAt: string; financialStatus: string | null; fulfillmentStatus: string | null; total: string | null; cancelledAt?: string | null; emailMismatch?: string | null
-  items: Array<{ title: string; variant: string | null; quantity: number; id?: string; unfulfilled?: number }>
+  sameName?: boolean; refunded?: number
+  items: Array<{ title: string; variant: string | null; quantity: number; id?: string; unfulfilled?: number; current?: number }>
   tracking: Array<{ company: string | null; number: string | null; url: string | null }>
 } | null
 
@@ -61,6 +62,8 @@ export function SupportCase({ c }: { c: CaseView }) {
   const [note, setNote] = useState('')
 
   const move = (s: CaseView['status']) => start(() => setCaseStatus(c.id, s))
+  // Brandon, 25 Sept 2026: notes emailed to Jane should stand out on the page.
+  const toJane = c.messages.some((m) => m.emailedTo)
   return (
     <li id={c.id}>
       <details className="group">
@@ -73,6 +76,7 @@ export function SupportCase({ c }: { c: CaseView }) {
             <p className="text-sm font-medium">
               {c.who}
               <span className="font-normal text-muted"> · {c.category}{c.orderName ? ` · ${c.orderName}` : ''}{c.draft?.reply && c.status !== 'RESOLVED' ? ' · reply drafted' : ''}</span>
+              {toJane ? <span className="ml-1.5 whitespace-nowrap rounded bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent">★ Note to Jane</span> : null}
             </p>
             <p className="text-xs leading-snug text-muted">{c.summary ?? c.subject ?? '(no summary)'}</p>
           </div>
@@ -92,10 +96,17 @@ export function SupportCase({ c }: { c: CaseView }) {
                 {c.order.total ? ` · ${c.order.total}` : ''}
               </p>
               {c.order.emailMismatch ? (
-                <p className="text-urgent">
-                  Placed with {c.order.emailMismatch}, not the address writing in. Check it is theirs. Changes to this order are locked,
-                  and the reply gives no order details.
-                </p>
+                c.order.sameName ? (
+                  <p>
+                    Placed with {c.order.emailMismatch}. Same name as the person writing in, so it is treated as theirs. An address
+                    change still needs an email from {c.order.emailMismatch}.
+                  </p>
+                ) : (
+                  <p className="text-urgent">
+                    Placed with {c.order.emailMismatch}, and the name does not match the person writing in. Check it is theirs.
+                    Changes to this order are locked, and the reply gives no order details.
+                  </p>
+                )
               ) : null}
               {c.order.items.map((i, n) => (
                 <OrderLine key={n} caseId={c.id} item={i} open={c.status !== 'RESOLVED'} />
@@ -114,17 +125,24 @@ export function SupportCase({ c }: { c: CaseView }) {
             {c.messages.map((m) => (
               <li
                 key={m.id}
-                className={`rounded border px-3 py-2 text-sm ${m.direction === 'NOTE' ? 'border-dashed border-line text-muted' : 'border-line bg-bg'}`}
+                className={`rounded border px-3 py-2 text-sm ${
+                  m.emailedTo ? 'border-accent bg-accent-soft text-ink' : m.direction === 'NOTE' ? 'border-dashed border-line text-muted' : 'border-line bg-bg'
+                }`}
               >
                 <p className="mb-1 text-[11px] text-faint">
                   {m.direction === 'NOTE' ? `Note${m.fromAddress ? ` — ${m.fromAddress}` : ''}` : m.direction === 'INBOUND' ? 'Customer' : `Sent${m.fromAddress ? ` — ${m.fromAddress}` : ''}`} · {day(m.at)}
+                  {m.emailedTo ? <span className="ml-1.5 font-medium text-accent">★ Emailed to Jane</span> : null}
                 </p>
                 <MessageBody body={m.body} quoted={m.direction === 'INBOUND'} />
               </li>
             ))}
           </ul>
 
-          {c.status !== 'RESOLVED' ? <ReplyBox c={c} /> : null}
+          {/* Keyed on the draft's time: the box holds its text in state, so a
+              draft arriving (or a redraft) must start a fresh box. Without
+              this, a case opened before its draft showed an empty box after
+              "Draft a reply" — #2362, 25 Sept 2026, looked like no draft. */}
+          {c.status !== 'RESOLVED' ? <ReplyBox key={c.draft?.at ?? 'none'} c={c} /> : null}
 
           <div className="flex flex-wrap gap-2">
             {c.status !== 'WAITING_ON_CUSTOMER' && c.status !== 'RESOLVED' ? (
@@ -179,6 +197,7 @@ function ReplyBox({ c }: { c: CaseView }) {
   const d = c.draft
   const [text, setText] = useState(d?.reply ?? '')
   const [msg, setMsg] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
   const [pending, start] = useTransition()
 
   if (!d) {
@@ -208,14 +227,20 @@ function ReplyBox({ c }: { c: CaseView }) {
   const canMove = !!a && !a.problems.length
   // The reply tells the customer the order is cancelled or refunded: the tap
   // that sends it has to make that true first (cancelOrderAndReply).
-  const cancels = !!c.order && !c.order.cancelledAt && !c.order.emailMismatch &&
+  const o = c.order
+  const partial = partlyShipped(o)
+  const open = unshippedLines(o)
+  const done = !!o && (!!o.cancelledAt || (partial && !open.length && refundIssued(o)))
+  const cancels = !!o && !done && (!o.emailMismatch || !!o.sameName) && (!partial || open.length > 0) &&
     claimsNotYetDone(text, { name: '', financialStatus: '', cancelledAt: null }).length > 0
+  const what = open.map((l) => l.label).join(', ')
   const primary = canMove || cancels
   const blocked = pending || !!gaps.length || !text.trim()
   const run = (fn: () => Promise<{ ok: true } | { ok: false; error: string }>) =>
     start(async () => {
       setMsg(null)
       const r = await fn()
+      setFailed(!r.ok)
       setMsg(r.ok ? 'Sent.' : r.error)
     })
 
@@ -227,8 +252,10 @@ function ReplyBox({ c }: { c: CaseView }) {
       {mentionsDiscount(text) ? <p className="text-xs text-muted">Includes the CLEOFRIEND code (10% off).</p> : null}
       {cancels ? (
         <p className="text-xs text-muted">
-          This reply says {c.order?.name} is cancelled and refunded. One tap cancels it in Shopify, refunds the full amount to the
-          original payment and restocks it, then sends. Checked first: from the email on the order, and nothing has shipped.
+          {partial
+            ? <>Part of {o?.name} has shipped. One tap cancels what has not ({what}), refunds it to the original payment, then sends.</>
+            : <>This reply says {o?.name} is cancelled and refunded. One tap cancels it in Shopify, refunds the full amount to the original payment and restocks it, then sends.</>}
+          {' '}It takes up to 15 seconds. A refund shows as pending in Shopify for a few days; that is normal.
         </p>
       ) : null}
 
@@ -274,7 +301,7 @@ function ReplyBox({ c }: { c: CaseView }) {
             onClick={() => run(() => cancelOrderAndReply(c.id, text))}
             className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-bg disabled:opacity-40"
           >
-            {pending ? 'Cancelling…' : 'Cancel order, refund & send'}
+            {pending ? 'Cancelling in Shopify…' : partial ? `Cancel ${what} (not shipped), refund & send` : 'Cancel order, refund & send'}
           </button>
         ) : null}
         <button
@@ -286,13 +313,13 @@ function ReplyBox({ c }: { c: CaseView }) {
         </button>
         <button
           type="button" disabled={pending}
-          onClick={() => start(async () => { await redraftReply(c.id); setMsg('Redrafted — reload to see it.') })}
+          onClick={() => start(async () => { await redraftReply(c.id); setMsg('Redrafted.') })}
           className="rounded border border-line px-2.5 py-1.5 text-xs text-muted"
         >
           Redraft
         </button>
       </div>
-      {msg ? <p className="text-xs text-muted">{msg}</p> : null}
+      {msg ? <p className={`text-xs ${failed ? 'font-medium text-urgent' : 'text-muted'}`}>{msg}</p> : null}
     </div>
   )
 }

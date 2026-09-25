@@ -3,9 +3,9 @@ import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { CHAT_MODEL } from '@/lib/mouse/agent'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
-import type { OrderSnapshot } from '@/lib/support/orders'
+import { findOrder, type OrderSnapshot } from '@/lib/support/orders'
 import { addressChangeProblems, DRAFT_INSTRUCTIONS, orderFacts, parseDraft } from '@/lib/support/reply'
-import { trimQuoted } from '@/lib/support/core'
+import { orderNumbersIn, trimQuoted } from '@/lib/support/core'
 
 /**
  * Write (or rewrite) the drafted reply on one case.
@@ -98,7 +98,7 @@ export async function draftForCase(caseId: string): Promise<void> {
  * give it only as an estimate.
  */
 export async function stockFacts(order: OrderSnapshot | null): Promise<string> {
-  if (order?.emailMismatch) return ''
+  if (order?.emailMismatch && !order.sameName) return ''
   const open = (order?.items ?? []).filter((i) => (i.unfulfilled ?? 0) > 0 && i.variantId)
   if (!open.length) return ''
   const ids = open.map((i) => i.variantId!.split('/').pop()!)
@@ -171,4 +171,34 @@ export async function recentReplies(caseId: string, take = 8): Promise<string> {
       'is the one to learn from.',
     ...sent.map((m, i) => `--- Example ${i + 1}${edited(m) ? ' (a person rewrote the draft before sending)' : ''}\n${m.body.slice(0, 1500)}`),
   ].join('\n')
+}
+
+/**
+ * Look the order up again before a redraft, when the case has none or has
+ * one it cannot treat as the customer's. The lookup used to run only when an
+ * email arrived, so a case filed before a fix stayed wrong for good: on
+ * 25 Sept 2026 Corinne's two cases kept saying "No Shopify order under ... or
+ * #2421" after #2421 could be found, and every redraft asked her for it.
+ */
+export async function refreshOrder(caseId: string): Promise<void> {
+  const c = await db.supportCase.findUnique({
+    where: { id: caseId },
+    include: { messages: { where: { direction: 'INBOUND' }, select: { body: true } } },
+  })
+  if (!c) return
+  const snap = c.orderSnapshot as OrderSnapshot | null
+  if (c.shopifyOrderId && !(snap?.emailMismatch && !snap.sameName)) return
+  const quoted = orderNumbersIn([c.subject ?? '', ...c.messages.map((m) => trimQuoted(m.body).text)].join('\n'))
+  const lookup = await findOrder(c.customerEmail, quoted, c.customerName)
+  if (!lookup.order) return
+  await db.$transaction([
+    db.supportCase.update({
+      where: { id: caseId },
+      data: { shopifyOrderName: lookup.order.name, shopifyOrderId: lookup.order.id, orderSnapshot: lookup.order as unknown as Prisma.InputJsonValue },
+    }),
+    // The "no order" note is now untrue, and a note that is wrong gets believed.
+    db.supportMessage.deleteMany({ where: { caseId, direction: 'NOTE', fromAddress: null, body: { startsWith: 'No Shopify order under' } } }),
+    db.supportMessage.deleteMany({ where: { caseId, direction: 'NOTE', fromAddress: null, body: { contains: ', the address writing in. Shown so you can judge' } } }),
+  ])
+  if (lookup.note) await db.supportMessage.create({ data: { caseId, direction: 'NOTE', body: lookup.note } })
 }

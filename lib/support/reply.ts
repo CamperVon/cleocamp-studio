@@ -201,13 +201,17 @@ export function orderFacts(order: OrderSnapshot | null): string {
   // Found by the number they quoted, but placed from another email. Could be
   // theirs under a second address, could be someone quoting another person's
   // order: the reply confirms nothing about it.
-  if (order.emailMismatch) {
+  if (order.emailMismatch && !order.sameName) {
     return `The order number they quoted (${order.name}) exists, but it was placed with a different email address ` +
       'from the one writing in. Do NOT ask for the order number again, and do NOT state any detail of that order ' +
       '(items, address, status, dates) or the email it was placed with. Ask them to reply from the email address ' +
       'they ordered with, or to confirm it, so the team can help. You may still explain the policy that applies.'
   }
   const lines = [
+    ...(order.emailMismatch
+      ? ['This order was placed with a different email from the one writing in, but the name on it matches, so it is theirs. ' +
+         'Do not mention either email address, and do not ask them to write from another one.']
+      : []),
     `Order ${order.name}, placed ${order.createdAt.slice(0, 10)}. Payment: ${order.financialStatus ?? 'unknown'}. Shipping status: ${order.fulfillmentStatus ?? 'unknown'}.`,
     `Items: ${order.items.map((i) => `${i.quantity} × ${i.title}${i.variant ? ` (${i.variant})` : ''}${
       i.unfulfilled === undefined ? '' : i.unfulfilled === 0 ? ' — shipped' : i.unfulfilled === i.quantity ? ' — NOT shipped' : ` — ${i.unfulfilled} not shipped`
@@ -273,17 +277,40 @@ export function isMachineSender(email: string): boolean {
  * So Send checks the order as it is at that moment, and refuses a reply that
  * claims a cancellation or refund the order does not show.
  */
-export function claimsNotYetDone(reply: string, order: Pick<OrderSnapshot, 'name' | 'financialStatus' | 'cancelledAt'> | null): string[] {
+/** Money is on its way back: Shopify says refunded or voided, or a refund is paid or pending. */
+export function refundIssued(order: Pick<OrderSnapshot, 'financialStatus' | 'refunded'> | null): boolean {
+  if (!order) return false
+  return /REFUNDED|VOIDED/i.test(order.financialStatus ?? '') || (order.refunded ?? 0) > 0
+}
+
+/** Items still waiting to ship and still on the order, with how many. */
+export function unshippedLines(order: Partial<Pick<OrderSnapshot, 'items'>> | null): Array<{ id: string; label: string; quantity: number }> {
+  return (order?.items ?? [])
+    .map((i) => ({ i, n: Math.min(i.unfulfilled ?? 0, i.current ?? i.quantity) }))
+    .filter(({ i, n }) => i.id && n > 0)
+    .map(({ i, n }) => ({ id: i.id!, label: `${n > 1 ? `${n} × ` : ''}${i.title}${i.variant ? ` ${i.variant}` : ''}`, quantity: n }))
+}
+
+/** Some of the order has gone out: only the rest can be cancelled. */
+export function partlyShipped(order: Pick<OrderSnapshot, 'items'> | null): boolean {
+  return (order?.items ?? []).some((i) => i.unfulfilled !== undefined && i.unfulfilled < (i.current ?? i.quantity)) ||
+    (order?.items ?? []).some((i) => i.unfulfilled === 0)
+}
+
+export function claimsNotYetDone(reply: string, order: (Pick<OrderSnapshot, 'name' | 'financialStatus' | 'cancelledAt'> & Partial<Pick<OrderSnapshot, 'refunded' | 'items'>>) | null): string[] {
   const text = reply.replace(/\s+/g, ' ')
   const saysCancelled = /\b(?:we(?:'ve| have)|has been|have been|it(?:'s| is)|is now|was)\s+(?:gone ahead and\s+|now\s+|already\s+)?cancel+ed\b/i.test(text) ||
     /\bcancel+ed (?:your |the )?order\b/i.test(text)
   const saysRefunded = /\b(?:we(?:'ve| have)|has been|have been|it(?:'s| is)|is now|was)\s+(?:gone ahead and\s+|now\s+|already\s+)?(?:fully\s+)?refunded\b/i.test(text) ||
-    /\brefunded (?:in full|you|your)\b/i.test(text)
+    /\brefunded (?:in full|you|your|it|them|that|this|the item)\b/i.test(text)
   if (!saysCancelled && !saysRefunded) return []
   const name = order?.name ?? 'the order'
   const financial = (order?.financialStatus ?? '').toUpperCase()
   const problems: string[] = []
-  if (saysCancelled && !order?.cancelledAt) problems.push(`The reply says ${name} is cancelled, but Shopify has not cancelled it.`)
-  if (saysRefunded && !/REFUNDED|VOIDED/.test(financial)) problems.push(`The reply says ${name} is refunded, but Shopify shows it as ${financial.toLowerCase().replace(/_/g, ' ') || 'not refunded'}.`)
+  // Part of an order cancelled counts once nothing is left waiting to ship
+  // and money has gone back: #2237, one tee out, the other cancelled.
+  const partDone = !!order && refundIssued(order) && !!order.items?.length && !unshippedLines(order).length
+  if (saysCancelled && !order?.cancelledAt && !partDone) problems.push(`The reply says ${name} is cancelled, but Shopify has not cancelled it.`)
+  if (saysRefunded && !refundIssued(order)) problems.push(`The reply says ${name} is refunded, but Shopify shows it as ${financial.toLowerCase().replace(/_/g, ' ') || 'not refunded'}.`)
   return problems
 }

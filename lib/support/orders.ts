@@ -1,10 +1,13 @@
+import { namesMatch } from '@/lib/support/core'
+import { refundIssued } from '@/lib/support/reply'
 import { isConfigured, shopifyGraphQL } from '@/lib/integrations/shopify'
 
 /**
  * The customer's order, found by code — never chosen by the model reading the
  * email. By an order number quoted in the email first (exact), then by the
- * sender's address (most recent). A customer writing from a different address
- * than they ordered with simply gets no match, and the case says so.
+ * sender's address (most recent). An order quoted from a different address is
+ * kept and marked (emailMismatch), and treated as theirs when the name on it
+ * matches the sender (sameName).
  */
 export type OrderSnapshot = {
   id: string
@@ -16,8 +19,19 @@ export type OrderSnapshot = {
   cancelledAt?: string | null
   total: string | null
   email: string | null
-  /** id/unfulfilled/variantId are absent on snapshots from before 24 Sept 2026. */
-  items: Array<{ title: string; variant: string | null; quantity: number; id?: string; unfulfilled?: number; variantId?: string | null }>
+  /** id/unfulfilled/variantId are absent on snapshots from before 24 Sept 2026, current before 26 Sept. */
+  items: Array<{ title: string; variant: string | null; quantity: number; id?: string; unfulfilled?: number; variantId?: string | null; current?: number }>
+  /**
+   * Money refunded or on its way back, in the order's currency: refund
+   * transactions that succeeded or are pending. A Shopify Payments refund
+   * sits pending for a while and the order reads "paid" until it settles —
+   * on 25 Sept 2026 #2555 was cancelled and $95 refunded, and the check that
+   * waited for the word "refunded" gave up and sent nothing. Absent on
+   * snapshots from before 26 Sept 2026.
+   */
+  refunded?: number
+  /** The billing name, a second name to match a customer writing from another address. */
+  billName?: string | null
   tracking: Array<{ company: string | null; number: string | null; url: string | null }>
   /** Where it is going. Optional: snapshots taken before 24 Sept 2026 lack it. */
   shipTo?: ShipTo | null
@@ -27,6 +41,14 @@ export type OrderSnapshot = {
    * order; the drafter is told only that it exists; nothing can change it.
    */
   emailMismatch?: string | null
+  /**
+   * On a mismatch: the name on the order matches the person writing in (see
+   * namesMatch), so it is treated as theirs. Brandon, 25 Sept 2026: "people
+   * often email with a different email address." Address changes still need
+   * the order's own email; a cancel's refund can only go back to the card
+   * that paid, so a name match is enough for that.
+   */
+  sameName?: boolean
 }
 
 export type ShipTo = {
@@ -43,7 +65,9 @@ type Node = {
   displayFinancialStatus: string | null
   displayFulfillmentStatus: string | null
   totalPriceSet: { shopMoney: { amount: string; currencyCode: string } } | null
-  lineItems: { nodes: Array<{ id: string; title: string; variantTitle: string | null; quantity: number; unfulfilledQuantity: number; variant: { id: string } | null }> }
+  lineItems: { nodes: Array<{ id: string; title: string; variantTitle: string | null; quantity: number; currentQuantity: number; unfulfilledQuantity: number; variant: { id: string } | null }> }
+  transactions?: Array<{ kind: string; status: string; amountSet: { shopMoney: { amount: string } } }>
+  billingAddress?: { name: string | null } | null
   fulfillments: Array<{ trackingInfo: Array<{ company: string | null; number: string | null; url: string | null }> }>
   shippingAddress: (Omit<ShipTo, 'countryCode'> & { countryCodeV2: string | null }) | null
 }
@@ -51,7 +75,9 @@ type Node = {
 const ORDER_FIELDS = `
   id name createdAt cancelledAt email displayFinancialStatus displayFulfillmentStatus
   totalPriceSet { shopMoney { amount currencyCode } }
-  lineItems(first: 20) { nodes { id title variantTitle quantity unfulfilledQuantity variant { id } } }
+  lineItems(first: 20) { nodes { id title variantTitle quantity currentQuantity unfulfilledQuantity variant { id } } }
+  transactions(first: 30) { kind status amountSet { shopMoney { amount } } }
+  billingAddress { name }
   fulfillments(first: 5) { trackingInfo(first: 3) { company number url } }
   shippingAddress { name address1 address2 city provinceCode zip countryCodeV2 }
 `
@@ -68,8 +94,12 @@ function snapshot(n: Node): OrderSnapshot {
     email: n.email,
     items: n.lineItems.nodes.map((l) => ({
       title: l.title, variant: l.variantTitle, quantity: l.quantity,
-      id: l.id, unfulfilled: l.unfulfilledQuantity, variantId: l.variant?.id ?? null,
+      id: l.id, unfulfilled: l.unfulfilledQuantity, variantId: l.variant?.id ?? null, current: l.currentQuantity,
     })),
+    refunded: Math.round((n.transactions ?? [])
+      .filter((t) => t.kind === 'REFUND' && (t.status === 'SUCCESS' || t.status === 'PENDING'))
+      .reduce((a, t) => a + Number(t.amountSet.shopMoney.amount), 0) * 100) / 100,
+    billName: n.billingAddress?.name ?? null,
     tracking: n.fulfillments.flatMap((f) => f.trackingInfo),
     shipTo: n.shippingAddress
       ? {
@@ -89,7 +119,7 @@ async function search(query: string, first: number): Promise<OrderSnapshot[]> {
   return d.orders.nodes.map(snapshot)
 }
 
-export async function findOrder(email: string, quotedNames: string[]): Promise<
+export async function findOrder(email: string, quotedNames: string[], senderName?: string | null): Promise<
   { order: OrderSnapshot | null; recent: OrderSnapshot[]; note: string | null }
 > {
   if (!isConfigured()) return { order: null, recent: [], note: 'Shopify is not connected' }
@@ -107,12 +137,18 @@ export async function findOrder(email: string, quotedNames: string[]): Promise<
       if (hit && (!hit.email || hit.email.toLowerCase() === email)) {
         return { order: hit, recent: [], note: null }
       }
-      if (hit && !claimed) claimed = { ...hit, emailMismatch: hit.email }
+      if (hit && !claimed) {
+        claimed = { ...hit, emailMismatch: hit.email, sameName: namesMatch(senderName, email, [hit.shipTo?.name, hit.billName]) }
+      }
     }
     const recent = await search(`email:${email}`, 3)
     const mismatchNote = claimed
-      ? `${claimed.name} was placed with ${claimed.emailMismatch}, not ${email}, the address writing in. Shown so you can judge whether it is theirs; changes to it stay locked unless they write from the order's email.`
+      ? claimed.sameName
+        ? `${claimed.name} was placed with ${claimed.emailMismatch}, not ${email}, but the name matches, so it is treated as theirs. An address change still needs a message from the order's email.`
+        : `${claimed.name} was placed with ${claimed.emailMismatch}, not ${email}, and the name does not match. Shown so you can judge whether it is theirs; changes to it stay locked.`
       : null
+    // The order they named, when it is plainly theirs, beats their latest one.
+    if (claimed?.sameName) return { order: claimed, recent, note: mismatchNote }
     if (recent.length) return { order: recent[0], recent, note: mismatchNote }
     if (claimed) return { order: claimed, recent: [], note: mismatchNote }
     return {
@@ -241,10 +277,78 @@ export async function cancelAndRefund(orderId: string, staffNote: string): Promi
   if (r.orderCancel.orderCancelUserErrors.length) {
     return { ok: false, error: r.orderCancel.orderCancelUserErrors.map((e) => e.message).join('; ') }
   }
-  for (let i = 0; i < 10; i++) {
-    const now = await freshOrder(orderId)
-    if (now?.cancelledAt && /REFUNDED|VOIDED/i.test(now.financialStatus ?? '')) return { ok: true, order: now }
-    await new Promise((res) => setTimeout(res, 1500))
+  let now: OrderSnapshot | null = null
+  for (let i = 0; i < 8; i++) {
+    now = await freshOrder(orderId)
+    if (now?.cancelledAt && refundIssued(now)) return { ok: true, order: now }
+    await new Promise((res) => setTimeout(res, 1000))
   }
-  return { ok: false, error: 'Shopify accepted the cancellation but had not shown it cancelled and refunded after 15 seconds. Check the order in Shopify before sending anything.' }
+  return {
+    ok: false,
+    error: now?.cancelledAt
+      ? 'Shopify cancelled the order but shows no refund on it yet. Check the order in Shopify before sending anything.'
+      : 'Shopify accepted the cancellation but had not cancelled the order after 8 seconds. Check it in Shopify before sending anything.',
+  }
+}
+
+/**
+ * Cancel what has not shipped on a part-shipped order and refund it, in one
+ * step. For a customer whose order is partly out the door: the shipped part
+ * is a return, the rest is cancelled.
+ *
+ * 25 Sept 2026, Elisabeth, #2237: one tee shipped, one not. The draft said the
+ * unshipped one was "cancelled and refunded in full". The whole-order cancel
+ * rightly refused, and the per-item "Remove" took the item off but left the
+ * refund for a person to send in Shopify, so the reply would still not have
+ * been true. Now one tap does both.
+ *
+ * Shopify's own suggested refund works out the amount (the item plus its
+ * tax), and the refund cancels the unshipped quantity (restock type CANCEL)
+ * in the same call. The order is read again afterwards and the result checked:
+ * those units no longer waiting to ship, and the order showing a refund.
+ * Only ever run on a person's tap (CLAUDE.md §4). Needs write_orders.
+ */
+export async function cancelUnshippedLines(
+  orderId: string,
+  lines: Array<{ lineItemId: string; quantity: number }>,
+  locationId: string,
+  note: string,
+): Promise<{ ok: true; refunded: string; order: OrderSnapshot } | { ok: false; error: string }> {
+  const refundLineItems = lines.map((l) => ({ lineItemId: l.lineItemId, quantity: l.quantity, restockType: 'CANCEL', locationId }))
+  type Tx = { gateway: string; kind: string; parentTransaction: { id: string } | null; amountSet: { shopMoney: { amount: string; currencyCode: string } } }
+  const s = await shopifyGraphQL<{ order: { suggestedRefund: { amountSet: { shopMoney: { amount: string; currencyCode: string } }; suggestedTransactions: Tx[] } | null } | null }>(
+    `query($id: ID!, $lines: [RefundLineItemInput!]) { order(id: $id) { suggestedRefund(refundLineItems: $lines, suggestFullRefund: false) { amountSet { shopMoney { amount currencyCode } } suggestedTransactions { gateway kind parentTransaction { id } amountSet { shopMoney { amount currencyCode } } } } } }`,
+    { id: orderId, lines: refundLineItems },
+  )
+  const sug = s.order?.suggestedRefund
+  if (!sug) return { ok: false, error: 'Shopify could not work out a refund for those items.' }
+  const transactions = sug.suggestedTransactions
+    .filter((t) => Number(t.amountSet.shopMoney.amount) > 0)
+    .map((t) => ({ orderId, gateway: t.gateway, kind: 'REFUND', amount: t.amountSet.shopMoney.amount, parentId: t.parentTransaction?.id ?? null }))
+  if (Number(sug.amountSet.shopMoney.amount) > 0 && !transactions.length) {
+    return { ok: false, error: 'Shopify suggested a refund but no payment to refund it to. Do it in Shopify.' }
+  }
+
+  const before = await freshOrder(orderId)
+  const r = await shopifyGraphQL<{ refundCreate: { refund: { id: string } | null; userErrors: Array<{ message: string }> } }>(
+    `mutation($input: RefundInput!) { refundCreate(input: $input) { refund { id totalRefundedSet { shopMoney { amount currencyCode } } } userErrors { field message } } }`,
+    { input: { orderId, note: note.slice(0, 250), notify: false, refundLineItems, transactions } },
+  )
+  if (r.refundCreate.userErrors.length || !r.refundCreate.refund) {
+    return { ok: false, error: r.refundCreate.userErrors.map((e) => e.message).join('; ') || 'Shopify did not create the refund.' }
+  }
+
+  // A pending refund counts: see OrderSnapshot.refunded.
+  const after = await freshOrder(orderId)
+  if (!after) return { ok: false, error: 'The refund was created but the order could not be read back. Check it in Shopify before sending anything.' }
+  const stillOn = lines.filter((l) => {
+    const was = before?.items.find((i) => i.id === l.lineItemId)?.current
+    const now = after.items.find((i) => i.id === l.lineItemId)?.current
+    return was === undefined || now === undefined || now > was - l.quantity
+  })
+  if (stillOn.length || (Number(sug.amountSet.shopMoney.amount) > 0 && (after.refunded ?? 0) <= (before?.refunded ?? 0))) {
+    return { ok: false, error: 'The refund was created but the order does not yet show those items cancelled and refunded. Check it in Shopify before sending anything.' }
+  }
+  const amt = sug.amountSet.shopMoney
+  return { ok: true, refunded: `${Number(amt.amount).toFixed(2)} ${amt.currencyCode}`, order: after }
 }

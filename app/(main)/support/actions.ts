@@ -5,9 +5,10 @@ import { currentPersonId } from '@/lib/session'
 import { Prisma } from '@/generated/prisma/client'
 import { sendEmail } from '@/lib/email'
 import { grantedScopes } from '@/lib/integrations/shopify'
-import { draftForCase } from '@/lib/support/draft'
-import { cancelAndRefund, freshOrder, removeUnshippedUnits, setShippingAddress } from '@/lib/support/orders'
-import { addressChangeProblems, claimsNotYetDone, SUPPORT_FROM, SUPPORT_REPLY_TO, unfilled, type DraftAddress } from '@/lib/support/reply'
+import { draftForCase, refreshOrder } from '@/lib/support/draft'
+import { cancelAndRefund, cancelUnshippedLines, freshOrder, removeUnshippedUnits, setShippingAddress } from '@/lib/support/orders'
+import { addressChangeProblems, claimsNotYetDone, partlyShipped, refundIssued, SUPPORT_FROM, SUPPORT_REPLY_TO, unfilled, unshippedLines, type DraftAddress } from '@/lib/support/reply'
+import { namesMatch } from '@/lib/support/core'
 import type { OrderSnapshot } from '@/lib/support/orders'
 
 const STATUSES = ['OPEN', 'WAITING_ON_CUSTOMER', 'WAITING_ON_RETURN', 'RESOLVED'] as const
@@ -34,7 +35,7 @@ export async function addCaseNote(id: string, text: string) {
   if (!text.trim()) return
   const who = await currentPersonId()
   const person = who ? await db.person.findUnique({ where: { id: who }, select: { name: true, email: true } }) : null
-  await db.supportMessage.create({
+  const note = await db.supportMessage.create({
     data: { caseId: id, direction: 'NOTE', fromAddress: person?.name ?? null, body: text.trim() },
   })
   const jane = await db.person.findFirst({ where: { email: 'jane@cleocamp.com', active: true }, select: { email: true } })
@@ -51,7 +52,10 @@ export async function addCaseNote(id: string, text: string) {
           `${text.trim()}\n\n` +
           `Open it: https://admin.cleocamp.com/support#${id}\n\n` +
           `Nothing has been sent to the customer.\n— Studio Mouse`,
-      }).catch((e) => console.error('[support] note email failed', e))
+      })
+        // Marked only once it went, so the page never shows a note as sent that was not.
+        .then(() => db.supportMessage.update({ where: { id: note.id }, data: { emailedTo: jane.email } }))
+        .catch((e) => console.error('[support] note email failed', e))
     }
   }
   revalidatePath('/support')
@@ -227,33 +231,72 @@ export async function cancelOrderAndReply(id: string, text: string): Promise<Res
     return { ok: false, error: `Could not read the order from Shopify: ${e instanceof Error ? e.message.slice(0, 160) : String(e)}` }
   }
   if (!fresh) return { ok: false, error: 'Shopify has no such order.' }
-  if (!fresh.email || fresh.email.toLowerCase() !== c.customerEmail.toLowerCase()) {
-    return { ok: false, error: `This case is not from the email on the order${fresh.email ? ` (${fresh.email})` : ''}. If you are sure, cancel it in Shopify.` }
+  // Theirs by email, or by name when they wrote from another address. The
+  // refund can only go back to the card that paid, so a name match is enough
+  // here; an address change still needs the order's own email.
+  const sameEmail = !!fresh.email && fresh.email.toLowerCase() === c.customerEmail.toLowerCase()
+  if (!sameEmail && !namesMatch(c.customerName, c.customerEmail, [fresh.shipTo?.name, fresh.billName])) {
+    return { ok: false, error: `The name on this order does not match the person writing in${fresh.email ? ` (it was placed with ${fresh.email})` : ''}. If you are sure it is theirs, cancel it in Shopify.` }
   }
-  if (!fresh.cancelledAt) {
-    if (fresh.items.some((i) => (i.unfulfilled ?? 0) < i.quantity)) {
-      return { ok: false, error: 'Part of this order has shipped, so it cannot be cancelled whole. Remove the unshipped item instead, or handle it in Shopify.' }
-    }
+  const keep = (o: OrderSnapshot) => db.supportCase.update({
+    where: { id },
+    data: { orderSnapshot: { ...o, emailMismatch: sameEmail ? null : o.email, sameName: !sameEmail || undefined } as unknown as Prisma.InputJsonValue },
+  })
+  const money = (o: OrderSnapshot) => `${o.refunded?.toFixed(2) ?? '?'} ${o.total?.split(' ')[1] ?? ''}`.trim()
+  const fail = (msg: string) => /access|scope|denied|permission/i.test(msg)
+    ? permissionError('cancel this order', 'write_orders', msg)
+    : Promise.resolve(`Shopify refused: ${msg.slice(0, 160)}. Nothing was sent.`)
+
+  const open = unshippedLines(fresh)
+  if (fresh.cancelledAt || (partlyShipped(fresh) && !open.length && refundIssued(fresh))) {
+    // Already done — a second tap after a slow first one, or done in Shopify.
+    await keep(fresh)
+  } else if (!partlyShipped(fresh)) {
     let done
     try {
       done = await cancelAndRefund(c.shopifyOrderId, `Cancelled at the customer's request (support case), by ${who.name} in the Studio app.`)
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      return {
-        ok: false,
-        error: /access|scope|denied|permission/i.test(msg)
-          ? await permissionError('cancel this order', 'write_orders', msg)
-          : `Shopify refused the cancellation: ${msg.slice(0, 160)}. Nothing was sent.`,
-      }
+      return { ok: false, error: await fail(e instanceof Error ? e.message : String(e)) }
     }
-    if (!done.ok) return { ok: false, error: `${done.error} Nothing was sent.` }
+    // Whatever happened, the card shows the order as it now is.
+    const now = done.ok ? done.order : await freshOrder(c.shopifyOrderId).catch(() => null)
+    if (now) await keep(now)
+    if (!done.ok) {
+      revalidatePath('/support')
+      return { ok: false, error: `${done.error} Nothing was sent.` }
+    }
     await db.supportMessage.create({
       data: {
         caseId: id, direction: 'NOTE', fromAddress: who.name,
-        body: `${c.shopifyOrderName} cancelled in Shopify: refunded in full to the original payment, items restocked. Shopify now shows it ${String(done.order.financialStatus ?? '').toLowerCase().replace(/_/g, ' ')}.`,
+        body: `${c.shopifyOrderName} cancelled in Shopify: ${money(done.order)} refunded to the original payment, items restocked.`,
       },
     })
-    await db.supportCase.update({ where: { id }, data: { orderSnapshot: done.order as unknown as Prisma.InputJsonValue } })
+  } else {
+    // Part has shipped: cancel and refund what has not. See cancelUnshippedLines.
+    if (!open.length) return { ok: false, error: 'Everything on this order has shipped, so nothing can be cancelled. It is a return.' }
+    const location = await db.location.findFirst({ where: { isDefault: true }, select: { shopifyLocationId: true } })
+    if (!location?.shopifyLocationId) return { ok: false, error: 'The studio has no Shopify location on record. Nothing was changed or sent.' }
+    let done
+    try {
+      done = await cancelUnshippedLines(
+        c.shopifyOrderId, open.map((l) => ({ lineItemId: l.id, quantity: l.quantity })),
+        location.shopifyLocationId, `Not shipped; cancelled at the customer's request by ${who.name} in the Studio app.`,
+      )
+    } catch (e) {
+      return { ok: false, error: await fail(e instanceof Error ? e.message : String(e)) }
+    }
+    const now = done.ok ? done.order : await freshOrder(c.shopifyOrderId).catch(() => null)
+    if (now) await keep(now)
+    if (!done.ok) {
+      revalidatePath('/support')
+      return { ok: false, error: `${done.error} Nothing was sent.` }
+    }
+    await db.supportMessage.create({
+      data: {
+        caseId: id, direction: 'NOTE', fromAddress: who.name,
+        body: `Cancelled in Shopify (not shipped): ${open.map((l) => l.label).join(', ')}. ${done.refunded} refunded to the original payment. The rest of ${c.shopifyOrderName} had already shipped.`,
+      },
+    })
   }
   return sendReply(id, text)
 }
@@ -261,6 +304,7 @@ export async function cancelOrderAndReply(id: string, text: string): Promise<Res
 /** Ask for a fresh draft — after the case changed, or when the first one failed. */
 export async function redraftReply(id: string): Promise<void> {
   if (!(await approver())) return
+  await refreshOrder(id).catch((e) => console.error('[support] order refresh', e))
   await draftForCase(id)
   revalidatePath('/support')
 }

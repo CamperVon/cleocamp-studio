@@ -121,7 +121,13 @@ data. That must not happen again.
   tap does what the reply says: "Cancel order, refund & send" cancels an
   unshipped order in Shopify with a full refund before the reply goes, and
   Send refuses a reply claiming a cancellation or refund Shopify does not
-  show. **One exception, approved
+  show. On a part-shipped order the same tap cancels and refunds only what
+  has not shipped. A refund counts once Shopify shows it paid or pending
+  (Shopify Payments refunds sit pending for days). A customer writing from
+  another address gets their order treated as theirs when the name on it
+  matches (`namesMatch`, never the order number alone); that is enough for a
+  cancel, since the money can only go back to the card that paid, but an
+  address change still needs the order's own email. **One exception, approved
   by Brandon 24 Sept 2026:** a fixed "your email arrived" note (`autoAckText`
   in `lib/support/reply.ts`), once per customer ever, never to spam, fires,
   forwards or machine addresses. It is fixed text — never let a model write

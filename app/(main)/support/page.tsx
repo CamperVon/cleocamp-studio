@@ -48,7 +48,7 @@ export default async function Support() {
     orderName: c.shopifyOrderName,
     order: (c.orderSnapshot as CaseView['order']) ?? null,
     age: age(c.lastMessageAt),
-    messages: c.messages.map((m) => ({ id: m.id, direction: m.direction, fromAddress: m.fromAddress, body: m.body, at: m.createdAt.toISOString() })),
+    messages: c.messages.map((m) => ({ id: m.id, direction: m.direction, fromAddress: m.fromAddress, body: m.body, at: m.createdAt.toISOString(), emailedTo: m.emailedTo })),
     draft: c.draftedAt
       ? { reply: c.draftReply, needs: c.draftNeeds, address: (c.draftAddress as NonNullable<CaseView['draft']>['address']) ?? null, at: c.draftedAt.toISOString() }
       : null,

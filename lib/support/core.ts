@@ -178,7 +178,7 @@ export function finalUrgency(args: {
  * "Begin forwarded message:" are both read. Returns null when the email is
  * not a forward, or names no sender — then it is just a teammate writing.
  */
-export function forwardedOrigin(body: string): { email: string; name: string | null; subject: string | null; body: string } | null {
+export function forwardedOrigin(body: string): { email: string; name: string | null; subject: string | null; body: string; to: string | null; toName: string | null } | null {
   const marker = body.search(/-{5,}\s*Forwarded message\s*-{5,}|Begin forwarded message:/i)
   if (marker < 0) return null
   const rest = body.slice(marker).replace(/^.*\n/, '')
@@ -190,11 +190,19 @@ export function forwardedOrigin(body: string): { email: string; name: string | n
   // Strip the quotes around a display name, not the apostrophe in O'Connell.
   const name = from.replace(/<[^>]*>/, '').replace(/"/g, '').trim().replace(/^'(.*)'$/, '$1') || null
   const subject = rest.match(/^\s*>?\s*Subject:\s*(.+)$/im)?.[1]?.trim() ?? null
+  // Who the forwarded message went TO: when a teammate forwards their own
+  // reply, the customer is here, not in From.
+  const toLine = rest.slice(0, Math.max(0, rest.search(/\n\s*\n/)) || undefined).match(/^\s*>?\s*To:\s*(.+)$/im)?.[1]?.trim()
+  const to = toLine ? (toLine.match(/<([^>\s]+@[^>\s]+)>/)?.[1] ?? toLine.match(/([^\s<>",]+@[^\s<>",]+)/)?.[1] ?? null) : null
+  const toName = toLine ? toLine.split(',')[0].replace(/<[^>]*>/, '').replace(/"/g, '').trim() || null : null
   // Everything after the header block is the customer's message (with any
   // earlier thread quoted under it, which the reader is given too).
   const headerEnd = rest.search(/\n\s*\n/)
   const inner = (headerEnd >= 0 ? rest.slice(headerEnd) : rest).trim()
-  return { email: addr.toLowerCase(), name: name && name !== addr ? name : null, subject, body: inner }
+  return {
+    email: addr.toLowerCase(), name: name && name !== addr ? name : null, subject, body: inner,
+    to: to?.toLowerCase() ?? null, toName: toName && to && toName.toLowerCase() !== to.toLowerCase() ? toName : null,
+  }
 }
 
 /**
@@ -249,4 +257,28 @@ export function trimQuoted(text: string): { text: string; trimmed: boolean } {
   const kept = text.slice(0, at).trimEnd()
   if (at === text.length || kept.replace(/\s/g, '').length < 15) return { text, trimmed: false }
   return { text: kept, trimmed: true }
+}
+
+/**
+ * Is the person writing in plausibly the person on the order, when they write
+ * from a different address? Brandon, 25 Sept 2026: "people often email with a
+ * different email address." Serena wrote from her NYU address about #2355,
+ * placed as serena.j.song@outlook.com; Corinne wrote from her work address and
+ * from eandclammers@msn.com about #2421, placed as corilammers@msn.com.
+ *
+ * A match is the sender's first name equal to the first name on the order, or
+ * the order's surname (4+ letters) inside the sender's address. An order
+ * number is guessable, so a number alone is never enough.
+ */
+export function namesMatch(senderName: string | null | undefined, senderEmail: string, orderNames: Array<string | null | undefined>): boolean {
+  const words = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[^a-z\s'-]/g, ' ').split(/\s+/).filter((w) => w.length > 1)
+  const first = words(senderName ?? '')[0]
+  const local = senderEmail.toLowerCase().split('@')[0].replace(/[^a-z]/g, '')
+  return orderNames.some((n) => {
+    const w = words(n ?? '')
+    if (!w.length) return false
+    if (first && w[0] === first) return true
+    const last = w[w.length - 1]
+    return w.length > 1 && last.length >= 4 && local.includes(last)
+  })
 }

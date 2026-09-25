@@ -140,3 +140,44 @@ test('a draft with raw line breaks inside the reply still reads', async () => {
   assert.equal(d!.reply, 'Hi Amanda,\n\nYour order ships Monday.\n\nKindly,\nCleo Studio')
   assert.equal(parseDraft('{\n  "reply": "Hi",\n  "needs": null\n}')!.reply, 'Hi', 'breaks between fields are fine')
 })
+
+test('a pending refund is a refund (MacKenzie, #2555: cancelled, $95 pending, reply held)', async () => {
+  const { claimsNotYetDone, refundIssued } = await import('../lib/support/reply')
+  const draft = "Hi MacKenzie,\n\nWe've gone ahead and cancelled order #2555 since it hasn't shipped yet. It's been refunded in full to your original payment method.\n\nKindly,\nCleo Studio"
+  const now = { name: '#2555', financialStatus: 'PAID', cancelledAt: '2026-09-25T22:46:21Z', refunded: 95, items: [{ title: 'Cleo Tee', variant: 'White / 1', quantity: 1, unfulfilled: 0, current: 0 }] }
+  assert.equal(refundIssued(now), true)
+  assert.deepEqual(claimsNotYetDone(draft, now), [])
+  assert.equal(claimsNotYetDone(draft, { ...now, refunded: 0 }).length, 1, 'cancelled with no refund is still caught')
+})
+
+test('part of an order cancelled: only what has not shipped (Elisabeth, #2237)', async () => {
+  const { claimsNotYetDone, partlyShipped, unshippedLines } = await import('../lib/support/reply')
+  const before = {
+    name: '#2237', financialStatus: 'PAID', cancelledAt: null, refunded: 0,
+    items: [
+      { id: 'L2', title: 'Cleo Tee', variant: 'Black / 2', quantity: 1, unfulfilled: 0, current: 1 },
+      { id: 'L1', title: 'Cleo Tee', variant: 'Black / 1', quantity: 1, unfulfilled: 1, current: 1 },
+    ],
+  }
+  assert.equal(partlyShipped(before), true)
+  assert.deepEqual(unshippedLines(before), [{ id: 'L1', label: 'Cleo Tee Black / 1', quantity: 1 }])
+  const draft = "Hi Elisabeth,\n\nThe Black / 1 hasn't shipped yet, so we've cancelled that item and refunded it in full.\n\nKindly,\nCleo Studio"
+  assert.equal(claimsNotYetDone(draft, before).length, 2)
+  const after = { ...before, financialStatus: 'PARTIALLY_REFUNDED', refunded: 49.5, items: [before.items[0], { ...before.items[1], unfulfilled: 0, current: 0 }] }
+  assert.deepEqual(unshippedLines(after), [])
+  assert.deepEqual(claimsNotYetDone(draft, after), [])
+  // Nothing shipped: not partial, the whole order is cancelled instead.
+  assert.equal(partlyShipped({ items: [{ title: 'x', variant: null, quantity: 2, unfulfilled: 2, current: 2 }] }), false)
+})
+
+test('an order from another address with a matching name is described in full', async () => {
+  const { orderFacts } = await import('../lib/support/reply')
+  const facts = orderFacts({
+    id: 'gid://shopify/Order/1', name: '#2355', createdAt: '2026-09-08T16:22:32Z', financialStatus: 'PAID', fulfillmentStatus: 'FULFILLED',
+    total: '155.00 USD', email: 'serena.j.song@outlook.com', emailMismatch: 'serena.j.song@outlook.com', sameName: true,
+    items: [{ title: 'You Dress', variant: 'Black / 1', quantity: 1, unfulfilled: 0 }], tracking: [],
+  })
+  assert.match(facts, /You Dress \(Black \/ 1\) — shipped/)
+  assert.match(facts, /do not ask them to write from another one/)
+  assert.doesNotMatch(facts, /outlook/)
+})

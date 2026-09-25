@@ -162,6 +162,34 @@ export async function supportPass() {
     // written to support@ — except the alert and the auto-reply, since the
     // one who forwarded it already knows, and the customer wrote days ago.
     const origin = teammate ? forwardedOrigin(body) : null
+    // A teammate forwarding a reply the TEAM sent: the forwarded From is one
+    // of us, so the customer is who it went to. 25 Sept 2026: Cleo answered
+    // Abby from studio@ and forwarded her sent reply to support@; it was filed
+    // as a case for studio@cleocamp.com with Cleo's words labelled "Customer",
+    // and its draft would have gone to studio@. Now it is a note on Abby's
+    // case — no draft, no alert, no auto-reply: the team has just answered.
+    if (origin && (teamBy.has(origin.email) || /@cleocamp\.com$/i.test(origin.email))) {
+      if (origin.to && !teamBy.has(origin.to) && !/@(send\.)?cleocamp\.com$/i.test(origin.to)) {
+        const subj = origin.subject ?? (m.subject ?? '').replace(/^\s*(fwd?|fw)\s*:\s*/i, '')
+        const existing = await findCase(origin.to, subj)
+        const target = existing ?? await db.supportCase.create({
+          data: {
+            customerEmail: origin.to, customerName: shapeOfName(origin.toName?.split(/\s+/)[0]) ?? null, subject: subj,
+            status: 'WAITING_ON_CUSTOMER', urgency: 'DIGEST', summary: `${teamBy.get(origin.email) ?? origin.name ?? 'The team'} replied from their own email.`,
+            lastMessageAt: m.receivedAt,
+          },
+        })
+        await db.supportMessage.create({
+          data: {
+            caseId: target.id, direction: 'NOTE', fromAddress: teamBy.get(origin.email) ?? teammate,
+            body: `Replied from their own email (${origin.email}), outside the app:\n\n${origin.body.slice(0, 4000)}`,
+          },
+        })
+        if (existing) await db.supportCase.update({ where: { id: existing.id }, data: { status: 'WAITING_ON_CUSTOMER', lastMessageAt: m.receivedAt } })
+      }
+      await db.inboundEmail.update({ where: { id: m.id }, data: { processedAt: new Date() } })
+      continue
+    }
     const forwardedBy = origin ? teammate : null
     if (origin) {
       email = origin.email
@@ -189,7 +217,7 @@ export async function supportPass() {
     const quoted = orderNumbersIn(`${subject ?? ''}\n${body}`)
     const lookup = c?.shopifyOrderName && !quoted.length
       ? { order: (c.orderSnapshot as OrderSnapshot | null) ?? null, note: null }
-      : await findOrder(email, quoted)
+      : await findOrder(email, quoted, name ?? c?.customerName)
 
     const earlier = c
       ? (await db.supportMessage.findMany({
