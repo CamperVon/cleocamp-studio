@@ -66,7 +66,7 @@ export function SupportCase({ c }: { c: CaseView }) {
         <summary className="flex cursor-pointer items-start gap-2.5 px-4 py-3 hover:bg-sunk sm:px-5">
           <span
             aria-hidden
-            className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${c.urgency === 'NOW' && c.status !== 'RESOLVED' ? 'bg-urgent' : 'bg-transparent'}`}
+            className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${c.urgency === 'NOW' && c.status === 'OPEN' ? 'bg-urgent' : 'bg-transparent'}`}
           />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">

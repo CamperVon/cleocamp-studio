@@ -100,7 +100,7 @@ async function alertTeam(c: { id: string; customerName: string | null; customerE
   const label = CATEGORY_LABEL[c.category as keyof typeof CATEGORY_LABEL] ?? c.category
   await sendEmail({
     to,
-    subject: `Support fire: ${label}${c.shopifyOrderName ? ` — ${c.shopifyOrderName}` : ''}`,
+    subject: `Urgent support email: ${label}${c.shopifyOrderName ? ` — ${c.shopifyOrderName}` : ''}`,
     text:
       `${who} wrote to support@${c.subject ? ` — "${c.subject}"` : ''}.\n\n` +
       `${c.summary ?? '(Mouse could not summarise it — open the case to read it.)'}\n\n` +

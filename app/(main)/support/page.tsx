@@ -56,7 +56,7 @@ export default async function Support() {
 
   const open = cases.filter((c) => c.status === 'OPEN')
   const groups: Array<{ title: string; items: typeof cases; empty?: string }> = [
-    { title: 'Fires', items: open.filter((c) => c.urgency === 'NOW'), empty: 'No fires.' },
+    { title: 'Urgent', items: open.filter((c) => c.urgency === 'NOW'), empty: 'Nothing urgent.' },
     { title: 'Today', items: open.filter((c) => c.urgency === 'TODAY') },
     { title: 'Can wait', items: open.filter((c) => c.urgency === 'DIGEST') },
     { title: 'Waiting', items: cases.filter((c) => c.status === 'WAITING_ON_CUSTOMER' || c.status === 'WAITING_ON_RETURN') },

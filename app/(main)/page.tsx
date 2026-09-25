@@ -256,7 +256,7 @@ export default async function Today() {
               <span aria-hidden className={`h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full ${supportFires ? 'bg-urgent' : 'bg-transparent'}`} />
               <span>
                 Customer support:{' '}
-                {supportFires ? <span className="font-semibold text-urgent">{supportFires} {supportFires === 1 ? 'fire' : 'fires'}</span> : null}
+                {supportFires ? <span className="font-semibold text-urgent">{supportFires} urgent</span> : null}
                 {supportFires && supportToday ? ', ' : ''}
                 {supportToday ? `${supportToday} for today` : ''}
                 {(supportFires || supportToday) && repliesWaiting ? ' · ' : ''}
