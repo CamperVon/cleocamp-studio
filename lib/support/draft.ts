@@ -4,6 +4,7 @@ import { Prisma } from '@/generated/prisma/client'
 import { CHAT_MODEL } from '@/lib/mouse/agent'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
 import { findOrder, type OrderSnapshot } from '@/lib/support/orders'
+import { isConfigured, shopifyGraphQL } from '@/lib/integrations/shopify'
 import { addressChangeProblems, DRAFT_INSTRUCTIONS, orderFacts, parseDraft } from '@/lib/support/reply'
 import { orderNumbersIn, trimQuoted } from '@/lib/support/core'
 
@@ -31,7 +32,12 @@ export async function draftForCase(caseId: string): Promise<void> {
     .map((m) => `${m.direction === 'INBOUND' ? 'CUSTOMER' : 'US'} (${m.createdAt.toISOString().slice(0, 10)}):\n${trimQuoted(m.body).text.slice(0, 2500)}`)
     .join('\n---\n')
 
-  const [stock, examples] = await Promise.all([stockFacts(order).catch(() => ''), recentReplies(caseId).catch(() => '')])
+  const latest = c.messages.filter((m) => m.direction === 'INBOUND').slice(-3).map((m) => trimQuoted(m.body).text).join('\n')
+  const [stock, catalog, examples] = await Promise.all([
+    stockFacts(order).catch(() => ''),
+    catalogFacts(`${c.subject ?? ''}\n${latest}`).catch((e) => { console.error('[support] catalog facts', e); return '' }),
+    recentReplies(caseId).catch(() => ''),
+  ])
   // Asked up to twice: a reply that cannot be read as a draft is asked for
   // again once, then left as a note on the case, never silently dropped.
   let d: ReturnType<typeof parseDraft> = null
@@ -51,6 +57,7 @@ export async function draftForCase(caseId: string): Promise<void> {
             `Customer: ${c.customerName ?? 'name unknown'} <${c.customerEmail}>. Sorted as: ${c.category}.\n\n` +
             `ORDER FACTS (from Shopify, checked by code):\n${orderFacts(order)}\n\n` +
             (stock ? `STOCK FACTS for items not yet shipped (from our records):\n${stock}\n\n` : '') +
+            (catalog ? `CATALOG FACTS for products the customer names (from the shop, just now):\n${catalog}\n\n` : '') +
             (examples ? `${examples}\n\n` : '') +
             `<conversation>\n${thread.slice(-9000)}\n</conversation>\n\n` +
             `Draft the reply to the customer's latest email.`,
@@ -106,16 +113,30 @@ export async function stockFacts(order: OrderSnapshot | null): Promise<string> {
     where: { shopifyVariantId: { in: ids } },
     select: { id: true, shopifyVariantId: true, onHandQty: true, productId: true },
   })
+  const more = await restockDates(variants)
+
+  return open.map((i) => {
+    const v = variants.find((x) => x.shopifyVariantId === i.variantId!.split('/').pop())
+    const label = `${i.title}${i.variant ? ` (${i.variant})` : ''}`
+    if (!v) return `- ${label}: not in our records — no stock facts.`
+    const onHand = v.onHandQty === null ? null : Number(v.onHandQty)
+    const stock = onHand === null ? 'stock not counted' : onHand > 0 ? `${onHand} in stock — can ship` : 'none in stock (sold ahead of stock)'
+    const dates = more(v)
+    return `- ${label}: ${stock}.${onHand !== null && onHand > 0 ? '' : dates.length ? ` More coming: ${dates.join('; ')}.` : ' No date on file for more.'}`
+  }).join('\n')
+}
+
+/**
+ * When more of a variant is expected: open production runs for its product,
+ * and open POs with a line for that exact variant. A fabric or label PO
+ * tagged to the same product (RichLine, L&L) says nothing about when a tee
+ * reaches a customer, so it is not counted.
+ */
+async function restockDates(variants: Array<{ id: string; productId: string }>): Promise<(v: { id: string; productId: string }) => string[]> {
   const productIds = [...new Set(variants.map((v) => v.productId))]
   const [pos, runs] = await Promise.all([
     db.purchaseOrder.findMany({
-      where: {
-        status: { in: ['SENT', 'PARTIALLY_RECEIVED'] },
-        // Only orders that bring the finished item itself — a line for this
-        // exact variant. A fabric or label PO tagged to the same product
-        // (RichLine, L&L) says nothing about when a tee reaches a customer.
-        lines: { some: { productVariantId: { in: variants.map((v) => v.id) } } },
-      },
+      where: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] }, lines: { some: { productVariantId: { in: variants.map((v) => v.id) } } } },
       select: { poNumber: true, expectedAt: true, lines: { select: { productVariantId: true } } },
     }),
     db.productionRun.findMany({
@@ -124,20 +145,69 @@ export async function stockFacts(order: OrderSnapshot | null): Promise<string> {
     }),
   ])
   const day = (d: Date) => d.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'long', day: 'numeric' })
+  return (v) => [
+    ...runs.filter((r) => r.productId === v.productId && r.expectedReadyAt)
+      .map((r) => `a production run ${r.status.toLowerCase().replace(/_/g, ' ')}, ready ${day(r.expectedReadyAt!)}${r.dateConfirmed ? '' : ' (estimate, not confirmed)'}`),
+    ...pos.filter((p) => p.expectedAt && p.lines.some((l) => l.productVariantId === v.id))
+      .map((p) => `PO ${p.poNumber} expected ${day(p.expectedAt!)} (estimate)`),
+  ]
+}
 
-  return open.map((i) => {
-    const v = variants.find((x) => x.shopifyVariantId === i.variantId!.split('/').pop())
-    const label = `${i.title}${i.variant ? ` (${i.variant})` : ''}`
-    if (!v) return `- ${label}: not in our records — no stock facts.`
-    const onHand = v.onHandQty === null ? null : Number(v.onHandQty)
-    const stock = onHand === null ? 'stock not counted' : onHand > 0 ? `${onHand} in stock — can ship` : 'none in stock (sold ahead of stock)'
-    const dates = [
-      ...runs.filter((r) => r.productId === v.productId && r.expectedReadyAt)
-        .map((r) => `a production run ${r.status.toLowerCase().replace(/_/g, ' ')}, ready ${day(r.expectedReadyAt!)}${r.dateConfirmed ? '' : ' (estimate, not confirmed)'}`),
-      ...pos.filter((p) => p.expectedAt && p.lines.some((l) => l.productVariantId === v.id))
-        .map((p) => `PO ${p.poNumber} expected ${day(p.expectedAt!)} (estimate)`),
-    ]
-    return `- ${label}: ${stock}.${onHand !== null && onHand > 0 ? '' : dates.length ? ` More coming: ${dates.join('; ')}.` : ' No date on file for more.'}`
+type CatalogProduct = {
+  title: string
+  status: string
+  variants: { nodes: Array<{ id: string; title: string; availableForSale: boolean; inventoryPolicy: string; inventoryQuantity: number | null }> }
+}
+
+/**
+ * What the shop has of any product the customer names, read live from
+ * Shopify: whether each size can be bought on the site now, in stock or as a
+ * pre-order, plus any restock date we hold. Brandon, 25 Sept 2026, on JJ
+ * asking "Is the red Cleo tee available in size 1?": Mouse should answer it,
+ * not ask for an order. Stock facts were only ever built from an order's
+ * items, so a question with no order had nothing to go on.
+ *
+ * A product counts as named when its name (before any " - Colour") is in the
+ * email: "red Cleo tee" names Cleo Tee and every Cleo Tee colour product.
+ */
+/** Products whose name, before any " - Colour", appears in the text. Pure. */
+export function namedProducts<P extends { title: string }>(products: P[], text: string): P[] {
+  const t = text.toLowerCase().replace(/\s+/g, ' ')
+  const base = (title: string) => title.split(/\s[-—–]\s/)[0].trim().toLowerCase()
+  return products.filter((p) => base(p.title).length >= 4 && t.includes(base(p.title)))
+}
+
+/** Can a customer buy this size on the site right now, and how. Pure. */
+export function saleState(onSite: boolean, v: { availableForSale: boolean; inventoryPolicy: string; inventoryQuantity: number | null }): string {
+  if (!onSite || !v.availableForSale) return 'sold out, cannot be ordered'
+  if ((v.inventoryQuantity ?? 0) > 0) return 'in stock'
+  return v.inventoryPolicy === 'CONTINUE' ? 'sold out, but can be ordered now as a pre-order and ships when more arrive' : 'sold out'
+}
+
+export async function catalogFacts(text: string): Promise<string> {
+  if (!isConfigured()) return ''
+  const t = text
+  const d = await shopifyGraphQL<{ products: { nodes: CatalogProduct[] } }>(
+    `query { products(first: 100, query: "status:active OR status:unlisted") { nodes { title status variants(first: 50) { nodes { id title availableForSale inventoryPolicy inventoryQuantity } } } } }`,
+    {},
+  )
+  const named = namedProducts(d.products.nodes, t)
+  if (!named.length) return ''
+  const ours = await db.productVariant.findMany({
+    where: { shopifyVariantId: { in: named.flatMap((p) => p.variants.nodes.map((v) => v.id.split('/').pop()!)) } },
+    select: { id: true, productId: true, shopifyVariantId: true },
+  })
+  const more = await restockDates(ours)
+  return named.map((p) => {
+    const onSite = p.status === 'ACTIVE'
+    const sizes = p.variants.nodes.map((v) => {
+      const inStock = (v.inventoryQuantity ?? 0) > 0
+      const state = saleState(onSite, v)
+      const mine = ours.find((o) => o.shopifyVariantId === v.id.split('/').pop())
+      const dates = !inStock && mine ? more(mine) : []
+      return `${v.title}: ${state}${inStock ? '' : dates.length ? ` (more coming: ${dates.join('; ')})` : ' (no restock date on file)'}`
+    })
+    return `- ${p.title}${onSite ? '' : ' — not on the website right now'}: ${sizes.join('; ')}.`
   }).join('\n')
 }
 

@@ -181,3 +181,15 @@ test('an order from another address with a matching name is described in full', 
   assert.match(facts, /do not ask them to write from another one/)
   assert.doesNotMatch(facts, /outlook/)
 })
+
+test('a product question gets the catalog, not a request for an order (JJ, red Cleo tee)', async () => {
+  const { namedProducts, saleState } = await import('../lib/support/draft')
+  const shop = [{ title: 'Cleo Tee - Ruby Red' }, { title: 'Cleo Tee' }, { title: 'Story Dress' }, { title: 'Cleo Bag' }, { title: 'Cachet' }]
+  assert.deepEqual(namedProducts(shop, 'Hi!\n\nIs the red Cleo tee available in size 1?').map((p) => p.title), ['Cleo Tee - Ruby Red', 'Cleo Tee'])
+  assert.deepEqual(namedProducts(shop, 'Where is my order?'), [])
+  // Unlisted Ruby Red: nothing to buy.
+  assert.equal(saleState(false, { availableForSale: false, inventoryPolicy: 'DENY', inventoryQuantity: 0 }), 'sold out, cannot be ordered')
+  // Black / 1 at -121 with overselling on: a pre-order.
+  assert.match(saleState(true, { availableForSale: true, inventoryPolicy: 'CONTINUE', inventoryQuantity: -121 }), /pre-order/)
+  assert.equal(saleState(true, { availableForSale: true, inventoryPolicy: 'DENY', inventoryQuantity: 17 }), 'in stock')
+})
