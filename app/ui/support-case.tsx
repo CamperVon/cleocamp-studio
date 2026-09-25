@@ -7,7 +7,7 @@ import { trimQuoted } from '@/lib/support/core'
 type Msg = { id: string; direction: 'INBOUND' | 'OUTBOUND' | 'NOTE'; fromAddress: string | null; body: string; at: string; emailedTo?: string | null }
 type Order = {
   name: string; createdAt: string; financialStatus: string | null; fulfillmentStatus: string | null; total: string | null; cancelledAt?: string | null; emailMismatch?: string | null
-  sameName?: boolean; refunded?: number
+  sameName?: boolean; refunded?: number; shipTo?: { name: string | null } | null
   items: Array<{ title: string; variant: string | null; quantity: number; id?: string; unfulfilled?: number; current?: number }>
   tracking: Array<{ company: string | null; number: string | null; url: string | null }>
 } | null
@@ -98,8 +98,9 @@ export function SupportCase({ c }: { c: CaseView }) {
               {c.order.emailMismatch ? (
                 c.order.sameName ? (
                   <p>
-                    Placed with {c.order.emailMismatch}. Same name as the person writing in, so it is treated as theirs. An address
-                    change still needs an email from {c.order.emailMismatch}.
+                    Placed {c.order.shipTo?.name ? <>by <span className="font-medium text-ink">{c.order.shipTo.name}</span> </> : null}with{' '}
+                    {c.order.emailMismatch}. The name matches the person writing in, so it is treated as theirs — check it is them before
+                    cancelling. An address change still needs an email from {c.order.emailMismatch}.
                   </p>
                 ) : (
                   <p className="text-urgent">
