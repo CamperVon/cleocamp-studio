@@ -86,14 +86,23 @@ export async function checkLeadTimeDrift(poId: string): Promise<string[]> {
   // finished goods, a cut-and-sew order — speaks to the VENDOR's own
   // turnaround instead: Vendor.leadTimeDays is documented as exactly this,
   // "on a manufacturer this is cut-and-sew time."
+  //
+  // Only lines that actually arrived are evidence. On 24 Sept 2026 PO 2375
+  // was partly received (the Size and Cosmo x Cleo labels) and this asked
+  // whether Main label's lead time was now 8 days, when not one Main label
+  // had come; Jane was still waiting on them the next day. A fully received
+  // order counts every line; a partial one only lines with a quantity in.
+  const arrived = po.status === 'RECEIVED'
+    ? po.lines
+    : po.lines.filter((l) => Number(l.qtyReceived) > 0)
   const candidates: LeadTimeCandidate[] = []
   const seen = new Set<string>()
-  for (const l of po.lines) {
+  for (const l of arrived) {
     if (!l.component || seen.has(l.component.id)) continue
     seen.add(l.component.id)
     candidates.push({ entityType: 'COMPONENT', entityId: l.component.id, name: l.component.name, recorded: l.component.leadTimeDays })
   }
-  if (po.lines.some((l) => l.componentId === null)) {
+  if (arrived.some((l) => l.componentId === null)) {
     candidates.push({ entityType: 'VENDOR', entityId: po.vendor.id, name: po.vendor.name, recorded: po.vendor.leadTimeDays })
   }
 
