@@ -1038,6 +1038,10 @@ model InboundEmail {
   receivedAt  DateTime
   /// Set once Studio Mouse has read it and raised whatever it needed to.
   processedAt DateTime?
+  /// Set when a support pass starts on it, so a second pass running at the
+  /// same moment leaves it alone. A lease, not a verdict: a pass that dies
+  /// leaves it unprocessed, and after a few minutes another may take it.
+  claimedAt   DateTime?
   /// Set once this has been forwarded on to the people who should have been
   /// cc'd. Doubles as the idempotency guard: Resend retries a webhook it
   /// thinks failed, and a retry must not send the same mail twice. Claimed

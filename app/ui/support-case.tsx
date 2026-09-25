@@ -2,10 +2,11 @@
 import { useState, useTransition } from 'react'
 import { addCaseNote, applyAddressAndReply, cancelOrderAndReply, redraftReply, removeUnshippedItem, sendReply, setCaseStatus } from '@/app/(main)/support/actions'
 import { claimsNotYetDone, mentionsDiscount, unfilled } from '@/lib/support/reply'
+import { trimQuoted } from '@/lib/support/core'
 
 type Msg = { id: string; direction: 'INBOUND' | 'OUTBOUND' | 'NOTE'; fromAddress: string | null; body: string; at: string }
 type Order = {
-  name: string; createdAt: string; financialStatus: string | null; fulfillmentStatus: string | null; total: string | null; cancelledAt?: string | null
+  name: string; createdAt: string; financialStatus: string | null; fulfillmentStatus: string | null; total: string | null; cancelledAt?: string | null; emailMismatch?: string | null
   items: Array<{ title: string; variant: string | null; quantity: number; id?: string; unfulfilled?: number }>
   tracking: Array<{ company: string | null; number: string | null; url: string | null }>
 } | null
@@ -90,6 +91,12 @@ export function SupportCase({ c }: { c: CaseView }) {
                 Order {c.order.name} · {c.order.createdAt.slice(0, 10)} · {[c.order.financialStatus, c.order.fulfillmentStatus].filter(Boolean).join(' / ').toLowerCase()}
                 {c.order.total ? ` · ${c.order.total}` : ''}
               </p>
+              {c.order.emailMismatch ? (
+                <p className="text-urgent">
+                  Placed with {c.order.emailMismatch}, not the address writing in. Check it is theirs. Changes to this order are locked,
+                  and the reply gives no order details.
+                </p>
+              ) : null}
               {c.order.items.map((i, n) => (
                 <OrderLine key={n} caseId={c.id} item={i} open={c.status !== 'RESOLVED'} />
               ))}
@@ -112,7 +119,7 @@ export function SupportCase({ c }: { c: CaseView }) {
                 <p className="mb-1 text-[11px] text-faint">
                   {m.direction === 'NOTE' ? `Note${m.fromAddress ? ` — ${m.fromAddress}` : ''}` : m.direction === 'INBOUND' ? 'Customer' : `Sent${m.fromAddress ? ` — ${m.fromAddress}` : ''}`} · {day(m.at)}
                 </p>
-                <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                <MessageBody body={m.body} quoted={m.direction === 'INBOUND'} />
               </li>
             ))}
           </ul>
@@ -201,7 +208,7 @@ function ReplyBox({ c }: { c: CaseView }) {
   const canMove = !!a && !a.problems.length
   // The reply tells the customer the order is cancelled or refunded: the tap
   // that sends it has to make that true first (cancelOrderAndReply).
-  const cancels = !!c.order && !c.order.cancelledAt &&
+  const cancels = !!c.order && !c.order.cancelledAt && !c.order.emailMismatch &&
     claimsNotYetDone(text, { name: '', financialStatus: '', cancelledAt: null }).length > 0
   const primary = canMove || cancels
   const blocked = pending || !!gaps.length || !text.trim()
@@ -329,5 +336,25 @@ function OrderLine({ caseId, item, open }: {
       </p>
       {msg ? <p className="text-ink">{msg}</p> : null}
     </div>
+  )
+}
+
+/**
+ * A customer message without the earlier emails quoted under it, with a tap
+ * to see them. Brandon, 25 Sept 2026: "do we need all the fat at the bottom
+ * of some of the customer emails?" See trimQuoted.
+ */
+function MessageBody({ body, quoted }: { body: string; quoted: boolean }) {
+  const [open, setOpen] = useState(false)
+  const t = quoted ? trimQuoted(body) : { text: body, trimmed: false }
+  return (
+    <>
+      <p className="whitespace-pre-wrap break-words">{open ? body : t.text}</p>
+      {t.trimmed ? (
+        <button type="button" onClick={() => setOpen(!open)} className="mt-1 text-[11px] text-faint underline decoration-dotted underline-offset-2">
+          {open ? 'Hide the earlier emails' : 'Show the earlier emails quoted below'}
+        </button>
+      ) : null}
+    </>
   )
 }

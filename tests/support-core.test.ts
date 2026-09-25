@@ -86,3 +86,23 @@ test('the third-email alert counts only what is unanswered (Leah, 25 Sept)', () 
   assert.equal(unansweredCount([m('INBOUND', 'x'), m('OUTBOUND', 'Auto-reply'), m('INBOUND', 'x')]), 3)
   assert.equal(unansweredCount([]), 1)
 })
+
+test('quoted history is cut from customer messages', async () => {
+  const { trimQuoted } = await import('../lib/support/core')
+  const mack = "Hi there, my order is taking much longer than originally expected, and I\nwould like to cancel it before the item ships.\n\nThank you!\n\nMacKenzie\n\nOn Sun, Sep 20, 2026 at 2:08 PM cleocamp <\nstore+79155396861@m.shopifyemail.com> wrote:\n\n> We appreciate your business\n>\n> unsubscribe <https://cleocamp.com/...>"
+  const r = trimQuoted(mack)
+  assert.equal(r.trimmed, true)
+  assert.match(r.text, /cancel it before the item ships/)
+  assert.match(r.text, /MacKenzie$/)
+  assert.doesNotMatch(r.text, /appreciate your business|wrote:/)
+
+  const outlook = "Yes please, the white one.\n\nBest,\nAna\n\n________________________________\nFrom: Cleo Studio <support@cleocamp.com>\nSent: Monday\nSubject: Re: order"
+  assert.equal(trimQuoted(outlook).text, 'Yes please, the white one.\n\nBest,\nAna')
+
+  const plain = 'Where is my order #2555? It has been two weeks.'
+  assert.deepEqual(trimQuoted(plain), { text: plain, trimmed: false })
+
+  // Nothing but a quote: keep it all rather than show an empty message.
+  const onlyQuote = '\nOn Mon, Sep 1, 2026 at 9:00 AM Cleo wrote:\n> hello\n> there'
+  assert.equal(trimQuoted(onlyQuote).trimmed, false)
+})

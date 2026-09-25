@@ -119,3 +119,24 @@ test('a reply claiming a cancellation Shopify does not show is caught (MacKenzie
   assert.deepEqual(claimsNotYetDone("Hi Tracy,\n\nWe've updated order #2585 to ship to your new address.\n\nKindly,\nCleo Studio", open), [], 'no claim, no check')
   assert.deepEqual(claimsNotYetDone('Once it arrives we will process your refund.', open), [], 'a future refund is not a claim')
 })
+
+test('an order found by number but placed from another email is named, never described (Serena, #2355)', async () => {
+  const { orderFacts } = await import('../lib/support/reply')
+  const facts = orderFacts({
+    id: 'gid://shopify/Order/1', name: '#2355', createdAt: '2026-09-08T16:22:32Z', financialStatus: 'PAID', fulfillmentStatus: 'FULFILLED',
+    total: '155.00 USD', email: 'serena.j.song@outlook.com', emailMismatch: 'serena.j.song@outlook.com',
+    items: [{ title: 'You Dress', variant: 'Black / 1', quantity: 1 }], tracking: [],
+  })
+  assert.match(facts, /#2355/)
+  assert.match(facts, /Do NOT ask for the order number again/)
+  assert.doesNotMatch(facts, /You Dress|Black|outlook|FULFILLED/i)
+})
+
+test('a draft with raw line breaks inside the reply still reads', async () => {
+  const { parseDraft } = await import('../lib/support/reply')
+  const raw = '{"reply": "Hi Amanda,\n\nYour order ships Monday.\n\nKindly,\nCleo Studio", "needs": null, "newAddress": null}'
+  const d = parseDraft(raw)
+  assert.ok(d)
+  assert.equal(d!.reply, 'Hi Amanda,\n\nYour order ships Monday.\n\nKindly,\nCleo Studio')
+  assert.equal(parseDraft('{\n  "reply": "Hi",\n  "needs": null\n}')!.reply, 'Hi', 'breaks between fields are fine')
+})

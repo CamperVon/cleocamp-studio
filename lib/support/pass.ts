@@ -4,7 +4,7 @@ import { htmlToText } from '@/lib/html-to-text'
 import { sendEmail } from '@/lib/email'
 import { CHAT_MODEL } from '@/lib/mouse/agent'
 import {
-  CATEGORIES, CATEGORY_LABEL, customerAddress, finalUrgency, forwardedOrigin, isSupportMail, normalizeSubject, orderNumbersIn, unansweredCount,
+  CATEGORIES, CATEGORY_LABEL, customerAddress, finalUrgency, forwardedOrigin, isSupportMail, normalizeSubject, orderNumbersIn, trimQuoted, unansweredCount,
   parseVerdict, stripGroupFooter, type Verdict,
 } from '@/lib/support/core'
 import { findOrder, type OrderSnapshot } from '@/lib/support/orders'
@@ -131,7 +131,25 @@ export async function supportPass() {
     for (const a of [t.email, ...(t.aliasEmails ?? '').split(',')]) if (a?.trim()) teamBy.set(a.trim().toLowerCase(), t.name)
   }
 
+  const started = Date.now()
   for (const m of mail) {
+    // The function running this has two minutes. A pass stops taking new
+    // emails after ninety seconds and leaves the rest unclaimed for the next
+    // one, rather than being cut off halfway through one.
+    if (Date.now() - started > 90_000) break
+    // Every inbound email starts a pass, and each pass reads the whole unread
+    // queue. On 25 Sept 2026 Cleo forwarded about twenty old emails at once:
+    // twenty passes worked the same queue together, each email was read and
+    // drafted several times over, and five customers ended up with two or
+    // three cases. So a pass claims an email before touching it, in one
+    // conditional update only one pass can win. The claim lapses after five
+    // minutes, so a pass that dies (the function has two) leaves the email
+    // for the next one rather than stuck.
+    const claim = await db.inboundEmail.updateMany({
+      where: { id: m.id, processedAt: null, OR: [{ claimedAt: null }, { claimedAt: { lt: new Date(Date.now() - 5 * 60e3) } }] },
+      data: { claimedAt: new Date() },
+    })
+    if (claim.count === 0) continue
     const data = (m.raw as { data?: { reply_to?: string | string[] } })?.data
     const sender = customerAddress(m.fromAddress, data?.reply_to)
     let { email, name } = sender
@@ -179,7 +197,7 @@ export async function supportPass() {
           orderBy: { createdAt: 'asc' },
           take: 5,
           select: { body: true },
-        })).map((x) => x.body.slice(0, 800))
+        })).map((x) => trimQuoted(x.body).text.slice(0, 800))
       : []
     const thread = c
       ? await db.supportMessage.findMany({
@@ -188,7 +206,7 @@ export async function supportPass() {
           select: { direction: true, fromAddress: true },
         })
       : []
-    const verdict = await classify(body, subject, lookup.order, earlier)
+    const verdict = await classify(trimQuoted(body).text, subject, lookup.order, earlier)
     const urgency = finalUrgency({
       verdict,
       text: `${subject ?? ''}\n${body}`,
@@ -233,8 +251,11 @@ export async function supportPass() {
     if (forwardedBy) {
       await db.supportMessage.create({ data: { caseId: c.id, direction: 'NOTE', fromAddress: forwardedBy, body: `Forwarded into the app by ${forwardedBy} from their own inbox.` } })
     }
-    if (lookup.note && !c.shopifyOrderName) {
-      await db.supportMessage.create({ data: { caseId: c.id, direction: 'NOTE', body: lookup.note } })
+    // A mismatched order is on the case, so the name alone no longer means
+    // "nothing to explain": its note says why changes to it are locked.
+    if (lookup.note && (!c.shopifyOrderName || lookup.order?.emailMismatch)) {
+      const said = await db.supportMessage.findFirst({ where: { caseId: c.id, direction: 'NOTE', body: lookup.note }, select: { id: true } })
+      if (!said) await db.supportMessage.create({ data: { caseId: c.id, direction: 'NOTE', body: lookup.note } })
     }
 
     // Once per case per half-day, so a customer sending five emails in a

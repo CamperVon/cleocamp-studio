@@ -21,6 +21,12 @@ export type OrderSnapshot = {
   tracking: Array<{ company: string | null; number: string | null; url: string | null }>
   /** Where it is going. Optional: snapshots taken before 24 Sept 2026 lack it. */
   shipTo?: ShipTo | null
+  /**
+   * Set when this order was found by the number the customer quoted but was
+   * placed with a different email: the order's own email. The team sees the
+   * order; the drafter is told only that it exists; nothing can change it.
+   */
+  emailMismatch?: string | null
 }
 
 export type ShipTo = {
@@ -88,19 +94,31 @@ export async function findOrder(email: string, quotedNames: string[]): Promise<
 > {
   if (!isConfigured()) return { order: null, recent: [], note: 'Shopify is not connected' }
   try {
+    // An order number alone could be anyone's, so it is only trusted when the
+    // address matches too. But it is not thrown away when it doesn't: on
+    // 25 Sept 2026 Serena quoted #2355, which she had placed from another
+    // address, and the case said no order existed, so the draft asked her
+    // for the number she had just given. Now the order is kept, marked, and
+    // the team decides. Anything that changes an order still checks the
+    // sender against the order's email at the tap, so nothing opens up.
+    let claimed: OrderSnapshot | null = null
     for (const name of quotedNames) {
       const [hit] = await search(`name:${name}`, 1)
-      // An order number alone could be anyone's — only trust it when the
-      // address matches too, or when there is no address to check against.
       if (hit && (!hit.email || hit.email.toLowerCase() === email)) {
         return { order: hit, recent: [], note: null }
       }
+      if (hit && !claimed) claimed = { ...hit, emailMismatch: hit.email }
     }
     const recent = await search(`email:${email}`, 3)
+    const mismatchNote = claimed
+      ? `${claimed.name} was placed with ${claimed.emailMismatch}, not ${email}, the address writing in. Shown so you can judge whether it is theirs; changes to it stay locked unless they write from the order's email.`
+      : null
+    if (recent.length) return { order: recent[0], recent, note: mismatchNote }
+    if (claimed) return { order: claimed, recent: [], note: mismatchNote }
     return {
-      order: recent[0] ?? null,
+      order: null,
       recent,
-      note: recent.length ? null : `No Shopify order under ${email}${quotedNames.length ? ` or ${quotedNames.join(', ')}` : ''}`,
+      note: `No Shopify order under ${email}${quotedNames.length ? ` or ${quotedNames.join(', ')}` : ''}`,
     }
   } catch (e) {
     return { order: null, recent: [], note: `Order lookup failed: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}` }

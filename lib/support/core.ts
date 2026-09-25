@@ -217,3 +217,36 @@ export function unansweredCount(messages: { direction: string; fromAddress: stri
   }
   return n
 }
+
+/**
+ * A customer's message without the earlier emails quoted under it.
+ *
+ * Brandon, 25 Sept 2026: "do we need all the fat at the bottom of some of the
+ * customer emails?" MacKenzie's two-line cancellation request came with the
+ * whole Shopify thank-you email quoted underneath, unsubscribe links and
+ * all; Amanda's was 5,175 characters. It cluttered the case, and every
+ * character of it went to the sorting and drafting models too.
+ *
+ * Cut at the first sign of quoted history: Gmail's "On … wrote:" (which can
+ * wrap onto a second line), Outlook's "From: … Sent:" header or a line of
+ * underscores before it, "Original Message", or a trailing run of ">" lines.
+ * The full text stays in the stored email; this is what is shown and read.
+ * If cutting would leave almost nothing, the message is returned whole.
+ */
+export function trimQuoted(text: string): { text: string; trimmed: boolean } {
+  const cuts = [
+    /\n[ \t]*On [^\n]{3,200}?(?:\n[^\n]{0,200}?)?\bwrote:[ \t]*(?:\n|$)/i,
+    /\n[ \t]*-{2,}\s*Original Message\s*-{2,}/i,
+    /\n[ \t]*_{8,}\s*\n\s*From:/i,
+    /\n[ \t]*From:[^\n]+\n[ \t]*(?:Sent|Date):[^\n]+\n/i,
+    /\n(?:[ \t]*>[^\n]*(?:\n|$)){2,}[\s>]*$/,
+  ]
+  let at = text.length
+  for (const re of cuts) {
+    const m = re.exec(text)
+    if (m && m.index < at) at = m.index
+  }
+  const kept = text.slice(0, at).trimEnd()
+  if (at === text.length || kept.replace(/\s/g, '').length < 15) return { text, trimmed: false }
+  return { text: kept, trimmed: true }
+}

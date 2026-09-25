@@ -104,11 +104,35 @@ export type Draft = { reply: string | null; needs: string | null; newAddress: Dr
 const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
 
 /** The model's JSON, checked. Anything malformed is "no draft", never a guess. */
+/**
+ * Raw line breaks and tabs inside JSON strings, escaped. A model writing a
+ * multi-paragraph reply sometimes leaves real line breaks inside the "reply"
+ * string, which JSON forbids, and the whole draft was silently dropped
+ * (Amanda's case, 25 Sept 2026). Walks the text, so breaks between fields
+ * are left alone.
+ */
+export function escapeBreaksInStrings(json: string): string {
+  let out = '', inString = false, escaped = false
+  for (const ch of json) {
+    if (inString) {
+      if (escaped) { out += ch; escaped = false; continue }
+      if (ch === '\\') { out += ch; escaped = true; continue }
+      if (ch === '"') { inString = false; out += ch; continue }
+      out += ch === '\n' ? '\\n' : ch === '\r' ? '' : ch === '\t' ? '\\t' : ch
+      continue
+    }
+    if (ch === '"') inString = true
+    out += ch
+  }
+  return out
+}
+
 export function parseDraft(raw: string): Draft | null {
   const json = raw.match(/\{[\s\S]*\}/)?.[0]
   if (!json) return null
   try {
-    const o = JSON.parse(json) as Record<string, unknown>
+    let o: Record<string, unknown>
+    try { o = JSON.parse(json) } catch { o = JSON.parse(escapeBreaksInStrings(json)) }
     const a = o.newAddress && typeof o.newAddress === 'object' ? (o.newAddress as Record<string, unknown>) : null
     return {
       reply: str(o.reply, 4000),
@@ -174,6 +198,15 @@ export function addressChangeProblems(order: OrderSnapshot | null, sender: strin
 /** Order facts for the drafter: what it may state, and nothing it may not. */
 export function orderFacts(order: OrderSnapshot | null): string {
   if (!order) return 'No order is matched to this customer.'
+  // Found by the number they quoted, but placed from another email. Could be
+  // theirs under a second address, could be someone quoting another person's
+  // order: the reply confirms nothing about it.
+  if (order.emailMismatch) {
+    return `The order number they quoted (${order.name}) exists, but it was placed with a different email address ` +
+      'from the one writing in. Do NOT ask for the order number again, and do NOT state any detail of that order ' +
+      '(items, address, status, dates) or the email it was placed with. Ask them to reply from the email address ' +
+      'they ordered with, or to confirm it, so the team can help. You may still explain the policy that applies.'
+  }
   const lines = [
     `Order ${order.name}, placed ${order.createdAt.slice(0, 10)}. Payment: ${order.financialStatus ?? 'unknown'}. Shipping status: ${order.fulfillmentStatus ?? 'unknown'}.`,
     `Items: ${order.items.map((i) => `${i.quantity} × ${i.title}${i.variant ? ` (${i.variant})` : ''}${

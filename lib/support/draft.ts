@@ -5,6 +5,7 @@ import { CHAT_MODEL } from '@/lib/mouse/agent'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
 import type { OrderSnapshot } from '@/lib/support/orders'
 import { addressChangeProblems, DRAFT_INSTRUCTIONS, orderFacts, parseDraft } from '@/lib/support/reply'
+import { trimQuoted } from '@/lib/support/core'
 
 /**
  * Write (or rewrite) the drafted reply on one case.
@@ -27,39 +28,49 @@ export async function draftForCase(caseId: string): Promise<void> {
   const order = (c.orderSnapshot as OrderSnapshot | null) ?? null
   const thread = c.messages
     .filter((m) => m.direction !== 'NOTE')
-    .map((m) => `${m.direction === 'INBOUND' ? 'CUSTOMER' : 'US'} (${m.createdAt.toISOString().slice(0, 10)}):\n${m.body.slice(0, 2500)}`)
+    .map((m) => `${m.direction === 'INBOUND' ? 'CUSTOMER' : 'US'} (${m.createdAt.toISOString().slice(0, 10)}):\n${trimQuoted(m.body).text.slice(0, 2500)}`)
     .join('\n---\n')
 
   const [stock, examples] = await Promise.all([stockFacts(order).catch(() => ''), recentReplies(caseId).catch(() => '')])
+  // Asked up to twice: a reply that cannot be read as a draft is asked for
+  // again once, then left as a note on the case, never silently dropped.
+  let d: ReturnType<typeof parseDraft> = null
   let raw = ''
-  try {
-    const startedAt = Date.now()
-    const res = await new Anthropic().messages.create({
-      model: CHAT_MODEL,
-      max_tokens: 1500,
-      system: DRAFT_INSTRUCTIONS,
-      output_config: { effort: 'low' },
-      messages: [{
-        role: 'user',
-        content:
-          `Today is ${new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', year: 'numeric', month: 'long', day: 'numeric' })}.\n` +
-          `Customer: ${c.customerName ?? 'name unknown'} <${c.customerEmail}>. Sorted as: ${c.category}.\n\n` +
-          `ORDER FACTS (from Shopify, checked by code):\n${orderFacts(order)}\n\n` +
-          (stock ? `STOCK FACTS for items not yet shipped (from our records):\n${stock}\n\n` : '') +
-          (examples ? `${examples}\n\n` : '') +
-          `<conversation>\n${thread.slice(-9000)}\n</conversation>\n\n` +
-          `Draft the reply to the customer's latest email.`,
-      }],
-    })
-    await recordUsage('support-draft', [usageOf(CHAT_MODEL, res.usage, startedAt)])
-    raw = res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('')
-  } catch (e) {
-    console.error('[support] draft failed', caseId, e)
+  for (let attempt = 0; attempt < 2 && !d; attempt++) {
+    try {
+      const startedAt = Date.now()
+      const res = await new Anthropic().messages.create({
+        model: CHAT_MODEL,
+        max_tokens: 1500,
+        system: DRAFT_INSTRUCTIONS,
+        output_config: { effort: 'low' },
+        messages: [{
+          role: 'user',
+          content:
+            `Today is ${new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', year: 'numeric', month: 'long', day: 'numeric' })}.\n` +
+            `Customer: ${c.customerName ?? 'name unknown'} <${c.customerEmail}>. Sorted as: ${c.category}.\n\n` +
+            `ORDER FACTS (from Shopify, checked by code):\n${orderFacts(order)}\n\n` +
+            (stock ? `STOCK FACTS for items not yet shipped (from our records):\n${stock}\n\n` : '') +
+            (examples ? `${examples}\n\n` : '') +
+            `<conversation>\n${thread.slice(-9000)}\n</conversation>\n\n` +
+            `Draft the reply to the customer's latest email.`,
+        }],
+      })
+      await recordUsage('support-draft', [usageOf(CHAT_MODEL, res.usage, startedAt)])
+      raw = res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('')
+    } catch (e) {
+      console.error('[support] draft failed', caseId, e)
+      raw = ''
+    }
+    d = parseDraft(raw)
+  }
+  if (!d) {
+    const body = "Mouse couldn't write a draft for this one. Tap \"Draft a reply\" to try again, or write it yourself."
+    const said = await db.supportMessage.findFirst({ where: { caseId, direction: 'NOTE', body }, select: { id: true } })
+    if (!said) await db.supportMessage.create({ data: { caseId, direction: 'NOTE', body } })
+    console.error('[support] draft unreadable', caseId, raw.slice(0, 300))
     return
   }
-
-  const d = parseDraft(raw)
-  if (!d) return
   // The checks are run and stored now so the card can show them, and run
   // again against a fresh read of the order at the moment someone taps.
   const address = d.newAddress
@@ -87,6 +98,7 @@ export async function draftForCase(caseId: string): Promise<void> {
  * give it only as an estimate.
  */
 export async function stockFacts(order: OrderSnapshot | null): Promise<string> {
+  if (order?.emailMismatch) return ''
   const open = (order?.items ?? []).filter((i) => (i.unfulfilled ?? 0) > 0 && i.variantId)
   if (!open.length) return ''
   const ids = open.map((i) => i.variantId!.split('/').pop()!)
