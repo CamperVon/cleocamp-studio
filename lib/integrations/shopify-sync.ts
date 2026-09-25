@@ -46,6 +46,18 @@ export async function syncShopify(db: PrismaClient, sinceISO: string): Promise<S
   let variantsUpdated = 0
   const variantsUnknown: string[] = []
 
+  // onHandQty must add up from the ledger (CLAUDE.md §3). Until 25 Sept 2026
+  // this sync overwrote it with Shopify's number and wrote no event, so every
+  // sale, fulfilment or edit made in Shopify opened a gap: 46 of 98 variants
+  // no longer summed, and each needed a backfilled starting balance. Now any
+  // change Shopify reports is written as a COUNTED event beside the new
+  // number, in the same transaction, measured against the ledger itself.
+  const ledger = new Map(
+    (await db.inventoryEvent.groupBy({
+      by: ['productVariantId'], where: { productVariantId: { not: null } }, _sum: { deltaQty: true },
+    })).map((g) => [g.productVariantId!, Number(g._sum.deltaQty ?? 0)]),
+  )
+
   for (const v of variants) {
     const existing = await db.productVariant.findFirst({
       where: { shopifyVariantId: v.id.split('/').pop() },
@@ -58,7 +70,7 @@ export async function syncShopify(db: PrismaClient, sinceISO: string): Promise<S
       variantsUnknown.push(`${v.product.title} / ${v.title}${why}`)
       continue
     }
-    await db.productVariant.update({
+    const update = db.productVariant.update({
       where: { id: existing.id },
       data: {
         onHandQty: v.inventoryQuantity === null ? null : String(v.inventoryQuantity),
@@ -67,6 +79,22 @@ export async function syncShopify(db: PrismaClient, sinceISO: string): Promise<S
         shopifyInventoryItemId: v.inventoryItem.id,
       },
     })
+    // Shopify not tracking a variant means unknown, not zero: no event.
+    const drift = v.inventoryQuantity === null ? 0 : v.inventoryQuantity - (ledger.get(existing.id) ?? 0)
+    if (drift !== 0) {
+      await db.$transaction([
+        db.inventoryEvent.create({
+          data: {
+            productVariantId: existing.id, type: 'COUNTED', source: 'SYSTEM',
+            countedQty: String(v.inventoryQuantity), deltaQty: String(drift),
+            note: "Shopify sync: Shopify's count, which moves with sales, fulfilments and edits made in Shopify.",
+          },
+        }),
+        update,
+      ])
+    } else {
+      await update
+    }
     variantsUpdated++
   }
 
