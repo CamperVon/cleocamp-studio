@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
+import { chooseDeliverTo } from '@/lib/po-deliver-to'
 import { laMidnight } from '@/lib/dates'
 import { poLineLabel } from '@/lib/po'
 import { asDocLanguage } from '@/lib/po-strings'
@@ -1900,6 +1901,19 @@ export const TOOLS: Record<string, Tool> = {
         where: { vendorId: i.vendorId },
         orderBy: { createdAt: 'desc' },
       })
+      // An order that replaces another is a corrected copy of it, so where it
+      // goes comes from that order, not from whatever was drafted last.
+      const replacesNumber = ((i.supersedes as string[] | undefined) ?? []).map(String)[0]
+      const [replaces, recentToVendor] = await Promise.all([
+        replacesNumber
+          ? db.purchaseOrder.findFirst({ where: { poNumber: replacesNumber, vendorId: i.vendorId }, select: { poNumber: true, deliverTo: true } })
+          : null,
+        db.purchaseOrder.findMany({
+          where: { vendorId: i.vendorId, status: { not: 'CANCELLED' } },
+          orderBy: { createdAt: 'desc' }, take: 5,
+          select: { poNumber: true, deliverTo: true },
+        }),
+      ])
       const inherited: string[] = []
       const take = <T,>(given: T | undefined | null, prior: T | null, label: string): T | null => {
         if (given !== undefined && given !== null) return given
@@ -1913,7 +1927,9 @@ export const TOOLS: Record<string, Tool> = {
       const vendorRow = await db.vendor.findUnique({ where: { id: i.vendorId as string }, select: { documentLanguage: true } })
       const language = take(i.language as string | undefined, vendorRow?.documentLanguage ?? null, 'document language') ?? 'en'
 
-      const deliverTo = take(i.deliverTo, previous?.deliverTo ?? null, 'delivery address')
+      const ship = chooseDeliverTo({ given: i.deliverTo as string | undefined, replaces, recent: recentToVendor })
+      const deliverTo = ship.value
+      if (ship.from) inherited.push(`delivery address "${ship.value}" (from ${ship.from})`)
       const paymentTerms = take(i.paymentTerms, previous?.paymentTerms ?? null, 'payment terms')
       const depositPercent = take(i.depositPercent, previous?.depositPercent ?? null, 'deposit percentage')
       const netDays = take(i.netDaysAfterDelivery, previous?.netDaysAfterDelivery ?? null, 'net terms')
@@ -2016,6 +2032,11 @@ export const TOOLS: Record<string, Tool> = {
           `Drafted as PO ${po.poNumber}. Not sent — open /po/${po.poNumber} to review and print. ` +
           (superseded.length ? `PO ${superseded.join(' and ')} cancelled, replaced by this one. ` : '') +
           (notFound.length ? `No PO ${notFound.join(' or ')} to cancel — check the number. ` : '') +
+          (po.deliverTo
+            ? `Delivers to: ${po.deliverTo}. `
+            : ship.conflict.length
+              ? `NO DELIVERY ADDRESS: recent ${po.vendor.name} orders went to ${ship.conflict.length} different places (${ship.conflict.join('; ')}), so none was carried over. Ask where this one goes and set it before it is sent. `
+              : '') +
           (inherited.length
             ? `Carried over from the last ${po.vendor.name} order: ${inherited.join(', ')}. Say if any of that has changed.`
             : (() => {
