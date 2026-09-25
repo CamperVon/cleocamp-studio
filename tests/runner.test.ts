@@ -172,3 +172,16 @@ test('the weekly review only suggests real open items, once each, with a reason'
   assert.deepEqual(parseSuggestions('nothing to close', open), [])
   assert.deepEqual(parseSuggestions('[]', open), [])
 })
+
+test('an answer written alongside a tool call reaches the person (the 25 Sept label count)', async () => {
+  let n = 0
+  const r = await runLoop({ ...base,
+    create: async () => n++ === 0
+      ? response([{ type: 'text', text: 'Main label: 4,010 in the studio. Cosmo x Cleo: 2,000.', citations: null }, toolUse('update_purchase_order')])
+      : response([{ type: 'text', text: 'Also retired the note asking Jane to confirm that number.', citations: null }], 'end_turn'),
+    execute: async () => ({ updated: true }),
+  })
+  assert.match(r.text, /4,010/)
+  assert.match(r.text, /Also retired/)
+  assert.ok(r.text.indexOf('4,010') < r.text.indexOf('Also retired'), 'kept in the order it was said')
+})

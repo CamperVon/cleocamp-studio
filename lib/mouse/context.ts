@@ -24,7 +24,12 @@ export async function buildCatalog(): Promise<string> {
         bomLines: { include: { component: true } },
       },
     }),
-    db.component.findMany({ orderBy: { name: 'asc' }, include: { vendor: true } }),
+    db.component.findMany({
+      // A retired record (merged, split, discontinued) is history, not stock.
+      where: { active: true },
+      orderBy: { name: 'asc' },
+      include: { vendor: true, locationStock: { include: { location: true, atVendor: true } } },
+    }),
     db.vendor.findMany({ orderBy: { name: 'asc' } }),
     db.location.findMany({ orderBy: { name: 'asc' } }),
     db.actionItem.findMany({ where: { resolved: false }, orderBy: { createdAt: 'asc' } }),
@@ -154,9 +159,21 @@ export async function buildCatalog(): Promise<string> {
 
   L.push('\n## Components')
   L.push('Fabric is bought per production run and shipped straight to the manufacturer.')
-  L.push('It is never stocked or counted, so it has no on-hand figure by design.')
+  L.push('It is never stocked or counted, so it has no on-hand figure by design. Every')
+  L.push('other on-hand figure below is the current count from the ledger: it beats any note.')
   for (const c of components) {
-    const stock = c.stockedInStudio ? `${c.onHandQty} in studio` : 'not stocked — bought per run'
+    // Only fabric goes uncounted. Trim and packaging are counted wherever
+    // they sit, studio or a vendor (CLAUDE.md §3), and a count exists whether
+    // or not stockedInStudio is set. Printing "not stocked" for anything that
+    // wasn't a studio stash hid real numbers: on 25 Sept 2026 Mouse told
+    // Brandon there were 2,100 Main labels and no Cosmo x Cleo labels, reading
+    // a 16 Sept note, while the records held 4,010 and 2,000.
+    const places = c.locationStock
+      .filter((s) => Number(s.qty) !== 0)
+      .map((s) => `${s.qty} at ${s.location?.name ?? s.atVendor?.name ?? 'unknown place'}`)
+    const stock = c.category === 'MATERIAL'
+      ? 'not stocked — bought per run'
+      : `${c.onHandQty} on hand${places.length ? ` (${places.join(', ')})` : ''}${c.stockedInStudio ? '' : ' · bought per run'}`
     L.push(`- ${c.name} [${c.id}] · ${c.category} · ${c.vendor?.name ?? 'no vendor'}${c.vendorSku ? ` · style ${c.vendorSku}` : ''} · ${money(c.unitCostCents)}/${c.unitOfMeasure} · lead time ${c.leadTimeDays === null ? 'UNKNOWN' : c.leadTimeDays + 'd'} · ${stock}${Number(c.incomingQty) > 0 ? `, ${c.incomingQty} incoming` : ''}`)
   }
 

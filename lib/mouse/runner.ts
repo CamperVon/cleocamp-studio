@@ -47,6 +47,13 @@ export async function runLoop(opts: {
   let escalated: string | null = null
   let spent = 0
   let text = ''
+  // What Mouse wrote alongside a tool call. On 25 Sept 2026 Brandon asked how
+  // many Main and Cosmo labels were on hand; Mouse looked both up, wrote the
+  // answer and, in the same step, retired a stale note. Only the words after
+  // the last tool call were kept, so the reply read "Also retired the note…"
+  // with no answer above it. Asked again, it answered from memory and was
+  // wrong. Everything said to the person is kept now, in order.
+  const said: string[] = []
   let stopReason: AgentUsage['stopReason'] = 'budget'
   let attemptedRequests = 0
   let providerError: string | null = null
@@ -111,11 +118,14 @@ export async function runLoop(opts: {
     }
 
     if (res.stop_reason !== 'tool_use') {
-      text = res.content.filter(b => b.type === 'text').map(b => b.text).join('\n')
+      const final = res.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim()
+      text = [...said, final].filter(Boolean).join('\n\n')
       stopReason = res.stop_reason === 'end_turn' || res.stop_reason === 'stop_sequence' ? 'complete' : 'budget'
       break
     }
 
+    const aside = res.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim()
+    if (aside) said.push(aside)
     messages.push({ role: 'assistant', content: res.content })
     const results: Anthropic.ToolResultBlockParam[] = []
     for (const u of res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')) {
@@ -148,6 +158,7 @@ export async function runLoop(opts: {
     const failures = calls.filter(c => c.status === 'failed').length
     const done = completedWrites(calls).length
     const status = `${reason} before finishing. ${done ? `${done} action${done === 1 ? '' : 's'} completed; the saved changes remain.` : 'No completed changes were recorded.'}${failures ? ` ${failures} action${failures === 1 ? '' : 's'} failed; I have kept the diagnostic details.` : ''} Please continue from here; completed actions should not be repeated.`
+    if (!text && said.length) text = said.join('\n\n')
     text = text ? `${text}\n\n${status}` : status
   }
   return { text, writes: completedWrites(calls), toolCalls: calls, model, escalated,
