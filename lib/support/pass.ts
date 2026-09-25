@@ -4,7 +4,7 @@ import { htmlToText } from '@/lib/html-to-text'
 import { sendEmail } from '@/lib/email'
 import { CHAT_MODEL } from '@/lib/mouse/agent'
 import {
-  CATEGORIES, CATEGORY_LABEL, customerAddress, finalUrgency, forwardedOrigin, isSupportMail, normalizeSubject, orderNumbersIn, trimQuoted, unansweredCount,
+  CATEGORIES, CATEGORY_LABEL, customerAddress, finalUrgency, forwardedOrigin, isSupportMail, normalizeSubject, orderNumbersIn, trimQuoted, unansweredCount, isJustThanks,
   parseVerdict, stripGroupFooter, type Verdict,
 } from '@/lib/support/core'
 import { findOrder, type OrderSnapshot } from '@/lib/support/orders'
@@ -235,7 +235,13 @@ export async function supportPass() {
         })
       : []
     const verdict = await classify(trimQuoted(body).text, subject, lookup.order, earlier)
-    const urgency = finalUrgency({
+    // A thank-you straight after our reply, asking nothing: filed closed, not
+    // pressing, no alert, no draft. See isJustThanks. The last message before
+    // this one must be a person's reply, not the auto-reply.
+    const lastBefore = thread[thread.length - 1]
+    const thanks = !!c && verdict.category !== 'SPAM' && lastBefore?.direction === 'OUTBOUND' &&
+      lastBefore.fromAddress !== 'Auto-reply' && isJustThanks(body)
+    const urgency = thanks ? 'DIGEST' : finalUrgency({
       verdict,
       text: `${subject ?? ''}\n${body}`,
       inboundCount: unansweredCount(thread),
@@ -258,7 +264,9 @@ export async function supportPass() {
           where: { id: c.id },
           // A new email reopens a conversation that had been closed or was
           // waiting on the customer — the ball is back with us.
-          data: { ...fields, status: verdict.category === 'SPAM' ? c.status : 'OPEN', resolvedAt: null },
+          data: thanks
+            ? { ...fields, category: c.category, status: 'RESOLVED', resolvedAt: c.resolvedAt ?? new Date() }
+            : { ...fields, status: verdict.category === 'SPAM' ? c.status : 'OPEN', resolvedAt: null },
         })
       : await db.supportCase.create({
           data: {
@@ -295,10 +303,14 @@ export async function supportPass() {
       alerted = true
     }
 
+    if (thanks) {
+      await db.supportMessage.create({ data: { caseId: c.id, direction: 'NOTE', body: 'Closed by Mouse: a thank-you after our reply, with nothing to answer. Reopen it if it needs something.' } })
+    }
+
     // Phase 2: a reply drafted for a person to read, edit and send. Best
     // effort — the case is already filed, and a failed draft just means the
     // card offers "Draft a reply" instead.
-    if (verdict.category !== 'SPAM') await draftForCase(c.id).catch((e) => console.error('[support] draft', e))
+    if (verdict.category !== 'SPAM' && !thanks) await draftForCase(c.id).catch((e) => console.error('[support] draft', e))
 
     // The one fixed note that goes without a tap — see autoAckText.
     if (!forwardedBy && isNew && verdict.category !== 'SPAM' && urgency !== 'NOW') {

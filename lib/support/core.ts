@@ -241,7 +241,7 @@ export function unansweredCount(messages: { direction: string; fromAddress: stri
  * The full text stays in the stored email; this is what is shown and read.
  * If cutting would leave almost nothing, the message is returned whole.
  */
-export function trimQuoted(text: string): { text: string; trimmed: boolean } {
+export function trimQuoted(text: string, minKept = 15): { text: string; trimmed: boolean } {
   const cuts = [
     /\n[ \t]*On [^\n]{3,200}?(?:\n[^\n]{0,200}?)?\bwrote:[ \t]*(?:\n|$)/i,
     /\n[ \t]*-{2,}\s*Original Message\s*-{2,}/i,
@@ -255,7 +255,7 @@ export function trimQuoted(text: string): { text: string; trimmed: boolean } {
     if (m && m.index < at) at = m.index
   }
   const kept = text.slice(0, at).trimEnd()
-  if (at === text.length || kept.replace(/\s/g, '').length < 15) return { text, trimmed: false }
+  if (at === text.length || kept.replace(/\s/g, '').length < minKept) return { text, trimmed: false }
   return { text: kept, trimmed: true }
 }
 
@@ -281,4 +281,27 @@ export function namesMatch(senderName: string | null | undefined, senderEmail: s
     const last = w[w.length - 1]
     return w.length > 1 && last.length >= 4 && local.includes(last)
   })
+}
+
+/**
+ * A customer saying thank you after the team answered, and nothing else: no
+ * question, no request. Brandon, 25 Sept 2026: "customers that send thx or
+ * whatnot are not pressing", and "if no further action needed, why not just
+ * send to closed (be conservative)". Every case in Pressing that evening was
+ * one: a thank-you on a where's-my-order about an order over two weeks old
+ * trips the pressing rule exactly as the original question did.
+ *
+ * Conservative by design. Any question mark, any word that asks for
+ * something or reports a problem, or anything long, and it is not a
+ * thank-you; the case stays open as before. Wrongly closing costs a
+ * customer an answer, wrongly leaving open costs a tap. Pure.
+ */
+export function isJustThanks(body: string): boolean {
+  const own = trimQuoted(body, 1).text
+    .replace(/\n--\s*\n[\s\S]*$/, '') // signature block
+    .trim()
+  if (!own || own.length > 500 || own.includes('?')) return false
+  if (!/\b(thanks?|thank you|thx|ty|appreciate[ds]?|grateful|no worries|no problem)\b/i.test(own)) return false
+  const asks = /\b(return(ing|ed)?|refund|exchange|cancel|change|swap|size|wrong|damaged|broken|stain|missing|defect|hole|haven'?t|hasn'?t|not (yet )?(received|arrived|here)|never (got|received|arrived|came)|let me know|please|can you|could you|would you|can i|could i|when will|still|address|(?<!look )(?<!looking )forward|attach|instead|however|but|unfortunately|problem with|issue|help)\b/i
+  return !asks.test(own)
 }

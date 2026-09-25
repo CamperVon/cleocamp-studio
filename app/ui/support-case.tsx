@@ -161,7 +161,7 @@ export function SupportCase({ c }: { c: CaseView }) {
               </button>
             ) : null}
             {c.status !== 'RESOLVED' ? (
-              <button type="button" disabled={pending} onClick={() => move('RESOLVED')} className="rounded bg-ink px-2.5 py-1.5 text-xs font-medium text-bg">
+              <button type="button" disabled={pending} onClick={() => move('RESOLVED')} className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-bg">
                 Close
               </button>
             ) : (

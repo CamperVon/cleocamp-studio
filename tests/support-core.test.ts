@@ -132,3 +132,25 @@ test('a customer writing from another address is matched by name, never by numbe
   // A short surname is too easy to hit by accident.
   assert.equal(namesMatch(null, 'bookworm@x.com', ['Amy Ko']), false)
 })
+
+test('a thank-you after our reply is told apart from a follow-up (25 Sept 2026, real replies)', async () => {
+  const { isJustThanks } = await import('../lib/support/core')
+  const thanks = [
+    "Thank you!\n\nOn Fri, Sep 25, 2026 at 7:10 PM Cleo Studio <support@send.cleocamp.com>\nwrote:\n\n> Hi MacKenzie,\n>\n> We've gone ahead and cancelled order #2555.\n> It's been refunded",
+    "Oh! No worries. That’s kind of what I thought, I was just thrown because Shopify said it was supposed to be delivered last week! Sorry if I was being pushy! Thank you!",
+    'Thank you so much for your response. I appreciate the update and I look forward to receiving my top sometime in October (they are fabulous tops!).\n\nBest,\nDeirdre',
+    'Hi, thanks for the update and for the discount code! I appreciate you letting me know.',
+    'Thank you for the update! No problem at all, just wanted to know the situation. :)\nRebecca',
+  ]
+  for (const t of thanks) assert.equal(isJustThanks(t), true, t.slice(0, 40))
+  const notThanks = [
+    'Does it have to be shipped back in the same box?',
+    "Hi there, I didn't realize the black colorway was a pre-order, thanks for letting me know. Will the same tracking number work?",
+    'Hello! I haven’t received shipping notification yet. Please let me know when this will ship. Thank you, Nikki',
+    "Hello! Thank you so much for your reply. I'd like to return both for a refund, and then I'll reorder the one I want in my size.",
+    "Hi! I'll forward it to you. It's a follow up from an IG chat. Thanks. Leah",
+    'Thanks, but the tee arrived with a stain on the front.',
+    'Hi, where is my order',
+  ]
+  for (const t of notThanks) assert.equal(isJustThanks(t), false, t.slice(0, 40))
+})
