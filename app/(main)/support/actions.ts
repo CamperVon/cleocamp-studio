@@ -23,14 +23,36 @@ export async function setCaseStatus(id: string, status: Status) {
   revalidatePath('/')
 }
 
-/** A note on the case for the team — what was done off-app, a phone call. Never sent. */
+/**
+ * A note on the case for the team — what was done off-app, a phone call, an
+ * instruction. Never sent to the customer. It is emailed to Jane, who runs
+ * support (Brandon, 25 Sept 2026: "CS notes to the team should be sent back
+ * to jane's email"), unless she wrote it. Replies go to whoever wrote it.
+ */
 export async function addCaseNote(id: string, text: string) {
   if (!text.trim()) return
   const who = await currentPersonId()
-  const person = who ? await db.person.findUnique({ where: { id: who }, select: { name: true } }) : null
+  const person = who ? await db.person.findUnique({ where: { id: who }, select: { name: true, email: true } }) : null
   await db.supportMessage.create({
     data: { caseId: id, direction: 'NOTE', fromAddress: person?.name ?? null, body: text.trim() },
   })
+  const jane = await db.person.findFirst({ where: { email: 'jane@cleocamp.com', active: true }, select: { email: true } })
+  if (jane?.email && person?.email?.toLowerCase() !== jane.email) {
+    const c = await db.supportCase.findUnique({ where: { id }, select: { customerName: true, customerEmail: true, subject: true, shopifyOrderName: true } })
+    if (c) {
+      const who = c.customerName ?? c.customerEmail
+      await sendEmail({
+        to: [jane.email],
+        ...(person?.email ? { replyTo: person.email } : {}),
+        subject: `Support note from ${person?.name ?? 'the team'}: ${who}${c.shopifyOrderName ? ` · ${c.shopifyOrderName}` : ''}`,
+        text:
+          `${person?.name ?? 'Someone on the team'} left a note on ${who}'s case${c.subject ? ` ("${c.subject}")` : ''}:\n\n` +
+          `${text.trim()}\n\n` +
+          `Open it: https://admin.cleocamp.com/support#${id}\n\n` +
+          `Nothing has been sent to the customer.\n— Studio Mouse`,
+      }).catch((e) => console.error('[support] note email failed', e))
+    }
+  }
   revalidatePath('/support')
 }
 

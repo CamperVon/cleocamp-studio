@@ -152,7 +152,7 @@ export function SupportCase({ c }: { c: CaseView }) {
             <input
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Add a note for the team (not sent)"
+              placeholder="Note for the team (emailed to Jane, never to the customer)"
               className="min-w-0 flex-1 rounded border border-line bg-bg px-2.5 py-1.5 text-sm"
             />
             <button
