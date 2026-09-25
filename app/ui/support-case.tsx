@@ -1,11 +1,11 @@
 'use client'
 import { useState, useTransition } from 'react'
-import { addCaseNote, applyAddressAndReply, redraftReply, removeUnshippedItem, sendReply, setCaseStatus } from '@/app/(main)/support/actions'
-import { mentionsDiscount, unfilled } from '@/lib/support/reply'
+import { addCaseNote, applyAddressAndReply, cancelOrderAndReply, redraftReply, removeUnshippedItem, sendReply, setCaseStatus } from '@/app/(main)/support/actions'
+import { claimsNotYetDone, mentionsDiscount, unfilled } from '@/lib/support/reply'
 
 type Msg = { id: string; direction: 'INBOUND' | 'OUTBOUND' | 'NOTE'; fromAddress: string | null; body: string; at: string }
 type Order = {
-  name: string; createdAt: string; financialStatus: string | null; fulfillmentStatus: string | null; total: string | null
+  name: string; createdAt: string; financialStatus: string | null; fulfillmentStatus: string | null; total: string | null; cancelledAt?: string | null
   items: Array<{ title: string; variant: string | null; quantity: number; id?: string; unfulfilled?: number }>
   tracking: Array<{ company: string | null; number: string | null; url: string | null }>
 } | null
@@ -199,6 +199,11 @@ function ReplyBox({ c }: { c: CaseView }) {
   const gaps = unfilled(text)
   const a = d.address
   const canMove = !!a && !a.problems.length
+  // The reply tells the customer the order is cancelled or refunded: the tap
+  // that sends it has to make that true first (cancelOrderAndReply).
+  const cancels = !!c.order && !c.order.cancelledAt &&
+    claimsNotYetDone(text, { name: '', financialStatus: '', cancelledAt: null }).length > 0
+  const primary = canMove || cancels
   const blocked = pending || !!gaps.length || !text.trim()
   const run = (fn: () => Promise<{ ok: true } | { ok: false; error: string }>) =>
     start(async () => {
@@ -213,6 +218,12 @@ function ReplyBox({ c }: { c: CaseView }) {
 
       {d.needs ? <p className="text-xs font-medium text-urgent">Needs you: {d.needs}</p> : null}
       {mentionsDiscount(text) ? <p className="text-xs text-muted">Includes the CLEOFRIEND code (10% off).</p> : null}
+      {cancels ? (
+        <p className="text-xs text-muted">
+          This reply says {c.order?.name} is cancelled and refunded. One tap cancels it in Shopify, refunds the full amount to the
+          original payment and restocks it, then sends. Checked first: from the email on the order, and nothing has shipped.
+        </p>
+      ) : null}
 
       {a ? (
         <div className="grid grid-cols-2 gap-2 text-xs">
@@ -250,12 +261,21 @@ function ReplyBox({ c }: { c: CaseView }) {
             {pending ? 'Working…' : 'Update address & send'}
           </button>
         ) : null}
+        {cancels ? (
+          <button
+            type="button" disabled={blocked}
+            onClick={() => run(() => cancelOrderAndReply(c.id, text))}
+            className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-bg disabled:opacity-40"
+          >
+            {pending ? 'Cancelling…' : 'Cancel order, refund & send'}
+          </button>
+        ) : null}
         <button
           type="button" disabled={blocked}
           onClick={() => run(() => sendReply(c.id, text))}
-          className={`rounded px-2.5 py-1.5 text-xs font-medium disabled:opacity-40 ${canMove ? 'border border-line' : 'bg-accent text-bg'}`}
+          className={`rounded px-2.5 py-1.5 text-xs font-medium disabled:opacity-40 ${primary ? 'border border-line' : 'bg-accent text-bg'}`}
         >
-          {canMove ? 'Send reply only' : pending ? 'Sending…' : 'Send reply'}
+          {primary ? 'Send reply only' : pending ? 'Sending…' : 'Send reply'}
         </button>
         <button
           type="button" disabled={pending}

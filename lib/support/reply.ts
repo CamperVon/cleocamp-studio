@@ -43,6 +43,10 @@ CANCELLING PART OF AN ORDER
   original payment, with no restocking fee (it never left). A person removes it
   and sends the refund before your reply goes, so write it as done.
 - An item that HAS shipped cannot be cancelled — it is a return, as above.
+- A whole order that has NOT shipped, when the customer asks to cancel it: the
+  tap that sends your reply cancels it in Shopify and refunds it in full first,
+  so write it as done ("We've cancelled order #… and refunded it in full").
+  Send is refused if Shopify does not show it cancelled and refunded.
 
 LATE ORDERS AND UNHAPPY CUSTOMERS
 - Apologise simply and say what is being done.
@@ -223,4 +227,30 @@ export function shapeOfName(name: string | null | undefined): string | null {
 export function isMachineSender(email: string): boolean {
   return /^(no-?reply|do-?not-?reply|mailer-daemon|postmaster|bounces?|notifications?|alerts?|news(letter)?|marketing|info|support|hello|team)[+@._-]/i.test(email) ||
     /@(.*\.)?(shopify(email)?\.com|mailchimp|sendgrid|amazonses\.com|google\.com|facebookmail\.com|intuit\.com)/i.test(email)
+}
+
+/**
+ * What a reply says has been done to the order that Shopify does not show.
+ *
+ * 25 Sept 2026: a draft to MacKenzie read "We've gone ahead and cancelled
+ * order #2555 … It's been refunded in full." The policy tells the drafter to
+ * write a cancellation as done, on the understanding that a person does it in
+ * Shopify first. Nothing checked. Brandon, about to tap Send: "if it hit fire
+ * will shopify then cancel and refund. if so we are good." It would not have.
+ * So Send checks the order as it is at that moment, and refuses a reply that
+ * claims a cancellation or refund the order does not show.
+ */
+export function claimsNotYetDone(reply: string, order: Pick<OrderSnapshot, 'name' | 'financialStatus' | 'cancelledAt'> | null): string[] {
+  const text = reply.replace(/\s+/g, ' ')
+  const saysCancelled = /\b(?:we(?:'ve| have)|has been|have been|it(?:'s| is)|is now|was)\s+(?:gone ahead and\s+|now\s+|already\s+)?cancel+ed\b/i.test(text) ||
+    /\bcancel+ed (?:your |the )?order\b/i.test(text)
+  const saysRefunded = /\b(?:we(?:'ve| have)|has been|have been|it(?:'s| is)|is now|was)\s+(?:gone ahead and\s+|now\s+|already\s+)?(?:fully\s+)?refunded\b/i.test(text) ||
+    /\brefunded (?:in full|you|your)\b/i.test(text)
+  if (!saysCancelled && !saysRefunded) return []
+  const name = order?.name ?? 'the order'
+  const financial = (order?.financialStatus ?? '').toUpperCase()
+  const problems: string[] = []
+  if (saysCancelled && !order?.cancelledAt) problems.push(`The reply says ${name} is cancelled, but Shopify has not cancelled it.`)
+  if (saysRefunded && !/REFUNDED|VOIDED/.test(financial)) problems.push(`The reply says ${name} is refunded, but Shopify shows it as ${financial.toLowerCase().replace(/_/g, ' ') || 'not refunded'}.`)
+  return problems
 }

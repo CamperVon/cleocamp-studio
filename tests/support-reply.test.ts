@@ -109,3 +109,13 @@ test('the auto-reply is the approved text, with a first name only when it is pla
   assert.equal(isMachineSender('store+79155396861@t.shopifyemail.com'), true)
   assert.equal(isMachineSender('oconnell.kay@gmail.com'), false)
 })
+
+test('a reply claiming a cancellation Shopify does not show is caught (MacKenzie, #2555)', async () => {
+  const { claimsNotYetDone } = await import('../lib/support/reply')
+  const draft = "Hi MacKenzie,\n\nWe've gone ahead and cancelled order #2555 since it hasn't shipped yet. It's been refunded in full to your original payment method, no restocking fee.\n\nKindly,\nCleo Studio"
+  const open = { name: '#2555', financialStatus: 'PAID', cancelledAt: null }
+  assert.equal(claimsNotYetDone(draft, open).length, 2)
+  assert.deepEqual(claimsNotYetDone(draft, { name: '#2555', financialStatus: 'REFUNDED', cancelledAt: '2026-09-25T21:00:00Z' }), [])
+  assert.deepEqual(claimsNotYetDone("Hi Tracy,\n\nWe've updated order #2585 to ship to your new address.\n\nKindly,\nCleo Studio", open), [], 'no claim, no check')
+  assert.deepEqual(claimsNotYetDone('Once it arrives we will process your refund.', open), [], 'a future refund is not a claim')
+})

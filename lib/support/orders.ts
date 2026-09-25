@@ -12,6 +12,8 @@ export type OrderSnapshot = {
   createdAt: string
   financialStatus: string | null
   fulfillmentStatus: string | null
+  /** When Shopify cancelled it, if it has. Absent on snapshots from before 25 Sept 2026. */
+  cancelledAt?: string | null
   total: string | null
   email: string | null
   /** id/unfulfilled/variantId are absent on snapshots from before 24 Sept 2026. */
@@ -30,6 +32,7 @@ type Node = {
   id: string
   name: string
   createdAt: string
+  cancelledAt?: string | null
   email: string | null
   displayFinancialStatus: string | null
   displayFulfillmentStatus: string | null
@@ -40,7 +43,7 @@ type Node = {
 }
 
 const ORDER_FIELDS = `
-  id name createdAt email displayFinancialStatus displayFulfillmentStatus
+  id name createdAt cancelledAt email displayFinancialStatus displayFulfillmentStatus
   totalPriceSet { shopMoney { amount currencyCode } }
   lineItems(first: 20) { nodes { id title variantTitle quantity unfulfilledQuantity variant { id } } }
   fulfillments(first: 5) { trackingInfo(first: 3) { company number url } }
@@ -54,6 +57,7 @@ function snapshot(n: Node): OrderSnapshot {
     createdAt: n.createdAt,
     financialStatus: n.displayFinancialStatus,
     fulfillmentStatus: n.displayFulfillmentStatus,
+    cancelledAt: n.cancelledAt ?? null,
     total: n.totalPriceSet ? `${n.totalPriceSet.shopMoney.amount} ${n.totalPriceSet.shopMoney.currencyCode}` : null,
     email: n.email,
     items: n.lineItems.nodes.map((l) => ({
@@ -194,4 +198,35 @@ export function matchCalculatedLine<T extends { id: string; editableQuantity: nu
   if (!variantId) return null
   const byVariant = lines.filter((l) => l.variant?.id === variantId && l.editableQuantity > 0)
   return byVariant.length === 1 ? byVariant[0] : null
+}
+
+/**
+ * Cancel the whole order in Shopify, refund it to the original payment and
+ * restock it. For a customer who asks to cancel before anything has shipped.
+ *
+ * 25 Sept 2026: a draft to MacKenzie said order #2555 had been cancelled and
+ * refunded, and Send only sent the email. Brandon: "mouse should do this on
+ * its own." So the tap that sends the reply does the cancellation first. It
+ * moves money, which is why it only ever runs on a person's tap in the app
+ * (CLAUDE.md §4), never from an email and never by a model.
+ *
+ * Shopify cancels in the background. The order is read again until it shows
+ * as cancelled, so the reply only goes once it is true. Needs write_orders.
+ */
+export async function cancelAndRefund(orderId: string, staffNote: string): Promise<
+  { ok: true; order: OrderSnapshot } | { ok: false; error: string }
+> {
+  const r = await shopifyGraphQL<{ orderCancel: { job: { id: string; done: boolean } | null; orderCancelUserErrors: Array<{ message: string }> } }>(
+    `mutation($orderId: ID!, $note: String) { orderCancel(orderId: $orderId, reason: CUSTOMER, refundMethod: { originalPaymentMethodsRefund: true }, restock: true, notifyCustomer: false, staffNote: $note) { job { id done } orderCancelUserErrors { field message code } } }`,
+    { orderId, note: staffNote.slice(0, 250) },
+  )
+  if (r.orderCancel.orderCancelUserErrors.length) {
+    return { ok: false, error: r.orderCancel.orderCancelUserErrors.map((e) => e.message).join('; ') }
+  }
+  for (let i = 0; i < 10; i++) {
+    const now = await freshOrder(orderId)
+    if (now?.cancelledAt && /REFUNDED|VOIDED/i.test(now.financialStatus ?? '')) return { ok: true, order: now }
+    await new Promise((res) => setTimeout(res, 1500))
+  }
+  return { ok: false, error: 'Shopify accepted the cancellation but had not shown it cancelled and refunded after 15 seconds. Check the order in Shopify before sending anything.' }
 }

@@ -5,8 +5,9 @@ import { currentPersonId } from '@/lib/session'
 import { Prisma } from '@/generated/prisma/client'
 import { sendEmail } from '@/lib/email'
 import { draftForCase } from '@/lib/support/draft'
-import { freshOrder, removeUnshippedUnits, setShippingAddress } from '@/lib/support/orders'
-import { addressChangeProblems, SUPPORT_FROM, SUPPORT_REPLY_TO, unfilled, type DraftAddress } from '@/lib/support/reply'
+import { cancelAndRefund, freshOrder, removeUnshippedUnits, setShippingAddress } from '@/lib/support/orders'
+import { addressChangeProblems, claimsNotYetDone, SUPPORT_FROM, SUPPORT_REPLY_TO, unfilled, type DraftAddress } from '@/lib/support/reply'
+import type { OrderSnapshot } from '@/lib/support/orders'
 
 const STATUSES = ['OPEN', 'WAITING_ON_CUSTOMER', 'WAITING_ON_RETURN', 'RESOLVED'] as const
 type Status = (typeof STATUSES)[number]
@@ -63,6 +64,22 @@ export async function sendReply(id: string, text: string): Promise<Result> {
     include: { messages: { where: { direction: 'INBOUND' }, orderBy: { createdAt: 'desc' }, take: 1 } },
   })
   if (!c) return { ok: false, error: 'Case not found.' }
+
+  // A reply that tells the customer their order is cancelled or refunded must
+  // be true when it lands. Sending does not cancel or refund anything, so the
+  // order is read fresh from Shopify now and the send is refused if it does
+  // not show what the reply claims. See claimsNotYetDone.
+  if (claimsNotYetDone(body, { name: 'the order', financialStatus: 'UNKNOWN', cancelledAt: null }).length) {
+    const snap = (c.orderSnapshot as OrderSnapshot | null) ?? null
+    const now = snap?.id ? await freshOrder(snap.id).catch(() => null) : null
+    if (!now) {
+      return { ok: false, error: 'This reply says the order is cancelled or refunded, and Shopify could not be checked. Confirm it in Shopify, then send.' }
+    }
+    const problems = claimsNotYetDone(body, now)
+    if (problems.length) {
+      return { ok: false, error: `${problems.join(' ')} Cancel and refund it in Shopify first, then tap Send again. Nothing was sent.` }
+    }
+  }
 
   // Thread onto the customer's own last message when we know its id.
   const last = c.messages[0]?.inboundEmailId
@@ -144,6 +161,58 @@ export async function applyAddressAndReply(id: string, text: string): Promise<Re
       body: `Ship-to on ${c.shopifyOrderName} changed in Shopify.\nWas: ${line(fresh?.shipTo)}\nNow: ${line(to)}`,
     },
   })
+  return sendReply(id, text)
+}
+
+/**
+ * Cancel the order in Shopify with a full refund and restock, then send the
+ * reply. The tap is the approval (money always needs one, CLAUDE.md §4).
+ * Same guard as an address change, on a fresh read: the case must come from
+ * the email the order was placed with, and nothing on it may have shipped.
+ * If Shopify refuses, or has not finished, nothing is sent.
+ */
+export async function cancelOrderAndReply(id: string, text: string): Promise<Result> {
+  const who = await approver()
+  if (!who) return { ok: false, error: 'Sign in again — only the team can do this.' }
+  const c = await db.supportCase.findUnique({ where: { id } })
+  if (!c?.shopifyOrderId) return { ok: false, error: 'No order on this case.' }
+  if (unfilled(text).length) return { ok: false, error: 'Fill in the bracketed gaps in the reply first.' }
+
+  let fresh
+  try {
+    fresh = await freshOrder(c.shopifyOrderId)
+  } catch (e) {
+    return { ok: false, error: `Could not read the order from Shopify: ${e instanceof Error ? e.message.slice(0, 160) : String(e)}` }
+  }
+  if (!fresh) return { ok: false, error: 'Shopify has no such order.' }
+  if (!fresh.email || fresh.email.toLowerCase() !== c.customerEmail.toLowerCase()) {
+    return { ok: false, error: `This case is not from the email on the order${fresh.email ? ` (${fresh.email})` : ''}. If you are sure, cancel it in Shopify.` }
+  }
+  if (!fresh.cancelledAt) {
+    if (fresh.items.some((i) => (i.unfulfilled ?? 0) < i.quantity)) {
+      return { ok: false, error: 'Part of this order has shipped, so it cannot be cancelled whole. Remove the unshipped item instead, or handle it in Shopify.' }
+    }
+    let done
+    try {
+      done = await cancelAndRefund(c.shopifyOrderId, `Cancelled at the customer's request (support case), by ${who.name} in the Studio app.`)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return {
+        ok: false,
+        error: /access|scope|denied|permission/i.test(msg)
+          ? 'Shopify would not let the app cancel orders. It needs the "write orders" permission. Nothing was cancelled or sent.'
+          : `Shopify refused the cancellation: ${msg.slice(0, 160)}. Nothing was sent.`,
+      }
+    }
+    if (!done.ok) return { ok: false, error: `${done.error} Nothing was sent.` }
+    await db.supportMessage.create({
+      data: {
+        caseId: id, direction: 'NOTE', fromAddress: who.name,
+        body: `${c.shopifyOrderName} cancelled in Shopify: refunded in full to the original payment, items restocked. Shopify now shows it ${String(done.order.financialStatus ?? '').toLowerCase().replace(/_/g, ' ')}.`,
+      },
+    })
+    await db.supportCase.update({ where: { id }, data: { orderSnapshot: done.order as unknown as Prisma.InputJsonValue } })
+  }
   return sendReply(id, text)
 }
 
