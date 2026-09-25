@@ -117,7 +117,11 @@ data. That must not happen again.
   a customer, and nothing changes in Shopify, without a person tapping it in
   the app (Brandon, Cleo or Jane; replies sign "Kindly, Cleo Studio") — never
   approved by replying to an email, which anyone can fake. Money (discount
-  codes, refunds, exchanges) always needs that tap. **One exception, approved
+  codes, refunds, exchanges) always needs that tap, and since 25 Sept 2026 the
+  tap does what the reply says: "Cancel order, refund & send" cancels an
+  unshipped order in Shopify with a full refund before the reply goes, and
+  Send refuses a reply claiming a cancellation or refund Shopify does not
+  show. **One exception, approved
   by Brandon 24 Sept 2026:** a fixed "your email arrived" note (`autoAckText`
   in `lib/support/reply.ts`), once per customer ever, never to spam, fires,
   forwards or machine addresses. It is fixed text — never let a model write
