@@ -14,6 +14,11 @@ import { useEffect, useRef, useState } from 'react'
  * The PDF is fetched when the page opens, not on tap: iOS only allows the
  * share sheet straight after a tap, and waiting a few seconds for the PDF to
  * render in between loses that permission.
+ *
+ * Phones only. Desktop Chrome and Safari can share files too, so testing for
+ * that alone swapped the Mac's download for a share menu — Brandon, 25 Sept
+ * 2026: "trying to download a pdf from desktop is a mess, i can't download it
+ * from any browser". A touch screen is what marks the phone here.
  */
 export function PdfButton({ poNumber }: { poNumber: string }) {
   const file = useRef<File | null>(null)
@@ -22,6 +27,7 @@ export function PdfButton({ poNumber }: { poNumber: string }) {
 
   useEffect(() => {
     if (typeof navigator === 'undefined' || !navigator.canShare) return
+    if (!window.matchMedia('(pointer: coarse)').matches) return
     let cancelled = false
     fetch(`/po/${poNumber}/pdf?inline=1`)
       .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
