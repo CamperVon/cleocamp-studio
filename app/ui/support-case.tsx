@@ -1,6 +1,6 @@
 'use client'
 import { useState, useTransition } from 'react'
-import { addCaseNote, applyAddressAndReply, cancelOrderAndReply, redraftReply, removeUnshippedItem, sendReply, setCaseStatus } from '@/app/(main)/support/actions'
+import { addCaseNote, applyAddressAndReply, cancelOrderAndReply, flagForReview, markReviewed, redraftReply, removeUnshippedItem, sendReply, setCaseStatus } from '@/app/(main)/support/actions'
 import { claimsNotYetDone, mentionsDiscount, partlyShipped, refundIssued, unfilled, unshippedLines } from '@/lib/support/reply'
 import { trimQuoted } from '@/lib/support/core'
 
@@ -22,6 +22,8 @@ export type CaseView = {
   summary: string | null
   subject: string | null
   orderName: string | null
+  /** Open flag for Brandon & Claude, if any. */
+  review: { by: string | null; reason: string; at: string } | null
   order: Order
   age: string
   messages: Msg[]
@@ -76,6 +78,7 @@ export function SupportCase({ c }: { c: CaseView }) {
             <p className="text-sm font-medium">
               {c.who}
               <span className="font-normal text-muted"> · {c.category}{c.orderName ? ` · ${c.orderName}` : ''}{c.draft?.reply && c.status !== 'RESOLVED' ? ' · reply drafted' : ''}</span>
+              {c.review ? <span className="ml-1.5 whitespace-nowrap rounded bg-urgent/15 px-1.5 py-0.5 text-[11px] font-medium text-urgent">⚑ For Brandon &amp; Claude</span> : null}
               {toJane ? <span className="ml-1.5 whitespace-nowrap rounded bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent">★ Note to Jane</span> : null}
             </p>
             <p className="text-xs leading-snug text-muted">{c.summary ?? c.subject ?? '(no summary)'}</p>
@@ -143,6 +146,7 @@ export function SupportCase({ c }: { c: CaseView }) {
               draft arriving (or a redraft) must start a fresh box. Without
               this, a case opened before its draft showed an empty box after
               "Draft a reply" — #2362, 25 Sept 2026, looked like no draft. */}
+          <ReviewFlag c={c} />
           {c.status !== 'RESOLVED' ? <ReplyBox key={c.draft?.at ?? 'none'} c={c} /> : null}
 
           <div className="flex flex-wrap gap-2">
@@ -384,5 +388,77 @@ function MessageBody({ body, quoted }: { body: string; quoted: boolean }) {
         </button>
       ) : null}
     </>
+  )
+}
+
+/**
+ * "Mouse got this wrong": sends the case to Brandon and Claude to fix Mouse
+ * itself, not just this reply. Asks for a line on what was wrong; keeps
+ * Mouse's draft as it stood. See flagForReview.
+ */
+function ReviewFlag({ c }: { c: CaseView }) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [msg, setMsg] = useState<string | null>(null)
+  const [pending, start] = useTransition()
+
+  if (c.review) {
+    return (
+      <div className="flex flex-col gap-1.5 rounded border border-urgent/40 bg-urgent/5 px-3 py-2 text-xs">
+        <p><span className="font-medium text-urgent">⚑ Flagged for Brandon &amp; Claude</span> by {c.review.by ?? 'someone'}: {c.review.reason}</p>
+        {open ? (
+          <div className="flex flex-col gap-1.5">
+            <input
+              value={text} onChange={(e) => setText(e.target.value)}
+              placeholder="What was changed (optional)"
+              className="w-full rounded border border-line bg-bg px-2 py-1.5 text-sm"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button" disabled={pending}
+                onClick={() => start(async () => { const r = await markReviewed(c.id, text); if (!r.ok) setMsg(r.error) })}
+                className="rounded bg-ink px-2.5 py-1.5 font-medium text-bg"
+              >
+                {pending ? 'Saving…' : 'Mark reviewed'}
+              </button>
+              <button type="button" onClick={() => setOpen(false)} className="underline text-muted">Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setOpen(true)} className="self-start underline text-muted">Reviewed?</button>
+        )}
+        {msg ? <p className="text-urgent">{msg}</p> : null}
+      </div>
+    )
+  }
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="self-start text-xs text-muted underline">
+        ⚑ Mouse got this wrong — flag for Brandon &amp; Claude
+      </button>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-1.5 rounded border border-line bg-bg px-3 py-2 text-xs">
+      <p className="text-muted">
+        For when Mouse needs fixing, not just this reply. Say what it got wrong. Brandon gets an email; the customer sees nothing.
+      </p>
+      <textarea
+        value={text} onChange={(e) => setText(e.target.value)} rows={3}
+        placeholder="e.g. It asked for her order number when she gave it"
+        className="w-full rounded border border-line bg-bg px-2.5 py-2 text-sm"
+      />
+      <div className="flex gap-2">
+        <button
+          type="button" disabled={pending || !text.trim()}
+          onClick={() => start(async () => { const r = await flagForReview(c.id, text); setMsg(r.ok ? null : r.error); if (r.ok) setOpen(false) })}
+          className="rounded bg-ink px-2.5 py-1.5 font-medium text-bg disabled:opacity-40"
+        >
+          {pending ? 'Flagging…' : 'Flag it'}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className="text-muted underline">Cancel</button>
+      </div>
+      {msg ? <p className="text-urgent">{msg}</p> : null}
+    </div>
   )
 }

@@ -1286,6 +1286,18 @@ model SupportCase {
   alertedAt       DateTime?
   lastMessageAt   DateTime        @default(now())
   resolvedAt      DateTime?
+  /// Flagged by a person for Brandon and Claude: Mouse got something wrong
+  /// here that needs fixing in the code or the policy, not just in this
+  /// reply (Brandon, 25 Sept 2026). The reason is theirs; the draft is
+  /// Mouse's as it stood when they flagged it. A Claude Code session starts
+  /// with the open ones (reviewRequestedAt set, reviewedAt null).
+  reviewRequestedAt DateTime?
+  reviewRequestedBy String?
+  reviewReason      String?
+  reviewDraft       String?
+  reviewedAt        DateTime?
+  /// What was changed, in a line, when marked reviewed.
+  reviewOutcome     String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   messages        SupportMessage[]

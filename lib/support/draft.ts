@@ -127,10 +127,16 @@ export async function stockFacts(order: OrderSnapshot | null): Promise<string> {
 }
 
 /**
- * When more of a variant is expected: open production runs for its product,
- * and open POs with a line for that exact variant. A fabric or label PO
- * tagged to the same product (RichLine, L&L) says nothing about when a tee
- * reaches a customer, so it is not counted.
+ * When more of a variant is expected: open production runs and open POs with
+ * a line for that exact variant. A fabric or label PO tagged to the same
+ * product (RichLine, L&L) says nothing about when a tee reaches a customer,
+ * so it is not counted.
+ *
+ * Runs used to count for every variant of their product. On 25 Sept 2026 the
+ * Cleo Tee run at the dye house, which has no colours recorded, lent its
+ * 7 October date to Ruby Red, and JJ was told red was coming then. PO 2360,
+ * the batch actually due that day, has no red on it. A run with no lines says
+ * nothing about which colours it carries, so it now dates nothing.
  */
 async function restockDates(variants: Array<{ id: string; productId: string }>): Promise<(v: { id: string; productId: string }) => string[]> {
   const productIds = [...new Set(variants.map((v) => v.productId))]
@@ -140,13 +146,13 @@ async function restockDates(variants: Array<{ id: string; productId: string }>):
       select: { poNumber: true, expectedAt: true, lines: { select: { productVariantId: true } } },
     }),
     db.productionRun.findMany({
-      where: { productId: { in: productIds }, status: { notIn: ['RECEIVED', 'CANCELLED'] } },
-      select: { productId: true, expectedReadyAt: true, dateConfirmed: true, status: true },
+      where: { productId: { in: productIds }, status: { notIn: ['RECEIVED', 'CANCELLED'] }, lines: { some: { productVariantId: { in: variants.map((v) => v.id) } } } },
+      select: { productId: true, expectedReadyAt: true, dateConfirmed: true, status: true, lines: { select: { productVariantId: true } } },
     }),
   ])
   const day = (d: Date) => d.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'long', day: 'numeric' })
   return (v) => [
-    ...runs.filter((r) => r.productId === v.productId && r.expectedReadyAt)
+    ...runs.filter((r) => r.expectedReadyAt && r.lines.some((l) => l.productVariantId === v.id))
       .map((r) => `a production run ${r.status.toLowerCase().replace(/_/g, ' ')}, ready ${day(r.expectedReadyAt!)}${r.dateConfirmed ? '' : ' (estimate, not confirmed)'}`),
     ...pos.filter((p) => p.expectedAt && p.lines.some((l) => l.productVariantId === v.id))
       .map((p) => `PO ${p.poNumber} expected ${day(p.expectedAt!)} (estimate)`),

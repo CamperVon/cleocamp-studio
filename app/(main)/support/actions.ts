@@ -354,3 +354,60 @@ export async function removeUnshippedItem(id: string, lineItemId: string): Promi
   revalidatePath('/support')
   return { ok: true, note }
 }
+
+/**
+ * "Mouse got this wrong": a case flagged for Brandon and Claude, when the fix
+ * belongs in Mouse's code or policy rather than in this one reply. Brandon,
+ * 25 Sept 2026: "a button that jane can hit on CS for BC to review (meaning
+ * it needs you and me reprogramming mouse)."
+ *
+ * Keeps the person's reason and Mouse's draft as it stood, since the draft
+ * is usually what went wrong and is overwritten by the next redraft. Emails
+ * Brandon unless he flagged it himself. Nothing reaches the customer.
+ */
+export async function flagForReview(id: string, reason: string): Promise<Result> {
+  const who = await approver()
+  if (!who) return { ok: false, error: 'Sign in again — only the team can do this.' }
+  const why = reason.trim()
+  if (!why) return { ok: false, error: 'Say in a line what Mouse got wrong.' }
+  const c = await db.supportCase.findUnique({ where: { id } })
+  if (!c) return { ok: false, error: 'Case not found.' }
+  await db.$transaction([
+    db.supportCase.update({
+      where: { id },
+      data: {
+        reviewRequestedAt: new Date(), reviewRequestedBy: who.name, reviewReason: why.slice(0, 2000),
+        reviewDraft: c.draftReply, reviewedAt: null, reviewOutcome: null,
+      },
+    }),
+    db.supportMessage.create({ data: { caseId: id, direction: 'NOTE', fromAddress: who.name, body: `Flagged for Brandon & Claude: ${why}` } }),
+  ])
+  const brandon = await db.person.findFirst({ where: { email: 'brandon@cleocamp.com', active: true }, select: { id: true, email: true } })
+  if (brandon?.email && brandon.id !== who.id) {
+    const person = await db.person.findUnique({ where: { id: who.id }, select: { email: true } })
+    const customer = c.customerName ?? c.customerEmail
+    await sendEmail({
+      to: [brandon.email],
+      ...(person?.email ? { replyTo: person.email } : {}),
+      subject: `Mouse review: ${customer}${c.shopifyOrderName ? ` · ${c.shopifyOrderName}` : ''}`,
+      text:
+        `${who.name} flagged ${customer}'s case for you and Claude:\n\n${why}\n\n` +
+        (c.draftReply ? `Mouse's draft at the time:\n\n${c.draftReply}\n\n` : 'There was no draft at the time.\n\n') +
+        `Open it: https://admin.cleocamp.com/support#${id}\n\n— Studio Mouse`,
+    }).catch((e) => console.error('[support] review email failed', e))
+  }
+  revalidatePath('/support')
+  return { ok: true }
+}
+
+/** Brandon or Claude has dealt with a flag. The outcome line says what changed. */
+export async function markReviewed(id: string, outcome: string): Promise<Result> {
+  const who = await approver()
+  if (!who) return { ok: false, error: 'Sign in again — only the team can do this.' }
+  await db.$transaction([
+    db.supportCase.update({ where: { id }, data: { reviewedAt: new Date(), reviewOutcome: outcome.trim().slice(0, 2000) || null } }),
+    db.supportMessage.create({ data: { caseId: id, direction: 'NOTE', fromAddress: who.name, body: `Review done${outcome.trim() ? `: ${outcome.trim()}` : '.'}` } }),
+  ])
+  revalidatePath('/support')
+  return { ok: true }
+}

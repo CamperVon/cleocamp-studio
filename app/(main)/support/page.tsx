@@ -21,6 +21,8 @@ async function loadCases() {
       OR: [
         { status: { not: 'RESOLVED' } },
         { resolvedAt: { gte: new Date(Date.now() - 14 * 864e5) }, category: { not: 'SPAM' } },
+        // A flag stays in view until reviewed, however old the case.
+        { reviewRequestedAt: { not: null }, reviewedAt: null },
       ],
     },
     orderBy: { lastMessageAt: 'desc' },
@@ -46,6 +48,7 @@ export default async function Support() {
     summary: c.summary,
     subject: c.subject,
     orderName: c.shopifyOrderName,
+    review: c.reviewRequestedAt && !c.reviewedAt ? { by: c.reviewRequestedBy, reason: c.reviewReason ?? '', at: c.reviewRequestedAt.toISOString() } : null,
     order: (c.orderSnapshot as CaseView['order']) ?? null,
     age: age(c.lastMessageAt),
     messages: c.messages.map((m) => ({ id: m.id, direction: m.direction, fromAddress: m.fromAddress, body: m.body, at: m.createdAt.toISOString(), emailedTo: m.emailedTo })),
@@ -55,6 +58,7 @@ export default async function Support() {
   })
 
   const open = cases.filter((c) => c.status === 'OPEN')
+  const flagged = cases.filter((c) => c.reviewRequestedAt && !c.reviewedAt)
   const groups: Array<{ title: string; items: typeof cases; empty?: string }> = [
     // Pressing is only what also sends the alert email (lib/support/core.ts
     // finalUrgency). Everything else open is one list, most urgent first:
@@ -68,6 +72,19 @@ export default async function Support() {
 
   return (
     <Page title="Support" lede="Customer email to support@cleocamp.com, sorted by Mouse, with a reply drafted. Nothing reaches a customer until someone taps Send.">
+      {flagged.length ? (
+        <Card title={`For Brandon & Claude (${flagged.length})`}>
+          <ul className="divide-y divide-line">
+            {flagged.map((c) => (
+              <li key={c.id} className="px-4 py-2.5 text-sm sm:px-5">
+                <a href={`#${c.id}`} className="font-medium underline">{c.customerName ?? c.customerEmail}{c.shopifyOrderName ? ` · ${c.shopifyOrderName}` : ''}</a>
+                <span className="text-muted"> — {c.reviewReason}</span>
+                <span className="block text-xs text-faint">Flagged by {c.reviewRequestedBy ?? 'someone'}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
       {groups.map((g) =>
         g.items.length || g.empty ? (
           <Card key={g.title} title={`${g.title}${g.items.length ? ` (${g.items.length})` : ''}`}>

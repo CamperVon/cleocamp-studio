@@ -6,6 +6,14 @@ The assistant layer inside it is called **Studio Mouse**.
 Read `SPEC.md` for the full design and the reasoning behind every decision
 below. This file is the short list of things that must not be gotten wrong.
 
+**Then check for support cases flagged for review:** `SupportCase` rows with
+`reviewRequestedAt` set and `reviewedAt` null. Jane, Cleo or Brandon tap
+"Mouse got this wrong" when the fix belongs in Mouse's code or policy, not
+just in one reply (Brandon, 25 Sept 2026). Each carries their reason and
+Mouse's draft as it stood (`reviewDraft`). Fix the cause, then set
+`reviewedAt` and a one-line `reviewOutcome` so the list at the top of
+Support clears.
+
 **If `HANDOFF.md` exists in this repo, read it now, before doing anything
 else.** It is written by whoever worked here last: where things stand, what is
 in flight, what has already been settled so it is not argued again, and the
