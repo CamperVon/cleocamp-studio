@@ -96,24 +96,20 @@ async function writeEvent(args: {
     // buttons in studio, we will have them at various factories... SM
     // exists for clear accounting." A component someone still genuinely
     // keeps a stash of at the studio (stockedInStudio: true) defaults there
-    // automatically; anything else has to say where.
+    // automatically.
+    //
+    // And so does everything else now. Brandon, 25 Sept 2026: "If we are
+    // logging inventory it's studio." A count or delivery someone reports is
+    // what reached the studio; stock held at a vendor is logged there only
+    // when the person says so (atVendorId).
     let locationId = args.locationId ?? null
     let atVendorId = args.atVendorId ?? null
     if (locationId && atVendorId) {
       return { eventId: null, applied: false, error: 'Give a location or a vendor for this, not both.' }
     }
     if (!locationId && !atVendorId) {
-      if (c.stockedInStudio) {
-        const studio = await db.location.findFirst({ where: { isDefault: true } })
-        locationId = studio?.id ?? null
-      } else {
-        return {
-          eventId: null, applied: false,
-          error:
-            `${c.name} isn't tracked as a studio stash — say where this happened: at the ` +
-            `studio, or which vendor currently holds it. Ask rather than guess.`,
-        }
-      }
+      const studio = await db.location.findFirst({ where: { isDefault: true } })
+      locationId = studio?.id ?? null
     }
 
     return db.$transaction(async (tx) => {
@@ -315,25 +311,21 @@ export const TOOLS: Record<string, Tool> = {
         'If our own count for a variant is unknown, you do not need to ask the user to sync ' +
         'from Shopify first — this checks Shopify live on its own and uses that as the ' +
         'baseline. Just mention in your reply that it did, so it is not silent.\n\n' +
-        'For a component that is not a small studio stash (most trim and hardware now — see ' +
-        'each component\'s stockedInStudio), say WHERE with locationId or atVendorId: this ' +
-        'is frequently at a manufacturer, not the studio, and the count only means something ' +
-        'once it is attached to a place. If you do not know where, ask rather than guess — ' +
-        'do not default to the studio for something that plainly is not there.',
+        'Where: logged stock is at the studio (Brandon, 25 Sept 2026: "If we are logging ' +
+        'inventory it\'s studio"), and a component event with no place defaults there. Use ' +
+        'atVendorId only when the person says the stock is at a vendor.',
       input_schema: {
         type: 'object',
         properties: {
           componentId: str('Component id, if this is a component'),
           productVariantId: str('Variant id, if this is a finished product'),
           locationId: str(
-            'For a component event only. The studio\'s location id, when this genuinely ' +
-            'happened there. Omit for a component with stockedInStudio true — it defaults ' +
-            'there automatically.',
+            'For a component event only. Leave it out: stock that is logged is at the studio ' +
+            'unless the person says otherwise (Brandon, 25 Sept 2026), and it defaults there.',
           ),
           atVendorId: str(
-            'For a component event only. Which vendor currently holds this stock — the ' +
-            'common case for trim and hardware bought per production run. Exactly one of ' +
-            'locationId or atVendorId, never both.',
+            'For a component event only, and only when the person says the stock is at a ' +
+            'vendor (for example "Antonio has 2,000 buttons"). Never both this and locationId.',
           ),
           type: {
             type: 'string',

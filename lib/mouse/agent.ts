@@ -201,6 +201,49 @@ const RECORD_IT_NUDGE =
   'genuinely nothing to record, say that in one line. Never say a thing is noted, recorded ' +
   'or resolved unless a tool call on this turn made it so. Do not mention this check.'
 
+const STOCK_TOOLS = new Set(['log_inventory_event', 'correct_inventory_event', 'transfer_component_stock'])
+
+/**
+ * The stock changes a turn made, one plain line each: item, change, before
+ * and after. Pure, so it can be tested; used for the check below.
+ */
+export function stockChangesThisTurn(calls: Array<{ name: string; status: string; input?: unknown; result?: unknown }>): string[] {
+  return calls
+    .filter((c) => STOCK_TOOLS.has(c.name) && c.status === 'succeeded')
+    .map((c) => {
+      const i = (c.input ?? {}) as Record<string, unknown>
+      const r = (c.result ?? {}) as Record<string, unknown>
+      const name = typeof r.name === 'string' ? r.name : String(i.componentId ?? i.productVariantId ?? 'an item')
+      const after = r.newQty
+      const delta = typeof i.deltaQty === 'number' ? i.deltaQty : null
+      const change = i.countedQty !== undefined
+        ? `counted ${i.countedQty}`
+        : c.name === 'correct_inventory_event'
+          ? `reversed event ${String(i.eventId ?? '')}`
+          : `${String(i.type ?? '')} ${delta !== null && delta > 0 ? '+' : ''}${delta ?? ''}`.trim()
+      const before = delta !== null && typeof after === 'number' ? after - delta : null
+      return `- ${name}: ${change}${before !== null ? `, was ${before}, now ${after}` : after !== undefined ? `, now ${after}` : ''}${r.shopify ? ` (${String(r.shopify)})` : ''}`
+    })
+}
+
+/**
+ * Brandon, 25 Sept 2026, after Mouse logged the same 8 bean bags twice: "mouse
+ * needs to think a bit more and catch its own mistakes … Logging twice is dumb
+ * and can't fly here." Any turn from a person that changed stock gets one
+ * short round to look at what it just did, before the answer goes out. The
+ * duplicate itself is also refused in code (lib/inventory-duplicate.ts); this
+ * catches the rest: wrong item, wrong quantity, a count that doesn't match
+ * what was said.
+ */
+const STOCK_CHECK = (lines: string[]) =>
+  '[automatic check, not a message from anyone] You changed stock on this turn:\n' +
+  lines.join('\n') +
+  '\n\nBefore you answer, check each line against what the person actually said: the right ' +
+  'item, the right quantity, the right direction, logged once, and not something already ' +
+  'recorded on an earlier turn (read the actions lines on your earlier replies). If a line is ' +
+  'wrong, fix it now with correct_inventory_event and say plainly what you corrected. If they ' +
+  'are all right, give your answer, stating each change as before → after. Do not mention this check.'
+
 export async function runAgent(opts: {
   /** What this run is for. Becomes the first user message. */
   instruction: string
@@ -334,6 +377,32 @@ export async function runAgent(opts: {
         requests: [...result.usage.requests, ...second.usage.requests],
         attemptedRequests: result.usage.attemptedRequests + second.usage.attemptedRequests,
         durationMs: result.usage.durationMs + second.usage.durationMs,
+      },
+    }
+  }
+
+  const changed = opts.fromAPerson === true && result.usage.stopReason === 'complete'
+    ? stockChangesThisTurn(result.toolCalls)
+    : []
+  if (changed.length) {
+    const checked = await loop(
+      [
+        ...messages,
+        { role: 'assistant', content: stripForgedActions(result.text) || '(changes made)' },
+        { role: 'user', content: STOCK_CHECK(changed) },
+      ],
+      3,
+    )
+    result = {
+      ...checked,
+      text: checked.text || result.text,
+      writes: [...result.writes, ...checked.writes],
+      toolCalls: [...result.toolCalls, ...checked.toolCalls],
+      usage: {
+        ...checked.usage,
+        requests: [...result.usage.requests, ...checked.usage.requests],
+        attemptedRequests: result.usage.attemptedRequests + checked.usage.attemptedRequests,
+        durationMs: result.usage.durationMs + checked.usage.durationMs,
       },
     }
   }

@@ -475,11 +475,10 @@ bought per production run and ships straight to whoever is cutting that run —
 Brandon: "we will rarely have button in studio, we will have them at various
 factories." Unlike fabric, this is worth counting: a factory can end up
 sitting on a real surplus, or running short, and nobody would know without
-asking. So when you log a receipt, a use or a count for a component that is
-not a genuine studio stash, say WHERE it happened — the studio, or which
-vendor currently holds it. Do not guess the studio by default for something
-that plainly is not there, and do not skip saying where just because it is
-easier. There is a tool to move stock between places without touching the
+asking. But what someone reports to you as picked up, received or counted is
+at the studio: Brandon, 25 Sept 2026, "If we are logging inventory it's
+studio." Log it there, which is the default. Record stock at a vendor only
+when the person says it is there ("Antonio has 2,000 buttons"). There is a tool to move stock between places without touching the
 total, for when a run finishes and leftovers come back or move on to the
 next one. Don't fuss over small amounts left at a vendor from ordinary slack
 — but if a real quantity is sitting somewhere unused, that is exactly the
