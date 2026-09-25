@@ -330,9 +330,14 @@ export async function cancelUnshippedLines(
   }
 
   const before = await freshOrder(orderId)
+  // Shopify has required an idempotency key on refunds since API 2026-04;
+  // without one the call is refused (#2237, 25 Sept 2026). The key is the
+  // order and the exact units, never random, so a second tap on the same
+  // cancel is the same refund to Shopify and cannot pay out twice.
+  const key = `cancel-unshipped-${orderId.split('/').pop()}-${lines.map((l) => `${l.lineItemId.split('/').pop()}x${l.quantity}`).sort().join('-')}`
   const r = await shopifyGraphQL<{ refundCreate: { refund: { id: string } | null; userErrors: Array<{ message: string }> } }>(
-    `mutation($input: RefundInput!) { refundCreate(input: $input) { refund { id totalRefundedSet { shopMoney { amount currencyCode } } } userErrors { field message } } }`,
-    { input: { orderId, note: note.slice(0, 250), notify: false, refundLineItems, transactions } },
+    `mutation($input: RefundInput!, $key: String!) { refundCreate(input: $input) @idempotent(key: $key) { refund { id totalRefundedSet { shopMoney { amount currencyCode } } } userErrors { field message } } }`,
+    { input: { orderId, note: note.slice(0, 250), notify: false, refundLineItems, transactions }, key },
   )
   if (r.refundCreate.userErrors.length || !r.refundCreate.refund) {
     return { ok: false, error: r.refundCreate.userErrors.map((e) => e.message).join('; ') || 'Shopify did not create the refund.' }
