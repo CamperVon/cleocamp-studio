@@ -110,6 +110,10 @@ export async function sendReply(id: string, text: string): Promise<Result> {
     include: { messages: { where: { direction: 'INBOUND' }, orderBy: { createdAt: 'desc' }, take: 1 } },
   })
   if (!c) return { ok: false, error: 'Case not found.' }
+  // A case filed under our own address has no customer to reply to.
+  if (/@(send\.)?cleocamp\.com$/i.test(c.customerEmail)) {
+    return { ok: false, error: "This case is filed under our own address, so there is no customer to send to. Reply from your own email." }
+  }
 
   // A reply that tells the customer their order is cancelled or refunded must
   // be true when it lands. Sending does not cancel or refund anything, so the

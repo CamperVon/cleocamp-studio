@@ -83,15 +83,23 @@ export async function POST(req: NextRequest) {
   // Mouse has something to read.
   let text: string | null = d.text ?? null
   let html: string | null = d.html ?? null
+  // Reply-To is not in the webhook either, and it is where the customer is
+  // when Google Groups rewrites the sender to support@cleocamp.com (it does
+  // for iCloud, Mac and some company domains). On 26 Sept 2026 four
+  // customers' replies arrived "from support@cleocamp.com" with no Reply-To
+  // stored, were filed as one customer writing four times, and set off a
+  // Pressing email. The full message has it; keep it on the stored event.
+  let replyTo: string[] | null = d.reply_to ? (Array.isArray(d.reply_to) ? d.reply_to : [d.reply_to]) : null
   if (!text && !html && d.email_id && process.env.RESEND_API_KEY) {
     try {
       const r = await fetch(`https://api.resend.com/emails/receiving/${d.email_id}`, {
         headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
       })
       if (r.ok) {
-        const full = (await r.json()) as { text?: string; html?: string }
+        const full = (await r.json()) as { text?: string; html?: string; reply_to?: string | string[] | null }
         text = full.text ?? null
         html = full.html ?? null
+        if (!replyTo && full.reply_to) replyTo = Array.isArray(full.reply_to) ? full.reply_to : [full.reply_to]
       }
     } catch {
       // Metadata is still worth keeping; the body can be fetched again later.
@@ -123,7 +131,7 @@ export async function POST(req: NextRequest) {
       subject: d.subject ?? null,
       text,
       html,
-      raw: event,
+      raw: replyTo ? { ...event, data: { ...d, reply_to: replyTo } } : event,
       receivedAt: d.created_at ? new Date(d.created_at) : new Date(),
     },
     update: {},

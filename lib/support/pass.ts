@@ -89,6 +89,25 @@ async function findCase(email: string, subject: string | null) {
   return recent.find((c) => c.status !== 'RESOLVED' && Date.now() - c.lastMessageAt.getTime() < 14 * 864e5) ?? null
 }
 
+/** One of our own addresses — the support group, or anything at cleocamp.com. */
+function isOwnAddress(address: string): boolean {
+  const a = (address.match(/<([^>]+)>/)?.[1] ?? address).trim().toLowerCase()
+  return /@(send\.)?cleocamp\.com$/.test(a)
+}
+
+/** Reply-To from Resend's copy of the message, for mail stored without it. */
+async function fetchReplyTo(emailId: string | undefined): Promise<string[] | null> {
+  if (!emailId || !process.env.RESEND_API_KEY) return null
+  try {
+    const r = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, { headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` } })
+    if (!r.ok) return null
+    const full = (await r.json()) as { reply_to?: string | string[] | null }
+    return full.reply_to ? (Array.isArray(full.reply_to) ? full.reply_to : [full.reply_to]) : null
+  } catch {
+    return null
+  }
+}
+
 async function alertTeam(c: { id: string; customerName: string | null; customerEmail: string; category: string; summary: string | null; shopifyOrderName: string | null; subject: string | null }) {
   const people = await db.person.findMany({
     where: { active: true, external: false, email: { not: null } },
@@ -150,8 +169,11 @@ export async function supportPass() {
       data: { claimedAt: new Date() },
     })
     if (claim.count === 0) continue
-    const data = (m.raw as { data?: { reply_to?: string | string[] } })?.data
-    const sender = customerAddress(m.fromAddress, data?.reply_to)
+    const data = (m.raw as { data?: { reply_to?: string | string[]; email_id?: string } })?.data
+    // Mail stored before the intake kept Reply-To (26 Sept 2026) is asked
+    // for again; see app/api/inbound/email/route.ts.
+    const replyTo = data?.reply_to ?? (isOwnAddress(m.fromAddress) ? await fetchReplyTo(data?.email_id) : null)
+    const sender = customerAddress(m.fromAddress, replyTo)
     let { email, name } = sender
     let body = stripGroupFooter(m.text?.trim() || (m.html ? htmlToText(m.html) : '') || '')
     let subject = m.subject
@@ -212,7 +234,11 @@ export async function supportPass() {
       continue
     }
 
-    let c = await findCase(email, subject)
+    // Still one of our own addresses: nobody knows who wrote it. It gets a
+    // case of its own — never merged with others under the same address, as
+    // four customers were on 26 Sept — and no alert, draft or auto-reply.
+    const unknownSender = !teammate && isOwnAddress(email)
+    let c = unknownSender ? null : await findCase(email, subject)
     const isNew = !c
     const quoted = orderNumbersIn(`${subject ?? ''}\n${body}`)
     const lookup = c?.shopifyOrderName && !quoted.length
@@ -241,7 +267,7 @@ export async function supportPass() {
     const lastBefore = thread[thread.length - 1]
     const thanks = !!c && verdict.category !== 'SPAM' && lastBefore?.direction === 'OUTBOUND' &&
       lastBefore.fromAddress !== 'Auto-reply' && isJustThanks(body)
-    const urgency = thanks ? 'DIGEST' : finalUrgency({
+    const urgency = thanks || unknownSender ? 'DIGEST' : finalUrgency({
       verdict,
       text: `${subject ?? ''}\n${body}`,
       inboundCount: unansweredCount(thread),
@@ -303,6 +329,9 @@ export async function supportPass() {
       alerted = true
     }
 
+    if (unknownSender) {
+      await db.supportMessage.create({ data: { caseId: c.id, direction: 'NOTE', body: "Couldn't tell who sent this: Google Groups replaced the sender with our own address and the message had no Reply-To. Reply from your own email, not from here." } })
+    }
     if (thanks) {
       await db.supportMessage.create({ data: { caseId: c.id, direction: 'NOTE', body: 'Closed by Mouse: a thank-you after our reply, with nothing to answer. Reopen it if it needs something.' } })
     }
@@ -310,7 +339,7 @@ export async function supportPass() {
     // Phase 2: a reply drafted for a person to read, edit and send. Best
     // effort — the case is already filed, and a failed draft just means the
     // card offers "Draft a reply" instead.
-    if (verdict.category !== 'SPAM' && !thanks) await draftForCase(c.id).catch((e) => console.error('[support] draft', e))
+    if (verdict.category !== 'SPAM' && !thanks && !unknownSender) await draftForCase(c.id).catch((e) => console.error('[support] draft', e))
 
     // The one fixed note that goes without a tap — see autoAckText.
     if (!forwardedBy && isNew && verdict.category !== 'SPAM' && urgency !== 'NOW') {
