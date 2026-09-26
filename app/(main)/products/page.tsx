@@ -92,95 +92,129 @@ export default async function Products() {
   // ties break on what is actually selling — the hero product leads.
   rows.sort((a, b) => b.activity - a.activity || b.soldTotal - a.soldTotal)
 
+  // One line per product, opened on a tap. Brandon, 26 Sept 2026: "make the
+  // products drop down to make it easier on the eye." Anything flagged
+  // urgent still shows on the closed line, so a problem is never folded away.
+  const groups = [
+    { title: 'Selling', items: rows.filter((r) => r.p.status === 'ACTIVE') },
+    { title: 'In the works', items: rows.filter((r) => r.p.status === 'DEVELOPMENT' || r.p.status === 'SAMPLING') },
+    { title: 'Retired', items: rows.filter((r) => r.p.status === 'SUNSETTED') },
+  ].filter((g) => g.items.length)
+
   return (
-    <Page title="Products" lede="Most recently active first — what is on order, in production, and what Studio Mouse would flag.">
-      {rows.map(({ p, relatedPos, relatedRuns, soldTotal, onHand, weeks, flags }) => (
-        <Card key={p.id} title={p.name} action={<Chip tone={STATUS_TONE[p.status]}>{p.status.toLowerCase()}</Chip>}>
-          {flags.length ? (
-            <ul className="divide-y divide-line border-b border-line">
-              {flags.map((f, i) => (
-                <li key={i} className={`flex items-start gap-2.5 px-4 py-2.5 sm:px-5 ${f.tone === 'urgent' ? 'bg-urgent-soft' : 'bg-warn-soft'}`}>
-                  <Chip tone={f.tone}>{f.tone === 'urgent' ? '!' : '?'}</Chip>
-                  <p className={`text-sm ${f.tone === 'urgent' ? 'text-urgent' : 'text-warn'}`}>{f.text}</p>
+    <Page title="Products" lede="Most recently active first. Tap a product for what is on order, in production, and what Studio Mouse would flag.">
+      {groups.map((g) => (
+        <Card key={g.title} title={`${g.title} (${g.items.length})`}>
+          <ul className="divide-y divide-line">
+            {g.items.map(({ p, relatedPos, relatedRuns, soldTotal, onHand, weeks, flags }) => {
+              const urgent = flags.filter((f) => f.tone === 'urgent').length
+              return (
+                <li key={p.id}>
+                  <details className="group">
+                    <summary className="flex cursor-pointer list-none items-center gap-2.5 px-4 py-3 hover:bg-sunk sm:px-5 [&::-webkit-details-marker]:hidden">
+                      <span aria-hidden className="text-xs text-faint transition-transform group-open:rotate-90">▸</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium">{p.name}</span>
+                        <span className="block text-xs text-muted">
+                          <span className="tnum">{onHand}</span> on hand · <span className="tnum">{soldTotal}</span> sold in 8 wks
+                          {relatedPos.length || relatedRuns.length ? ` · ${relatedPos.length + relatedRuns.length} on order` : ''}
+                        </span>
+                      </span>
+                      {urgent ? <Chip tone="urgent">{urgent > 1 ? `! ${urgent}` : "!"}</Chip> : flags.length ? <Chip tone="warn">?</Chip> : null}
+                      <Chip tone={STATUS_TONE[p.status]}>{p.status.toLowerCase()}</Chip>
+                    </summary>
+                    <div className="border-t border-line">
+                      {flags.length ? (
+                        <ul className="divide-y divide-line border-b border-line">
+                          {flags.map((f, i) => (
+                            <li key={i} className={`flex items-start gap-2.5 px-4 py-2.5 sm:px-5 ${f.tone === 'urgent' ? 'bg-urgent-soft' : 'bg-warn-soft'}`}>
+                              <Chip tone={f.tone}>{f.tone === 'urgent' ? '!' : '?'}</Chip>
+                              <p className={`text-sm ${f.tone === 'urgent' ? 'text-urgent' : 'text-warn'}`}>{f.text}</p>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+
+                      {relatedPos.length || relatedRuns.length ? (
+                        <div className="border-b border-line px-4 py-3 sm:px-5">
+                          <p className="mb-2 text-xs text-faint">Updates</p>
+                          <ul className="flex flex-col gap-1.5">
+                            {relatedRuns.map((r) => (
+                              <li key={r.id} className="flex justify-between gap-3 text-sm">
+                                <span>
+                                  In production at {r.vendor?.name ?? 'unassigned'} · {r.status.toLowerCase().replace(/_/g, ' ')}
+                                </span>
+                                <span className="shrink-0 text-muted">
+                                  {r.expectedReadyAt ? laDay(r.expectedReadyAt) : 'no date'}
+                                </span>
+                              </li>
+                            ))}
+                            {relatedPos.map(({ po, lines }) => (
+                              <li key={po.id} className="flex justify-between gap-3 text-sm">
+                                <span>
+                                  PO {po.poNumber} · {lines.map((l) => `${l.qtyOrdered} ${l.unit} ${poLineLabel(l)}`).join(', ')} from {po.vendor.name}
+                                </span>
+                                <span className="shrink-0 text-muted">
+                                  {po.expectedAt ? laDay(po.expectedAt) : 'ETA unconfirmed'}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-b border-line px-4 py-3 text-sm sm:grid-cols-5 sm:px-5">
+                        <div><dt className="text-xs text-faint">Retail</dt><dd><Money cents={p.retailPriceCents} /></dd></div>
+                        <div><dt className="text-xs text-faint">On hand</dt><dd className="tnum">{onHand}</dd></div>
+                        <div><dt className="text-xs text-faint">Sold 8wk</dt><dd className="tnum">{soldTotal}</dd></div>
+                        <div>
+                          <dt className="text-xs text-faint">Cover</dt>
+                          <dd>{weeks === null ? <span className="text-faint italic">no sales</span> : <span className="tnum">{weeks.toFixed(1)} wks</span>}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-faint">Lead time</dt>
+                          <dd><Value value={p.productionLeadTimeDays} unit="days" /></dd>
+                        </div>
+                      </dl>
+
+                      {p.colorways.length ? (
+                        <div className="border-b border-line px-4 py-3 sm:px-5">
+                          <p className="mb-2 text-xs text-faint">Colourways — customer name · dye house name</p>
+                          <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
+                            {p.colorways.map((c) => (
+                              <li key={c.id} className="text-sm">
+                                <span className={c.active ? '' : 'text-faint line-through'}>{c.customerName}</span>
+                                {c.dyeHouseName ? <span className="text-faint"> · {c.dyeHouseName}</span>
+                                  : c.inHouseMatch ? <span className="text-warn"> · in-house match</span> : null}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {p.bomLines.length ? (
+                        <div className="px-4 py-3 sm:px-5">
+                          <p className="mb-2 text-xs text-faint">Per unit</p>
+                          <ul className="flex flex-col gap-1">
+                            {p.bomLines.map((b) => (
+                              <li key={b.id} className="flex justify-between gap-3 text-sm">
+                                <span>{b.component.name}{b.component.vendor ? <span className="text-faint"> · {b.component.vendor.name}</span> : null}</span>
+                                <span className="tnum text-muted">
+                                  {Number(b.qtyPerUnit) === 0 ? <span className="italic text-faint">unknown</span> : `${b.qtyPerUnit} ${b.component.unitOfMeasure}`}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : (
+                        <p className="px-4 py-3 text-sm text-faint sm:px-5">No bill of materials yet — Studio Mouse will ask.</p>
+                      )}
+                    </div>
+                  </details>
                 </li>
-              ))}
-            </ul>
-          ) : null}
-
-          {relatedPos.length || relatedRuns.length ? (
-            <div className="border-b border-line px-4 py-3 sm:px-5">
-              <p className="mb-2 text-xs text-faint">Updates</p>
-              <ul className="flex flex-col gap-1.5">
-                {relatedRuns.map((r) => (
-                  <li key={r.id} className="flex justify-between gap-3 text-sm">
-                    <span>
-                      In production at {r.vendor?.name ?? 'unassigned'} · {r.status.toLowerCase().replace(/_/g, ' ')}
-                    </span>
-                    <span className="shrink-0 text-muted">
-                      {r.expectedReadyAt ? laDay(r.expectedReadyAt) : 'no date'}
-                    </span>
-                  </li>
-                ))}
-                {relatedPos.map(({ po, lines }) => (
-                  <li key={po.id} className="flex justify-between gap-3 text-sm">
-                    <span>
-                      PO {po.poNumber} · {lines.map((l) => `${l.qtyOrdered} ${l.unit} ${poLineLabel(l)}`).join(', ')} from {po.vendor.name}
-                    </span>
-                    <span className="shrink-0 text-muted">
-                      {po.expectedAt ? laDay(po.expectedAt) : 'ETA unconfirmed'}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-b border-line px-4 py-3 text-sm sm:grid-cols-5 sm:px-5">
-            <div><dt className="text-xs text-faint">Retail</dt><dd><Money cents={p.retailPriceCents} /></dd></div>
-            <div><dt className="text-xs text-faint">On hand</dt><dd className="tnum">{onHand}</dd></div>
-            <div><dt className="text-xs text-faint">Sold 8wk</dt><dd className="tnum">{soldTotal}</dd></div>
-            <div>
-              <dt className="text-xs text-faint">Cover</dt>
-              <dd>{weeks === null ? <span className="text-faint italic">no sales</span> : <span className="tnum">{weeks.toFixed(1)} wks</span>}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-faint">Lead time</dt>
-              <dd><Value value={p.productionLeadTimeDays} unit="days" /></dd>
-            </div>
-          </dl>
-
-          {p.colorways.length ? (
-            <div className="border-b border-line px-4 py-3 sm:px-5">
-              <p className="mb-2 text-xs text-faint">Colourways — customer name · dye house name</p>
-              <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
-                {p.colorways.map((c) => (
-                  <li key={c.id} className="text-sm">
-                    <span className={c.active ? '' : 'text-faint line-through'}>{c.customerName}</span>
-                    {c.dyeHouseName ? <span className="text-faint"> · {c.dyeHouseName}</span>
-                      : c.inHouseMatch ? <span className="text-warn"> · in-house match</span> : null}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {p.bomLines.length ? (
-            <div className="px-4 py-3 sm:px-5">
-              <p className="mb-2 text-xs text-faint">Per unit</p>
-              <ul className="flex flex-col gap-1">
-                {p.bomLines.map((b) => (
-                  <li key={b.id} className="flex justify-between gap-3 text-sm">
-                    <span>{b.component.name}{b.component.vendor ? <span className="text-faint"> · {b.component.vendor.name}</span> : null}</span>
-                    <span className="tnum text-muted">
-                      {Number(b.qtyPerUnit) === 0 ? <span className="italic text-faint">unknown</span> : `${b.qtyPerUnit} ${b.component.unitOfMeasure}`}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : (
-            <p className="px-4 py-3 text-sm text-faint sm:px-5">No bill of materials yet — Studio Mouse will ask.</p>
-          )}
+              )
+            })}
+          </ul>
         </Card>
       ))}
     </Page>
