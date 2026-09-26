@@ -129,10 +129,19 @@ export function parseVerdict(raw: string): Verdict {
 }
 
 /**
- * The fire rules, decided in code on top of whatever the model said, so the
- * ones that matter most do not depend on a model's judgement on the night.
- * Only ever raises urgency, never lowers it — except spam, which is nobody's
- * fire.
+ * How urgent a customer email is, decided in code. NOW is what sends the
+ * "Pressing" alert email and fills the Pressing list, so it is kept to what
+ * cannot wait for the morning. Brandon, 26 Sept 2026: "we are getting too
+ * many from mouse ... only if it's the 2nd email and about an open issue. or
+ * about a purchase that needs immediate change before shipping."
+ *
+ * So NOW is exactly:
+ * - a second (or later) email from a customer the team has not answered yet;
+ * - a change to an order that has not shipped, which races the packing
+ *   table (labels are printed as orders are packed);
+ * - a chargeback or legal threat, which costs money if it waits.
+ * Everything else — the model's own "urgent", old where's-my-order, wholesale
+ * and press — is at most TODAY: on the list, no email. Spam is never urgent.
  */
 export function finalUrgency(args: {
   verdict: Verdict
@@ -144,29 +153,16 @@ export function finalUrgency(args: {
 }): Urgency {
   const { verdict, text } = args
   if (verdict.category === 'SPAM') return 'DIGEST'
-  const rank = { DIGEST: 0, TODAY: 1, NOW: 2 } as const
-  let u: Urgency = verdict.urgency
-  const raise = (to: Urgency) => { if (rank[to] > rank[u]) u = to }
-
-  // Money and reputation: a dispute, a threat, anything legal.
-  if (/\b(charge\s?back|dispute[ds]?|lawyer|attorney|legal action|small claims|bbb|better business bureau|fraud|scam|report(ing)? you)\b/i.test(text)) raise('NOW')
-  // Wholesale and press are opportunities with a clock on them.
-  if (verdict.category === 'WHOLESALE' || verdict.category === 'PRESS') raise('NOW')
-  // The third email since the team last answered. Counts only what has gone
-  // unanswered — see unansweredCount.
-  if (args.inboundCount >= 3) raise('NOW')
-  // Where's my order, on an order more than two weeks old.
-  if (verdict.category === 'WHERE_IS_MY_ORDER' && args.orderCreatedAt) {
-    const days = ((args.now ?? new Date()).getTime() - Date.parse(args.orderCreatedAt)) / 864e5
-    if (days > 14) raise('NOW')
-  }
-  // A change to an order that has not shipped races the packing table:
-  // labels are printed as orders are packed (Brandon, 24 Sept 2026), so once
-  // it is packed the change is too late.
-  if (verdict.category === 'ORDER_CHANGE' && args.orderFulfilled === false) raise('NOW')
-  // Wrong or damaged is always at least today.
-  if (verdict.category === 'WRONG_ITEM' || verdict.category === 'DAMAGED') raise('TODAY')
-  return u
+  const followUp = args.inboundCount >= 2
+  const changeBeforeShipping = verdict.category === 'ORDER_CHANGE' && args.orderFulfilled === false
+  const threat = /\b(charge\s?back|dispute[ds]?|lawyer|attorney|legal action|small claims|bbb|better business bureau|report(ing)? you)\b/i.test(text)
+  if (followUp || changeBeforeShipping || threat) return 'NOW'
+  // Worth doing today, not worth an email.
+  if (verdict.urgency === 'NOW' || verdict.category === 'WRONG_ITEM' || verdict.category === 'DAMAGED' ||
+    verdict.category === 'WHOLESALE' || verdict.category === 'PRESS') return 'TODAY'
+  if (verdict.category === 'WHERE_IS_MY_ORDER' && args.orderCreatedAt &&
+    ((args.now ?? new Date()).getTime() - Date.parse(args.orderCreatedAt)) / 864e5 > 14) return 'TODAY'
+  return verdict.urgency
 }
 
 /**

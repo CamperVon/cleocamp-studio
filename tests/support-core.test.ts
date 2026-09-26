@@ -48,17 +48,20 @@ test('the model’s verdict is checked, with a safe fallback', () => {
 
 const v = (category: string, urgency = 'DIGEST') => parseVerdict(JSON.stringify({ category, urgency }))
 
-test('fires are decided in code, whatever the model said', () => {
+test('the Pressing email is kept to follow-ups, changes before shipping and threats (26 Sept 2026)', () => {
+  // A second email with no answer yet, on anything but spam.
+  assert.equal(finalUrgency({ verdict: v('SIZING_QUESTION'), text: 'hello?', inboundCount: 2 }), 'NOW')
+  assert.equal(finalUrgency({ verdict: v('SIZING_QUESTION'), text: 'hello?', inboundCount: 1 }), 'DIGEST')
+  // A change to an unshipped order races the packing table.
+  assert.equal(finalUrgency({ verdict: v('ORDER_CHANGE'), text: 'new address', inboundCount: 1, orderFulfilled: false }), 'NOW')
+  assert.equal(finalUrgency({ verdict: v('ORDER_CHANGE'), text: 'new address', inboundCount: 1, orderFulfilled: true }), 'DIGEST')
   assert.equal(finalUrgency({ verdict: v('OTHER'), text: 'I will file a chargeback', inboundCount: 1 }), 'NOW')
-  assert.equal(finalUrgency({ verdict: v('WHOLESALE'), text: 'stockist enquiry', inboundCount: 1 }), 'NOW')
-  assert.equal(finalUrgency({ verdict: v('SIZING_QUESTION'), text: 'hello?', inboundCount: 3 }), 'NOW')
+  // No longer an email: the model's own NOW, wholesale, press, wrong item, old orders.
+  assert.equal(finalUrgency({ verdict: v('OTHER', 'NOW'), text: 'URGENT!!', inboundCount: 1 }), 'TODAY')
+  assert.equal(finalUrgency({ verdict: v('WHOLESALE'), text: 'stockist enquiry', inboundCount: 1 }), 'TODAY')
   assert.equal(finalUrgency({ verdict: v('WRONG_ITEM'), text: 'wrong size', inboundCount: 1 }), 'TODAY')
   assert.equal(
     finalUrgency({ verdict: v('WHERE_IS_MY_ORDER', 'TODAY'), text: 'where is it', inboundCount: 1, orderCreatedAt: '2026-09-01', now: new Date('2026-09-23') }),
-    'NOW',
-  )
-  assert.equal(
-    finalUrgency({ verdict: v('WHERE_IS_MY_ORDER', 'TODAY'), text: 'where is it', inboundCount: 1, orderCreatedAt: '2026-09-20', now: new Date('2026-09-23') }),
     'TODAY',
   )
   // Spam is never a fire, even if it shouts.
