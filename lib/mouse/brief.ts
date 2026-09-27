@@ -1,3 +1,4 @@
+import { inventoryWritesEnabled } from './tools'
 import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
@@ -106,7 +107,11 @@ export async function composeDailyBrief(overnight?: string): Promise<{ text: str
     `Open questions and todos (${items.length}):`,
     ...items.slice(0, 14).map((i) => `- ${i.title}`),
     '',
-    'Note: inventory writing is currently paused for a studio count, so counts may be stale.',
+    // Only when it is true. This line used to be written in unconditionally, so
+    // long after the first studio count was done the corner kept telling
+    // Brandon to treat every number as "directionally true, not exact"
+    // (27 Sept 2026: "i don't understand this line").
+    inventoryWritesEnabled() ? '' : 'Note: inventory writing is currently paused for a studio count, so counts may be stale.',
     notes ? `\nStudio Mouse's own working notes from tonight — distill the ONE or TWO things from this that actually matter, do not summarise the whole thing:\n${notes}` : '',
   ].filter(Boolean).join('\n')
 
