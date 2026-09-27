@@ -315,3 +315,21 @@ export async function grantedScopes(): Promise<string | null> {
   }
   return cached?.scope ?? null
 }
+
+/**
+ * The granted permissions from a token minted just now, not the cached one.
+ * A warm instance can hold a token from before the store approved new
+ * permissions for up to a day; asking again settles whether the approval
+ * has actually landed.
+ */
+export async function freshScopes(): Promise<string[] | null> {
+  cached = null
+  try {
+    await getAccessToken()
+  } catch {
+    return null
+  }
+  // getAccessToken refilled the cache; TypeScript still sees the null above.
+  const now = cached as { scope: string | null } | null
+  return now ? (now.scope ?? '').split(',').map((s: string) => s.trim()).filter(Boolean) : null
+}
