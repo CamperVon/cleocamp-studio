@@ -35,7 +35,7 @@ const DAILY: Item[] = [
   { href: '/', label: 'Home', icon: <IconHome /> },
   { href: '/products', label: 'Products', icon: <IconTag /> },
   { href: '/purchase-orders', label: 'Purchase orders', short: 'POs', icon: <IconDoc /> },
-  { href: '/items', label: 'To do', icon: <IconCheck /> },
+  { href: '/items', label: 'ToDo', icon: <IconCheck /> },
 ]
 
 const OCCASIONAL: Item[] = [
