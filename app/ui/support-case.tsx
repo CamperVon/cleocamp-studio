@@ -3,6 +3,7 @@ import { useState, useTransition } from 'react'
 import { addCaseNote, applyAddressAndReply, approveReturnRefund, cancelOrderAndReply, flagForReview, markReviewed, quoteCaseRefund, redraftReply, removeUnshippedItem, sendReply, setCaseStatus } from '@/app/(main)/support/actions'
 import { claimsNotYetDone, mentionsDiscount, partlyShipped, refundIssued, unfilled, unshippedLines } from '@/lib/support/reply'
 import { trimQuoted } from '@/lib/support/core'
+import { ReturnIntake } from '@/app/ui/return-intake'
 
 type Msg = { id: string; direction: 'INBOUND' | 'OUTBOUND' | 'NOTE'; fromAddress: string | null; body: string; at: string; emailedTo?: string | null }
 type Order = {
@@ -151,7 +152,7 @@ export function SupportCase({ c }: { c: CaseView }) {
               draft arriving (or a redraft) must start a fresh box. Without
               this, a case opened before its draft showed an empty box after
               "Draft a reply" — #2362, 25 Sept 2026, looked like no draft. */}
-          {c.returnInfo ? <ReturnBox c={c} /> : null}
+          {c.returnInfo ? <ReturnBox c={c} /> : c.status === 'WAITING_ON_RETURN' && c.orderName ? <ReturnIntake orderName={c.orderName} compact /> : null}
           <ReviewFlag c={c} />
           {c.status !== 'RESOLVED' ? <ReplyBox key={c.draft?.at ?? 'none'} c={c} /> : null}
 

@@ -8,8 +8,8 @@ import { lookupReturn, receiveReturn, type ReturnLookup } from '@/app/(main)/sup
  * The refund itself is a second tap on the case, once someone has checked
  * the item (see app/ui/support-case.tsx).
  */
-export function ReturnIntake() {
-  const [num, setNum] = useState('')
+export function ReturnIntake({ orderName, compact }: { orderName?: string; compact?: boolean } = {}) {
+  const [num, setNum] = useState(orderName ?? '')
   const [found, setFound] = useState<Extract<ReturnLookup, { ok: true }> | null>(null)
   const [qty, setQty] = useState<Record<string, number>>({})
   const [kind, setKind] = useState<'REFUND' | 'EXCHANGE'>('REFUND')
@@ -40,9 +40,17 @@ export function ReturnIntake() {
 
   const any = found && found.order.items.some((i) => (qty[i.id] ?? 0) > 0)
   return (
-    <section className="rounded-xl border border-line bg-surface px-4 py-3 sm:px-5">
-      <h2 className="font-serif text-[17px] italic text-accent">A return arrived</h2>
-      <form onSubmit={(e) => { e.preventDefault(); look() }} className="mt-2 flex gap-2">
+    <section className={compact ? 'rounded border border-line bg-bg px-3 py-2 text-xs' : 'rounded-xl border border-line bg-surface px-4 py-3 sm:px-5'}>
+      {compact ? (
+        found ? null : (
+          <button type="button" onClick={look} disabled={pending} className="rounded bg-accent px-2.5 py-1.5 font-medium text-bg disabled:opacity-40">
+            {pending ? 'Looking…' : `The return for ${orderName} arrived`}
+          </button>
+        )
+      ) : (
+        <h2 className="font-serif text-[17px] italic text-accent">A return arrived</h2>
+      )}
+      <form onSubmit={(e) => { e.preventDefault(); look() }} className={compact ? 'hidden' : 'mt-2 flex gap-2'}>
         <input
           value={num} onChange={(e) => setNum(e.target.value)} inputMode="numeric" placeholder="Order number, e.g. 2237"
           className="min-w-0 flex-1 rounded border border-line bg-bg px-2.5 py-1.5 text-sm"
