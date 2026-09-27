@@ -3,9 +3,10 @@ import { useState, useTransition } from 'react'
 import { lookupReturn, receiveReturn, type ReturnLookup } from '@/app/(main)/support/actions'
 
 /**
-* "A return arrived", on the Support page and on each case waiting on a
- * return (Brandon wanted it on Support, not Products): type the order number, tick what came back, say refund
- * or exchange, and the customer is told it landed. Brandon, 27 Sept 2026.
+ * "A return arrived", on the Support page and on each case waiting on a
+ * return (Brandon wanted it on Support, not Products): type the order
+ * number, tick what came back, say refund or exchange, and the customer is
+ * told it landed. Brandon, 27 Sept 2026.
  * The refund itself is a second tap on the case, once someone has checked
  * the item (see app/ui/support-case.tsx).
  */
