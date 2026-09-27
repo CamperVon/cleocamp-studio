@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
 import { Page, Card, Chip, Value, Money } from '@/app/ui/primitives'
 import { laDay, laMidnight } from '@/lib/dates'
+import { ReturnIntake } from '@/app/ui/return-intake'
 
 export const dynamic = 'force-dynamic'
 
@@ -103,6 +104,7 @@ export default async function Products() {
 
   return (
     <Page title="Products" lede="Most recently active first. Tap a product for what is on order, in production, and what Studio Mouse would flag.">
+      <ReturnIntake />
       {groups.map((g) => (
         <Card key={g.title} title={`${g.title} (${g.items.length})`}>
           <ul className="divide-y divide-line">

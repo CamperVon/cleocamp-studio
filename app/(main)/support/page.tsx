@@ -48,6 +48,7 @@ export default async function Support() {
     summary: c.summary,
     subject: c.subject,
     orderName: c.shopifyOrderName,
+    returnInfo: (c.returnInfo as CaseView['returnInfo']) ?? null,
     review: c.reviewRequestedAt && !c.reviewedAt ? { by: c.reviewRequestedBy, reason: c.reviewReason ?? '', at: c.reviewRequestedAt.toISOString() } : null,
     order: (c.orderSnapshot as CaseView['order']) ?? null,
     age: age(c.lastMessageAt),

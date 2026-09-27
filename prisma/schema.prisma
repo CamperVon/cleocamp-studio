@@ -1298,6 +1298,10 @@ model SupportCase {
   reviewedAt        DateTime?
   /// What was changed, in a line, when marked reviewed.
   reviewOutcome     String?
+  /// A return that reached the studio: order, lines, refund or exchange, who
+  /// received it, and the refund once someone approved it. Set by the
+  /// Return arrived box (27 Sept 2026). See lib/returns.ts.
+  returnInfo        Json?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   messages        SupportMessage[]

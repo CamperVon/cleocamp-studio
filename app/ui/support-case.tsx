@@ -1,6 +1,6 @@
 'use client'
 import { useState, useTransition } from 'react'
-import { addCaseNote, applyAddressAndReply, cancelOrderAndReply, flagForReview, markReviewed, redraftReply, removeUnshippedItem, sendReply, setCaseStatus } from '@/app/(main)/support/actions'
+import { addCaseNote, applyAddressAndReply, approveReturnRefund, cancelOrderAndReply, flagForReview, markReviewed, quoteCaseRefund, redraftReply, removeUnshippedItem, sendReply, setCaseStatus } from '@/app/(main)/support/actions'
 import { claimsNotYetDone, mentionsDiscount, partlyShipped, refundIssued, unfilled, unshippedLines } from '@/lib/support/reply'
 import { trimQuoted } from '@/lib/support/core'
 
@@ -22,6 +22,11 @@ export type CaseView = {
   summary: string | null
   subject: string | null
   orderName: string | null
+  /** A return that reached the studio, if any. See lib/returns.ts. */
+  returnInfo: {
+    orderName: string; kind: 'REFUND' | 'EXCHANGE'; receivedAt: string; receivedBy: string
+    lines: Array<{ label: string; quantity: number }>; refundedAt?: string; refunded?: number; fee?: number
+  } | null
   /** Open flag for Brandon & Claude, if any. */
   review: { by: string | null; reason: string; at: string } | null
   order: Order
@@ -146,6 +151,7 @@ export function SupportCase({ c }: { c: CaseView }) {
               draft arriving (or a redraft) must start a fresh box. Without
               this, a case opened before its draft showed an empty box after
               "Draft a reply" — #2362, 25 Sept 2026, looked like no draft. */}
+          {c.returnInfo ? <ReturnBox c={c} /> : null}
           <ReviewFlag c={c} />
           {c.status !== 'RESOLVED' ? <ReplyBox key={c.draft?.at ?? 'none'} c={c} /> : null}
 
@@ -459,6 +465,49 @@ function ReviewFlag({ c }: { c: CaseView }) {
         <button type="button" onClick={() => setOpen(false)} className="text-muted underline">Cancel</button>
       </div>
       {msg ? <p className="text-urgent">{msg}</p> : null}
+    </div>
+  )
+}
+
+/**
+ * A return that reached the studio. A refund waits here until someone has
+ * checked the item and taps to refund it less the 10% restocking fee.
+ */
+function ReturnBox({ c }: { c: CaseView }) {
+  const r = c.returnInfo!
+  const [quote, setQuote] = useState<{ refund: number; fee: number } | null>(null)
+  const [msg, setMsg] = useState<{ text: string; bad: boolean } | null>(null)
+  const [pending, start] = useTransition()
+  const what = r.lines.map((l) => `${l.quantity} × ${l.label}`).join(', ')
+  return (
+    <div className="flex flex-col gap-1.5 rounded border border-line bg-bg px-3 py-2 text-xs">
+      <p>
+        <span className="font-medium">Return received</span> {r.receivedAt.slice(0, 10)} by {r.receivedBy}: {what}.{' '}
+        {r.kind === 'EXCHANGE' ? 'Exchange.' : r.refundedAt ? `Refunded $${r.refunded?.toFixed(2)} (fee $${r.fee?.toFixed(2)} kept) on ${r.refundedAt.slice(0, 10)}.` : 'Refund waiting for approval.'}
+      </p>
+      {r.kind === 'REFUND' && !r.refundedAt ? (
+        quote ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button" disabled={pending}
+              onClick={() => start(async () => { const x = await approveReturnRefund(c.id); setMsg(x.ok ? { text: 'Refunded and the customer emailed.', bad: false } : { text: x.error, bad: true }) })}
+              className="rounded bg-accent px-2.5 py-1.5 font-medium text-bg disabled:opacity-40"
+            >
+              {pending ? 'Refunding…' : `Refund $${quote.refund.toFixed(2)} & email`}
+            </button>
+            <span className="text-muted">10% restocking fee of ${quote.fee.toFixed(2)} kept; items go back into studio stock.</span>
+          </div>
+        ) : (
+          <button
+            type="button" disabled={pending}
+            onClick={() => start(async () => { const x = await quoteCaseRefund(c.id); if (x.ok) setQuote(x); else setMsg({ text: x.error, bad: true }) })}
+            className="self-start rounded border border-line px-2.5 py-1.5 font-medium"
+          >
+            {pending ? 'Working it out…' : 'Checked it — work out the refund'}
+          </button>
+        )
+      ) : null}
+      {msg ? <p className={msg.bad ? 'font-medium text-urgent' : 'text-muted'}>{msg.text}</p> : null}
     </div>
   )
 }

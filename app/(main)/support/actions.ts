@@ -415,3 +415,158 @@ export async function markReviewed(id: string, outcome: string): Promise<Result>
   revalidatePath('/support')
   return { ok: true }
 }
+
+// ── Returns that reach the studio ────────────────────────────────────────
+// See lib/returns.ts. Each step is a person's tap; the emails are fixed text.
+
+export type ReturnLookup =
+  | { ok: false; error: string }
+  | { ok: true; order: { id: string; name: string; email: string | null; customerName: string | null; items: Array<{ id: string; label: string; returnable: number }> }; caseId: string | null; alreadyReceived: boolean }
+
+/** Find the order behind a number typed at the studio, and its case if there is one. */
+export async function lookupReturn(input: string): Promise<ReturnLookup> {
+  if (!(await approver())) return { ok: false, error: 'Sign in again — only the team can do this.' }
+  const { findReturnOrder, orderNameFrom } = await import('@/lib/returns')
+  const name = orderNameFrom(input)
+  if (!name) return { ok: false, error: 'Type the order number, like 2237.' }
+  let order
+  try {
+    order = await findReturnOrder(name)
+  } catch (e) {
+    return { ok: false, error: `Could not read Shopify: ${e instanceof Error ? e.message.slice(0, 160) : String(e)}` }
+  }
+  if (!order) return { ok: false, error: `No order ${name} in Shopify.` }
+  // Only what went out and has not already been refunded can come back.
+  const items = order.items
+    .map((i) => ({ id: i.id, label: i.label, returnable: Math.min(i.shipped, i.refundable) }))
+    .filter((i) => i.returnable > 0)
+  if (!items.length) return { ok: false, error: `Nothing on ${name} has shipped and is still unrefunded, so there is nothing to return.` }
+  const c = await db.supportCase.findFirst({ where: { shopifyOrderId: order.id }, orderBy: [{ status: 'asc' }, { lastMessageAt: 'desc' }] })
+  const info = c?.returnInfo as { refundedAt?: string } | null
+  return {
+    ok: true,
+    order: { id: order.id, name: order.name, email: order.email, customerName: order.customerName, items },
+    caseId: c?.id ?? null,
+    alreadyReceived: !!info && !info.refundedAt,
+  }
+}
+
+/**
+ * The parcel is in the studio: record it on the order's case (making one if
+ * the customer never wrote), email the customer that it arrived, and then
+ * close an exchange or leave a refund open for someone to approve.
+ */
+export async function receiveReturn(input: {
+  orderName: string
+  lines: Array<{ lineItemId: string; quantity: number }>
+  kind: 'REFUND' | 'EXCHANGE'
+}): Promise<Result & { caseId?: string }> {
+  const who = await approver()
+  if (!who) return { ok: false, error: 'Sign in again — only the team can do this.' }
+  const found = await lookupReturn(input.orderName)
+  if (!found.ok) return found
+  const { order } = found
+  const lines = input.lines
+    .filter((l) => l.quantity > 0)
+    .map((l) => {
+      const item = order.items.find((i) => i.id === l.lineItemId)
+      return item ? { lineItemId: item.id, quantity: Math.min(Math.round(l.quantity), item.returnable), label: item.label } : null
+    })
+    .filter((l): l is { lineItemId: string; quantity: number; label: string } => !!l && l.quantity > 0)
+  if (!lines.length) return { ok: false, error: 'Tick what came back.' }
+  if (!order.email) return { ok: false, error: `${order.name} has no email on it, so the customer cannot be told. Handle it in Shopify.` }
+
+  const { returnReceivedText } = await import('@/lib/returns')
+  const first = order.customerName?.trim().split(/\s+/)[0] ?? null
+  let caseId = found.caseId
+  if (!caseId) {
+    const snap = await freshOrder(order.id).catch(() => null)
+    const c = await db.supportCase.create({
+      data: {
+        customerEmail: order.email.toLowerCase(), customerName: first, subject: `Your return for ${order.name}`,
+        category: 'RETURN_EXCHANGE', urgency: 'DIGEST', status: 'OPEN',
+        summary: `Return received at the studio for ${order.name}.`,
+        shopifyOrderName: order.name, shopifyOrderId: order.id,
+        orderSnapshot: snap ? (snap as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+      },
+    })
+    caseId = c.id
+  }
+  const info = { orderId: order.id, orderName: order.name, kind: input.kind, lines, receivedAt: new Date().toISOString(), receivedBy: who.name }
+  await db.$transaction([
+    db.supportCase.update({ where: { id: caseId }, data: { returnInfo: info as unknown as Prisma.InputJsonValue } }),
+    db.supportMessage.create({
+      data: {
+        caseId, direction: 'NOTE', fromAddress: who.name,
+        body: `Return received at the studio: ${lines.map((l) => `${l.quantity} × ${l.label}`).join(', ')}. ${input.kind === 'REFUND' ? 'Refund to approve once it has been checked.' : 'Exchange: send the replacement.'}`,
+      },
+    }),
+  ])
+  const sent = await sendReply(caseId, returnReceivedText(first, info))
+  if (!sent.ok) return { ok: false, error: `Recorded, but the email did not go: ${sent.error}` }
+  // A refund waits, open, for someone to approve it; an exchange is done here.
+  await db.supportCase.update({
+    where: { id: caseId },
+    data: input.kind === 'REFUND' ? { status: 'OPEN', resolvedAt: null, urgency: 'TODAY' } : { status: 'RESOLVED', resolvedAt: new Date() },
+  })
+  revalidatePath('/support')
+  revalidatePath('/products')
+  return { ok: true, caseId }
+}
+
+async function studioLocation(): Promise<string | null> {
+  const l = await db.location.findFirst({ where: { isDefault: true }, select: { shopifyLocationId: true } })
+  return l?.shopifyLocationId ?? null
+}
+
+/** What approving the refund on this case would pay back. Changes nothing. */
+export async function quoteCaseRefund(caseId: string): Promise<{ ok: true; refund: number; fee: number } | { ok: false; error: string }> {
+  if (!(await approver())) return { ok: false, error: 'Sign in again — only the team can do this.' }
+  const c = await db.supportCase.findUnique({ where: { id: caseId } })
+  const info = c?.returnInfo as import('@/lib/returns').ReturnInfo | null
+  if (!info || info.kind !== 'REFUND' || info.refundedAt) return { ok: false, error: 'No refund waiting on this case.' }
+  const loc = await studioLocation()
+  if (!loc) return { ok: false, error: 'The studio has no Shopify location on record.' }
+  const { quoteReturnRefund } = await import('@/lib/returns')
+  try {
+    const q = await quoteReturnRefund(info.orderId, info.lines, loc)
+    return { ok: true, refund: q.refund, fee: q.fee }
+  } catch (e) {
+    return { ok: false, error: `Shopify could not work it out: ${e instanceof Error ? e.message.slice(0, 160) : String(e)}` }
+  }
+}
+
+/** Approved: refund less the fee, restock, email the customer, close. */
+export async function approveReturnRefund(caseId: string): Promise<Result> {
+  const who = await approver()
+  if (!who) return { ok: false, error: 'Sign in again — only the team can do this.' }
+  const c = await db.supportCase.findUnique({ where: { id: caseId } })
+  const info = c?.returnInfo as import('@/lib/returns').ReturnInfo | null
+  if (!c || !info || info.kind !== 'REFUND') return { ok: false, error: 'No refund waiting on this case.' }
+  if (info.refundedAt) return { ok: false, error: `Already refunded on ${info.refundedAt.slice(0, 10)}.` }
+  const loc = await studioLocation()
+  if (!loc) return { ok: false, error: 'The studio has no Shopify location on record. Nothing was refunded.' }
+  const { refundReturn, returnRefundedText } = await import('@/lib/returns')
+  let q
+  try {
+    q = await refundReturn(info.orderId, info.lines, loc, `return-${info.orderId.split('/').pop()}-${caseId}`, `Return, less 10% restocking fee. Approved by ${who.name} in the Studio app.`)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: false, error: /access|scope|denied|permission/i.test(msg) ? await permissionError('refund this return', 'write_orders', msg) : `Shopify refused: ${msg.slice(0, 200)}. Nothing was sent.` }
+  }
+  const done = { ...info, refundedAt: new Date().toISOString(), refunded: q.refund, fee: q.fee }
+  const now = await freshOrder(info.orderId).catch(() => null)
+  await db.$transaction([
+    db.supportCase.update({
+      where: { id: caseId },
+      data: { returnInfo: done as unknown as Prisma.InputJsonValue, ...(now ? { orderSnapshot: now as unknown as Prisma.InputJsonValue } : {}) },
+    }),
+    db.supportMessage.create({
+      data: { caseId, direction: 'NOTE', fromAddress: who.name, body: `Refunded $${q.refund.toFixed(2)} in Shopify (10% restocking fee of $${q.fee.toFixed(2)} kept); items back in the studio's stock.` },
+    }),
+  ])
+  const sent = await sendReply(caseId, returnRefundedText(c.customerName, info.orderName, q))
+  await db.supportCase.update({ where: { id: caseId }, data: { status: 'RESOLVED', resolvedAt: new Date() } })
+  revalidatePath('/support')
+  return sent.ok ? { ok: true } : { ok: false, error: `Refunded, but the email did not go: ${sent.error}` }
+}
