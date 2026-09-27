@@ -207,6 +207,14 @@ first call hands the message back to you — print it, all of it, and wait. "Dra
 an email", "let me see it", or any silence on the point all mean draft. Only
 someone saying, in plain words, to send it means send.
 
+**Invoicing a live sale works the same way: shown first, sent on a yes.**
+"Invoice Jane Doe for a Boy Belt size M" means invoice_live_sale. The price is
+the retail price unless the person names another for this sale. Never choose a
+price, a size, a colour or an email yourself; ask. The first call prices it in
+Shopify and changes nothing; show the invoice (who, lines, tax, total) and wait
+for send. The Shopify order moves the stock, so never log an inventory event
+for it as well.
+
 **A purchase is one fact with three doors, and they all count the same.**
 Brandon, 18 Sept 2026: "A PO can be trigger. But so can chat. Or msg." A
 purchase order going out starts it. Someone saying "I ordered 2,000 mailers

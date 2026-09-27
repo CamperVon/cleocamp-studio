@@ -48,6 +48,12 @@ const OCCASIONAL: Item[] = [
   { href: '/phones', label: 'Phones' },
 ]
 
+// Desktop has room for one more in the row, and Support is used daily now
+// (Brandon, 27 Sept 2026: "remove support from the drop down and put at top").
+// The phone keeps four tabs; Support stays under More there.
+const DESK_ROW: Item[] = [...DAILY, { href: '/support', label: 'Support' }]
+const DESK_MORE: Item[] = OCCASIONAL.filter((i) => !DESK_ROW.some((d) => d.href === i.href))
+
 /** A section counts as "here" for itself and anything under it — /po/2378 is Purchase orders. */
 function isHere(pathname: string, href: string): boolean {
   if (href === '/') return pathname === '/'
@@ -73,6 +79,7 @@ export function NavBar({ personName }: { personName: string | null }) {
   }, [moreOpen, deskMore])
 
   const inMore = OCCASIONAL.some((i) => isHere(pathname, i.href))
+  const inDeskMore = DESK_MORE.some((i) => isHere(pathname, i.href))
 
   return (
     <>
@@ -91,7 +98,7 @@ export function NavBar({ personName }: { personName: string | null }) {
               laptop-width screen and cut off at "Fi", the same problem the
               phone had, one size up. */}
           <nav className="hidden items-center gap-1 md:flex">
-            {DAILY.map((l) => {
+            {DESK_ROW.map((l) => {
               const here = isHere(pathname, l.href)
               return (
                 <Link
@@ -114,7 +121,7 @@ export function NavBar({ personName }: { personName: string | null }) {
                 aria-expanded={deskMore}
                 className={
                   'shrink-0 rounded-md px-2.5 py-1.5 text-sm ' +
-                  (inMore ? 'text-ink underline decoration-accent decoration-2 underline-offset-[6px]' : 'text-muted hover:bg-sunk hover:text-ink')
+                  (inDeskMore ? 'text-ink underline decoration-accent decoration-2 underline-offset-[6px]' : 'text-muted hover:bg-sunk hover:text-ink')
                 }
               >
                 More <span aria-hidden className="text-faint">&#9662;</span>
@@ -123,7 +130,7 @@ export function NavBar({ personName }: { personName: string | null }) {
                 <>
                   <div className="fixed inset-0 z-30" onClick={() => setDeskMore(false)} />
                   <ul className="absolute left-0 top-full z-40 mt-1.5 w-52 divide-y divide-line border border-line bg-surface py-0.5 shadow-sm">
-                    {OCCASIONAL.map((l) => {
+                    {DESK_MORE.map((l) => {
                       const here = isHere(pathname, l.href)
                       return (
                         <li key={l.href}>

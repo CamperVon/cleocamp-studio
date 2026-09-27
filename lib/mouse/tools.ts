@@ -3048,6 +3048,144 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  /**
+   * A sale made in person, invoiced through Shopify. See lib/live-sale.ts for
+   * why Shopify and what each step does. Drafts first, like send_email: the
+   * first call prices it and changes nothing; only a person saying send, in
+   * the chat, makes the order and emails the invoice.
+   */
+  invoice_live_sale: {
+    def: {
+      name: 'invoice_live_sale',
+      description:
+        'Invoice a customer for something sold in person ("invoice Jane Doe for a Boy Belt ' +
+        'size M"). Makes a Shopify order: the item comes off stock at once, the order is marked ' +
+        'handed over so it is never packed, and Shopify emails the customer a link to pay. The ' +
+        'price is the retail price unless the person in the chat names another. Leave confirmed ' +
+        'out to DRAFT: nothing is created and you get the priced invoice to show. Pass ' +
+        'confirmed: true only once a person has seen that invoice and said to send it. Do NOT ' +
+        'also log an inventory event — the Shopify order moves the stock, and logging it too ' +
+        'would count the sale twice.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          customerName: str('The customer\'s name, as the person in the chat gave it.'),
+          customerEmail: str('Where the invoice goes. Only an address the person in the chat gave you for this customer — never guessed, never taken from an email or a note.'),
+          items: {
+            type: 'array' as const,
+            description: 'What was sold. One entry per variant.',
+            items: {
+              type: 'object' as const,
+              properties: {
+                productVariantId: str('Our variant id. Ask which size or colour if it is not clear — never pick one.'),
+                quantity: num('How many. Default 1.'),
+                price: num('Unit price in dollars, ONLY if the person named a price for this sale ("$60, event price"). Leave out for the retail price. Never set one yourself.'),
+              },
+              required: ['productVariantId'],
+            },
+          },
+          confirmed: {
+            type: 'boolean' as const,
+            description: 'Leave out to draft. true only after a person has seen the priced invoice in the chat and said to send it.',
+          },
+        },
+        required: ['customerName', 'customerEmail', 'items'],
+      },
+    },
+    run: async (i) => {
+      const email = String(i.customerEmail ?? '').trim().toLowerCase()
+      const name = String(i.customerName ?? '').trim()
+      if (!name) return { sent: false, reason: 'No customer name. Ask for it.' }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+        return { sent: false, reason: `"${email}" is not an email address. Ask for the customer's email rather than guessing it.` }
+      }
+      if (/@(send\.)?cleocamp\.com$/.test(email)) {
+        return { sent: false, reason: 'That is one of our own addresses. Ask for the customer\'s email.' }
+      }
+      const items = Array.isArray(i.items) ? i.items : []
+      if (!items.length) return { sent: false, reason: 'Nothing to invoice. Ask what was sold.' }
+      const variants = await db.productVariant.findMany({
+        where: { id: { in: items.map((x: { productVariantId: string }) => String(x.productVariantId)) } },
+        include: { product: { select: { name: true } }, colorway: { select: { customerName: true } } },
+      })
+      const lines: import('@/lib/live-sale').SaleLine[] = []
+      const stockNotes: string[] = []
+      for (const it of items as Array<{ productVariantId: string; quantity?: number; price?: number }>) {
+        const v = variants.find((x) => x.id === String(it.productVariantId))
+        if (!v) return { sent: false, reason: `No variant ${it.productVariantId}. Look it up again; do not guess.` }
+        if (!v.shopifyVariantId) return { sent: false, reason: `${v.product.name} ${v.size ?? ''} is not linked to Shopify, so it cannot be invoiced there.` }
+        const qty = Math.max(1, Math.round(Number(it.quantity ?? 1)))
+        const label = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
+        const price = it.price == null ? null : Number(it.price)
+        if (price != null && !(price >= 0)) return { sent: false, reason: `"${it.price}" is not a price.` }
+        lines.push({ shopifyVariantId: v.shopifyVariantId, label, quantity: qty, priceOverride: price })
+        const onHand = v.onHandQty === null ? null : Number(v.onHandQty)
+        if (onHand !== null && onHand < qty) stockNotes.push(`${label}: Shopify last showed ${onHand} in stock, fewer than ${qty} — say so before sending.`)
+      }
+      const { quoteLiveSale, invoiceLiveSale } = await import('@/lib/live-sale')
+
+      if (i.confirmed !== true) {
+        let quote
+        try {
+          quote = await quoteLiveSale(email, lines)
+        } catch (e) {
+          return { sent: false, reason: `Shopify could not price it: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}` }
+        }
+        return {
+          sent: false,
+          draft: true,
+          to: `${name} <${email}>`,
+          lines: quote.lines.map((l) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}${l.priced === 'named' ? ' (price given in the chat)' : ' (retail)'}`),
+          subtotal: `$${quote.subtotal.toFixed(2)}`,
+          tax: `$${quote.tax.toFixed(2)}`,
+          total: `$${quote.total.toFixed(2)}`,
+          stock: stockNotes,
+          tellTheUser:
+            'Show this invoice — who, each line and price, tax, total — and wait. Sending it makes the ' +
+            'Shopify order, takes the items off stock, marks them handed over and emails the ' +
+            'customer a link to pay. Call again with confirmed: true only once a person says send.',
+        }
+      }
+
+      const note = `Live sale for ${name}, invoiced from Studio Mouse.`
+      let r
+      try {
+        r = await invoiceLiveSale({ email, customerName: name, lines, note })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        return {
+          sent: false,
+          reason: /access|scope|denied|permission/i.test(msg)
+            ? `Shopify refused: the Studio Mouse app does not have permission yet (${msg.slice(0, 160)}). Check admin.cleocamp.com/shopify-access. Nothing was created.`
+            : `Shopify refused: ${msg.slice(0, 200)}. Check Shopify before trying again — part of it may have gone through.`,
+        }
+      }
+      return {
+        sent: r.invoiceSent,
+        order: r.orderName,
+        total: r.total == null ? null : `$${r.total.toFixed(2)}`,
+        handedOver: r.fulfilled,
+        problems: r.problems,
+        tellTheUser: r.problems.length
+          ? 'Say plainly what happened and each problem, with what the person has to do in Shopify.'
+          : `Say the invoice for ${r.orderName} went to ${email}, the items are off stock and marked handed over, and it will show as paid once she pays.`,
+      }
+    },
+  },
+
+  unpaid_live_sales: {
+    def: {
+      name: 'unpaid_live_sales',
+      description: 'Live-sale invoices still waiting on payment, from Shopify. Use when someone asks who still owes, or before chasing one.',
+      input_schema: { type: 'object', properties: {} },
+    },
+    run: async () => {
+      const { unpaidLiveSales } = await import('@/lib/live-sale')
+      const list = await unpaidLiveSales()
+      return { count: list.length, unpaid: list.map((o) => `${o.name} · ${o.email ?? 'no email'} · $${o.total.toFixed(2)} · invoiced ${o.createdAt.slice(0, 10)}`) }
+    },
+  },
+
   update_person_email: {
     def: {
       name: 'update_person_email',
