@@ -184,7 +184,7 @@ function ReportGap({ messageId }: { messageId: string }) {
   if (state === 'done') {
     return (
       <p className="mt-1.5 text-[11px] text-muted">
-        Filed for Claude — it&rsquo;s on <a className="underline" href="/items">To tend to</a> with this
+        Filed for Claude — it&rsquo;s on <a className="underline" href="/items">To do</a> with this
         exchange attached.
       </p>
     )

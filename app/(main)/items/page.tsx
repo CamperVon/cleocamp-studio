@@ -31,7 +31,7 @@ export default async function Items() {
 
   return (
     <Page
-      title="To tend to"
+      title="To do"
       lede="Everything Studio Mouse is waiting on — questions it needs answered and todos people have set."
     >
       <SuggestedCloses
