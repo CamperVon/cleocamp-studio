@@ -103,7 +103,7 @@ export default async function PurchaseOrders() {
   }
 
   return (
-    <Page title="Purchase orders" lede="Every order Studio Mouse has drafted or sent, whatever its status.">
+    <Page title="Purchase Orders" lede="Every order Studio Mouse has drafted or sent, whatever its status.">
       {pos.length ? (
         <div className="flex flex-wrap gap-3">
           <Stat

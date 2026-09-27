@@ -34,7 +34,7 @@ type Item = { href: string; label: string; short?: string; icon?: ReactNode }
 const DAILY: Item[] = [
   { href: '/', label: 'Home', icon: <IconHome /> },
   { href: '/products', label: 'Products', icon: <IconTag /> },
-  { href: '/purchase-orders', label: 'Purchase orders', short: 'POs', icon: <IconDoc /> },
+  { href: '/purchase-orders', label: 'Purchase Orders', short: 'POs', icon: <IconDoc /> },
   { href: '/items', label: 'ToDo', icon: <IconCheck /> },
 ]
 

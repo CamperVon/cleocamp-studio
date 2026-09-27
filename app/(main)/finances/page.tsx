@@ -85,7 +85,7 @@ export default async function Finances() {
   // page should show what it has rather than insisting on OAuth first.
   if (!conn && !snap) {
     return (
-      <Page title="Finances" lede="Where the money is and what is owed to Cleo Camp. Purchase order commitments live on the Purchase orders tab.">
+      <Page title="Finances" lede="Where the money is and what is owed to Cleo Camp. Purchase order commitments live on the Purchase Orders tab.">
         <Card title="Nothing recorded yet">
           <div className="flex flex-col gap-3 px-4 py-5 sm:px-5">
             <p className="text-sm text-muted">
