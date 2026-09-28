@@ -454,6 +454,67 @@ export async function sendDraft(args: { draftOrderId: string; email: string; cus
   return completeAndInvoice(args.draftOrderId, args.email, args.customerName, args.options ?? {})
 }
 
+export type DraftSummary = {
+  id: string
+  name: string
+  open: boolean
+  tags: string[]
+  email: string | null
+  company: string | null
+  address: ShipAddress | null
+  lines: Array<{ label: string; quantity: number; unitPrice: number; fromStock: boolean }>
+  subtotal: number
+  shipping: number
+  tax: number
+  total: number
+  pdfPath: string
+  adminUrl: string
+}
+
+/**
+ * A draft by its number ("D36"), read back from Shopify in full, so it can be
+ * shown and sent as it stands. Brandon, 28 Sept 2026, asking Mouse to process
+ * #D36: Mouse asked him for the items, because the only way to send was to
+ * rebuild the draft from a list it no longer had. Shopify's search does not
+ * match draft names exactly, so the recent ones are read and matched here.
+ */
+export async function findDraft(nameIn: string): Promise<DraftSummary | null> {
+  const want = `#${nameIn.replace(/^#/, '').trim().toUpperCase()}`
+  const list = await shopifyGraphQL<{ draftOrders: { nodes: Array<{ id: string; name: string }> } }>(
+    `{ draftOrders(first: 100, reverse: true) { nodes { id name } } }`,
+  )
+  const hit = list.draftOrders.nodes.find((n) => n.name.toUpperCase() === want)
+  if (!hit) return null
+  type A = { company: string | null; firstName: string | null; lastName: string | null; address1: string | null; address2: string | null; city: string | null; provinceCode: string | null; zip: string | null } | null
+  const d = await shopifyGraphQL<{ draftOrder: {
+    id: string; name: string; status: string; legacyResourceId: string; tags: string[]; email: string | null
+    shippingAddress: A; billingAddress: A
+    lineItems: { nodes: Array<{ title: string; variantTitle: string | null; quantity: number; variant: { id: string } | null; originalUnitPriceSet: Money }> }
+    subtotalPriceSet: Money; totalShippingPriceSet: Money; totalTaxSet: Money; totalPriceSet: Money
+  } | null }>(
+    `query($id: ID!) { draftOrder(id: $id) { id name status legacyResourceId tags email
+      shippingAddress { company firstName lastName address1 address2 city provinceCode zip }
+      billingAddress { company firstName lastName address1 address2 city provinceCode zip }
+      lineItems(first: 250) { nodes { title variantTitle quantity variant { id } originalUnitPriceSet { shopMoney { amount } } } }
+      subtotalPriceSet { shopMoney { amount } } totalShippingPriceSet { shopMoney { amount } } totalTaxSet { shopMoney { amount } } totalPriceSet { shopMoney { amount } } } }`,
+    { id: hit.id },
+  )
+  const o = d.draftOrder
+  if (!o) return null
+  const a = o.shippingAddress ?? o.billingAddress
+  return {
+    id: o.id, name: o.name, open: o.status !== 'COMPLETED', tags: o.tags, email: o.email,
+    company: a?.company ?? null,
+    address: a?.address1 && a.city && a.provinceCode && a.zip
+      ? { company: a.company, firstName: a.firstName, lastName: a.lastName, address1: a.address1, address2: a.address2, city: a.city, provinceCode: a.provinceCode, zip: a.zip, countryCode: 'US' }
+      : null,
+    lines: o.lineItems.nodes.map((l) => ({ label: `${l.title}${l.variantTitle ? ` — ${l.variantTitle}` : ''}`, quantity: l.quantity, unitPrice: money(l.originalUnitPriceSet), fromStock: !!l.variant })),
+    subtotal: money(o.subtotalPriceSet), shipping: money(o.totalShippingPriceSet), tax: money(o.totalTaxSet), total: money(o.totalPriceSet),
+    pdfPath: `/drafts/${o.legacyResourceId}/pdf`,
+    adminUrl: await draftAdminUrl(o.legacyResourceId),
+  }
+}
+
 /** Live sales still waiting on payment, newest first. */
 export async function unpaidLiveSales(): Promise<Array<{ name: string; email: string | null; total: number; createdAt: string; status: string }>> {
   const d = await shopifyGraphQL<{ orders: { nodes: Array<{ name: string; email: string | null; createdAt: string; displayFinancialStatus: string | null; totalPriceSet: Money }> } }>(

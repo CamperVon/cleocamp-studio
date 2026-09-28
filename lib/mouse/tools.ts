@@ -3351,7 +3351,9 @@ export const TOOLS: Record<string, Tool> = {
       }
       const options = {
         taxExempt: true,
-        tags: ['wholesale', 'studio-mouse'],
+        // Whether it ships is kept on the draft, so it can be sent later by
+        // its number without anyone having to say it again.
+        tags: ['wholesale', 'studio-mouse', i.ship ? 'ships' : 'handed-over'],
         subject: (n: string) => `Cleo Camp wholesale invoice ${n}`,
         message: () => `Hello ${acct.contactName?.trim().split(/\s+/)[0] ?? acct.name}, thank you for your order. Your invoice is below, with a link to pay.\n\nKindly,\nCleo Studio`,
       } as import('@/lib/live-sale').InvoiceOptions
@@ -3456,6 +3458,83 @@ export const TOOLS: Record<string, Tool> = {
         tellTheUser: emailed
           ? `Say $${o.refund.toFixed(2)} was refunded on ${o.name} and ${o.email} was told.`
           : `Say the refund of $${o.refund.toFixed(2)} on ${o.name} went through but the email did not send, so someone should tell the customer.`,
+      }
+    },
+  },
+
+  send_wholesale_draft: {
+    def: {
+      name: 'send_wholesale_draft',
+      description:
+        'Show or send a wholesale draft that already exists in Shopify, by its number ("D36"). ' +
+        'Reads the draft back from Shopify as it stands (items, prices, edits made there, the store, ' +
+        'whether each line comes off stock) — never ask the person for the items, and never rebuild ' +
+        'it with invoice_wholesale. Leave confirmed out to SHOW it; confirmed: true only once a ' +
+        'person has seen it and said send. ship is needed only when the draft does not already say ' +
+        'whether it ships (older drafts); then ask, or use what the person said.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          draft: str('The draft number, e.g. "D36"'),
+          ship: { type: 'boolean' as const, description: 'Only if the draft does not say: true ships (label in Shopify), false was handed over or delivered.' },
+          alsoCopy: { type: 'array' as const, items: { type: 'string' as const }, description: 'Other people at the store to copy (blind), only addresses a person gave. studio@ is always copied.' },
+          confirmed: { type: 'boolean' as const, description: 'Leave out to show. true only after a person has seen it and said send.' },
+        },
+        required: ['draft'],
+      },
+    },
+    run: async (i) => {
+      const { findDraft, sendDraft } = await import('@/lib/live-sale')
+      const d = await findDraft(String(i.draft ?? ''))
+      if (!d) return { sent: false, reason: `No draft ${String(i.draft)} among the last 100 in Shopify. Ask for the number again.` }
+      if (!d.open) return { sent: false, reason: `${d.name} has already been turned into an order. Nothing to send.` }
+      if (!d.tags.includes('wholesale')) return { sent: false, reason: `${d.name} is not a wholesale draft. This tool only sends wholesale drafts.` }
+      if (!d.email) return { sent: false, reason: `${d.name} has no email on it. Ask where the invoice should go, save it on the account, and redraft.` }
+      const tagged = d.tags.includes('ships') ? true : d.tags.includes('handed-over') ? false : null
+      const ship = tagged ?? (typeof i.ship === 'boolean' ? i.ship : null)
+      if (ship === null) return { sent: false, reason: `${d.name} does not say whether it ships. Ask: shipped to the store, or already handed over?` }
+      if (ship && !d.address) return { sent: false, reason: `${d.name} has no full address to ship to. Ask for it and redraft.` }
+      const copy = (Array.isArray(i.alsoCopy) ? i.alsoCopy : []).map((x: unknown) => String(x).trim().toLowerCase()).filter(Boolean)
+      const bad = copy.find((x: string) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x))
+      if (bad) return { sent: false, reason: `"${bad}" is not an email address. Ask again.` }
+      const acct = await db.wholesaleAccount.findFirst({ where: { email: { equals: d.email, mode: 'insensitive' } } })
+      const storeName = acct?.name ?? d.company ?? d.email
+      const fromStock = d.lines.filter((l) => l.fromStock).length
+      const stock = fromStock === 0 ? 'Stock is left alone (no line is linked to a product).'
+        : fromStock === d.lines.length ? 'Every line comes off Shopify stock when sent.'
+        : `${fromStock} of ${d.lines.length} lines come off Shopify stock when sent; the rest leave stock alone.`
+      if (i.confirmed !== true) {
+        return {
+          sent: false, draft: d.name, to: `${storeName} <${d.email}>`,
+          copied: ['studio@cleocamp.com (always)', ...copy],
+          lines: d.lines.map((l) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}`),
+          subtotal: `$${d.subtotal.toFixed(2)}`, shipping: ship ? `ships to the store, $${d.shipping.toFixed(2)} charged; label made in Shopify after sending` : 'handed over, marked fulfilled when sent',
+          tax: `$${d.tax.toFixed(2)}`, total: `$${d.total.toFixed(2)}`, stock,
+          reviewInShopify: d.adminUrl, pdf: d.pdfPath,
+          tellTheUser: 'Show it: the store and email, each line and price, the total, stock, shipped or handed over, and the Shopify and PDF links. Nothing is sent until the person says send.',
+        }
+      }
+      const first = acct?.contactName?.trim().split(/\s+/)[0] ?? storeName
+      let r
+      try {
+        r = await sendDraft({
+          draftOrderId: d.id, email: d.email, customerName: first, requireTag: 'wholesale',
+          options: {
+            shipTo: ship ? d.address ?? undefined : undefined,
+            bcc: copy,
+            subject: (n: string) => `Cleo Camp wholesale invoice ${n}`,
+            message: () => `Hello ${first}, thank you for your order. Your invoice is below, with a link to pay.\n\nKindly,\nCleo Studio`,
+          },
+        })
+      } catch (e) {
+        return { sent: false, reason: `Shopify refused: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}. Check ${d.name} in Shopify before retrying — part may have gone through.` }
+      }
+      return {
+        sent: r.invoiceSent, order: r.orderName, total: r.total == null ? null : `$${r.total.toFixed(2)}`,
+        handedOver: r.fulfilled, problems: r.problems,
+        tellTheUser: r.problems.length
+          ? 'Say what happened and each problem, with what to do in Shopify.'
+          : `Say ${d.name} went to ${storeName} as order ${r.orderName}, studio@ copied.${ship ? ` To ship: open ${r.orderName} in Shopify and tap "Create shipping label".` : ''}`,
       }
     },
   },

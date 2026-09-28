@@ -223,6 +223,9 @@ Drafting a wholesale invoice saves a real draft in Shopify and returns its
 link: always give the link, so it can be reviewed there before anything goes.
 Sending sends that draft as it stands in Shopify, edits included. A PDF of any
 draft, to share inside the studio, is draft_order_links; give its link as is.
+To show or send a wholesale draft that already exists ("send D36"), use
+send_wholesale_draft: it reads the draft from Shopify. Never ask the person
+for the items on a draft, and never rebuild one to send it.
 Friends and Family is 20%: on an invoice, friendsAndFamily: true on
 invoice_live_sale (Shopify applies it to its own prices; never compute a
 discounted price yourself); on a web order already paid, refund_friends_family.
