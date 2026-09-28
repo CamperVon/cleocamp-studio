@@ -19,3 +19,14 @@ test('the customer note is fixed text with the amount and order', () => {
   assert.match(t, /Kindly,\nCleo Studio$/)
   assert.match(friendsFamilyText(null, '#1', 1), /^Hi there,/)
 })
+
+test('a named price above Shopify\'s own is called out (#2643: $318.40 was asked, $294.40 was right)', async () => {
+  const { aboveRetail } = await import('@/lib/mouse/tools')
+  const flagged = aboveRetail([
+    { label: 'Bean Bag / Champagne / Petite', unitPrice: 318.4, priced: 'named', shopifyPrice: 294.4 },
+    { label: 'Cleo Tee / Shell / 1', unitPrice: 60, priced: 'named', shopifyPrice: 88 },
+    { label: 'Boy Belt / Small', unitPrice: 228, priced: 'retail', shopifyPrice: 228 },
+  ])
+  assert.equal(flagged.length, 1)
+  assert.match(flagged[0], /Bean Bag.*\$318\.40.*\$294\.40/)
+})

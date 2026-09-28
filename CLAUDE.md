@@ -239,6 +239,16 @@ Framework-level conventions from the Next.js scaffold live in `AGENTS.md`.
   filter, he wanted the feature gone, and said so three times before it was
   heard. When a second round of narrowing is being written for the same
   complaint, stop and ask whether the thing should exist at all.
+- **Money is worked out by Shopify, never by Mouse.** On 28 Sept 2026 a note
+  told Mouse Friends and Family was "80% of retail", so it did the sum itself
+  — off $398, the Bean Bag's product price in this app, when Shopify sells
+  the Petite at $368. #2643 went to a customer $26.34 too high and had to be
+  corrected with an apology. The app's `retailPriceCents` is a cache that can
+  be the product's rather than the size's; Shopify's variant price is the
+  truth. So a discount goes to Shopify as a discount (`FRIENDS_AND_FAMILY`
+  in `lib/friends-family.ts`), a named price is checked against Shopify's own
+  on the draft (`aboveRetail`), and a note never tells Mouse to calculate a
+  price.
 - **Studio Mouse must be told the date.** Without it in context it cannot reason
   about lead times or due dates, and correctly refuses to guess — which means
   asking Cleo what day it is.

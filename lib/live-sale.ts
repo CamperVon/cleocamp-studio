@@ -156,7 +156,8 @@ function draftInput(email: string, lines: SaleLine[], note: string, opts: Invoic
 }
 
 export type Quote = {
-  lines: Array<{ label: string; quantity: number; unitPrice: number; priced: 'retail' | 'named' }>
+  /** shopifyPrice: what Shopify itself sells the variant for, to check a named price against. */
+  lines: Array<{ label: string; quantity: number; unitPrice: number; priced: 'retail' | 'named'; shopifyPrice: number | null }>
   subtotal: number
   /** Taken off by an order discount (Friends and Family); subtotal is after it. */
   discount: number
@@ -179,12 +180,25 @@ export async function quoteLiveSale(email: string, lines: SaleLine[], opts: Invo
   )
   const c = d.draftOrderCalculate.calculatedDraftOrder
   if (!c) throw new Error(d.draftOrderCalculate.userErrors.map((e) => e.message).join('; ') || 'Shopify could not price this.')
+  // Shopify's own price for every real variant, straight from Shopify: the
+  // app's stored retail can be the product's, not the size's (the Bean Bag
+  // is $398 in Medium, $368 in Petite), and #2643 went out priced off it.
+  const ids = lines.filter((l) => !l.noStock && l.shopifyVariantId).map((l) => gid(l.shopifyVariantId))
+  const shopPrice = new Map<string, number>()
+  if (ids.length) {
+    const p = await shopifyGraphQL<{ nodes: Array<{ id?: string; price?: string } | null> }>(
+      `query($ids: [ID!]!) { nodes(ids: $ids) { ... on ProductVariant { id price } } }`,
+      { ids },
+    )
+    for (const n of p.nodes) if (n?.id && n.price != null) shopPrice.set(n.id, Number(n.price))
+  }
   return {
     lines: lines.map((l, i) => ({
       label: l.label,
       quantity: l.quantity,
       unitPrice: l.priceOverride ?? money(c.lineItems[i]?.originalUnitPriceSet),
       priced: l.priceOverride != null ? 'named' : 'retail',
+      shopifyPrice: l.noStock ? null : shopPrice.get(gid(l.shopifyVariantId)) ?? null,
     })),
     subtotal: money(c.subtotalPriceSet),
     discount: money(c.totalDiscountsSet),

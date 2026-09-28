@@ -26,6 +26,17 @@ const str = (description: string) => ({ type: 'string' as const, description })
  * be applied once counting is done.
  */
 export const inventoryWritesEnabled = () => process.env.INVENTORY_WRITES === 'on'
+
+/**
+ * A named price above what Shopify charges is almost always a mistake: #2643
+ * went out at 80% of the wrong retail price, which came to more than
+ * Shopify's own. Said out loud on the draft, never silently sent.
+ */
+export function aboveRetail(lines: Array<{ label: string; unitPrice: number; priced: string; shopifyPrice: number | null }>): string[] {
+  return lines
+    .filter((l) => l.priced === 'named' && l.shopifyPrice != null && l.unitPrice > l.shopifyPrice)
+    .map((l) => `${l.label}: the named $${l.unitPrice.toFixed(2)} is MORE than Shopify's own price of $${l.shopifyPrice!.toFixed(2)}.`)
+}
 const num = (description: string) => ({ type: 'number' as const, description })
 
 /**
@@ -3191,11 +3202,13 @@ export const TOOLS: Record<string, Tool> = {
           to: `${name} <${email}>`,
           lines: quote.lines.map((l) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}${l.priced === 'named' ? ' (price given in the chat)' : ' (retail)'}`),
           ...(quote.discount ? { discount: `${FRIENDS_AND_FAMILY.title} ${FRIENDS_AND_FAMILY.percent}%: −$${quote.discount.toFixed(2)}` } : {}),
+          ...(aboveRetail(quote.lines).length ? { check: aboveRetail(quote.lines) } : {}),
           subtotal: `$${quote.subtotal.toFixed(2)}${quote.discount ? ' (after the discount)' : ''}`,
           tax: `$${quote.tax.toFixed(2)}`,
           total: `$${quote.total.toFixed(2)}`,
           stock: stockNotes,
           tellTheUser:
+            (aboveRetail(quote.lines).length ? 'FIRST say plainly that a named price is above what Shopify charges, with both figures, and ask whether it is right. ' : '') +
             'Show this invoice — who, each line and price, tax, total — and wait. Sending it makes the ' +
             'Shopify order, takes the items off stock, marks them handed over and emails the ' +
             'customer a link to pay. Call again with confirmed: true only once a person says send.',
