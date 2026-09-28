@@ -9,10 +9,15 @@ export const dynamic = 'force-dynamic'
  * months only — see git history for the full account list if older history
  * is ever needed, it stays in the sheet rather than living twice.
  *
- * Deliberately reads nothing from Component, ProductVariant or
+ * Deliberately reads no count from Component, ProductVariant or
  * InventoryEvent — Brandon: "do NOT change inventory in any way." This page
  * (and the tools behind it) never touch a count; Shopify stays the only
- * place on-hand lives.
+ * place on-hand lives. It reads only the prices off products and variants.
+ *
+ * The price list is what invoice_wholesale charges, and the app is its
+ * master copy (Brandon, 28 Sept 2026: "Let's have these prices in a
+ * wholesale tab"). Loaded from the Jan 2026 line sheet; changed by telling
+ * Mouse, which uses set_wholesale_price.
  */
 export default async function Wholesale() {
   const accounts = await db.wholesaleAccount.findMany({
@@ -20,6 +25,19 @@ export default async function Wholesale() {
     orderBy: { name: 'asc' },
     include: { shipments: { include: { lines: true }, orderBy: { sentAt: 'desc' } } },
   })
+  // Things we sell: active, with a retail price (the muslin bodies are parts).
+  const products = await db.product.findMany({
+    where: { status: 'ACTIVE', retailPriceCents: { not: null } },
+    orderBy: { name: 'asc' },
+    select: {
+      id: true, name: true, retailPriceCents: true, wholesalePriceCents: true,
+      variants: {
+        orderBy: [{ colorway: { customerName: 'asc' } }, { size: 'asc' }],
+        select: { id: true, size: true, retailPriceCents: true, wholesalePriceCents: true, colorway: { select: { customerName: true } } },
+      },
+    },
+  })
+  const unpriced = products.filter((p) => p.wholesalePriceCents == null && !p.variants.some((v) => v.wholesalePriceCents != null)).length
 
   const row = (a: (typeof accounts)[number]) => {
     const totalOwed = a.shipments.reduce((n, s) => {
@@ -91,7 +109,7 @@ export default async function Wholesale() {
   return (
     <Page
       title="Wholesale"
-      lede="What has shipped to wholesale and consignment accounts, and what's been paid — not inventory, that stays in Shopify."
+      lede="What stores pay, what has shipped to them, and what's been paid — not inventory, that stays in Shopify."
     >
       <div className="flex flex-wrap gap-3">
         <div className="flex-1 rounded-xl border border-line bg-surface px-4 py-3">
@@ -105,6 +123,54 @@ export default async function Wholesale() {
           </div>
         ) : null}
       </div>
+
+      <Card title="Price list">
+        <p className="border-b border-line px-4 py-2.5 text-xs text-muted sm:px-5">
+          What a store pays, and what Mouse invoices unless you name a price for one order. To change one, tell Mouse
+          {' '}(&ldquo;wholesale on the Cleo Tee is $56&rdquo;).
+          {unpriced ? <span className="text-warn"> {unpriced} not set yet — Mouse will ask.</span> : null}
+        </p>
+        <ul className="divide-y divide-line">
+          {products.map((p) => {
+            const byVariant = p.wholesalePriceCents == null && p.variants.some((v) => v.wholesalePriceCents != null)
+            const own = p.variants.filter((v) => byVariant || (v.wholesalePriceCents != null && v.wholesalePriceCents !== p.wholesalePriceCents))
+            const pct = (w: number | null, r: number | null) => (w != null && r ? ` · ${Math.round((w / r) * 100)}%` : '')
+            return (
+              <li key={p.id} className="px-4 py-2.5 text-sm sm:px-5">
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="font-medium">{p.name}</p>
+                  <p className="shrink-0 text-right">
+                    {byVariant ? (
+                      <span className="text-xs text-muted">by colour &amp; size</span>
+                    ) : p.wholesalePriceCents == null ? (
+                      <span className="text-xs text-warn">not set</span>
+                    ) : (
+                      <span className="font-semibold"><Money cents={p.wholesalePriceCents} /></span>
+                    )}
+                    {byVariant ? null : <span className="text-xs text-faint"> · retail <Money cents={p.retailPriceCents} />{pct(p.wholesalePriceCents, p.retailPriceCents)}</span>}
+                  </p>
+                </div>
+                {own.length ? (
+                  <ul className="mt-1 flex flex-col gap-0.5">
+                    {own.map((v) => {
+                      const retail = v.retailPriceCents ?? p.retailPriceCents
+                      return (
+                        <li key={v.id} className="flex items-baseline justify-between gap-3 text-xs">
+                          <span className="text-muted">{[v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'One size'}</span>
+                          <span className="shrink-0">
+                            {v.wholesalePriceCents == null ? <span className="text-warn">not set</span> : <Money cents={v.wholesalePriceCents} />}
+                            <span className="text-faint"> · retail <Money cents={retail} />{pct(v.wholesalePriceCents, retail)}</span>
+                          </span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                ) : null}
+              </li>
+            )
+          })}
+        </ul>
+      </Card>
 
       <Card title={`Accounts (${accounts.length})`}>
         {accounts.length === 0 ? (
