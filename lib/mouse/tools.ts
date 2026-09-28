@@ -959,6 +959,51 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  /**
+   * The standing wholesale price — what invoice_wholesale charges unless a
+   * price is named for one invoice. Brandon, 28 Sept 2026: keeping the price
+   * list current "is something mouse should be able to do with new info."
+   */
+  set_wholesale_price: {
+    def: {
+      name: 'set_wholesale_price',
+      description:
+        'Change the standing wholesale price of a product (every colour and size), or of one ' +
+        'variant where the line sheet prices it differently. Only a price a person states as the ' +
+        'new standing price — a price for one store\'s invoice goes on that invoice, not here. ' +
+        'Say the old and new price back.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          productId: str('The product'),
+          productVariantId: str('Only when this one variant is priced differently from the rest'),
+          price: num('New wholesale price in dollars, as the person said it'),
+        },
+        required: ['productId', 'price'],
+      },
+    },
+    run: async (i) => {
+      const cents = Math.round(Number(i.price) * 100)
+      if (!(cents >= 0)) return { saved: false, reason: 'That price is not a number. Ask again.' }
+      const p = await db.product.findUnique({ where: { id: String(i.productId) }, select: { id: true, name: true, wholesalePriceCents: true } })
+      if (!p) return { saved: false, reason: 'No such product. Look it up again.' }
+      const $ = (c: number | null) => (c == null ? 'none' : `$${(c / 100).toFixed(2)}`)
+      if (i.productVariantId) {
+        const v = await db.productVariant.findFirst({ where: { id: String(i.productVariantId), productId: p.id }, include: { colorway: { select: { customerName: true } } } })
+        if (!v) return { saved: false, reason: `That variant is not part of ${p.name}. Look it up again.` }
+        await db.productVariant.update({ where: { id: v.id }, data: { wholesalePriceCents: cents } })
+        const label = [p.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
+        return { saved: true, item: label, was: $(v.wholesalePriceCents ?? p.wholesalePriceCents), now: $(cents) }
+      }
+      await db.product.update({ where: { id: p.id }, data: { wholesalePriceCents: cents } })
+      const overridden = await db.productVariant.count({ where: { productId: p.id, wholesalePriceCents: { not: null } } })
+      return {
+        saved: true, item: p.name, was: $(p.wholesalePriceCents), now: $(cents),
+        ...(overridden ? { note: `${overridden} variant(s) of ${p.name} carry their own wholesale price and keep it. Say so.` } : {}),
+      }
+    },
+  },
+
   update_product_bom: {
     def: {
       name: 'update_product_bom',
