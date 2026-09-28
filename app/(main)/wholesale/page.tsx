@@ -20,6 +20,9 @@ export const dynamic = 'force-dynamic'
  * Mouse, which uses set_wholesale_price.
  */
 export default async function Wholesale() {
+  // Invoices sent through Shopify: paid when Shopify says so. A failed check
+  // leaves them as they were rather than blanking the page.
+  await import('@/lib/wholesale-invoices').then((m) => m.syncWholesalePayments()).catch(() => {})
   const accounts = await db.wholesaleAccount.findMany({
     where: { active: true },
     orderBy: { name: 'asc' },

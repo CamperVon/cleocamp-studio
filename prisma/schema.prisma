@@ -1193,6 +1193,11 @@ model WholesaleShipment {
   paid      Boolean?
   paidAt    DateTime?
   notes     String?
+  /// The Shopify order this was invoiced as, when Mouse invoiced it. Paid is
+  /// then read from Shopify, not typed in.
+  shopifyOrderId String?   @unique
+  /// The invoice number the store sees, e.g. "#2644".
+  invoiceName    String?
   createdAt DateTime  @default(now())
 
   account WholesaleAccount        @relation(fields: [accountId], references: [id])

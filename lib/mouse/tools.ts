@@ -3403,6 +3403,12 @@ export const TOOLS: Record<string, Tool> = {
         const msg = e instanceof Error ? e.message : String(e)
         return { sent: false, reason: /access|scope|denied|permission/i.test(msg) ? `Shopify refused: the app lacks permission (${msg.slice(0, 160)}). Nothing was created.` : `Shopify refused: ${msg.slice(0, 200)}. Check Shopify before retrying — part may have gone through.` }
       }
+      // On the Wholesale page from the moment it is an order.
+      if (r.orderId) {
+        const { recordWholesaleInvoice } = await import('@/lib/wholesale-invoices')
+        const rec = await recordWholesaleInvoice(draftOrderId, acct.id)
+        if (!rec.recorded) r.problems.push(`${r.orderName} is not on the Wholesale page yet (${rec.reason}). Tell Claude.`)
+      }
       return {
         sent: r.invoiceSent, order: r.orderName, total: r.total == null ? null : `$${r.total.toFixed(2)}`,
         handedOver: r.fulfilled, copiedTo: r.copiedTo ?? [], shipping: shipTo ? 'unfulfilled, waiting for a label' : null,
@@ -3533,6 +3539,15 @@ export const TOOLS: Record<string, Tool> = {
         })
       } catch (e) {
         return { sent: false, reason: `Shopify refused: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}. Check ${d.name} in Shopify before retrying — part may have gone through.` }
+      }
+      // On the Wholesale page from the moment it is an order.
+      if (r.orderId) {
+        if (!acct) r.problems.push(`${r.orderName} is not on the Wholesale page: no wholesale account has ${d.email} as its email. Tell Claude which account it belongs to.`)
+        else {
+          const { recordWholesaleInvoice } = await import('@/lib/wholesale-invoices')
+          const rec = await recordWholesaleInvoice(d.id, acct.id)
+          if (!rec.recorded) r.problems.push(`${r.orderName} is not on the Wholesale page yet (${rec.reason}). Tell Claude.`)
+        }
       }
       return {
         sent: r.invoiceSent, order: r.orderName, total: r.total == null ? null : `$${r.total.toFixed(2)}`,
