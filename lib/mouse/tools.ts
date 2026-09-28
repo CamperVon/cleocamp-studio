@@ -3143,6 +3143,7 @@ export const TOOLS: Record<string, Tool> = {
             },
           },
           friendsAndFamily: { type: 'boolean' as const, description: 'true when the person says Friends and Family: 20% off, applied by Shopify. Do not also pass prices.' },
+          alsoCopy: { type: 'array' as const, items: { type: 'string' as const }, description: 'Anyone else to copy (blind) on this invoice, only addresses a person gave. studio@ is always copied.' },
           confirmed: {
             type: 'boolean' as const,
             description: 'Leave out to draft. true only after a person has seen the priced invoice in the chat and said to send it.',
@@ -3187,7 +3188,10 @@ export const TOOLS: Record<string, Tool> = {
       if (ff && lines.some((l) => l.priceOverride != null)) {
         return { sent: false, reason: 'Friends and Family is taken off the retail price by Shopify. Leave the prices out, or ask whether a named price should replace the discount.' }
       }
-      const options = ff ? { discount: FRIENDS_AND_FAMILY } : {}
+      const copy = (Array.isArray(i.alsoCopy) ? i.alsoCopy : []).map((x: unknown) => String(x).trim().toLowerCase()).filter(Boolean)
+      const badCopy = copy.find((x: string) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x))
+      if (badCopy) return { sent: false, reason: `"${badCopy}" is not an email address. Ask again.` }
+      const options = { ...(ff ? { discount: FRIENDS_AND_FAMILY } : {}), bcc: copy }
 
       if (i.confirmed !== true) {
         let quote
@@ -3200,6 +3204,7 @@ export const TOOLS: Record<string, Tool> = {
           sent: false,
           draft: true,
           to: `${name} <${email}>`,
+          copied: ['studio@cleocamp.com (always)', ...copy],
           lines: quote.lines.map((l) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}${l.priced === 'named' ? ' (price given in the chat)' : ' (retail)'}`),
           ...(quote.discount ? { discount: `${FRIENDS_AND_FAMILY.title} ${FRIENDS_AND_FAMILY.percent}%: −$${quote.discount.toFixed(2)}` } : {}),
           ...(aboveRetail(quote.lines).length ? { check: aboveRetail(quote.lines) } : {}),
