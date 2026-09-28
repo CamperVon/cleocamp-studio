@@ -15,6 +15,7 @@ const NEEDS: Array<{ what: string; scopes: string[] }> = [
   { what: 'Change an address, cancel and refund', scopes: ['write_orders'] },
   { what: 'Remove an unshipped item', scopes: ['write_order_edits'] },
   { what: 'Invoice a live sale', scopes: ['write_draft_orders', 'write_merchant_managed_fulfillment_orders'] },
+  { what: 'Put a store\'s name on a wholesale invoice', scopes: ['write_customers'] },
 ]
 
 export default async function ShopifyAccess() {

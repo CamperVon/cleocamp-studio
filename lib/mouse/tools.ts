@@ -3287,11 +3287,12 @@ export const TOOLS: Record<string, Tool> = {
       }
       const { saveDraft, sendDraft, parseUsAddress, addressLines } = await import('@/lib/live-sale')
       let shipTo: import('@/lib/live-sale').ShipAddress | undefined
+      const parsed = parseUsAddress(acct.address)
+      const [first, ...rest] = (acct.contactName ?? '').trim().split(/\s+/).filter(Boolean)
+      const storeAddress = parsed ? { ...parsed, company: acct.name, firstName: first ?? null, lastName: rest.join(' ') || null } : undefined
       if (i.ship) {
-        const a = parseUsAddress(acct.address)
-        if (!a) return { sent: false, reason: `${acct.name}'s address on file (${acct.address ?? 'none'}) is not a full street, city, state and ZIP. Ask for the full shipping address, save it with update_wholesale_account, then draft again.` }
-        const [first, ...rest] = (acct.contactName ?? '').trim().split(/\s+/).filter(Boolean)
-        shipTo = { ...a, company: acct.name, firstName: first ?? null, lastName: rest.join(' ') || null }
+        if (!storeAddress) return { sent: false, reason: `${acct.name}'s address on file (${acct.address ?? 'none'}) is not a full street, city, state and ZIP. Ask for the full shipping address, save it with update_wholesale_account, then draft again.` }
+        shipTo = storeAddress
       }
       const namedShipping = i.shippingCharge == null ? null : Number(i.shippingCharge)
       if (namedShipping != null && !(namedShipping >= 0)) return { sent: false, reason: 'That shipping charge is not a number. Ask again.' }
@@ -3331,6 +3332,12 @@ export const TOOLS: Record<string, Tool> = {
       const { wholesaleShipping } = await import('@/lib/live-sale')
       const sh = shipTo ? wholesaleShipping(goods, namedShipping) : null
       Object.assign(options, sh ? { shipTo, shippingCharge: sh.charge, shippingTitle: sh.title } : {})
+      // The store's name and address on the draft, shipped or not. The
+      // customer's name is the contact's if we have one, else the store's.
+      const { storeCustomer } = await import('@/lib/live-sale')
+      const cust = await storeCustomer(email, first ? { firstName: first, lastName: rest.join(' ') || null } : { firstName: acct.name })
+      Object.assign(options, { billTo: storeAddress, customerId: cust.id })
+      const customerNote = cust.id ? null : `The draft is not linked to a Shopify customer, so it may show no name (${cust.problem ?? 'unknown reason'}). The email is still on it.`
       const draftOrderId = typeof i.draftOrderId === 'string' && i.draftOrderId.startsWith('gid://shopify/DraftOrder/') ? i.draftOrderId : null
       const note = `Wholesale: ${acct.name}. Drafted by Studio Mouse.`
       if (i.confirmed !== true) {
@@ -3348,6 +3355,8 @@ export const TOOLS: Record<string, Tool> = {
           shipping: shipTo && sh ? `to ${addressLines(shipTo)}; shipping & handling $${d.shipping.toFixed(2)} (${sh.why}); label made in Shopify after sending` : 'none — marked handed over when sent',
           tax: `$${d.tax.toFixed(2)} (wholesale, none)`, total: `$${d.total.toFixed(2)}`,
           stock: i.reduceStock ? ['Comes off Shopify stock when sent.', ...stockNotes] : ['Stock is left alone.'],
+          ...(customerNote ? { customer: customerNote } : {}),
+          ...(!storeAddress ? { address: `No full address on file for ${acct.name}, so the draft has none. Ask for it if they want it on the invoice.` } : {}),
           tellTheUser: `Give the draft name and the Shopify link first, so it can be reviewed there. Then the store, each line and price and where the price came from, the shipping address if shipping (ask them to check it), the total, and whether stock comes off. Nothing is sent until someone says send; edits made to the draft in Shopify will go out as they are.`,
         }
       }

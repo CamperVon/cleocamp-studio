@@ -46,6 +46,14 @@ export type InvoiceOptions = {
   /** A shipping charge, only when a person named one or a rule sets it. */
   shippingCharge?: number | null
   shippingTitle?: string
+  /**
+   * Who the order is for, by name and address, when it is not shipped: a
+   * store the goods were handed to still has a name and an address, and the
+   * draft read "No name provided" without them (Brandon, 28 Sept 2026, #D36).
+   */
+  billTo?: ShipAddress
+  /** The Shopify customer, so the draft and order show their name. */
+  customerId?: string | null
 }
 
 /**
@@ -123,7 +131,8 @@ function draftInput(email: string, lines: SaleLine[], note: string, opts: Invoic
     note,
     tags: opts.tags ?? ['live-sale', 'studio-mouse'],
     ...(opts.taxExempt ? { taxExempt: true } : {}),
-    ...(opts.shipTo ? { shippingAddress: opts.shipTo } : {}),
+    ...(opts.shipTo ?? opts.billTo ? { shippingAddress: opts.shipTo ?? opts.billTo, billingAddress: opts.billTo ?? opts.shipTo } : {}),
+    ...(opts.customerId ? { purchasingEntity: { customerId: opts.customerId } } : {}),
     ...(opts.shippingCharge != null
       ? { shippingLine: { title: opts.shippingTitle ?? 'Shipping', priceWithCurrency: { amount: opts.shippingCharge.toFixed(2), currencyCode: 'USD' } } }
       : {}),
@@ -273,6 +282,40 @@ async function completeAndInvoice(draftId: string, email: string, customerName: 
   out.invoiceSent = !!sent.orderInvoiceSend.order && !sent.orderInvoiceSend.userErrors.length
   if (!out.invoiceSent) out.problems.push(`The invoice email did not go (${sent.orderInvoiceSend.userErrors.map((e) => e.message).join('; ') || 'no reason given'}). Open ${order.name} in Shopify and use "Send invoice".`)
   return out
+}
+
+/**
+ * The Shopify customer for a store, found by email or made, so an invoice
+ * carries the store's name. Only fills a name Shopify has blank; never
+ * renames someone. Returns null (and the draft goes out by email alone) if
+ * the app may not read or write customers.
+ */
+export async function storeCustomer(email: string, name: { firstName: string; lastName?: string | null }): Promise<{ id: string | null; problem?: string }> {
+  try {
+    const found = await shopifyGraphQL<{ customers: { nodes: Array<{ id: string; firstName: string | null; lastName: string | null }> } }>(
+      `query($q: String!) { customers(first: 1, query: $q) { nodes { id firstName lastName } } }`,
+      { q: `email:"${email.replace(/"/g, '')}"` },
+    )
+    const c = found.customers.nodes[0]
+    if (c) {
+      if (!c.firstName && !c.lastName) {
+        await shopifyGraphQL(
+          `mutation($input: CustomerInput!) { customerUpdate(input: $input) { customer { id } userErrors { message } } }`,
+          { input: { id: c.id, firstName: name.firstName, lastName: name.lastName ?? null } },
+        )
+      }
+      return { id: c.id }
+    }
+    const made = await shopifyGraphQL<{ customerCreate: { customer: { id: string } | null; userErrors: Array<{ message: string }> } }>(
+      `mutation($input: CustomerInput!) { customerCreate(input: $input) { customer { id } userErrors { message } } }`,
+      { input: { email, firstName: name.firstName, lastName: name.lastName ?? null, tags: ['wholesale'] } },
+    )
+    return made.customerCreate.customer
+      ? { id: made.customerCreate.customer.id }
+      : { id: null, problem: made.customerCreate.userErrors.map((e) => e.message).join('; ') }
+  } catch (e) {
+    return { id: null, problem: e instanceof Error ? e.message.slice(0, 160) : String(e) }
+  }
 }
 
 let shopHandle: string | null = null
