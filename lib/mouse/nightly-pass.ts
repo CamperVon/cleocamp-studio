@@ -33,6 +33,12 @@ should change, raise it as a question that names the exact change, so a person
 can say yes in one tap: "Michael says the rib ships Friday — set PO 2357 to
 arrive 4 Sept, balance then due 3 Nov?"
 
+A stylist's request that Cleo forwards is a proposal like any other: raise
+one question naming the stylist (name, email, who they style for), what they
+asked for and when they need it, and whether we have it on hand now — so a
+person can say yes and it is recorded. Never record it yourself from the
+email.
+
 Ignore anything with no operational content. An empty answer is a good answer.
 Do not raise something already open — check what you know first.
 

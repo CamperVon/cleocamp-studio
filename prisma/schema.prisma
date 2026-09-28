@@ -25,9 +25,9 @@ datasource db {
 /// Everyone who can create a todo, log an event, or be assigned something.
 /// Auth is a single shared password, so this is attribution, not identity.
 model Person {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
-  email       String?  @unique
+  email       String? @unique
   /// Other addresses this person sends from, comma-separated. Brandon sends
   /// from bc@thecampbrand.com as often as brandon@cleocamp.com, and Cleo from
   /// studio@cleocamp.com — neither is the address anything is configured to
@@ -52,17 +52,17 @@ model Person {
   /// from `active`, which means a person is still around at all: switching her
   /// off to tidy one page would take her out of everywhere she is correctly
   /// used.
-  external    Boolean  @default(false)
+  external Boolean @default(false)
 
   /// Secret behind this person's "tell Mouse" doors — the Siri shortcut and
   /// the home-screen page. The app's own login is one shared password whose
   /// session carries no identity, so this is the only thing that says who is
   /// speaking when an update arrives from a phone. Mint and rotate it with
   /// scripts/say-token.ts; never print it anywhere it would be logged.
-  sayToken    String?  @unique
+  sayToken String? @unique
 
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
 
   eventsCreated InventoryEvent[] @relation("EventCreatedBy")
   itemsCreated  ActionItem[]     @relation("ItemCreatedBy")
@@ -169,6 +169,10 @@ model Product {
   /// What a store pays, from the wholesale line sheet. Null = not on the
   /// sheet, so ask; never derived from retail.
   wholesalePriceCents    Int?
+  /// Kept on hand for stylist pulls and never counted as sellable when the
+  /// forecast works out cover (Brandon, 28 Sept 2026: 40 Cleo Tees). The
+  /// stock count itself stays one number, Shopify's.
+  stylistReserveQty      Int?
   notes                  String?
   createdAt              DateTime      @default(now())
 
@@ -704,10 +708,10 @@ model ActionItem {
   /// why, from what is on file (lib/mouse/tidy.ts). Only a suggestion: a
   /// person taps Close or Keep. Brandon, 24 Sept 2026, after 20 of 67 open
   /// items turned out to be answered, past or pointless and nothing had said.
-  closeSuggestion   String?
-  closeSuggestedAt  DateTime?
+  closeSuggestion  String?
+  closeSuggestedAt DateTime?
   /// Someone said "keep it open" to a suggestion — not suggested again for a month.
-  keptOpenAt        DateTime?
+  keptOpenAt       DateTime?
   /// Stated outright, independent of any date — "this is pressing", not
   /// inferred from a deadline. dueDate + remindDaysBefore already covers
   /// "surface this N days before it's due"; this covers there being no date
@@ -761,12 +765,12 @@ enum NoteSource {
 }
 
 model Note {
-  id         String     @id @default(cuid())
-  entityType EntityType @default(GENERAL)
-  entityId   String?
-  content    String
-  source     NoteSource @default(CHAT)
-  createdAt  DateTime   @default(now())
+  id           String     @id @default(cuid())
+  entityType   EntityType @default(GENERAL)
+  entityId     String?
+  content      String
+  source       NoteSource @default(CHAT)
+  createdAt    DateTime   @default(now())
   /// When this note stopped being true. A note is never deleted — a price that
   /// has changed is still the price that was quoted, and someone will want to
   /// look it up. But a superseded fact read back as current is worse than no
@@ -1185,20 +1189,20 @@ model WholesaleAccount {
 }
 
 model WholesaleShipment {
-  id        String    @id @default(cuid())
-  accountId String
-  sentAt    DateTime
+  id             String    @id @default(cuid())
+  accountId      String
+  sentAt         DateTime
   /// Null means not recorded — never assumed paid just because an earlier
   /// shipment to the same account was. Unknown is the honest default.
-  paid      Boolean?
-  paidAt    DateTime?
-  notes     String?
+  paid           Boolean?
+  paidAt         DateTime?
+  notes          String?
   /// The Shopify order this was invoiced as, when Mouse invoiced it. Paid is
   /// then read from Shopify, not typed in.
   shopifyOrderId String?   @unique
   /// The invoice number the store sees, e.g. "#2644".
   invoiceName    String?
-  createdAt DateTime  @default(now())
+  createdAt      DateTime  @default(now())
 
   account WholesaleAccount        @relation(fields: [accountId], references: [id])
   lines   WholesaleShipmentLine[]
@@ -1266,37 +1270,37 @@ enum SupportStatus {
 }
 
 model SupportCase {
-  id              String          @id @default(cuid())
-  customerEmail   String
-  customerName    String?
-  subject         String?
-  category        SupportCategory @default(OTHER)
-  urgency         SupportUrgency  @default(TODAY)
-  status          SupportStatus   @default(OPEN)
+  id                String           @id @default(cuid())
+  customerEmail     String
+  customerName      String?
+  subject           String?
+  category          SupportCategory  @default(OTHER)
+  urgency           SupportUrgency   @default(TODAY)
+  status            SupportStatus    @default(OPEN)
   /// One or two sentences, written by the model from the customer's words.
   /// Shown to people only — never fed to a Mouse that has tools, because it
   /// is derived from untrusted text.
-  summary         String?
+  summary           String?
   /// Shopify order name, "#1042", matched by code from the customer's address
   /// or an order number in the email — never by the model.
-  shopifyOrderName String?
-  shopifyOrderId   String?
+  shopifyOrderName  String?
+  shopifyOrderId    String?
   /// What the order looked like when it was matched: items, status, tracking.
-  orderSnapshot   Json?
+  orderSnapshot     Json?
   /// The reply Mouse drafted for a person to read, edit and send — never sent
   /// on its own. Written by a model with no tools from the customer's words,
   /// so it is only ever shown to a person, who taps Send.
-  draftReply      String?
+  draftReply        String?
   /// What a person has to add or decide before the draft can go, in one line
   /// ("the ship date"). Null when it is ready as written.
-  draftNeeds      String?
+  draftNeeds        String?
   /// An address change the customer asked for, as fields, with the checks
   /// code ran on it. Applied to Shopify only by a person's tap.
-  draftAddress    Json?
-  draftedAt       DateTime?
-  alertedAt       DateTime?
-  lastMessageAt   DateTime        @default(now())
-  resolvedAt      DateTime?
+  draftAddress      Json?
+  draftedAt         DateTime?
+  alertedAt         DateTime?
+  lastMessageAt     DateTime         @default(now())
+  resolvedAt        DateTime?
   /// Flagged by a person for Brandon and Claude: Mouse got something wrong
   /// here that needs fixing in the code or the policy, not just in this
   /// reply (Brandon, 25 Sept 2026). The reason is theirs; the draft is
@@ -1313,9 +1317,9 @@ model SupportCase {
   /// received it, and the refund once someone approved it. Set by the
   /// Return arrived box (27 Sept 2026). See lib/returns.ts.
   returnInfo        Json?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  messages        SupportMessage[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  messages          SupportMessage[]
 
   @@index([status, urgency])
   @@index([customerEmail])
@@ -1370,4 +1374,82 @@ model ModelUsage {
 
   @@index([createdAt])
   @@index([source, createdAt])
+}
+
+/// Stylists who pull pieces for shoots and ask for things we do not have
+/// (Brandon, 28 Sept 2026). Their requests arrive as mail Cleo forwards —
+/// read on the nightly pass as proposals, recorded once a person says yes.
+model Stylist {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?  @unique
+  phone     String?
+  /// Agency, publication or talent they style for.
+  company   String?
+  instagram String?
+  notes     String?
+  createdAt DateTime @default(now())
+
+  pulls    StylistPull[]
+  requests StylistRequest[]
+}
+
+/// Pieces lent to a stylist. Out on loan, not sold: the stock moves as
+/// STYLIST_PULL_OUT / STYLIST_PULL_RETURN events, which never count as demand.
+model StylistPull {
+  id        String    @id @default(cuid())
+  stylistId String
+  sentAt    DateTime
+  /// When they said it comes back. Null = not agreed, which is itself worth asking.
+  dueBackAt DateTime?
+  /// The shoot, talent or publication, as told.
+  project   String?
+  notes     String?
+  createdAt DateTime  @default(now())
+
+  stylist Stylist           @relation(fields: [stylistId], references: [id])
+  lines   StylistPullLine[]
+
+  @@index([stylistId, sentAt])
+}
+
+model StylistPullLine {
+  id               String    @id @default(cuid())
+  pullId           String
+  productVariantId String?
+  /// As it reads, e.g. "Cleo Tee / Shell / 2".
+  item             String
+  qty              Int
+  returnedQty      Int       @default(0)
+  returnedAt       DateTime?
+
+  pull StylistPull @relation(fields: [pullId], references: [id], onDelete: Cascade)
+
+  @@index([pullId])
+}
+
+enum StylistRequestStatus {
+  OPEN
+  /// We wrote to say it is in stock.
+  TOLD
+  FULFILLED
+  CLOSED
+}
+
+/// Something a stylist asked for that we could not send at the time.
+model StylistRequest {
+  id               String               @id @default(cuid())
+  stylistId        String
+  /// What they asked for, in their words or close to it.
+  what             String
+  productVariantId String?
+  qty              Int?
+  neededBy         DateTime?
+  status           StylistRequestStatus @default(OPEN)
+  notes            String?
+  createdAt        DateTime             @default(now())
+
+  stylist Stylist @relation(fields: [stylistId], references: [id])
+
+  @@index([status])
 }

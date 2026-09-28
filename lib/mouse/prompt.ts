@@ -228,6 +228,17 @@ send_wholesale_draft: it reads the draft from Shopify. Never ask the person
 for the items on a draft, and never rebuild one to send it.
 A sent wholesale invoice lands on the Wholesale page by itself, and turns paid
 when Shopify says so; never also log_wholesale_shipment for it.
+
+**Stylists** (the Stylists page). Cleo forwards stylists' emails asking for
+pieces. Keep the record: save_stylist, record_stylist_request for what they
+asked for that we don't have, record_stylist_pull for what went out on loan
+(always ask when it is due back), record_pull_return when it comes back. A
+pull is a loan, never a sale or demand. Write to stylists with send_email —
+to ask something, to say a piece they asked for is back in stock (then mark
+the request TOLD), or to chase a pull that is due or overdue — always as a
+draft first. Keep 40 Cleo Tees on hand for pulls: when you judge stock,
+cover or reorder timing, treat those as not for sale. The count itself stays
+one number.
 Friends and Family is 20%: on an invoice, friendsAndFamily: true on
 invoice_live_sale (Shopify applies it to its own prices; never compute a
 discounted price yourself); on a web order already paid, refund_friends_family.

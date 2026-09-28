@@ -1,0 +1,58 @@
+/**
+ * Stylists: who has what out on a pull, and what they asked for that we did
+ * not have. Brandon, 28 Sept 2026: Cleo forwards stylists' requests; Mouse
+ * keeps the record, and writes to them — to ask, to say new stock is in, or
+ * to chase a pull that is due back.
+ *
+ * A pull is a loan. Its pieces leave the shelf as STYLIST_PULL_OUT events and
+ * come back as STYLIST_PULL_RETURN, neither of which counts as demand.
+ */
+import { db } from '@/lib/db'
+
+/** Pieces still out on a pull line. Pure. */
+export const stillOut = (l: { qty: number; returnedQty: number }) => Math.max(0, l.qty - l.returnedQty)
+
+export async function loadStylists() {
+  const stylists = await db.stylist.findMany({
+    orderBy: { name: 'asc' },
+    include: {
+      pulls: { orderBy: { sentAt: 'desc' }, include: { lines: true } },
+      requests: { orderBy: { createdAt: 'desc' } },
+    },
+  })
+  return stylists.map((s) => {
+    const out = s.pulls.reduce((n, p) => n + p.lines.reduce((m, l) => m + stillOut(l), 0), 0)
+    const openPulls = s.pulls.filter((p) => p.lines.some((l) => stillOut(l) > 0))
+    const due = openPulls.map((p) => p.dueBackAt).filter((d): d is Date => !!d).sort((a, b) => a.getTime() - b.getTime())[0] ?? null
+    const openRequests = s.requests.filter((r) => r.status === 'OPEN' || r.status === 'TOLD')
+    return { ...s, out, openPulls, due, openRequests }
+  })
+}
+
+const day = (d: Date) => d.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' })
+
+/**
+ * What Mouse is told every turn: pieces out and when they are due, overdue
+ * called out, and open requests — with the count now on hand where the
+ * request names a variant, so "that's back in stock, tell her" is visible.
+ */
+export async function stylistContext(now = new Date()): Promise<string> {
+  const all = await loadStylists()
+  const withPulls = all.filter((s) => s.out > 0)
+  const reqs = all.flatMap((s) => s.openRequests.map((r) => ({ s, r })))
+  const reserve = await db.product.findMany({ where: { stylistReserveQty: { gt: 0 } }, select: { name: true, stylistReserveQty: true } })
+  if (!withPulls.length && !reqs.length && !reserve.length) return ''
+  const variantIds = reqs.map(({ r }) => r.productVariantId).filter((x): x is string => !!x)
+  const counts = new Map((await db.productVariant.findMany({ where: { id: { in: variantIds } }, select: { id: true, onHandQty: true } })).map((v) => [v.id, v.onHandQty]))
+  const lines: string[] = ['STYLISTS (the Stylists page)']
+  for (const r of reserve) lines.push(`- Keep ${r.stylistReserveQty} ${r.name}s on hand for stylist pulls; they are not for sale when judging stock or cover.`)
+  for (const s of withPulls) {
+    const overdue = s.due && s.due < now
+    lines.push(`- ${s.name}${s.company ? ` (${s.company})` : ''}: ${s.out} piece${s.out === 1 ? '' : 's'} out${s.due ? `, due back ${day(s.due)}${overdue ? ' — OVERDUE' : ''}` : ', no return date agreed'}.`)
+  }
+  for (const { s, r } of reqs) {
+    const c = r.productVariantId ? counts.get(r.productVariantId) : undefined
+    lines.push(`- ${s.name} asked for ${r.what}${r.qty ? ` × ${r.qty}` : ''} on ${day(r.createdAt)}${r.status === 'TOLD' ? ' (told it is in stock)' : ''}${c != null ? `; ${String(c)} on hand now` : ''} [request ${r.id}].`)
+  }
+  return lines.join('\n')
+}

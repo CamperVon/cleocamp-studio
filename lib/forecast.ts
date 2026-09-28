@@ -193,7 +193,11 @@ export async function recomputeForecasts() {
     }
 
     const onOrder = incoming.get(p.id) ?? { qty: 0, due: null }
-    const daysLeft = (onHand + onOrder.qty) / rate
+    // Pieces kept back for stylist pulls are on the shelf but not for sale
+    // (Brandon, 28 Sept 2026: 40 Cleo Tees), so cover runs out when the rest do.
+    const reserve = Math.min(p.stylistReserveQty ?? 0, onHand)
+    const sellable = onHand - reserve
+    const daysLeft = (sellable + onOrder.qty) / rate
     const stockout = new Date(Date.now() + daysLeft * DAY)
 
     // Chain: components must arrive, then be made, then — for a colourway
@@ -220,6 +224,7 @@ export async function recomputeForecasts() {
       kind: 'product', id: p.id, name: p.name, stockout, orderBy,
       note:
         `Selling ${rate.toFixed(1)} a day, ${onHand} on hand` +
+        (reserve ? ` (${reserve} of them kept for stylist pulls, so ${sellable} to sell)` : '') +
         (onOrder.qty
           ? ` plus ${onOrder.qty} already on order${onOrder.due ? `, due ${onOrder.due.toISOString().slice(0, 10)}` : ''}`
           : '') +

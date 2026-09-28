@@ -294,6 +294,12 @@ export async function buildCatalog(): Promise<string> {
     }
   }
 
+  {
+    const { stylistContext } = await import('@/lib/stylists')
+    const st = await stylistContext().catch(() => '')
+    if (st) L.push('\n## ' + st)
+  }
+
   if (forecasts.length) {
     L.push('\n## Your own forecasts, from the last nightly run')
     for (const f of forecasts) {

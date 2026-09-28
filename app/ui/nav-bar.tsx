@@ -43,6 +43,7 @@ const OCCASIONAL: Item[] = [
   { href: '/components', label: 'Components' },
   { href: '/vendors', label: 'Vendors' },
   { href: '/wholesale', label: 'Wholesale' },
+  { href: '/stylists', label: 'Stylists' },
   { href: '/finances', label: 'Finances' },
   { href: '/inbox', label: 'Inbox' },
   { href: '/phones', label: 'Phones' },
