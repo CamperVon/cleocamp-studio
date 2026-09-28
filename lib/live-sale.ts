@@ -38,6 +38,64 @@ export type InvoiceOptions = {
   tags?: string[]
   subject?: (orderName: string) => string
   message?: (firstName: string) => string
+  /**
+   * Shipped rather than handed over: the address goes on the order and it is
+   * left unfulfilled, so Shopify offers "Create shipping label" on it.
+   */
+  shipTo?: ShipAddress
+  /** A shipping charge, only when a person named one. */
+  shippingCharge?: number | null
+}
+
+export type ShipAddress = {
+  company?: string | null
+  firstName?: string | null
+  lastName?: string | null
+  address1: string
+  address2?: string | null
+  city: string
+  provinceCode: string
+  zip: string
+  countryCode: 'US'
+}
+
+const STATES: Record<string, string> = {
+  alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA', colorado: 'CO', connecticut: 'CT',
+  delaware: 'DE', 'district of columbia': 'DC', florida: 'FL', georgia: 'GA', hawaii: 'HI', idaho: 'ID', illinois: 'IL',
+  indiana: 'IN', iowa: 'IA', kansas: 'KS', kentucky: 'KY', louisiana: 'LA', maine: 'ME', maryland: 'MD',
+  massachusetts: 'MA', michigan: 'MI', minnesota: 'MN', mississippi: 'MS', missouri: 'MO', montana: 'MT',
+  nebraska: 'NE', nevada: 'NV', 'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY',
+  'north carolina': 'NC', 'north dakota': 'ND', ohio: 'OH', oklahoma: 'OK', oregon: 'OR', pennsylvania: 'PA',
+  'rhode island': 'RI', 'south carolina': 'SC', 'south dakota': 'SD', tennessee: 'TN', texas: 'TX', utah: 'UT',
+  vermont: 'VT', virginia: 'VA', washington: 'WA', 'west virginia': 'WV', wisconsin: 'WI', wyoming: 'WY',
+}
+
+/**
+ * A US address written on one line — "2030 Hillhurst Ave, Los Angeles,
+ * California 90027" — split into the parts a label needs. Anything it cannot
+ * read with certainty (no ZIP, no state, no street number) is null, and the
+ * person is asked for the full address; a label to a guessed address is a
+ * parcel lost. Pure.
+ */
+export function parseUsAddress(line: string | null | undefined): Omit<ShipAddress, 'company' | 'firstName' | 'lastName'> | null {
+  const parts = (line ?? '').replace(/\s*\n\s*/g, ', ').split(',').map((p) => p.trim()).filter(Boolean)
+  if (parts.length && /^(usa?|united states( of america)?)$/i.test(parts[parts.length - 1])) parts.pop()
+  if (parts.length < 3) return null
+  const m = parts[parts.length - 1].match(/^([A-Za-z .]+?)\s+(\d{5})(?:-\d{4})?$/)
+  if (!m) return null
+  const st = m[1].trim().replace(/\./g, '')
+  const provinceCode = /^[A-Za-z]{2}$/.test(st) ? st.toUpperCase() : STATES[st.toLowerCase()]
+  if (!provinceCode || !Object.values(STATES).includes(provinceCode)) return null
+  const city = parts[parts.length - 2]
+  const street = parts.slice(0, -2)
+  if (!/^\d/.test(street[0] ?? '') || /\d/.test(city)) return null
+  return { address1: street[0], address2: street.slice(1).join(', ') || null, city, provinceCode, zip: m[2], countryCode: 'US' }
+}
+
+/** The address as it will print on the label, for a person to check. Pure. */
+export function addressLines(a: ShipAddress): string {
+  const who = [a.company, [a.firstName, a.lastName].filter(Boolean).join(' ')].filter(Boolean).join(', ')
+  return [who, a.address1, a.address2, `${a.city}, ${a.provinceCode} ${a.zip}`].filter(Boolean).join(' / ')
 }
 
 type Money = { shopMoney: { amount: string } }
@@ -50,6 +108,10 @@ function draftInput(email: string, lines: SaleLine[], note: string, opts: Invoic
     note,
     tags: opts.tags ?? ['live-sale', 'studio-mouse'],
     ...(opts.taxExempt ? { taxExempt: true } : {}),
+    ...(opts.shipTo ? { shippingAddress: opts.shipTo } : {}),
+    ...(opts.shippingCharge != null
+      ? { shippingLine: { title: 'Shipping', priceWithCurrency: { amount: opts.shippingCharge.toFixed(2), currencyCode: 'USD' } } }
+      : {}),
     lineItems: lines.map((l) => {
       const price = l.priceOverride != null ? { amount: l.priceOverride.toFixed(2), currencyCode: 'USD' } : null
       if (l.noStock) {
@@ -64,6 +126,7 @@ function draftInput(email: string, lines: SaleLine[], note: string, opts: Invoic
 export type Quote = {
   lines: Array<{ label: string; quantity: number; unitPrice: number; priced: 'retail' | 'named' }>
   subtotal: number
+  shipping: number
   tax: number
   total: number
 }
@@ -71,11 +134,11 @@ export type Quote = {
 /** What the invoice will say, worked out by Shopify. Creates nothing. */
 export async function quoteLiveSale(email: string, lines: SaleLine[], opts: InvoiceOptions = {}): Promise<Quote> {
   const d = await shopifyGraphQL<{ draftOrderCalculate: { calculatedDraftOrder: {
-    subtotalPriceSet: Money; totalTaxSet: Money; totalPriceSet: Money
+    subtotalPriceSet: Money; totalShippingPriceSet: Money; totalTaxSet: Money; totalPriceSet: Money
     lineItems: Array<{ quantity: number; originalUnitPriceSet: Money; discountedUnitPriceSet?: Money }>
   } | null; userErrors: Array<{ message: string }> } }>(
     `mutation($input: DraftOrderInput!) { draftOrderCalculate(input: $input) { calculatedDraftOrder {
-      subtotalPriceSet { shopMoney { amount } } totalTaxSet { shopMoney { amount } } totalPriceSet { shopMoney { amount } }
+      subtotalPriceSet { shopMoney { amount } } totalShippingPriceSet { shopMoney { amount } } totalTaxSet { shopMoney { amount } } totalPriceSet { shopMoney { amount } }
       lineItems { quantity originalUnitPriceSet { shopMoney { amount } } }
     } userErrors { message } } }`,
     { input: draftInput(email, lines, '', opts) },
@@ -90,6 +153,7 @@ export async function quoteLiveSale(email: string, lines: SaleLine[], opts: Invo
       priced: l.priceOverride != null ? 'named' : 'retail',
     })),
     subtotal: money(c.subtotalPriceSet),
+    shipping: money(c.totalShippingPriceSet),
     tax: money(c.totalTaxSet),
     total: money(c.totalPriceSet),
   }
@@ -144,9 +208,10 @@ export async function invoiceLiveSale(args: {
   out.total = money(order.totalPriceSet)
 
   // Handed over at the table, so it must never reach the packing list.
-  // Fulfillment orders appear a moment after the order does.
+  // Fulfillment orders appear a moment after the order does. A shipped order
+  // is left unfulfilled: that is what puts "Create shipping label" on it.
   let fulfillmentOrderIds: string[] = []
-  for (let i = 0; i < 5 && !fulfillmentOrderIds.length; i++) {
+  for (let i = 0; i < 5 && !opts.shipTo && !fulfillmentOrderIds.length; i++) {
     const fo = await shopifyGraphQL<{ order: { fulfillmentOrders: { nodes: Array<{ id: string; status: string }> } } | null }>(
       `query($id: ID!) { order(id: $id) { fulfillmentOrders(first: 5) { nodes { id status } } } }`,
       { id: order.id },
@@ -154,7 +219,9 @@ export async function invoiceLiveSale(args: {
     fulfillmentOrderIds = (fo.order?.fulfillmentOrders.nodes ?? []).filter((n) => n.status === 'OPEN').map((n) => n.id)
     if (!fulfillmentOrderIds.length) await new Promise((r) => setTimeout(r, 800))
   }
-  if (fulfillmentOrderIds.length) {
+  if (opts.shipTo) {
+    // Nothing to mark: it goes out with a label.
+  } else if (fulfillmentOrderIds.length) {
     const f = await shopifyGraphQL<{ fulfillmentCreate: { fulfillment: { id: string } | null; userErrors: Array<{ message: string }> } }>(
       `mutation($f: FulfillmentInput!) { fulfillmentCreate(fulfillment: $f) { fulfillment { id } userErrors { message } } }`,
       { f: { notifyCustomer: false, lineItemsByFulfillmentOrder: fulfillmentOrderIds.map((id) => ({ fulfillmentOrderId: id })) } },

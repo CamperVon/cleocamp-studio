@@ -3180,6 +3180,10 @@ export const TOOLS: Record<string, Tool> = {
    * "you can draft invoice, set custom prices, not include taxes."
    * Stock is the person's call each time: the real product takes it off
    * stock; a plain line of the same name and price leaves stock alone.
+   * Prices default to the wholesale line sheet (Jan 2026) stored on the
+   * product; a price named in the chat is for this invoice only. Shipped
+   * orders carry the store's address and stay unfulfilled, so Shopify offers
+   * the label (Brandon, 28 Sept 2026: "Let's add the shipping option").
    */
   invoice_wholesale: {
     def: {
@@ -3187,8 +3191,12 @@ export const TOOLS: Record<string, Tool> = {
       description:
         'Invoice a wholesale account (a store) through Shopify: the store\'s prices, no sales ' +
         'tax, tagged wholesale so it is not counted as retail demand, marked handed over so it ' +
-        'is never packed as a web order, and Shopify emails the store a link to pay. Every price ' +
-        'comes from the person in the chat — never set or guess one. reduceStock must be said: ' +
+        'is never packed as a web order, and Shopify emails the store a link to pay. Each line is ' +
+        'priced from the wholesale line sheet stored on the product; a price the person names ' +
+        'replaces it for this invoice only (never saved). A product with neither: ask, never guess. ' +
+        'ship must be said: true puts the store\'s address on the order and leaves it unfulfilled ' +
+        'so a shipping label can be made in Shopify; false marks it handed over. Only add ' +
+        'shippingCharge if the person names one. reduceStock must be said: ' +
         'true takes the items off Shopify stock (they left the studio), false leaves stock alone ' +
         '(e.g. shipped straight from a maker). If the person has not said, ask before drafting. ' +
         'Leave confirmed out to DRAFT and show it; confirmed: true only once a person says send. ' +
@@ -3204,38 +3212,57 @@ export const TOOLS: Record<string, Tool> = {
               properties: {
                 productVariantId: str('Our variant id. Ask about size or colour rather than picking one.'),
                 quantity: num('How many'),
-                price: num('Wholesale unit price in dollars, as the person gave it. Required.'),
+                price: num('Only if the person named a price for this invoice. Leave out to use the line-sheet price.'),
               },
-              required: ['productVariantId', 'quantity', 'price'],
+              required: ['productVariantId', 'quantity'],
             },
           },
           reduceStock: { type: 'boolean' as const, description: 'true: take these off Shopify stock. false: leave stock alone. Only what the person said.' },
+          ship: { type: 'boolean' as const, description: 'true: shipped to the store (label from Shopify). false: handed over or delivered by us. Only what the person said.' },
+          shippingCharge: num('Shipping to charge the store, in dollars. Only if the person named one.'),
           confirmed: { type: 'boolean' as const, description: 'Leave out to draft. true only after a person has seen it and said send.' },
         },
-        required: ['wholesaleAccountId', 'items', 'reduceStock'],
+        required: ['wholesaleAccountId', 'items', 'reduceStock', 'ship'],
       },
     },
     run: async (i) => {
       if (typeof i.reduceStock !== 'boolean') return { sent: false, reason: 'Ask whether this should come off stock before drafting.' }
+      if (typeof i.ship !== 'boolean') return { sent: false, reason: 'Ask whether this ships to the store or is handed over, before drafting.' }
       const acct = await db.wholesaleAccount.findUnique({ where: { id: String(i.wholesaleAccountId) } })
       if (!acct) return { sent: false, reason: 'No such wholesale account. Look it up again.' }
       const email = (acct.email ?? '').trim().toLowerCase()
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-        return { sent: false, reason: `${acct.name} has no email on file. Ask for it and save it on the account, then draft again.` }
+        return { sent: false, reason: `${acct.name} has no email on file. Ask for it, save it with update_wholesale_account, then draft again.` }
       }
-      const items = Array.isArray(i.items) ? i.items as Array<{ productVariantId: string; quantity: number; price: number }> : []
+      const { quoteLiveSale, invoiceLiveSale, parseUsAddress, addressLines } = await import('@/lib/live-sale')
+      let shipTo: import('@/lib/live-sale').ShipAddress | undefined
+      if (i.ship) {
+        const a = parseUsAddress(acct.address)
+        if (!a) return { sent: false, reason: `${acct.name}'s address on file (${acct.address ?? 'none'}) is not a full street, city, state and ZIP. Ask for the full shipping address, save it with update_wholesale_account, then draft again.` }
+        const [first, ...rest] = (acct.contactName ?? '').trim().split(/\s+/).filter(Boolean)
+        shipTo = { ...a, company: acct.name, firstName: first ?? null, lastName: rest.join(' ') || null }
+      }
+      const shippingCharge = i.shippingCharge == null ? null : Number(i.shippingCharge)
+      if (shippingCharge != null && !(shippingCharge >= 0)) return { sent: false, reason: 'That shipping charge is not a number. Ask again.' }
+      if (shippingCharge != null && !i.ship) return { sent: false, reason: 'A shipping charge on an order that is not shipping. Ask which it is.' }
+      const items = Array.isArray(i.items) ? i.items as Array<{ productVariantId: string; quantity: number; price?: number | null }> : []
       if (!items.length) return { sent: false, reason: 'Nothing to invoice. Ask what the store is taking.' }
       const variants = await db.productVariant.findMany({
         where: { id: { in: items.map((x) => String(x.productVariantId)) } },
-        include: { product: { select: { name: true } }, colorway: { select: { customerName: true } } },
+        include: { product: { select: { name: true, wholesalePriceCents: true } }, colorway: { select: { customerName: true } } },
       })
       const lines: import('@/lib/live-sale').SaleLine[] = []
+      const priced: string[] = []
       const stockNotes: string[] = []
       for (const it of items) {
         const v = variants.find((x) => x.id === String(it.productVariantId))
         if (!v) return { sent: false, reason: `No variant ${it.productVariantId}. Look it up again; do not guess.` }
-        const price = Number(it.price)
-        if (!(price >= 0)) return { sent: false, reason: `No price for ${v.product.name}. Ask for the wholesale price.` }
+        const named = it.price != null && String(it.price).trim() !== ''
+        const sheetCents = v.wholesalePriceCents ?? v.product.wholesalePriceCents
+        const price = named ? Number(it.price) : sheetCents == null ? NaN : sheetCents / 100
+        const label0 = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
+        if (!(price >= 0)) return { sent: false, reason: named ? `The price for ${label0} is not a number. Ask again.` : `${label0} has no wholesale price on the line sheet. Ask what to charge.` }
+        priced.push(named ? 'price named for this invoice' : 'line sheet')
         if (i.reduceStock && !v.shopifyVariantId) return { sent: false, reason: `${v.product.name} ${v.size ?? ''} is not linked to Shopify, so it cannot come off stock there. Ask whether to invoice it without touching stock.` }
         const qty = Math.max(1, Math.round(Number(it.quantity)))
         const label = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
@@ -3248,8 +3275,8 @@ export const TOOLS: Record<string, Tool> = {
         tags: ['wholesale', 'studio-mouse'],
         subject: (n: string) => `Cleo Camp wholesale invoice ${n}`,
         message: () => `Hello ${acct.contactName?.trim().split(/\s+/)[0] ?? acct.name}, thank you for your order. Your invoice is below, with a link to pay.\n\nKindly,\nCleo Studio`,
-      }
-      const { quoteLiveSale, invoiceLiveSale } = await import('@/lib/live-sale')
+      } as import('@/lib/live-sale').InvoiceOptions
+      Object.assign(options, { shipTo, shippingCharge })
       if (i.confirmed !== true) {
         let q
         try {
@@ -3260,10 +3287,12 @@ export const TOOLS: Record<string, Tool> = {
         return {
           sent: false, draft: true,
           to: `${acct.name} <${email}>`,
-          lines: q.lines.map((l) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}`),
-          subtotal: `$${q.subtotal.toFixed(2)}`, tax: `$${q.tax.toFixed(2)} (wholesale, none)`, total: `$${q.total.toFixed(2)}`,
+          lines: q.lines.map((l, n) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)} (${priced[n]})`),
+          subtotal: `$${q.subtotal.toFixed(2)}`,
+          shipping: shipTo ? `to ${addressLines(shipTo)}; ${shippingCharge != null ? `$${q.shipping.toFixed(2)} charged` : 'no charge on the invoice'}; label made in Shopify after sending` : 'none — marked handed over',
+          tax: `$${q.tax.toFixed(2)} (wholesale, none)`, total: `$${q.total.toFixed(2)}`,
           stock: i.reduceStock ? ['Comes off Shopify stock when sent.', ...stockNotes] : ['Stock is left alone.'],
-          tellTheUser: 'Show the store, each line and price, the total, and whether stock comes off. Wait for send.',
+          tellTheUser: 'Show the store, each line and price and where the price came from, the shipping address if shipping (ask them to check it), the total, and whether stock comes off. Wait for send.',
         }
       }
       let r
@@ -3275,8 +3304,11 @@ export const TOOLS: Record<string, Tool> = {
       }
       return {
         sent: r.invoiceSent, order: r.orderName, total: r.total == null ? null : `$${r.total.toFixed(2)}`,
-        handedOver: r.fulfilled, stock: i.reduceStock ? 'taken off Shopify stock' : 'left alone', problems: r.problems,
-        tellTheUser: r.problems.length ? 'Say what happened and each problem, with what to do in Shopify.' : `Say the invoice for ${r.orderName} went to ${acct.name}.`,
+        handedOver: r.fulfilled, shipping: shipTo ? 'unfulfilled, waiting for a label' : null,
+        stock: i.reduceStock ? 'taken off Shopify stock' : 'left alone', problems: r.problems,
+        tellTheUser: r.problems.length
+          ? 'Say what happened and each problem, with what to do in Shopify.'
+          : `Say the invoice for ${r.orderName} went to ${acct.name}.${shipTo ? ` To ship it: open ${r.orderName} in Shopify and tap "Create shipping label".` : ''}`,
       }
     },
   },
@@ -3456,6 +3488,37 @@ export const TOOLS: Record<string, Tool> = {
       },
     },
     run: async (i) => db.wholesaleAccount.create({ data: i, select: { id: true, name: true } }),
+  },
+
+  update_wholesale_account: {
+    def: {
+      name: 'update_wholesale_account',
+      description:
+        'Save a store\'s email, contact, shipping address or notes — only what a person just told ' +
+        'you, never guessed. The address should be one line: street, city, state ZIP.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          wholesaleAccountId: str('The account'),
+          contactName: str('Who you deal with'),
+          email: str('A real email, as given'),
+          address: str('Street, city, state ZIP — e.g. "2030 Hillhurst Ave, Los Angeles, CA 90027"'),
+          notes: str('Replaces the account notes'),
+        },
+        required: ['wholesaleAccountId'],
+      },
+    },
+    run: async (i) => {
+      const data: Record<string, string> = {}
+      for (const k of ['contactName', 'email', 'address', 'notes'] as const) {
+        const val = i[k]
+        if (typeof val === 'string' && val.trim()) data[k] = k === 'email' ? val.trim().toLowerCase() : val.trim()
+      }
+      if (data.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email)) return { saved: false, reason: 'That is not an email address. Ask again.' }
+      if (!Object.keys(data).length) return { saved: false, reason: 'Nothing to save.' }
+      const a = await db.wholesaleAccount.update({ where: { id: String(i.wholesaleAccountId) }, data, select: { id: true, name: true, contactName: true, email: true, address: true } }).catch(() => null)
+      return a ? { saved: true, account: a } : { saved: false, reason: 'No such wholesale account.' }
+    },
   },
 
   log_wholesale_shipment: {

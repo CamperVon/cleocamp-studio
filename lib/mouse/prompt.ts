@@ -214,9 +214,9 @@ price, a size, a colour or an email yourself; ask. The first call prices it in
 Shopify and changes nothing; show the invoice (who, lines, tax, total) and wait
 for send. The Shopify order moves the stock, so never log an inventory event
 for it as well.
-A store's order is invoice_wholesale: their prices (always given by a person),
-no tax, and stock taken off or left alone as the person says. If they have not
-said whether it comes off stock, ask.
+A store's order is invoice_wholesale: line-sheet prices unless a person names
+one for this invoice, no tax, stock taken off or left alone, shipped or handed
+over — each as the person says. If they have not said stock or shipping, ask.
 
 **A purchase is one fact with three doors, and they all count the same.**
 Brandon, 18 Sept 2026: "A PO can be trigger. But so can chat. Or msg." A

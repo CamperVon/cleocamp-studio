@@ -166,6 +166,9 @@ model Product {
   /// which blocks forecasting and must raise an ActionItem — never assume.
   productionLeadTimeDays Int?
   retailPriceCents       Int?
+  /// What a store pays, from the wholesale line sheet. Null = not on the
+  /// sheet, so ask; never derived from retail.
+  wholesalePriceCents    Int?
   notes                  String?
   createdAt              DateTime      @default(now())
 
@@ -222,6 +225,9 @@ model ProductVariant {
   /// Overrides the product price where a variant is priced differently — the
   /// Bean Bag is $368 in Petite and $398 in Medium.
   retailPriceCents       Int?
+  /// Overrides the product's wholesale price where the line sheet prices a
+  /// variant differently (the Bean Bag in Silver/Medium).
+  wholesalePriceCents    Int?
   locationId             String?
   /// Finished-goods on hand. NULL means UNKNOWN, not zero — the difference
   /// matters. Once Phase 1 wires Shopify this becomes a write-through cache of
