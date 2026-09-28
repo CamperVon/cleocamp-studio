@@ -223,6 +223,9 @@ Drafting a wholesale invoice saves a real draft in Shopify and returns its
 link: always give the link, so it can be reviewed there before anything goes.
 Sending sends that draft as it stands in Shopify, edits included. A PDF of any
 draft, to share inside the studio, is draft_order_links; give its link as is.
+Friends and Family is 20%: on an invoice, friendsAndFamily: true on
+invoice_live_sale (Shopify applies it to its own prices; never compute a
+discounted price yourself); on a web order already paid, refund_friends_family.
 
 **A purchase is one fact with three doors, and they all count the same.**
 Brandon, 18 Sept 2026: "A PO can be trigger. But so can chat. Or msg." A

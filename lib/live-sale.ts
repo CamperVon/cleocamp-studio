@@ -54,6 +54,13 @@ export type InvoiceOptions = {
   billTo?: ShipAddress
   /** The Shopify customer, so the draft and order show their name. */
   customerId?: string | null
+  /**
+   * A percentage off the whole order, worked out by Shopify from its own
+   * prices and shown on the invoice as a named discount. Mouse once took 20%
+   * off the wrong retail price by hand (#2643, 28 Sept 2026); Shopify
+   * cannot make that mistake.
+   */
+  discount?: { percent: number; title: string } | null
 }
 
 /**
@@ -133,6 +140,7 @@ function draftInput(email: string, lines: SaleLine[], note: string, opts: Invoic
     ...(opts.taxExempt ? { taxExempt: true } : {}),
     ...(opts.shipTo ?? opts.billTo ? { shippingAddress: opts.shipTo ?? opts.billTo, billingAddress: opts.billTo ?? opts.shipTo } : {}),
     ...(opts.customerId ? { purchasingEntity: { customerId: opts.customerId } } : {}),
+    ...(opts.discount ? { appliedDiscount: { value: opts.discount.percent, valueType: 'PERCENTAGE', title: opts.discount.title } } : {}),
     ...(opts.shippingCharge != null
       ? { shippingLine: { title: opts.shippingTitle ?? 'Shipping', priceWithCurrency: { amount: opts.shippingCharge.toFixed(2), currencyCode: 'USD' } } }
       : {}),
@@ -150,6 +158,8 @@ function draftInput(email: string, lines: SaleLine[], note: string, opts: Invoic
 export type Quote = {
   lines: Array<{ label: string; quantity: number; unitPrice: number; priced: 'retail' | 'named' }>
   subtotal: number
+  /** Taken off by an order discount (Friends and Family); subtotal is after it. */
+  discount: number
   shipping: number
   tax: number
   total: number
@@ -158,11 +168,11 @@ export type Quote = {
 /** What the invoice will say, worked out by Shopify. Creates nothing. */
 export async function quoteLiveSale(email: string, lines: SaleLine[], opts: InvoiceOptions = {}): Promise<Quote> {
   const d = await shopifyGraphQL<{ draftOrderCalculate: { calculatedDraftOrder: {
-    subtotalPriceSet: Money; totalShippingPriceSet: Money; totalTaxSet: Money; totalPriceSet: Money
+    subtotalPriceSet: Money; totalDiscountsSet: Money; totalShippingPriceSet: Money; totalTaxSet: Money; totalPriceSet: Money
     lineItems: Array<{ quantity: number; originalUnitPriceSet: Money; discountedUnitPriceSet?: Money }>
   } | null; userErrors: Array<{ message: string }> } }>(
     `mutation($input: DraftOrderInput!) { draftOrderCalculate(input: $input) { calculatedDraftOrder {
-      subtotalPriceSet { shopMoney { amount } } totalShippingPriceSet { shopMoney { amount } } totalTaxSet { shopMoney { amount } } totalPriceSet { shopMoney { amount } }
+      subtotalPriceSet { shopMoney { amount } } totalDiscountsSet { shopMoney { amount } } totalShippingPriceSet { shopMoney { amount } } totalTaxSet { shopMoney { amount } } totalPriceSet { shopMoney { amount } }
       lineItems { quantity originalUnitPriceSet { shopMoney { amount } } }
     } userErrors { message } } }`,
     { input: draftInput(email, lines, '', opts) },
@@ -177,6 +187,7 @@ export async function quoteLiveSale(email: string, lines: SaleLine[], opts: Invo
       priced: l.priceOverride != null ? 'named' : 'retail',
     })),
     subtotal: money(c.subtotalPriceSet),
+    discount: money(c.totalDiscountsSet),
     shipping: money(c.totalShippingPriceSet),
     tax: money(c.totalTaxSet),
     total: money(c.totalPriceSet),

@@ -3106,7 +3106,9 @@ export const TOOLS: Record<string, Tool> = {
         'Invoice a customer for something sold in person ("invoice Jane Doe for a Boy Belt ' +
         'size M"). Makes a Shopify order: the item comes off stock at once, the order is marked ' +
         'handed over so it is never packed, and Shopify emails the customer a link to pay. The ' +
-        'price is the retail price unless the person in the chat names another. Leave confirmed ' +
+        'price is the retail price unless the person in the chat names another. Friends and ' +
+        'Family: pass friendsAndFamily: true and NO prices — Shopify takes the 20% off its own ' +
+        'prices and shows it on the invoice. Never work out a discounted price yourself. Leave confirmed ' +
         'out to DRAFT: nothing is created and you get the priced invoice to show. Pass ' +
         'confirmed: true only once a person has seen that invoice and said to send it. Do NOT ' +
         'also log an inventory event — the Shopify order moves the stock, and logging it too ' +
@@ -3129,6 +3131,7 @@ export const TOOLS: Record<string, Tool> = {
               required: ['productVariantId'],
             },
           },
+          friendsAndFamily: { type: 'boolean' as const, description: 'true when the person says Friends and Family: 20% off, applied by Shopify. Do not also pass prices.' },
           confirmed: {
             type: 'boolean' as const,
             description: 'Leave out to draft. true only after a person has seen the priced invoice in the chat and said to send it.',
@@ -3168,11 +3171,17 @@ export const TOOLS: Record<string, Tool> = {
         if (onHand !== null && onHand < qty) stockNotes.push(`${label}: Shopify last showed ${onHand} in stock, fewer than ${qty} — say so before sending.`)
       }
       const { quoteLiveSale, invoiceLiveSale } = await import('@/lib/live-sale')
+      const { FRIENDS_AND_FAMILY } = await import('@/lib/friends-family')
+      const ff = i.friendsAndFamily === true
+      if (ff && lines.some((l) => l.priceOverride != null)) {
+        return { sent: false, reason: 'Friends and Family is taken off the retail price by Shopify. Leave the prices out, or ask whether a named price should replace the discount.' }
+      }
+      const options = ff ? { discount: FRIENDS_AND_FAMILY } : {}
 
       if (i.confirmed !== true) {
         let quote
         try {
-          quote = await quoteLiveSale(email, lines)
+          quote = await quoteLiveSale(email, lines, options)
         } catch (e) {
           return { sent: false, reason: `Shopify could not price it: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}` }
         }
@@ -3181,7 +3190,8 @@ export const TOOLS: Record<string, Tool> = {
           draft: true,
           to: `${name} <${email}>`,
           lines: quote.lines.map((l) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}${l.priced === 'named' ? ' (price given in the chat)' : ' (retail)'}`),
-          subtotal: `$${quote.subtotal.toFixed(2)}`,
+          ...(quote.discount ? { discount: `${FRIENDS_AND_FAMILY.title} ${FRIENDS_AND_FAMILY.percent}%: −$${quote.discount.toFixed(2)}` } : {}),
+          subtotal: `$${quote.subtotal.toFixed(2)}${quote.discount ? ' (after the discount)' : ''}`,
           tax: `$${quote.tax.toFixed(2)}`,
           total: `$${quote.total.toFixed(2)}`,
           stock: stockNotes,
@@ -3195,7 +3205,7 @@ export const TOOLS: Record<string, Tool> = {
       const note = `Live sale for ${name}, invoiced from Studio Mouse.`
       let r
       try {
-        r = await invoiceLiveSale({ email, customerName: name, lines, note })
+        r = await invoiceLiveSale({ email, customerName: name, lines, note, options })
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
         return {
@@ -3375,6 +3385,59 @@ export const TOOLS: Record<string, Tool> = {
         tellTheUser: r.problems.length
           ? 'Say what happened and each problem, with what to do in Shopify.'
           : `Say the invoice for ${r.orderName} went to ${acct.name}.${shipTo ? ` To ship it: open ${r.orderName} in Shopify and tap "Create shipping label".` : ''}`,
+      }
+    },
+  },
+
+  refund_friends_family: {
+    def: {
+      name: 'refund_friends_family',
+      description:
+        'Give Friends and Family (20%) on a web order that is already paid, by refunding 20% of the ' +
+        'goods and their tax (not shipping) to the card, and emailing the customer a fixed note ' +
+        'saying so. Leave confirmed out first: it shows the amount and the note and changes ' +
+        'nothing. confirmed: true only once a person has seen that and said yes. Never ' +
+        'work the amount out yourself.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          orderName: str('The Shopify order number, e.g. "2642"'),
+          confirmed: { type: 'boolean' as const, description: 'Leave out to check. true only after a person has seen the amount and said yes.' },
+        },
+        required: ['orderName'],
+      },
+    },
+    run: async (i) => {
+      const ffm = await import('@/lib/friends-family')
+      const o = await ffm.friendsFamilyOrder(String(i.orderName ?? ''))
+      if (!o) return { done: false, reason: `No Shopify order #${String(i.orderName).replace(/^#/, '')}. Ask for the number again.` }
+      if (o.blocked) return { done: false, reason: o.blocked }
+      if (!o.email) return { done: false, reason: `${o.name} has no email, so the customer cannot be told. Do it in Shopify.` }
+      const text = ffm.friendsFamilyText(o.firstName, o.name, o.refund)
+      if (i.confirmed !== true) {
+        return {
+          done: false, check: true, order: o.name, to: o.email,
+          refund: `$${o.refund.toFixed(2)} (20% of $${o.goods.toFixed(2)} goods${o.goodsTax ? ` and $${o.goodsTax.toFixed(2)} tax` : ''}; shipping not included)`,
+          email: text,
+          tellTheUser: 'Show the order, the refund amount and the email, and wait for a yes. Nothing has happened yet.',
+        }
+      }
+      try {
+        await ffm.refundFriendsFamily(o)
+      } catch (e) {
+        return { done: false, reason: `Shopify refused the refund: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}. Nothing was emailed.` }
+      }
+      const { sendEmail } = await import('@/lib/email')
+      const { SUPPORT_FROM, SUPPORT_REPLY_TO } = await import('@/lib/support/reply')
+      // sendEmail reports a failure rather than throwing it.
+      const emailed = await sendEmail({ from: SUPPORT_FROM, to: [o.email], replyTo: SUPPORT_REPLY_TO, subject: `Friends and Family, order ${o.name}`, text })
+        .then((r) => r.sent)
+        .catch(() => false)
+      return {
+        done: true, order: o.name, refunded: `$${o.refund.toFixed(2)}`, emailed,
+        tellTheUser: emailed
+          ? `Say $${o.refund.toFixed(2)} was refunded on ${o.name} and ${o.email} was told.`
+          : `Say the refund of $${o.refund.toFixed(2)} on ${o.name} went through but the email did not send, so someone should tell the customer.`,
       }
     },
   },
