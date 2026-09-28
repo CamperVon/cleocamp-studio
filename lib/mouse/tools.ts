@@ -3294,6 +3294,7 @@ export const TOOLS: Record<string, Tool> = {
           ship: { type: 'boolean' as const, description: 'true: shipped to the store (label from Shopify). false: handed over or delivered by us. Only what the person said.' },
           shippingCharge: num('Only if the person named a shipping charge for this invoice, replacing the standard $25 (waived over $2,500).'),
           draftOrderId: str('The Shopify draft from an earlier call (gid://shopify/DraftOrder/…). Pass it to revise that draft, and to send it.'),
+          alsoCopy: { type: 'array' as const, items: { type: 'string' as const }, description: 'Other people at the store to copy on the invoice email (blind), e.g. a second contact saved on the account. Only addresses a person gave. studio@ is always copied.' },
           confirmed: { type: 'boolean' as const, description: 'Leave out to draft. true only after a person has seen the draft and said send; needs draftOrderId.' },
         },
         required: ['wholesaleAccountId', 'items', 'reduceStock', 'ship'],
@@ -3317,6 +3318,9 @@ export const TOOLS: Record<string, Tool> = {
         if (!storeAddress) return { sent: false, reason: `${acct.name}'s address on file (${acct.address ?? 'none'}) is not a full street, city, state and ZIP. Ask for the full shipping address, save it with update_wholesale_account, then draft again.` }
         shipTo = storeAddress
       }
+      const copy = (Array.isArray(i.alsoCopy) ? i.alsoCopy : []).map((x: unknown) => String(x).trim().toLowerCase()).filter(Boolean)
+      const badCopy = copy.find((x: string) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x))
+      if (badCopy) return { sent: false, reason: `"${badCopy}" is not an email address. Ask again.` }
       const namedShipping = i.shippingCharge == null ? null : Number(i.shippingCharge)
       if (namedShipping != null && !(namedShipping >= 0)) return { sent: false, reason: 'That shipping charge is not a number. Ask again.' }
       if (namedShipping != null && !i.ship) return { sent: false, reason: 'A shipping charge on an order that is not shipping. Ask which it is.' }
@@ -3359,7 +3363,7 @@ export const TOOLS: Record<string, Tool> = {
       // customer's name is the contact's if we have one, else the store's.
       const { storeCustomer } = await import('@/lib/live-sale')
       const cust = await storeCustomer(email, first ? { firstName: first, lastName: rest.join(' ') || null } : { firstName: acct.name })
-      Object.assign(options, { billTo: storeAddress, customerId: cust.id })
+      Object.assign(options, { billTo: storeAddress, customerId: cust.id, bcc: copy })
       const customerNote = cust.id ? null : `The draft is not linked to a Shopify customer, so it may show no name (${cust.problem ?? 'unknown reason'}). The email is still on it.`
       const draftOrderId = typeof i.draftOrderId === 'string' && i.draftOrderId.startsWith('gid://shopify/DraftOrder/') ? i.draftOrderId : null
       const note = `Wholesale: ${acct.name}. Drafted by Studio Mouse.`
@@ -3373,6 +3377,7 @@ export const TOOLS: Record<string, Tool> = {
         return {
           sent: false, draft: d.name, draftOrderId: d.draftOrderId, reviewInShopify: d.adminUrl, pdf: d.pdfPath,
           to: `${acct.name} <${email}>`,
+          copied: ['studio@cleocamp.com (always; replies come back to the studio)', ...copy],
           lines: d.lines.map((l, n) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}${priced[n] ? ` (${priced[n]})` : ''}`),
           subtotal: `$${d.subtotal.toFixed(2)}`,
           shipping: shipTo && sh ? `to ${addressLines(shipTo)}; shipping & handling $${d.shipping.toFixed(2)} (${sh.why}); label made in Shopify after sending` : 'none — marked handed over when sent',

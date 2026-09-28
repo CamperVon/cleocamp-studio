@@ -61,6 +61,8 @@ export type InvoiceOptions = {
    * cannot make that mistake.
    */
   discount?: { percent: number; title: string } | null
+  /** Extra people to copy (blind) on the invoice email, beyond the studio. */
+  bcc?: string[]
 }
 
 /**
@@ -127,6 +129,9 @@ export function addressLines(a: ShipAddress): string {
   const who = [a.company, [a.firstName, a.lastName].filter(Boolean).join(' ')].filter(Boolean).join(', ')
   return [who, a.address1, a.address2, `${a.city}, ${a.provinceCode} ${a.zip}`].filter(Boolean).join(' / ')
 }
+
+/** The shop's own email in Shopify: what invoices come from and copy to. */
+export const INVOICE_FROM = 'studio@cleocamp.com'
 
 type Money = { shopMoney: { amount: string } }
 const gid = (id: string) => (id.startsWith('gid://') ? id : `gid://shopify/ProductVariant/${id}`)
@@ -293,17 +298,28 @@ async function completeAndInvoice(draftId: string, email: string, customerName: 
   }
 
   const first = customerName.trim().split(/\s+/)[0]
-  const sent = await shopifyGraphQL<{ orderInvoiceSend: { order: { id: string } | null; userErrors: Array<{ message: string }> } }>(
+  const base = {
+    to: email,
+    subject: opts.subject ? opts.subject(order.name) : `Your Cleo Camp invoice ${order.name}`,
+    customMessage: opts.message ? opts.message(first) : `Hi ${first}, thank you for shopping with us in person. You can pay securely using the link below.\n\nKindly,\nCleo Studio`,
+  }
+  const send = (e: Record<string, unknown>) => shopifyGraphQL<{ orderInvoiceSend: { order: { id: string } | null; userErrors: Array<{ message: string }> } }>(
     `mutation($id: ID!, $email: EmailInput) { orderInvoiceSend(id: $id, email: $email) { order { id } userErrors { message } } }`,
-    {
-      id: order.id,
-      email: {
-        to: email,
-        subject: opts.subject ? opts.subject(order.name) : `Your Cleo Camp invoice ${order.name}`,
-        customMessage: opts.message ? opts.message(first) : `Hi ${first}, thank you for shopping with us in person. You can pay securely using the link below.\n\nKindly,\nCleo Studio`,
-      },
-    },
+    { id: order.id, email: e },
   )
+  // From the studio, with the studio copied, so a reply reaches a person and
+  // the team sees what went out. Cleo, 28 Sept 2026: "Is there a way that I
+  // can be cc'd on it so we can keep the human communication going?"
+  // Shopify's invoice has no cc; bcc and a sender from the shop's own address
+  // are what it allows. If Shopify refuses those, the invoice still goes.
+  let sent = await send({ ...base, from: INVOICE_FROM, bcc: [INVOICE_FROM, ...(opts.bcc ?? [])] })
+  if (!sent.orderInvoiceSend.order || sent.orderInvoiceSend.userErrors.length) {
+    const refused = sent.orderInvoiceSend.userErrors.map((e) => e.message).join('; ')
+    sent = await send(base)
+    if (sent.orderInvoiceSend.order && !sent.orderInvoiceSend.userErrors.length) {
+      out.problems.push(`The invoice went, but without the studio copy (${refused || 'Shopify refused it'}), so studio@ did not get one.`)
+    }
+  }
   out.invoiceSent = !!sent.orderInvoiceSend.order && !sent.orderInvoiceSend.userErrors.length
   if (!out.invoiceSent) out.problems.push(`The invoice email did not go (${sent.orderInvoiceSend.userErrors.map((e) => e.message).join('; ') || 'no reason given'}). Open ${order.name} in Shopify and use "Send invoice".`)
   return out
