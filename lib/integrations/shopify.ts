@@ -187,7 +187,7 @@ export async function fetchSoldLines(sinceISO: string): Promise<SoldLine[]> {
           orders(first: 40, after: $cursor, query: $q, sortKey: CREATED_AT) {
             pageInfo { hasNextPage endCursor }
             nodes {
-              createdAt cancelledAt
+              createdAt cancelledAt tags
               lineItems(first: 50) { nodes { quantity variant { id } } }
             }
           }
@@ -197,6 +197,9 @@ export async function fetchSoldLines(sinceISO: string): Promise<SoldLine[]> {
     )
     for (const o of d.orders.nodes) {
       if (o.cancelledAt) continue
+      // A store's order is not retail demand: counted as sales history it
+      // would read as a rush and inflate the next reorder (27 Sept 2026).
+      if ((o.tags ?? []).some((t: string) => t.toLowerCase() === 'wholesale')) continue
       const date = fmt.format(new Date(o.createdAt))
       for (const li of o.lineItems.nodes) {
         if (!li.variant?.id) continue // deleted product, or a custom line

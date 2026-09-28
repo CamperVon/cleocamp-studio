@@ -3173,6 +3173,114 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  /**
+   * A store's order, invoiced through Shopify like a live sale but with the
+   * store's prices, no sales tax (they resell), and a wholesale tag that keeps
+   * it out of the sales history the forecast reads. Brandon, 27 Sept 2026:
+   * "you can draft invoice, set custom prices, not include taxes."
+   * Stock is the person's call each time: the real product takes it off
+   * stock; a plain line of the same name and price leaves stock alone.
+   */
+  invoice_wholesale: {
+    def: {
+      name: 'invoice_wholesale',
+      description:
+        'Invoice a wholesale account (a store) through Shopify: the store\'s prices, no sales ' +
+        'tax, tagged wholesale so it is not counted as retail demand, marked handed over so it ' +
+        'is never packed as a web order, and Shopify emails the store a link to pay. Every price ' +
+        'comes from the person in the chat — never set or guess one. reduceStock must be said: ' +
+        'true takes the items off Shopify stock (they left the studio), false leaves stock alone ' +
+        '(e.g. shipped straight from a maker). If the person has not said, ask before drafting. ' +
+        'Leave confirmed out to DRAFT and show it; confirmed: true only once a person says send. ' +
+        'Never also log an inventory event for it.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          wholesaleAccountId: str('The store\'s wholesale account. Its email is where the invoice goes; if it has none, ask for it and save it on the account first.'),
+          items: {
+            type: 'array' as const,
+            items: {
+              type: 'object' as const,
+              properties: {
+                productVariantId: str('Our variant id. Ask about size or colour rather than picking one.'),
+                quantity: num('How many'),
+                price: num('Wholesale unit price in dollars, as the person gave it. Required.'),
+              },
+              required: ['productVariantId', 'quantity', 'price'],
+            },
+          },
+          reduceStock: { type: 'boolean' as const, description: 'true: take these off Shopify stock. false: leave stock alone. Only what the person said.' },
+          confirmed: { type: 'boolean' as const, description: 'Leave out to draft. true only after a person has seen it and said send.' },
+        },
+        required: ['wholesaleAccountId', 'items', 'reduceStock'],
+      },
+    },
+    run: async (i) => {
+      if (typeof i.reduceStock !== 'boolean') return { sent: false, reason: 'Ask whether this should come off stock before drafting.' }
+      const acct = await db.wholesaleAccount.findUnique({ where: { id: String(i.wholesaleAccountId) } })
+      if (!acct) return { sent: false, reason: 'No such wholesale account. Look it up again.' }
+      const email = (acct.email ?? '').trim().toLowerCase()
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+        return { sent: false, reason: `${acct.name} has no email on file. Ask for it and save it on the account, then draft again.` }
+      }
+      const items = Array.isArray(i.items) ? i.items as Array<{ productVariantId: string; quantity: number; price: number }> : []
+      if (!items.length) return { sent: false, reason: 'Nothing to invoice. Ask what the store is taking.' }
+      const variants = await db.productVariant.findMany({
+        where: { id: { in: items.map((x) => String(x.productVariantId)) } },
+        include: { product: { select: { name: true } }, colorway: { select: { customerName: true } } },
+      })
+      const lines: import('@/lib/live-sale').SaleLine[] = []
+      const stockNotes: string[] = []
+      for (const it of items) {
+        const v = variants.find((x) => x.id === String(it.productVariantId))
+        if (!v) return { sent: false, reason: `No variant ${it.productVariantId}. Look it up again; do not guess.` }
+        const price = Number(it.price)
+        if (!(price >= 0)) return { sent: false, reason: `No price for ${v.product.name}. Ask for the wholesale price.` }
+        if (i.reduceStock && !v.shopifyVariantId) return { sent: false, reason: `${v.product.name} ${v.size ?? ''} is not linked to Shopify, so it cannot come off stock there. Ask whether to invoice it without touching stock.` }
+        const qty = Math.max(1, Math.round(Number(it.quantity)))
+        const label = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
+        lines.push({ shopifyVariantId: v.shopifyVariantId ?? '', label, quantity: qty, priceOverride: price, noStock: !i.reduceStock })
+        const onHand = v.onHandQty === null ? null : Number(v.onHandQty)
+        if (i.reduceStock && onHand !== null && onHand < qty) stockNotes.push(`${label}: Shopify last showed ${onHand} in stock, fewer than ${qty} — say so before sending.`)
+      }
+      const options = {
+        taxExempt: true,
+        tags: ['wholesale', 'studio-mouse'],
+        subject: (n: string) => `Cleo Camp wholesale invoice ${n}`,
+        message: () => `Hello ${acct.contactName?.trim().split(/\s+/)[0] ?? acct.name}, thank you for your order. Your invoice is below, with a link to pay.\n\nKindly,\nCleo Studio`,
+      }
+      const { quoteLiveSale, invoiceLiveSale } = await import('@/lib/live-sale')
+      if (i.confirmed !== true) {
+        let q
+        try {
+          q = await quoteLiveSale(email, lines, options)
+        } catch (e) {
+          return { sent: false, reason: `Shopify could not price it: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}` }
+        }
+        return {
+          sent: false, draft: true,
+          to: `${acct.name} <${email}>`,
+          lines: q.lines.map((l) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}`),
+          subtotal: `$${q.subtotal.toFixed(2)}`, tax: `$${q.tax.toFixed(2)} (wholesale, none)`, total: `$${q.total.toFixed(2)}`,
+          stock: i.reduceStock ? ['Comes off Shopify stock when sent.', ...stockNotes] : ['Stock is left alone.'],
+          tellTheUser: 'Show the store, each line and price, the total, and whether stock comes off. Wait for send.',
+        }
+      }
+      let r
+      try {
+        r = await invoiceLiveSale({ email, customerName: acct.contactName ?? acct.name, lines, note: `Wholesale: ${acct.name}. Invoiced from Studio Mouse.`, options })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        return { sent: false, reason: /access|scope|denied|permission/i.test(msg) ? `Shopify refused: the app lacks permission (${msg.slice(0, 160)}). Nothing was created.` : `Shopify refused: ${msg.slice(0, 200)}. Check Shopify before retrying — part may have gone through.` }
+      }
+      return {
+        sent: r.invoiceSent, order: r.orderName, total: r.total == null ? null : `$${r.total.toFixed(2)}`,
+        handedOver: r.fulfilled, stock: i.reduceStock ? 'taken off Shopify stock' : 'left alone', problems: r.problems,
+        tellTheUser: r.problems.length ? 'Say what happened and each problem, with what to do in Shopify.' : `Say the invoice for ${r.orderName} went to ${acct.name}.`,
+      }
+    },
+  },
+
   unpaid_live_sales: {
     def: {
       name: 'unpaid_live_sales',

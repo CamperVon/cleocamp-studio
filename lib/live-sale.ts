@@ -22,22 +22,42 @@
  */
 import { shopifyGraphQL } from '@/lib/integrations/shopify'
 
-export type SaleLine = { shopifyVariantId: string; label: string; quantity: number; priceOverride?: number | null }
+/**
+ * One line. With stock: the real Shopify variant, so the order takes it off
+ * stock. Without: a plain line with the same name and price and no product
+ * link, which Shopify never counts against stock — for goods that did not
+ * come out of the studio's stock (shipped from a maker, or already counted
+ * out). A line without stock must carry its price.
+ */
+export type SaleLine = { shopifyVariantId: string; label: string; quantity: number; priceOverride?: number | null; noStock?: boolean }
+
+/** How the invoice is made: the retail live sale is the default. */
+export type InvoiceOptions = {
+  /** Wholesale: the store resells, so no sales tax. */
+  taxExempt?: boolean
+  tags?: string[]
+  subject?: (orderName: string) => string
+  message?: (firstName: string) => string
+}
 
 type Money = { shopMoney: { amount: string } }
 const gid = (id: string) => (id.startsWith('gid://') ? id : `gid://shopify/ProductVariant/${id}`)
 const money = (m: Money | null | undefined) => Number(m?.shopMoney.amount ?? 0)
 
-function draftInput(email: string, lines: SaleLine[], note: string) {
+function draftInput(email: string, lines: SaleLine[], note: string, opts: InvoiceOptions = {}) {
   return {
     email,
     note,
-    tags: ['live-sale', 'studio-mouse'],
-    lineItems: lines.map((l) => ({
-      variantId: gid(l.shopifyVariantId),
-      quantity: l.quantity,
-      ...(l.priceOverride != null ? { priceOverride: { amount: l.priceOverride.toFixed(2), currencyCode: 'USD' } } : {}),
-    })),
+    tags: opts.tags ?? ['live-sale', 'studio-mouse'],
+    ...(opts.taxExempt ? { taxExempt: true } : {}),
+    lineItems: lines.map((l) => {
+      const price = l.priceOverride != null ? { amount: l.priceOverride.toFixed(2), currencyCode: 'USD' } : null
+      if (l.noStock) {
+        if (!price) throw new Error(`${l.label} has no price. A line that leaves stock alone needs one.`)
+        return { title: l.label, quantity: l.quantity, originalUnitPriceWithCurrency: price, taxable: !opts.taxExempt, requiresShipping: true }
+      }
+      return { variantId: gid(l.shopifyVariantId), quantity: l.quantity, ...(price ? { priceOverride: price } : {}) }
+    }),
   }
 }
 
@@ -49,7 +69,7 @@ export type Quote = {
 }
 
 /** What the invoice will say, worked out by Shopify. Creates nothing. */
-export async function quoteLiveSale(email: string, lines: SaleLine[]): Promise<Quote> {
+export async function quoteLiveSale(email: string, lines: SaleLine[], opts: InvoiceOptions = {}): Promise<Quote> {
   const d = await shopifyGraphQL<{ draftOrderCalculate: { calculatedDraftOrder: {
     subtotalPriceSet: Money; totalTaxSet: Money; totalPriceSet: Money
     lineItems: Array<{ quantity: number; originalUnitPriceSet: Money; discountedUnitPriceSet?: Money }>
@@ -58,7 +78,7 @@ export async function quoteLiveSale(email: string, lines: SaleLine[]): Promise<Q
       subtotalPriceSet { shopMoney { amount } } totalTaxSet { shopMoney { amount } } totalPriceSet { shopMoney { amount } }
       lineItems { quantity originalUnitPriceSet { shopMoney { amount } } }
     } userErrors { message } } }`,
-    { input: draftInput(email, lines, '') },
+    { input: draftInput(email, lines, '', opts) },
   )
   const c = d.draftOrderCalculate.calculatedDraftOrder
   if (!c) throw new Error(d.draftOrderCalculate.userErrors.map((e) => e.message).join('; ') || 'Shopify could not price this.')
@@ -94,12 +114,14 @@ export async function invoiceLiveSale(args: {
   customerName: string
   lines: SaleLine[]
   note: string
+  options?: InvoiceOptions
 }): Promise<InvoiceResult> {
+  const opts = args.options ?? {}
   const out: InvoiceResult = { orderName: null, orderId: null, total: null, fulfilled: false, invoiceSent: false, problems: [] }
 
   const created = await shopifyGraphQL<{ draftOrderCreate: { draftOrder: { id: string } | null; userErrors: Array<{ message: string }> } }>(
     `mutation($input: DraftOrderInput!) { draftOrderCreate(input: $input) { draftOrder { id } userErrors { message } } }`,
-    { input: draftInput(args.email, args.lines, args.note) },
+    { input: draftInput(args.email, args.lines, args.note, opts) },
   )
   const draftId = created.draftOrderCreate.draftOrder?.id
   if (!draftId) {
@@ -150,8 +172,8 @@ export async function invoiceLiveSale(args: {
       id: order.id,
       email: {
         to: args.email,
-        subject: `Your Cleo Camp invoice ${order.name}`,
-        customMessage: `Hi ${first}, thank you for shopping with us in person. You can pay securely using the link below.\n\nKindly,\nCleo Studio`,
+        subject: opts.subject ? opts.subject(order.name) : `Your Cleo Camp invoice ${order.name}`,
+        customMessage: opts.message ? opts.message(first) : `Hi ${first}, thank you for shopping with us in person. You can pay securely using the link below.\n\nKindly,\nCleo Studio`,
       },
     },
   )
