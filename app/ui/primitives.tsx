@@ -1,5 +1,22 @@
 import type { ReactNode } from 'react'
 
+/**
+ * A row that folds open. Lists are closed by default — Brandon, 28 Sept 2026:
+ * "this needs to just be default for the eye." The summary carries whatever
+ * needs attention (owed, not set, urgent) so nothing that matters is hidden.
+ */
+export function Fold({ summary, children }: { summary: ReactNode; children: ReactNode }) {
+  return (
+    <details className="group">
+      <summary className="flex cursor-pointer list-none items-center gap-2.5 px-4 py-3 hover:bg-sunk sm:px-5 [&::-webkit-details-marker]:hidden">
+        <span aria-hidden className="text-xs text-faint transition-transform group-open:rotate-90">▸</span>
+        <span className="min-w-0 flex-1">{summary}</span>
+      </summary>
+      {children}
+    </details>
+  )
+}
+
 export function Page({ title, lede, children }: { title: string; lede?: string; children: ReactNode }) {
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-4 sm:px-6 sm:py-10">

@@ -196,6 +196,10 @@ data. That must not happen again.
 - All dates are **America/Los_Angeles**. Never compute a date boundary in UTC.
 - The primary surface is a **phone**, checked in the morning. Mobile layout is
   a requirement, not a nicety.
+- **Lists fold closed by default** (Brandon, 28 Sept 2026: "this needs to just
+  be default for the eye"). Use `Fold` from `app/ui/primitives.tsx` for any
+  list of products, accounts or similar; put what needs attention (owed, not
+  set, urgent) on the closed line so nothing that matters hides inside.
 - Cleo is not technical. Favor one conversational interface over forms, and
   favor asking a question over guessing.
 

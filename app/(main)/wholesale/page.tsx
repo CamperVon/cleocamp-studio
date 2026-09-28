@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { Page, Card, Chip, Empty, Money } from '@/app/ui/primitives'
+import { Page, Card, Chip, Empty, Money, Fold } from '@/app/ui/primitives'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,19 +53,26 @@ export default async function Wholesale() {
     const unconfirmed = a.shipments.filter((s) => s.paid === null).length
 
     return (
-      <li key={a.id} className="px-4 py-3.5 sm:px-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="font-medium">{a.name}</p>
-            <Chip tone={a.type === 'CONSIGNMENT' ? 'accent' : 'neutral'}>
-              {a.type === 'CONSIGNMENT' ? `Consignment${a.commissionSplit ? ` · ${a.commissionSplit}` : ''}` : 'Wholesale'}
-            </Chip>
-          </div>
-          <Money cents={totalOwed} />
-        </div>
-        {a.contactName || a.address ? (
-          <p className="mt-1 text-xs text-muted">{[a.contactName, a.address].filter(Boolean).join(' · ')}</p>
-        ) : null}
+      <li key={a.id}>
+        <Fold
+          summary={
+            <span className="flex items-center justify-between gap-3">
+              <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="font-medium">{a.name}</span>
+                <Chip tone={a.type === 'CONSIGNMENT' ? 'accent' : 'neutral'}>
+                  {a.type === 'CONSIGNMENT' ? `Consignment${a.commissionSplit ? ` · ${a.commissionSplit}` : ''}` : 'Wholesale'}
+                </Chip>
+                {unconfirmed ? <span className="text-xs text-warn">{unconfirmed} not confirmed</span> : null}
+              </span>
+              <span className={`shrink-0 ${totalOwed ? 'font-semibold' : 'text-muted'}`}><Money cents={totalOwed} /></span>
+            </span>
+          }
+        >
+        <div className="px-4 pb-3.5 sm:px-5">
+        <p className="text-xs text-muted">
+          {[a.contactName, a.email, a.address].filter(Boolean).join(' · ') || 'No contact on file'}
+          {' · '}{a.shipments.length ? `${a.shipments.length} shipment${a.shipments.length === 1 ? '' : 's'}` : 'nothing shipped yet'}
+        </p>
         {a.shipments.length ? <ul className="mt-2 flex flex-col gap-1.5 border-t border-line pt-2">
           {a.shipments.map((s) => {
             const total = s.lines.reduce((n, l) => n + (l.wholesaleCents ?? 0), 0)
@@ -92,6 +99,8 @@ export default async function Wholesale() {
             )
           })}
         </ul> : null}
+        </div>
+        </Fold>
       </li>
     )
   }
@@ -125,14 +134,14 @@ export default async function Wholesale() {
       </div>
 
       <Card>
-        <details className="group">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 hover:bg-sunk sm:px-5 [&::-webkit-details-marker]:hidden">
-          <span className="flex items-center gap-2">
-            <span aria-hidden className="text-xs text-faint transition-transform group-open:rotate-90">▸</span>
-            <span className="font-serif text-[17px] italic text-accent">Price list</span>
-          </span>
-          <span className="text-xs text-muted">{products.length} products{unpriced ? ` · ${unpriced} not set` : ''}</span>
-        </summary>
+        <Fold
+          summary={
+            <span className="flex items-center justify-between gap-3">
+              <span className="font-serif text-[17px] italic text-accent">Price list</span>
+              <span className="text-xs text-muted">{products.length} products{unpriced ? ` · ${unpriced} not set` : ''}</span>
+            </span>
+          }
+        >
         <p className="border-b border-line px-4 py-2.5 text-xs text-muted sm:px-5">
           What a store pays, and what Mouse invoices unless you name a price for one order. To change one, tell Mouse
           {' '}(&ldquo;wholesale on the Cleo Tee is $56&rdquo;). Shipped orders add $25 shipping &amp; handling, waived over $2,500.
@@ -178,7 +187,7 @@ export default async function Wholesale() {
             )
           })}
         </ul>
-        </details>
+        </Fold>
       </Card>
 
       <Card title={`Accounts (${accounts.length})`}>
