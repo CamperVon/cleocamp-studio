@@ -3245,8 +3245,12 @@ export const TOOLS: Record<string, Tool> = {
         'shippingCharge if the person names a different one for this invoice. reduceStock must be said: ' +
         'true takes the items off Shopify stock (they left the studio), false leaves stock alone ' +
         '(e.g. shipped straight from a maker). If the person has not said, ask before drafting. ' +
-        'Leave confirmed out to DRAFT and show it; confirmed: true only once a person says send. ' +
-        'Never also log an inventory event for it.',
+        'Leave confirmed out to DRAFT: this saves a real draft order in Shopify (nothing sent, ' +
+        'stock untouched) and returns its link, so people can review it there. Always give the ' +
+        'link. To revise, draft again passing draftOrderId so the same draft is rewritten. ' +
+        'confirmed: true with that draftOrderId only once a person says send — it sends the draft ' +
+        'exactly as it stands in Shopify, including any edits made there. Never also log an ' +
+        'inventory event for it.',
       input_schema: {
         type: 'object',
         properties: {
@@ -3266,7 +3270,8 @@ export const TOOLS: Record<string, Tool> = {
           reduceStock: { type: 'boolean' as const, description: 'true: take these off Shopify stock. false: leave stock alone. Only what the person said.' },
           ship: { type: 'boolean' as const, description: 'true: shipped to the store (label from Shopify). false: handed over or delivered by us. Only what the person said.' },
           shippingCharge: num('Only if the person named a shipping charge for this invoice, replacing the standard $25 (waived over $2,500).'),
-          confirmed: { type: 'boolean' as const, description: 'Leave out to draft. true only after a person has seen it and said send.' },
+          draftOrderId: str('The Shopify draft from an earlier call (gid://shopify/DraftOrder/…). Pass it to revise that draft, and to send it.'),
+          confirmed: { type: 'boolean' as const, description: 'Leave out to draft. true only after a person has seen the draft and said send; needs draftOrderId.' },
         },
         required: ['wholesaleAccountId', 'items', 'reduceStock', 'ship'],
       },
@@ -3280,7 +3285,7 @@ export const TOOLS: Record<string, Tool> = {
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
         return { sent: false, reason: `${acct.name} has no email on file. Ask for it, save it with update_wholesale_account, then draft again.` }
       }
-      const { quoteLiveSale, invoiceLiveSale, parseUsAddress, addressLines } = await import('@/lib/live-sale')
+      const { saveDraft, sendDraft, parseUsAddress, addressLines } = await import('@/lib/live-sale')
       let shipTo: import('@/lib/live-sale').ShipAddress | undefined
       if (i.ship) {
         const a = parseUsAddress(acct.address)
@@ -3326,27 +3331,30 @@ export const TOOLS: Record<string, Tool> = {
       const { wholesaleShipping } = await import('@/lib/live-sale')
       const sh = shipTo ? wholesaleShipping(goods, namedShipping) : null
       Object.assign(options, sh ? { shipTo, shippingCharge: sh.charge, shippingTitle: sh.title } : {})
+      const draftOrderId = typeof i.draftOrderId === 'string' && i.draftOrderId.startsWith('gid://shopify/DraftOrder/') ? i.draftOrderId : null
+      const note = `Wholesale: ${acct.name}. Drafted by Studio Mouse.`
       if (i.confirmed !== true) {
-        let q
+        let d
         try {
-          q = await quoteLiveSale(email, lines, options)
+          d = await saveDraft({ email, lines, note, options, draftOrderId })
         } catch (e) {
-          return { sent: false, reason: `Shopify could not price it: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}` }
+          return { sent: false, reason: `Shopify would not save the draft: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}` }
         }
         return {
-          sent: false, draft: true,
+          sent: false, draft: d.name, draftOrderId: d.draftOrderId, reviewInShopify: d.adminUrl,
           to: `${acct.name} <${email}>`,
-          lines: q.lines.map((l, n) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)} (${priced[n]})`),
-          subtotal: `$${q.subtotal.toFixed(2)}`,
-          shipping: shipTo && sh ? `to ${addressLines(shipTo)}; shipping & handling $${q.shipping.toFixed(2)} (${sh.why}); label made in Shopify after sending` : 'none — marked handed over',
-          tax: `$${q.tax.toFixed(2)} (wholesale, none)`, total: `$${q.total.toFixed(2)}`,
+          lines: d.lines.map((l, n) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}${priced[n] ? ` (${priced[n]})` : ''}`),
+          subtotal: `$${d.subtotal.toFixed(2)}`,
+          shipping: shipTo && sh ? `to ${addressLines(shipTo)}; shipping & handling $${d.shipping.toFixed(2)} (${sh.why}); label made in Shopify after sending` : 'none — marked handed over when sent',
+          tax: `$${d.tax.toFixed(2)} (wholesale, none)`, total: `$${d.total.toFixed(2)}`,
           stock: i.reduceStock ? ['Comes off Shopify stock when sent.', ...stockNotes] : ['Stock is left alone.'],
-          tellTheUser: 'Show the store, each line and price and where the price came from, the shipping address if shipping (ask them to check it), the total, and whether stock comes off. Wait for send.',
+          tellTheUser: `Give the draft name and the Shopify link first, so it can be reviewed there. Then the store, each line and price and where the price came from, the shipping address if shipping (ask them to check it), the total, and whether stock comes off. Nothing is sent until someone says send; edits made to the draft in Shopify will go out as they are.`,
         }
       }
+      if (!draftOrderId) return { sent: false, reason: 'There is no draft to send. Draft it first (leave confirmed out) so it can be reviewed, then send that draft.' }
       let r
       try {
-        r = await invoiceLiveSale({ email, customerName: acct.contactName ?? acct.name, lines, note: `Wholesale: ${acct.name}. Invoiced from Studio Mouse.`, options })
+        r = await sendDraft({ draftOrderId, email, customerName: acct.contactName ?? acct.name, requireTag: 'wholesale', options })
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
         return { sent: false, reason: /access|scope|denied|permission/i.test(msg) ? `Shopify refused: the app lacks permission (${msg.slice(0, 160)}). Nothing was created.` : `Shopify refused: ${msg.slice(0, 200)}. Check Shopify before retrying — part may have gone through.` }

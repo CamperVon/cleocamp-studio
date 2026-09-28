@@ -184,6 +184,8 @@ export type InvoiceResult = {
   problems: string[]
 }
 
+type DraftCreated = { draftOrderCreate: { draftOrder: { id: string } | null; userErrors: Array<{ message: string }> } }
+
 /**
  * Create, hand over and invoice. Stops at the first step that fails and says
  * exactly what state that leaves, so nothing half-done goes unmentioned.
@@ -196,17 +198,26 @@ export async function invoiceLiveSale(args: {
   options?: InvoiceOptions
 }): Promise<InvoiceResult> {
   const opts = args.options ?? {}
-  const out: InvoiceResult = { orderName: null, orderId: null, total: null, fulfilled: false, invoiceSent: false, problems: [] }
-
-  const created = await shopifyGraphQL<{ draftOrderCreate: { draftOrder: { id: string } | null; userErrors: Array<{ message: string }> } }>(
+  const created = await shopifyGraphQL<DraftCreated>(
     `mutation($input: DraftOrderInput!) { draftOrderCreate(input: $input) { draftOrder { id } userErrors { message } } }`,
     { input: draftInput(args.email, args.lines, args.note, opts) },
   )
   const draftId = created.draftOrderCreate.draftOrder?.id
   if (!draftId) {
-    out.problems.push(`Shopify would not create the order: ${created.draftOrderCreate.userErrors.map((e) => e.message).join('; ') || 'no reason given'}. Nothing was created, charged or sent.`)
-    return out
+    return { orderName: null, orderId: null, total: null, fulfilled: false, invoiceSent: false, problems: [
+      `Shopify would not create the order: ${created.draftOrderCreate.userErrors.map((e) => e.message).join('; ') || 'no reason given'}. Nothing was created, charged or sent.`,
+    ] }
   }
+  return completeAndInvoice(draftId, args.email, args.customerName, opts)
+}
+
+/**
+ * Turn a draft into an unpaid order, mark it handed over unless it ships, and
+ * email the invoice. Shared by the live sale (draft made a moment ago) and a
+ * wholesale draft someone has reviewed in Shopify first.
+ */
+async function completeAndInvoice(draftId: string, email: string, customerName: string, opts: InvoiceOptions): Promise<InvoiceResult> {
+  const out: InvoiceResult = { orderName: null, orderId: null, total: null, fulfilled: false, invoiceSent: false, problems: [] }
 
   // Unpaid order: stock leaves now, payment follows through the invoice.
   const done = await shopifyGraphQL<{ draftOrderComplete: { draftOrder: { order: { id: string; name: string; totalPriceSet: Money } | null } | null; userErrors: Array<{ message: string }> } }>(
@@ -247,13 +258,13 @@ export async function invoiceLiveSale(args: {
     out.problems.push(`${order.name} was not marked handed over — Shopify had nothing to fulfil yet. Mark it fulfilled in Shopify, or it will show up to be packed and shipped.`)
   }
 
-  const first = args.customerName.trim().split(/\s+/)[0]
+  const first = customerName.trim().split(/\s+/)[0]
   const sent = await shopifyGraphQL<{ orderInvoiceSend: { order: { id: string } | null; userErrors: Array<{ message: string }> } }>(
     `mutation($id: ID!, $email: EmailInput) { orderInvoiceSend(id: $id, email: $email) { order { id } userErrors { message } } }`,
     {
       id: order.id,
       email: {
-        to: args.email,
+        to: email,
         subject: opts.subject ? opts.subject(order.name) : `Your Cleo Camp invoice ${order.name}`,
         customMessage: opts.message ? opts.message(first) : `Hi ${first}, thank you for shopping with us in person. You can pay securely using the link below.\n\nKindly,\nCleo Studio`,
       },
@@ -262,6 +273,98 @@ export async function invoiceLiveSale(args: {
   out.invoiceSent = !!sent.orderInvoiceSend.order && !sent.orderInvoiceSend.userErrors.length
   if (!out.invoiceSent) out.problems.push(`The invoice email did not go (${sent.orderInvoiceSend.userErrors.map((e) => e.message).join('; ') || 'no reason given'}). Open ${order.name} in Shopify and use "Send invoice".`)
   return out
+}
+
+let shopHandle: string | null = null
+/** Where a person opens a draft order in Shopify admin. */
+async function draftAdminUrl(legacyId: string): Promise<string> {
+  if (!shopHandle) {
+    const d = await shopifyGraphQL<{ shop: { myshopifyDomain: string } }>(`{ shop { myshopifyDomain } }`)
+    shopHandle = d.shop.myshopifyDomain.replace(/\.myshopify\.com$/, '')
+  }
+  return `https://admin.shopify.com/store/${shopHandle}/draft_orders/${legacyId}`
+}
+
+export type SavedDraft = {
+  draftOrderId: string
+  name: string
+  adminUrl: string
+  lines: Array<{ label: string; quantity: number; unitPrice: number }>
+  subtotal: number
+  shipping: number
+  tax: number
+  total: number
+}
+
+const DRAFT_FIELDS = `id name legacyResourceId status
+  subtotalPriceSet { shopMoney { amount } } totalShippingPriceSet { shopMoney { amount } }
+  totalTaxSet { shopMoney { amount } } totalPriceSet { shopMoney { amount } }
+  lineItems(first: 100) { nodes { title variantTitle quantity originalUnitPriceSet { shopMoney { amount } } } }`
+type DraftShape = {
+  id: string; name: string; legacyResourceId: string; status: string
+  subtotalPriceSet: Money; totalShippingPriceSet: Money; totalTaxSet: Money; totalPriceSet: Money
+  lineItems: { nodes: Array<{ title: string; variantTitle: string | null; quantity: number; originalUnitPriceSet: Money }> }
+}
+
+/**
+ * A real draft order in Shopify, for people to look over before anything is
+ * sent (Brandon, 28 Sept 2026: "spit back the draft or a link to the draft in
+ * shopify so that we can review internally"). Nothing leaves stock and nothing
+ * is emailed. Given the id of an earlier draft that is still open, it is
+ * rewritten in place rather than leaving a second draft behind.
+ */
+export async function saveDraft(args: { email: string; lines: SaleLine[]; note: string; options?: InvoiceOptions; draftOrderId?: string | null }): Promise<SavedDraft> {
+  const input = draftInput(args.email, args.lines, args.note, args.options ?? {})
+  let d: DraftShape | null = null
+  let errors: Array<{ message: string }> = []
+  if (args.draftOrderId) {
+    const cur = await shopifyGraphQL<{ draftOrder: { status: string } | null }>(`query($id: ID!) { draftOrder(id: $id) { status } }`, { id: args.draftOrderId })
+    if (cur.draftOrder && cur.draftOrder.status !== 'COMPLETED') {
+      const u = await shopifyGraphQL<{ draftOrderUpdate: { draftOrder: DraftShape | null; userErrors: Array<{ message: string }> } }>(
+        `mutation($id: ID!, $input: DraftOrderInput!) { draftOrderUpdate(id: $id, input: $input) { draftOrder { ${DRAFT_FIELDS} } userErrors { message } } }`,
+        { id: args.draftOrderId, input },
+      )
+      d = u.draftOrderUpdate.draftOrder
+      errors = u.draftOrderUpdate.userErrors
+    }
+  }
+  if (!d && !errors.length) {
+    const c = await shopifyGraphQL<{ draftOrderCreate: { draftOrder: DraftShape | null; userErrors: Array<{ message: string }> } }>(
+      `mutation($input: DraftOrderInput!) { draftOrderCreate(input: $input) { draftOrder { ${DRAFT_FIELDS} } userErrors { message } } }`,
+      { input },
+    )
+    d = c.draftOrderCreate.draftOrder
+    errors = c.draftOrderCreate.userErrors
+  }
+  if (!d) throw new Error(errors.map((e) => e.message).join('; ') || 'Shopify would not save the draft.')
+  return {
+    draftOrderId: d.id,
+    name: d.name,
+    adminUrl: await draftAdminUrl(d.legacyResourceId),
+    lines: d.lineItems.nodes.map((l) => ({ label: `${l.title}${l.variantTitle ? ` — ${l.variantTitle}` : ''}`, quantity: l.quantity, unitPrice: money(l.originalUnitPriceSet) })),
+    subtotal: money(d.subtotalPriceSet),
+    shipping: money(d.totalShippingPriceSet),
+    tax: money(d.totalTaxSet),
+    total: money(d.totalPriceSet),
+  }
+}
+
+/**
+ * Send a reviewed draft: exactly what is in Shopify now, edits made there
+ * included. Refuses a draft that is already an order, or that is not ours for
+ * this purpose (its tag), so a stale id can never invoice the wrong thing.
+ */
+export async function sendDraft(args: { draftOrderId: string; email: string; customerName: string; requireTag: string; options?: InvoiceOptions }): Promise<InvoiceResult> {
+  const blank: InvoiceResult = { orderName: null, orderId: null, total: null, fulfilled: false, invoiceSent: false, problems: [] }
+  const d = await shopifyGraphQL<{ draftOrder: { name: string; status: string; tags: string[]; order: { name: string } | null } | null }>(
+    `query($id: ID!) { draftOrder(id: $id) { name status tags order { name } } }`,
+    { id: args.draftOrderId },
+  )
+  const dr = d.draftOrder
+  if (!dr) return { ...blank, problems: ['That draft is no longer in Shopify (deleted?). Nothing was sent. Draft it again.'] }
+  if (dr.status === 'COMPLETED' || dr.order) return { ...blank, orderName: dr.order?.name ?? null, problems: [`${dr.name} has already been turned into order ${dr.order?.name ?? ''}. Nothing new was sent.`] }
+  if (!dr.tags.includes(args.requireTag)) return { ...blank, problems: [`${dr.name} is not a ${args.requireTag} draft. Nothing was sent.`] }
+  return completeAndInvoice(args.draftOrderId, args.email, args.customerName, args.options ?? {})
 }
 
 /** Live sales still waiting on payment, newest first. */
