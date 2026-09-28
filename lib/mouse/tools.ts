@@ -3117,7 +3117,10 @@ export const TOOLS: Record<string, Tool> = {
         'Invoice a customer for something sold in person ("invoice Jane Doe for a Boy Belt ' +
         'size M"). Makes a Shopify order: the item comes off stock at once, the order is marked ' +
         'handed over so it is never packed, and Shopify emails the customer a link to pay. The ' +
-        'price is the retail price unless the person in the chat names another. Friends and ' +
+        'price is the retail price unless the person in the chat names another. Items that are ' +
+        'not in Shopify (live-sale only, like the Red Petite bean bag) CAN be invoiced: they go on ' +
+        'as a plain line at the app\'s price and their count in the app comes down when sent — ' +
+        'never tell the person to list them in Shopify to invoice them. Friends and ' +
         'Family: pass friendsAndFamily: true and NO prices — Shopify takes the 20% off its own ' +
         'prices and shows it on the invoice. Never work out a discounted price yourself. Leave confirmed ' +
         'out to DRAFT: nothing is created and you get the priced invoice to show. Pass ' +
@@ -3166,18 +3169,36 @@ export const TOOLS: Record<string, Tool> = {
       if (!items.length) return { sent: false, reason: 'Nothing to invoice. Ask what was sold.' }
       const variants = await db.productVariant.findMany({
         where: { id: { in: items.map((x: { productVariantId: string }) => String(x.productVariantId)) } },
-        include: { product: { select: { name: true } }, colorway: { select: { customerName: true } } },
+        include: { product: { select: { name: true, retailPriceCents: true } }, colorway: { select: { customerName: true } } },
       })
       const lines: import('@/lib/live-sale').SaleLine[] = []
       const stockNotes: string[] = []
+      // Goods the app sells that Shopify never sees — the Red Petite bean bag
+      // is live-sale only by design (note, 25 Sept 2026). Mouse refused to
+      // invoice it on 28 Sept and suggested listing it publicly instead. It
+      // goes on the invoice as a plain line at the app's price (said out loud
+      // on the draft, since that price is ours, not Shopify's), and its count,
+      // which lives only in the app, comes down here when the invoice is sent.
+      const appOnly: Array<{ variantId: string; label: string; qty: number }> = []
+      const named = (items as Array<{ price?: number }>).some((x) => x.price != null)
       for (const it of items as Array<{ productVariantId: string; quantity?: number; price?: number }>) {
         const v = variants.find((x) => x.id === String(it.productVariantId))
         if (!v) return { sent: false, reason: `No variant ${it.productVariantId}. Look it up again; do not guess.` }
-        if (!v.shopifyVariantId) return { sent: false, reason: `${v.product.name} ${v.size ?? ''} is not linked to Shopify, so it cannot be invoiced there.` }
         const qty = Math.max(1, Math.round(Number(it.quantity ?? 1)))
         const label = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
         const price = it.price == null ? null : Number(it.price)
         if (price != null && !(price >= 0)) return { sent: false, reason: `"${it.price}" is not a price.` }
+        if (!v.shopifyVariantId) {
+          const appCents = v.retailPriceCents ?? v.product.retailPriceCents
+          const p = price ?? (appCents == null ? null : appCents / 100)
+          if (p == null) return { sent: false, reason: `${label} is not in Shopify and has no price in the app. Ask what to charge.` }
+          lines.push({ shopifyVariantId: '', label, quantity: qty, priceOverride: p, noStock: true })
+          appOnly.push({ variantId: v.id, label, qty })
+          const onHand = v.onHandQty === null ? null : Number(v.onHandQty)
+          stockNotes.push(`${label} is not in Shopify: priced at ${price != null ? 'the price given' : `the app's $${p.toFixed(2)} — check it is right`}; its count in the app (${onHand ?? 'unknown'}) comes down by ${qty} when sent.`)
+          if (onHand !== null && onHand < qty) stockNotes.push(`${label}: the app shows ${onHand}, fewer than ${qty} — say so before sending.`)
+          continue
+        }
         lines.push({ shopifyVariantId: v.shopifyVariantId, label, quantity: qty, priceOverride: price })
         const onHand = v.onHandQty === null ? null : Number(v.onHandQty)
         if (onHand !== null && onHand < qty) stockNotes.push(`${label}: Shopify last showed ${onHand} in stock, fewer than ${qty} — say so before sending.`)
@@ -3185,7 +3206,7 @@ export const TOOLS: Record<string, Tool> = {
       const { quoteLiveSale, invoiceLiveSale } = await import('@/lib/live-sale')
       const { FRIENDS_AND_FAMILY } = await import('@/lib/friends-family')
       const ff = i.friendsAndFamily === true
-      if (ff && lines.some((l) => l.priceOverride != null)) {
+      if (ff && named) {
         return { sent: false, reason: 'Friends and Family is taken off the retail price by Shopify. Leave the prices out, or ask whether a named price should replace the discount.' }
       }
       const copy = (Array.isArray(i.alsoCopy) ? i.alsoCopy : []).map((x: unknown) => String(x).trim().toLowerCase()).filter(Boolean)
@@ -3205,7 +3226,8 @@ export const TOOLS: Record<string, Tool> = {
           draft: true,
           to: `${name} <${email}>`,
           copied: ['studio@cleocamp.com (always)', ...copy],
-          lines: quote.lines.map((l) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}${l.priced === 'named' ? ' (price given in the chat)' : ' (retail)'}`),
+          lines: quote.lines.map((l, n) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}${
+            lines[n].noStock && !(items as Array<{ price?: number }>)[n]?.price ? " (the app's price — not in Shopify)" : l.priced === 'named' ? ' (price given in the chat)' : ' (retail)'}`),
           ...(quote.discount ? { discount: `${FRIENDS_AND_FAMILY.title} ${FRIENDS_AND_FAMILY.percent}%: −$${quote.discount.toFixed(2)}` } : {}),
           ...(aboveRetail(quote.lines).length ? { check: aboveRetail(quote.lines) } : {}),
           subtotal: `$${quote.subtotal.toFixed(2)}${quote.discount ? ' (after the discount)' : ''}`,
@@ -3233,11 +3255,27 @@ export const TOOLS: Record<string, Tool> = {
             : `Shopify refused: ${msg.slice(0, 200)}. Check Shopify before trying again — part of it may have gone through.`,
         }
       }
+      // Items only the app counts: Shopify moved nothing for them, so the
+      // app's own count comes down here, once the order exists.
+      const appStock: string[] = []
+      if (r.orderId) {
+        for (const a of appOnly) {
+          const why = `Sold on invoice ${r.orderName} to ${name} (live sale, not in Shopify).`
+          if (!inventoryWritesEnabled()) {
+            await db.actionItem.create({ data: { kind: 'TODO', title: `Take ${a.qty} × ${a.label} off the count: ${r.orderName}`, detail: `${why} Stock writing was paused, so it was not applied.`, source: 'CHAT' } })
+            appStock.push(`${a.label}: stock writing is paused, so a todo was made to take ${a.qty} off.`)
+            continue
+          }
+          const w = await writeEvent({ productVariantId: a.variantId, deltaQty: -a.qty, type: 'MANUAL_ADJUST', note: why })
+          appStock.push(w.eventId ? `${a.label}: ${a.qty} taken off the app's count (now ${String('newQty' in w ? w.newQty : '?')}).` : `${a.label}: NOT taken off the count (${'error' in w ? w.error : 'unknown'}). Log it by hand.`)
+        }
+      }
       return {
         sent: r.invoiceSent,
         order: r.orderName,
         total: r.total == null ? null : `$${r.total.toFixed(2)}`,
         handedOver: r.fulfilled, copiedTo: r.copiedTo ?? [],
+        ...(appStock.length ? { appStock } : {}),
         problems: r.problems,
         tellTheUser: r.problems.length
           ? 'Say plainly what happened and each problem, with what the person has to do in Shopify.'
