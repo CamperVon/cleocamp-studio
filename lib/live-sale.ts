@@ -332,6 +332,8 @@ export type SavedDraft = {
   draftOrderId: string
   name: string
   adminUrl: string
+  /** The draft as a PDF in our own app, behind the login, to share inside the studio. */
+  pdfPath: string
   lines: Array<{ label: string; quantity: number; unitPrice: number }>
   subtotal: number
   shipping: number
@@ -384,6 +386,7 @@ export async function saveDraft(args: { email: string; lines: SaleLine[]; note: 
     draftOrderId: d.id,
     name: d.name,
     adminUrl: await draftAdminUrl(d.legacyResourceId),
+    pdfPath: `/drafts/${d.legacyResourceId}/pdf`,
     lines: d.lineItems.nodes.map((l) => ({ label: `${l.title}${l.variantTitle ? ` — ${l.variantTitle}` : ''}`, quantity: l.quantity, unitPrice: money(l.originalUnitPriceSet) })),
     subtotal: money(d.subtotalPriceSet),
     shipping: money(d.totalShippingPriceSet),

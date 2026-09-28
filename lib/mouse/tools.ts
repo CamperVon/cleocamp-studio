@@ -3348,7 +3348,7 @@ export const TOOLS: Record<string, Tool> = {
           return { sent: false, reason: `Shopify would not save the draft: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}` }
         }
         return {
-          sent: false, draft: d.name, draftOrderId: d.draftOrderId, reviewInShopify: d.adminUrl,
+          sent: false, draft: d.name, draftOrderId: d.draftOrderId, reviewInShopify: d.adminUrl, pdf: d.pdfPath,
           to: `${acct.name} <${email}>`,
           lines: d.lines.map((l, n) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}${priced[n] ? ` (${priced[n]})` : ''}`),
           subtotal: `$${d.subtotal.toFixed(2)}`,
@@ -3357,7 +3357,7 @@ export const TOOLS: Record<string, Tool> = {
           stock: i.reduceStock ? ['Comes off Shopify stock when sent.', ...stockNotes] : ['Stock is left alone.'],
           ...(customerNote ? { customer: customerNote } : {}),
           ...(!storeAddress ? { address: `No full address on file for ${acct.name}, so the draft has none. Ask for it if they want it on the invoice.` } : {}),
-          tellTheUser: `Give the draft name and the Shopify link first, so it can be reviewed there. Then the store, each line and price and where the price came from, the shipping address if shipping (ask them to check it), the total, and whether stock comes off. Nothing is sent until someone says send; edits made to the draft in Shopify will go out as they are.`,
+          tellTheUser: `Give the draft name, the Shopify link and the PDF link (${d.pdfPath}, to share inside the studio) first, so it can be reviewed. Then the store, each line and price and where the price came from, the shipping address if shipping (ask them to check it), the total, and whether stock comes off. Nothing is sent until someone says send; edits made to the draft in Shopify will go out as they are.`,
         }
       }
       if (!draftOrderId) return { sent: false, reason: 'There is no draft to send. Draft it first (leave confirmed out) so it can be reviewed, then send that draft.' }
@@ -3375,6 +3375,34 @@ export const TOOLS: Record<string, Tool> = {
         tellTheUser: r.problems.length
           ? 'Say what happened and each problem, with what to do in Shopify.'
           : `Say the invoice for ${r.orderName} went to ${acct.name}.${shipTo ? ` To ship it: open ${r.orderName} in Shopify and tap "Create shipping label".` : ''}`,
+      }
+    },
+  },
+
+  draft_order_links: {
+    def: {
+      name: 'draft_order_links',
+      description:
+        'The Shopify link and a PDF (to share inside the studio) for a draft order, by its number, e.g. "D36". ' +
+        'Use when someone asks for a draft, a copy of it, or a PDF of it.',
+      input_schema: { type: 'object', properties: { name: str('The draft number, e.g. "D36" or "#D36"') }, required: ['name'] },
+    },
+    run: async (i) => {
+      const want = `#${String(i.name ?? '').replace(/^#/, '').trim().toUpperCase()}`
+      const { shopifyGraphQL } = await import('@/lib/integrations/shopify')
+      // Shopify's search does not match draft names exactly, so read the
+      // recent ones and match here.
+      const d = await shopifyGraphQL<{ draftOrders: { nodes: Array<{ name: string; legacyResourceId: string; status: string; totalPriceSet: { shopMoney: { amount: string } } }> }; shop: { myshopifyDomain: string } }>(
+        `{ draftOrders(first: 100, reverse: true) { nodes { name legacyResourceId status totalPriceSet { shopMoney { amount } } } } shop { myshopifyDomain } }`,
+      )
+      const hit = d.draftOrders.nodes.find((n) => n.name.toUpperCase() === want)
+      if (!hit) return { found: false, reason: `No draft ${want} among the last 100. Ask for the number again.` }
+      const store = d.shop.myshopifyDomain.replace(/\.myshopify\.com$/, '')
+      return {
+        found: true, draft: hit.name, status: hit.status === 'COMPLETED' ? 'already turned into an order' : 'open, not sent',
+        total: `$${Number(hit.totalPriceSet.shopMoney.amount).toFixed(2)}`,
+        shopify: `https://admin.shopify.com/store/${store}/draft_orders/${hit.legacyResourceId}`,
+        pdf: `/drafts/${hit.legacyResourceId}/pdf`,
       }
     },
   },
