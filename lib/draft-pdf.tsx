@@ -49,6 +49,8 @@ type Money = { shopMoney: { amount: string } }
 type Addr = { company: string | null; name: string | null; address1: string | null; address2: string | null; city: string | null; provinceCode: string | null; zip: string | null } | null
 export type DraftForPdf = {
   name: string
+  /** Once sent, the order it became: the invoice number the customer sees. */
+  order?: { name: string } | null
   status: string
   createdAt: string
   email: string | null
@@ -72,7 +74,7 @@ export async function loadDraft(id: string): Promise<DraftForPdf | null> {
   if (!/^\d+$/.test(id)) return null
   const d = await shopifyGraphQL<{ draftOrder: DraftForPdf | null }>(
     `query($id: ID!) { draftOrder(id: $id) {
-      name status createdAt email taxExempt
+      name status createdAt email taxExempt order { name }
       billingAddress { company name address1 address2 city provinceCode zip }
       shippingAddress { company name address1 address2 city provinceCode zip }
       shippingLine { title }
@@ -140,7 +142,7 @@ export function DraftDoc({ d }: { d: DraftForPdf }) {
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             {open ? <Text style={styles.stamp}>DRAFT · NOT SENT</Text> : null}
-            <Text style={{ marginTop: 8, fontWeight: 'bold' }}>{d.name}</Text>
+            <Text style={{ marginTop: 8, fontWeight: 'bold' }}>{d.order?.name ?? d.name}</Text>
             <Text style={styles.muted}>{date}</Text>
           </View>
         </View>
@@ -185,5 +187,5 @@ export function DraftDoc({ d }: { d: DraftForPdf }) {
 export async function renderDraftPdf(id: string): Promise<{ name: string; pdf: Buffer } | null> {
   const d = await loadDraft(id)
   if (!d) return null
-  return { name: d.name, pdf: await renderToBuffer(<DraftDoc d={d} />) }
+  return { name: d.order?.name ?? d.name, pdf: await renderToBuffer(<DraftDoc d={d} />) }
 }

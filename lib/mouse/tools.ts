@@ -3143,7 +3143,7 @@ export const TOOLS: Record<string, Tool> = {
             },
           },
           friendsAndFamily: { type: 'boolean' as const, description: 'true when the person says Friends and Family: 20% off, applied by Shopify. Do not also pass prices.' },
-          alsoCopy: { type: 'array' as const, items: { type: 'string' as const }, description: 'Anyone else to copy (blind) on this invoice, only addresses a person gave. studio@ is always copied.' },
+          alsoCopy: { type: 'array' as const, items: { type: 'string' as const }, description: 'Anyone else to get a copy of the invoice (our own email, with the PDF), only addresses a person gave. studio@ always gets one.' },
           confirmed: {
             type: 'boolean' as const,
             description: 'Leave out to draft. true only after a person has seen the priced invoice in the chat and said to send it.',
@@ -3237,7 +3237,7 @@ export const TOOLS: Record<string, Tool> = {
         sent: r.invoiceSent,
         order: r.orderName,
         total: r.total == null ? null : `$${r.total.toFixed(2)}`,
-        handedOver: r.fulfilled,
+        handedOver: r.fulfilled, copiedTo: r.copiedTo ?? [],
         problems: r.problems,
         tellTheUser: r.problems.length
           ? 'Say plainly what happened and each problem, with what the person has to do in Shopify.'
@@ -3299,7 +3299,7 @@ export const TOOLS: Record<string, Tool> = {
           ship: { type: 'boolean' as const, description: 'true: shipped to the store (label from Shopify). false: handed over or delivered by us. Only what the person said.' },
           shippingCharge: num('Only if the person named a shipping charge for this invoice, replacing the standard $25 (waived over $2,500).'),
           draftOrderId: str('The Shopify draft from an earlier call (gid://shopify/DraftOrder/…). Pass it to revise that draft, and to send it.'),
-          alsoCopy: { type: 'array' as const, items: { type: 'string' as const }, description: 'Other people at the store to copy on the invoice email (blind), e.g. a second contact saved on the account. Only addresses a person gave. studio@ is always copied.' },
+          alsoCopy: { type: 'array' as const, items: { type: 'string' as const }, description: 'Other people to get a copy of the invoice (our own email, with the PDF), e.g. Jane or a second contact at the store. Only addresses a person gave. studio@ always gets one.' },
           confirmed: { type: 'boolean' as const, description: 'Leave out to draft. true only after a person has seen the draft and said send; needs draftOrderId.' },
         },
         required: ['wholesaleAccountId', 'items', 'reduceStock', 'ship'],
@@ -3405,7 +3405,7 @@ export const TOOLS: Record<string, Tool> = {
       }
       return {
         sent: r.invoiceSent, order: r.orderName, total: r.total == null ? null : `$${r.total.toFixed(2)}`,
-        handedOver: r.fulfilled, shipping: shipTo ? 'unfulfilled, waiting for a label' : null,
+        handedOver: r.fulfilled, copiedTo: r.copiedTo ?? [], shipping: shipTo ? 'unfulfilled, waiting for a label' : null,
         stock: i.reduceStock ? 'taken off Shopify stock' : 'left alone', problems: r.problems,
         tellTheUser: r.problems.length
           ? 'Say what happened and each problem, with what to do in Shopify.'
@@ -3482,7 +3482,7 @@ export const TOOLS: Record<string, Tool> = {
         properties: {
           draft: str('The draft number, e.g. "D36"'),
           ship: { type: 'boolean' as const, description: 'Only if the draft does not say: true ships (label in Shopify), false was handed over or delivered.' },
-          alsoCopy: { type: 'array' as const, items: { type: 'string' as const }, description: 'Other people at the store to copy (blind), only addresses a person gave. studio@ is always copied.' },
+          alsoCopy: { type: 'array' as const, items: { type: 'string' as const }, description: 'Other people to get a copy of the invoice (our own email, with the PDF), only addresses a person gave. studio@ always gets one.' },
           confirmed: { type: 'boolean' as const, description: 'Leave out to show. true only after a person has seen it and said send.' },
         },
         required: ['draft'],
@@ -3536,11 +3536,41 @@ export const TOOLS: Record<string, Tool> = {
       }
       return {
         sent: r.invoiceSent, order: r.orderName, total: r.total == null ? null : `$${r.total.toFixed(2)}`,
-        handedOver: r.fulfilled, problems: r.problems,
+        handedOver: r.fulfilled, copiedTo: r.copiedTo ?? [], problems: r.problems,
         tellTheUser: r.problems.length
           ? 'Say what happened and each problem, with what to do in Shopify.'
-          : `Say ${d.name} went to ${storeName} as order ${r.orderName}, studio@ copied.${ship ? ` To ship: open ${r.orderName} in Shopify and tap "Create shipping label".` : ''}`,
+          : `Say ${d.name} went to ${storeName} as order ${r.orderName}; the team's copy went to ${(r.copiedTo ?? []).join(', ') || 'nobody'}.${ship ? ` To ship: open ${r.orderName} in Shopify and tap "Create shipping label".` : ''}`,
       }
+    },
+  },
+
+  email_invoice_copy: {
+    def: {
+      name: 'email_invoice_copy',
+      description:
+        'Email the team a copy of an invoice that has already gone to a customer, with the invoice ' +
+        'as a PDF, by order number ("2644"). studio@ always gets it; add anyone a person names ' +
+        '(e.g. Jane). Internal only: never use it to reach the customer.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          order: str('The order number, e.g. "2644"'),
+          to: { type: 'array' as const, items: { type: 'string' as const }, description: 'Other people to send the copy to, only addresses a person gave.' },
+        },
+        required: ['order'],
+      },
+    },
+    run: async (i) => {
+      const { draftForOrder, emailInvoiceCopy, INVOICE_FROM } = await import('@/lib/live-sale')
+      const extra = (Array.isArray(i.to) ? i.to : []).map((x: unknown) => String(x).trim().toLowerCase()).filter(Boolean)
+      const bad = extra.find((x: string) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x))
+      if (bad) return { sent: false, reason: `"${bad}" is not an email address. Ask again.` }
+      const d = await draftForOrder(String(i.order ?? ''))
+      if (!d) return { sent: false, reason: `Order #${String(i.order).replace(/^#/, '')} was not invoiced from a recent draft, so there is no invoice to copy. Share it from Shopify instead.` }
+      const r = await emailInvoiceCopy(d.draftId, [INVOICE_FROM, ...extra], d.email ?? 'the customer')
+      return r.sent
+        ? { sent: true, order: d.orderName, to: r.to, tellTheUser: `Say the copy of ${d.orderName} went to ${r.to.join(', ')}.` }
+        : { sent: false, reason: `The copy did not send (${r.reason}).` }
     },
   },
 

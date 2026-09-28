@@ -221,6 +221,33 @@ export type InvoiceResult = {
   invoiceSent: boolean
   /** Anything that did not happen, in words for the person, with what to do. */
   problems: string[]
+  /** Who got the team's copy (our own email, with the invoice PDF). */
+  copiedTo?: string[]
+}
+
+/**
+ * The team's copy of an invoice: our own email, not Shopify's, with the
+ * invoice as a PDF, to any address at all. Also used on its own to re-send a
+ * copy of an invoice that has already gone.
+ */
+export async function emailInvoiceCopy(draftId: string, to: string[], customerEmail: string): Promise<{ sent: boolean; to: string[]; reason?: string }> {
+  const recipients = [...new Set(to.map((t) => t.trim().toLowerCase()).filter(Boolean))]
+  try {
+    const { renderDraftPdf } = await import('@/lib/draft-pdf')
+    const { sendEmail } = await import('@/lib/email')
+    const r = await renderDraftPdf(draftId.split('/').pop() ?? draftId)
+    if (!r) return { sent: false, to: recipients, reason: 'the draft is no longer in Shopify' }
+    const res = await sendEmail({
+      to: recipients,
+      replyTo: INVOICE_FROM,
+      subject: `Copy: Cleo Camp invoice ${r.name} to ${customerEmail}`,
+      text: `For the team: this is a copy of invoice ${r.name}, which Shopify emailed to ${customerEmail} with a link to pay. The invoice is attached as a PDF.\n\nStudio Mouse`,
+      attachments: [{ filename: `Invoice-${r.name.replace(/[^A-Za-z0-9]/g, '')}.pdf`, content: r.pdf }],
+    })
+    return res.sent ? { sent: true, to: recipients } : { sent: false, to: recipients, reason: 'reason' in res ? String(res.reason) : 'the email did not send' }
+  } catch (e) {
+    return { sent: false, to: recipients, reason: e instanceof Error ? e.message.slice(0, 160) : String(e) }
+  }
 }
 
 type DraftCreated = { draftOrderCreate: { draftOrder: { id: string } | null; userErrors: Array<{ message: string }> } }
@@ -307,20 +334,20 @@ async function completeAndInvoice(draftId: string, email: string, customerName: 
     `mutation($id: ID!, $email: EmailInput) { orderInvoiceSend(id: $id, email: $email) { order { id } userErrors { message } } }`,
     { id: order.id, email: e },
   )
-  // From the studio, with the studio copied, so a reply reaches a person and
-  // the team sees what went out. Cleo, 28 Sept 2026: "Is there a way that I
-  // can be cc'd on it so we can keep the human communication going?"
-  // Shopify's invoice has no cc; bcc and a sender from the shop's own address
-  // are what it allows. If Shopify refuses those, the invoice still goes.
-  let sent = await send({ ...base, from: INVOICE_FROM, bcc: [INVOICE_FROM, ...(opts.bcc ?? [])] })
-  if (!sent.orderInvoiceSend.order || sent.orderInvoiceSend.userErrors.length) {
-    const refused = sent.orderInvoiceSend.userErrors.map((e) => e.message).join('; ')
-    sent = await send(base)
-    if (sent.orderInvoiceSend.order && !sent.orderInvoiceSend.userErrors.length) {
-      out.problems.push(`The invoice went, but without the studio copy (${refused || 'Shopify refused it'}), so studio@ did not get one.`)
-    }
-  }
+  // From the studio, so a reply reaches a person. Cleo, 28 Sept 2026: "Is
+  // there a way that I can be cc'd on it so we can keep the human
+  // communication going?" The team's copy is NOT Shopify's bcc: Shopify only
+  // allows its own staff accounts there, and on #2644 it refused jane@ and
+  // took studio@ down with it. The copy is our own email instead (below). If
+  // Shopify refuses the sender, the invoice still goes, from Shopify's own.
+  let sent = await send({ ...base, from: INVOICE_FROM })
+  if (!sent.orderInvoiceSend.order || sent.orderInvoiceSend.userErrors.length) sent = await send(base)
   out.invoiceSent = !!sent.orderInvoiceSend.order && !sent.orderInvoiceSend.userErrors.length
+  if (out.invoiceSent) {
+    const copy = await emailInvoiceCopy(draftId, [INVOICE_FROM, ...(opts.bcc ?? [])], email)
+    out.copiedTo = copy.sent ? copy.to : []
+    if (!copy.sent) out.problems.push(`The invoice went, but the team's copy did not (${copy.reason}). Ask Mouse to email the copy of ${order.name} again.`)
+  }
   if (!out.invoiceSent) out.problems.push(`The invoice email did not go (${sent.orderInvoiceSend.userErrors.map((e) => e.message).join('; ') || 'no reason given'}). Open ${order.name} in Shopify and use "Send invoice".`)
   return out
 }
@@ -513,6 +540,16 @@ export async function findDraft(nameIn: string): Promise<DraftSummary | null> {
     pdfPath: `/drafts/${o.legacyResourceId}/pdf`,
     adminUrl: await draftAdminUrl(o.legacyResourceId),
   }
+}
+
+/** The draft an order was invoiced from ("2644" → its draft id and email). */
+export async function draftForOrder(orderNameIn: string): Promise<{ draftId: string; orderName: string; email: string | null } | null> {
+  const want = `#${orderNameIn.replace(/^#/, '').trim()}`
+  const d = await shopifyGraphQL<{ draftOrders: { nodes: Array<{ id: string; email: string | null; order: { name: string } | null }> } }>(
+    `{ draftOrders(first: 100, reverse: true, query: "status:completed") { nodes { id email order { name } } } }`,
+  )
+  const hit = d.draftOrders.nodes.find((n) => n.order?.name === want)
+  return hit ? { draftId: hit.id, orderName: want, email: hit.email } : null
 }
 
 /** Live sales still waiting on payment, newest first. */
