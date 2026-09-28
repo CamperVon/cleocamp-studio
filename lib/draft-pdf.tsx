@@ -52,7 +52,8 @@ export type DraftForPdf = {
   status: string
   createdAt: string
   email: string | null
-  customer: { displayName: string } | null
+  /** Not read from Shopify (the app has no read_customers); the address carries the name. */
+  customer?: { displayName: string } | null
   billingAddress: Addr
   shippingAddress: Addr
   shippingLine: { title: string } | null
@@ -71,7 +72,7 @@ export async function loadDraft(id: string): Promise<DraftForPdf | null> {
   if (!/^\d+$/.test(id)) return null
   const d = await shopifyGraphQL<{ draftOrder: DraftForPdf | null }>(
     `query($id: ID!) { draftOrder(id: $id) {
-      name status createdAt email taxExempt customer { displayName }
+      name status createdAt email taxExempt
       billingAddress { company name address1 address2 city provinceCode zip }
       shippingAddress { company name address1 address2 city provinceCode zip }
       shippingLine { title }

@@ -49,13 +49,13 @@ export async function friendsFamilyOrder(orderName: string): Promise<FFOrder | n
   const name = `#${orderName.replace(/^#/, '').trim()}`
   const d = await shopifyGraphQL<{ orders: { nodes: Array<{
     id: string; name: string; email: string | null; cancelledAt: string | null; displayFinancialStatus: string | null
-    customer: { firstName: string | null } | null; billingAddress: { firstName: string | null } | null
+    billingAddress: { firstName: string | null } | null; shippingAddress: { firstName: string | null } | null
     currentSubtotalPriceSet: Money; totalDiscountsSet: Money; totalRefundedSet: Money
     lineItems: { nodes: Array<{ taxLines: Array<{ priceSet: Money }> }> }
     transactions: Array<{ id: string; kind: string; status: string; gateway: string; amountSet: Money }>
   }> } }>(
     `query($q: String!) { orders(first: 5, query: $q) { nodes {
-      id name email cancelledAt displayFinancialStatus customer { firstName } billingAddress { firstName }
+      id name email cancelledAt displayFinancialStatus billingAddress { firstName } shippingAddress { firstName }
       currentSubtotalPriceSet { shopMoney { amount } } totalDiscountsSet { shopMoney { amount } } totalRefundedSet { shopMoney { amount } }
       lineItems(first: 50) { nodes { taxLines { priceSet { shopMoney { amount } } } } }
       transactions(first: 20) { id kind status gateway amountSet { shopMoney { amount } } }
@@ -75,7 +75,9 @@ export async function friendsFamilyOrder(orderName: string): Promise<FFOrder | n
   else if (paid.length !== 1) blocked = `${o.name} was paid in more than one way, so the refund has to be split by hand in Shopify.`
   return {
     id: o.id, name: o.name, email: o.email,
-    firstName: o.customer?.firstName ?? o.billingAddress?.firstName ?? null,
+    // From the order's own addresses, not the customer record: the app is not
+    // granted read_customers, and asking for it failed #2642 (28 Sept 2026).
+    firstName: o.billingAddress?.firstName ?? o.shippingAddress?.firstName ?? null,
     goods, goodsTax, refund: friendsFamilyRefund(goods, goodsTax), blocked,
     gateway: paid[0]?.gateway ?? null, parentId: paid[0]?.id ?? null,
   }
