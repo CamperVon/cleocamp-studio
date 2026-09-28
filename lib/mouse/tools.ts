@@ -3240,8 +3240,9 @@ export const TOOLS: Record<string, Tool> = {
         'priced from the wholesale line sheet stored on the product; a price the person names ' +
         'replaces it for this invoice only (never saved). A product with neither: ask, never guess. ' +
         'ship must be said: true puts the store\'s address on the order and leaves it unfulfilled ' +
-        'so a shipping label can be made in Shopify; false marks it handed over. Only add ' +
-        'shippingCharge if the person names one. reduceStock must be said: ' +
+        'so a shipping label can be made in Shopify; false marks it handed over. A shipped order ' +
+        'carries $25 shipping & handling, waived over $2,500 of goods — set by the tool; only pass ' +
+        'shippingCharge if the person names a different one for this invoice. reduceStock must be said: ' +
         'true takes the items off Shopify stock (they left the studio), false leaves stock alone ' +
         '(e.g. shipped straight from a maker). If the person has not said, ask before drafting. ' +
         'Leave confirmed out to DRAFT and show it; confirmed: true only once a person says send. ' +
@@ -3264,7 +3265,7 @@ export const TOOLS: Record<string, Tool> = {
           },
           reduceStock: { type: 'boolean' as const, description: 'true: take these off Shopify stock. false: leave stock alone. Only what the person said.' },
           ship: { type: 'boolean' as const, description: 'true: shipped to the store (label from Shopify). false: handed over or delivered by us. Only what the person said.' },
-          shippingCharge: num('Shipping to charge the store, in dollars. Only if the person named one.'),
+          shippingCharge: num('Only if the person named a shipping charge for this invoice, replacing the standard $25 (waived over $2,500).'),
           confirmed: { type: 'boolean' as const, description: 'Leave out to draft. true only after a person has seen it and said send.' },
         },
         required: ['wholesaleAccountId', 'items', 'reduceStock', 'ship'],
@@ -3287,9 +3288,9 @@ export const TOOLS: Record<string, Tool> = {
         const [first, ...rest] = (acct.contactName ?? '').trim().split(/\s+/).filter(Boolean)
         shipTo = { ...a, company: acct.name, firstName: first ?? null, lastName: rest.join(' ') || null }
       }
-      const shippingCharge = i.shippingCharge == null ? null : Number(i.shippingCharge)
-      if (shippingCharge != null && !(shippingCharge >= 0)) return { sent: false, reason: 'That shipping charge is not a number. Ask again.' }
-      if (shippingCharge != null && !i.ship) return { sent: false, reason: 'A shipping charge on an order that is not shipping. Ask which it is.' }
+      const namedShipping = i.shippingCharge == null ? null : Number(i.shippingCharge)
+      if (namedShipping != null && !(namedShipping >= 0)) return { sent: false, reason: 'That shipping charge is not a number. Ask again.' }
+      if (namedShipping != null && !i.ship) return { sent: false, reason: 'A shipping charge on an order that is not shipping. Ask which it is.' }
       const items = Array.isArray(i.items) ? i.items as Array<{ productVariantId: string; quantity: number; price?: number | null }> : []
       if (!items.length) return { sent: false, reason: 'Nothing to invoice. Ask what the store is taking.' }
       const variants = await db.productVariant.findMany({
@@ -3321,7 +3322,10 @@ export const TOOLS: Record<string, Tool> = {
         subject: (n: string) => `Cleo Camp wholesale invoice ${n}`,
         message: () => `Hello ${acct.contactName?.trim().split(/\s+/)[0] ?? acct.name}, thank you for your order. Your invoice is below, with a link to pay.\n\nKindly,\nCleo Studio`,
       } as import('@/lib/live-sale').InvoiceOptions
-      Object.assign(options, { shipTo, shippingCharge })
+      const goods = lines.reduce((n, l) => n + (l.priceOverride ?? 0) * l.quantity, 0)
+      const { wholesaleShipping } = await import('@/lib/live-sale')
+      const sh = shipTo ? wholesaleShipping(goods, namedShipping) : null
+      Object.assign(options, sh ? { shipTo, shippingCharge: sh.charge, shippingTitle: sh.title } : {})
       if (i.confirmed !== true) {
         let q
         try {
@@ -3334,7 +3338,7 @@ export const TOOLS: Record<string, Tool> = {
           to: `${acct.name} <${email}>`,
           lines: q.lines.map((l, n) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)} (${priced[n]})`),
           subtotal: `$${q.subtotal.toFixed(2)}`,
-          shipping: shipTo ? `to ${addressLines(shipTo)}; ${shippingCharge != null ? `$${q.shipping.toFixed(2)} charged` : 'no charge on the invoice'}; label made in Shopify after sending` : 'none — marked handed over',
+          shipping: shipTo && sh ? `to ${addressLines(shipTo)}; shipping & handling $${q.shipping.toFixed(2)} (${sh.why}); label made in Shopify after sending` : 'none — marked handed over',
           tax: `$${q.tax.toFixed(2)} (wholesale, none)`, total: `$${q.total.toFixed(2)}`,
           stock: i.reduceStock ? ['Comes off Shopify stock when sent.', ...stockNotes] : ['Stock is left alone.'],
           tellTheUser: 'Show the store, each line and price and where the price came from, the shipping address if shipping (ask them to check it), the total, and whether stock comes off. Wait for send.',

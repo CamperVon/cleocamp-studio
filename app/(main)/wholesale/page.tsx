@@ -66,7 +66,7 @@ export default async function Wholesale() {
         {a.contactName || a.address ? (
           <p className="mt-1 text-xs text-muted">{[a.contactName, a.address].filter(Boolean).join(' · ')}</p>
         ) : null}
-        <ul className="mt-2 flex flex-col gap-1.5 border-t border-line pt-2">
+        {a.shipments.length ? <ul className="mt-2 flex flex-col gap-1.5 border-t border-line pt-2">
           {a.shipments.map((s) => {
             const total = s.lines.reduce((n, l) => n + (l.wholesaleCents ?? 0), 0)
             const soldOfLines = s.lines.filter((l) => l.soldAt).length
@@ -91,7 +91,7 @@ export default async function Wholesale() {
               </li>
             )
           })}
-        </ul>
+        </ul> : null}
       </li>
     )
   }
@@ -124,10 +124,18 @@ export default async function Wholesale() {
         ) : null}
       </div>
 
-      <Card title="Price list">
+      <Card>
+        <details className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 hover:bg-sunk sm:px-5 [&::-webkit-details-marker]:hidden">
+          <span className="flex items-center gap-2">
+            <span aria-hidden className="text-xs text-faint transition-transform group-open:rotate-90">▸</span>
+            <span className="font-serif text-[17px] italic text-accent">Price list</span>
+          </span>
+          <span className="text-xs text-muted">{products.length} products{unpriced ? ` · ${unpriced} not set` : ''}</span>
+        </summary>
         <p className="border-b border-line px-4 py-2.5 text-xs text-muted sm:px-5">
           What a store pays, and what Mouse invoices unless you name a price for one order. To change one, tell Mouse
-          {' '}(&ldquo;wholesale on the Cleo Tee is $56&rdquo;).
+          {' '}(&ldquo;wholesale on the Cleo Tee is $56&rdquo;). Shipped orders add $25 shipping &amp; handling, waived over $2,500.
           {unpriced ? <span className="text-warn"> {unpriced} not set yet — Mouse will ask.</span> : null}
         </p>
         <ul className="divide-y divide-line">
@@ -170,6 +178,7 @@ export default async function Wholesale() {
             )
           })}
         </ul>
+        </details>
       </Card>
 
       <Card title={`Accounts (${accounts.length})`}>

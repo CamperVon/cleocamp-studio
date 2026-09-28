@@ -43,8 +43,23 @@ export type InvoiceOptions = {
    * left unfulfilled, so Shopify offers "Create shipping label" on it.
    */
   shipTo?: ShipAddress
-  /** A shipping charge, only when a person named one. */
+  /** A shipping charge, only when a person named one or a rule sets it. */
   shippingCharge?: number | null
+  shippingTitle?: string
+}
+
+/**
+ * Wholesale shipping & handling: a flat $25 on a shipped order, waived when
+ * the goods come to over $2,500 (Brandon, 28 Sept 2026; the same terms he gave
+ * Cosimo on 24 Sept: "a flat $25 packing and shipping fees for domestic
+ * orders under $2500"). A charge a person names for one invoice wins. Pure.
+ */
+export const WHOLESALE_SHIPPING = 25
+export const WHOLESALE_FREE_SHIPPING_OVER = 2500
+export function wholesaleShipping(goodsSubtotal: number, named: number | null | undefined): { charge: number; title: string; why: string } {
+  if (named != null) return { charge: named, title: 'Shipping & handling', why: 'as named for this invoice' }
+  if (goodsSubtotal > WHOLESALE_FREE_SHIPPING_OVER) return { charge: 0, title: 'Shipping & handling (waived over $2,500)', why: 'waived, order over $2,500' }
+  return { charge: WHOLESALE_SHIPPING, title: 'Shipping & handling', why: 'flat $25, order under $2,500' }
 }
 
 export type ShipAddress = {
@@ -110,7 +125,7 @@ function draftInput(email: string, lines: SaleLine[], note: string, opts: Invoic
     ...(opts.taxExempt ? { taxExempt: true } : {}),
     ...(opts.shipTo ? { shippingAddress: opts.shipTo } : {}),
     ...(opts.shippingCharge != null
-      ? { shippingLine: { title: 'Shipping', priceWithCurrency: { amount: opts.shippingCharge.toFixed(2), currencyCode: 'USD' } } }
+      ? { shippingLine: { title: opts.shippingTitle ?? 'Shipping', priceWithCurrency: { amount: opts.shippingCharge.toFixed(2), currencyCode: 'USD' } } }
       : {}),
     lineItems: lines.map((l) => {
       const price = l.priceOverride != null ? { amount: l.priceOverride.toFixed(2), currencyCode: 'USD' } : null

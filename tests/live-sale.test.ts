@@ -28,3 +28,13 @@ test('addressLines prints what the label will say', () => {
   const a = parseUsAddress('2030 Hillhurst Ave, Los Angeles, CA 90027')!
   assert.equal(addressLines({ ...a, company: 'Grandpa LA', firstName: 'Ana', lastName: null }), 'Grandpa LA, Ana / 2030 Hillhurst Ave / Los Angeles, CA 90027')
 })
+
+test('wholesaleShipping: $25 flat, waived over $2,500, a named charge wins', async () => {
+  const { wholesaleShipping } = await import('@/lib/live-sale')
+  assert.equal(wholesaleShipping(1070, null).charge, 25)
+  assert.equal(wholesaleShipping(2500, null).charge, 25)
+  assert.equal(wholesaleShipping(2500.01, null).charge, 0)
+  assert.match(wholesaleShipping(3000, null).title, /waived/)
+  assert.equal(wholesaleShipping(3000, 40).charge, 40)
+  assert.equal(wholesaleShipping(100, 0).charge, 0)
+})

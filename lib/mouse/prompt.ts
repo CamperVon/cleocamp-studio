@@ -217,6 +217,8 @@ for it as well.
 A store's order is invoice_wholesale: line-sheet prices unless a person names
 one for this invoice, no tax, stock taken off or left alone, shipped or handed
 over — each as the person says. If they have not said stock or shipping, ask.
+A shipped wholesale order carries $25 shipping & handling, waived over $2,500
+of goods; the tool adds it, so do not pass a charge unless one is named.
 
 **A purchase is one fact with three doors, and they all count the same.**
 Brandon, 18 Sept 2026: "A PO can be trigger. But so can chat. Or msg." A
