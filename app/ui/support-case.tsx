@@ -13,6 +13,10 @@ type Order = {
   tracking: Array<{ company: string | null; number: string | null; url: string | null }>
 } | null
 
+
+/** The day an order was placed, in Los Angeles: "Sep 12". Brandon, 29 Sept 2026: show it on the case line. */
+const orderDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' })
+
 export type CaseView = {
   id: string
   who: string
@@ -83,7 +87,7 @@ export function SupportCase({ c }: { c: CaseView }) {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">
               {c.who}
-              <span className="font-normal text-muted"> · {c.category}{c.orderName ? ` · ${c.orderName}` : ''}{c.draft?.reply && c.status !== 'RESOLVED' ? ' · reply drafted' : ''}</span>
+              <span className="font-normal text-muted"> · {c.category}{c.orderName ? ` · ${c.orderName}` : ''}{c.order?.createdAt ? ` (ordered ${orderDay(c.order.createdAt)})` : ''}{c.draft?.reply && c.status !== 'RESOLVED' ? ' · reply drafted' : ''}</span>
               {c.review ? <span className="ml-1.5 whitespace-nowrap rounded bg-urgent/15 px-1.5 py-0.5 text-[11px] font-medium text-urgent">⚑ For Brandon &amp; Claude</span> : null}
               {toJane ? <span className="ml-1.5 whitespace-nowrap rounded bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent">★ Note to Jane</span> : null}
             </p>
@@ -101,7 +105,7 @@ export function SupportCase({ c }: { c: CaseView }) {
           {c.order ? (
             <div className="text-xs text-muted">
               <p className="font-medium text-ink">
-                Order {c.order.name} · {c.order.createdAt.slice(0, 10)} · {[c.order.financialStatus, c.order.fulfillmentStatus].filter(Boolean).join(' / ').toLowerCase()}
+                Order {c.order.name} · ordered {orderDay(c.order.createdAt)} · {[c.order.financialStatus, c.order.fulfillmentStatus].filter(Boolean).join(' / ').toLowerCase()}
                 {c.order.total ? ` · ${c.order.total}` : ''}
               </p>
               {c.order.emailMismatch ? (
