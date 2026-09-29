@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { Card, Empty, Page } from '@/app/ui/primitives'
 import { SupportCase, type CaseView } from '@/app/ui/support-case'
 import { ReturnIntake } from '@/app/ui/return-intake'
+import { OrderLookup } from '@/app/ui/order-lookup'
 import { CATEGORY_LABEL, type Category } from '@/lib/support/core'
 
 export const dynamic = 'force-dynamic'
@@ -74,6 +75,7 @@ export default async function Support() {
 
   return (
     <Page title="Support" lede="Customer email to support@cleocamp.com, sorted by Mouse, with a reply drafted. Nothing reaches a customer until someone taps Send.">
+      <OrderLookup />
       <ReturnIntake />
       {flagged.length ? (
         <Card title={`For Brandon & Claude (${flagged.length})`}>

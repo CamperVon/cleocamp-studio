@@ -570,3 +570,24 @@ export async function approveReturnRefund(caseId: string): Promise<Result> {
   revalidatePath('/support')
   return sent.ok ? { ok: true } : { ok: false, error: `Refunded, but the email did not go: ${sent.error}` }
 }
+
+/**
+ * Any order's status by number, for the lookup box at the top of Support.
+ * Read only. Brandon, 29 Sept 2026.
+ */
+export async function lookupOrder(input: string): Promise<
+  { ok: true; order: import('@/lib/order-status').OrderStatus; caseId: string | null } | { ok: false; error: string }
+> {
+  if (!(await approver())) return { ok: false, error: 'Sign in again — only the team can do this.' }
+  const { orderStatus, orderName } = await import('@/lib/order-status')
+  const name = orderName(input)
+  if (!name) return { ok: false, error: 'Type the order number, like 2237.' }
+  try {
+    const order = await orderStatus(name)
+    if (!order) return { ok: false, error: `No order ${name} in Shopify.` }
+    const c = await db.supportCase.findFirst({ where: { shopifyOrderName: name }, orderBy: { lastMessageAt: 'desc' }, select: { id: true } }).catch(() => null)
+    return { ok: true, order, caseId: c?.id ?? null }
+  } catch (e) {
+    return { ok: false, error: `Could not read Shopify: ${e instanceof Error ? e.message.slice(0, 160) : String(e)}` }
+  }
+}
