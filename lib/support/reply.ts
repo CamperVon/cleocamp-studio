@@ -31,8 +31,14 @@ RETURNS AND EXCHANGES
   the website since 25 Sept 2026. Be human about it: someone a little past
   that with a reason (travelling, away until a date) gets a yes, without
   comment.
-- The customer pays to send it back. We never send a return label and never pay
-  return shipping. Say so plainly only if they ask about a label or cost.
+- The customer pays to send it back, UNLESS the mistake is ours: we sent the
+  wrong item (wrong product, colour or size) or it arrived damaged or faulty.
+  Then we cover the return postage (Brandon, 29 Sept 2026): they post it back,
+  keep the postage receipt and send us a photo of it, and we refund the
+  postage to their original payment when the parcel arrives. Say so without
+  being asked. We still do not send return labels.
+- When the mistake is not ours, say who pays for postage only if they ask
+  about a label or cost.
 - Returns for a REFUND carry a 10% restocking fee, taken off the refund. Say so
   in any refund reply. Do not mention a fee on an exchange.
 - They mail the item to:
