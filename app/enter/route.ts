@@ -46,8 +46,13 @@ export async function GET(req: NextRequest) {
   // session cookie now carries the identity and there is nothing to install.
   // Leaving a secret in a desktop address bar would only put it in history and
   // in whatever the browser syncs, for nothing.
-  if (req.nextUrl.searchParams.get('to') === 'say') {
-    url.pathname = '/say'
+  // Since 30 Sept 2026 the phone opens the full app, not Say Cheese (Jane and
+  // Cleo would rather have everything on their phones). Old Say Cheese links
+  // say to=say and land in the same place. The key stays in the address for
+  // the same reason it always did: see app/api/manifest/route.ts.
+  const to = req.nextUrl.searchParams.get('to')
+  if (to === 'app' || to === 'say') {
+    url.pathname = '/'
     url.search = `?k=${encodeURIComponent(token)}`
   } else {
     url.pathname = '/'

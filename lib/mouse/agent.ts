@@ -267,6 +267,11 @@ export async function runAgent(opts: {
    * scheduled job. Only then is the instruction itself read for corrections.
    */
   fromAPerson?: boolean
+  /**
+   * A practice conversation (training Jane and Cleo, 30 Sept 2026): Mouse
+   * reads the real records, but nothing that would change anything runs.
+   */
+  practice?: boolean
 }): Promise<AgentResult> {
   const client = new Anthropic({ maxRetries: 0 })
   const maxRounds = opts.maxRounds ?? (Number(process.env.MOUSE_MAX_REQUESTS) || 6)
@@ -296,6 +301,7 @@ export async function runAgent(opts: {
     { type: 'text', text: SYSTEM_RULES, cache_control: { type: 'ephemeral', ttl: '1h' } },
   ]
   if (opts.extraRules) system.push({ type: 'text', text: opts.extraRules })
+  if (opts.practice) system.push({ type: 'text', text: PRACTICE_RULES })
   if (opts.withCatalog !== false) {
     system.push({
       type: 'text',
@@ -320,7 +326,8 @@ export async function runAgent(opts: {
     runLoop({
       create: request => client.messages.create(request),
       system, messages: msgs, tools,
-      execute: async (name, input) => withNotesOnWhatChanged(name, input, await TOOLS[name].run(input)),
+      execute: async (name, input) => practiceStop(opts.practice === true, name, input) ??
+        withNotesOnWhatChanged(name, input, await TOOLS[name].run(input)),
       model: opts.model ?? CHAT_MODEL, deepModel: DEEP_MODEL,
       effort: opts.effort, maxRequests: rounds,
       maxOutputTokens: Number(process.env.MOUSE_MAX_OUTPUT_TOKENS) || 24000,
@@ -347,6 +354,7 @@ export async function runAgent(opts: {
   // fires only once, and only for a run that actually holds a tool capable of
   // writing — a look-only run has nothing to be guilty of.
   if (
+    !opts.practice &&
     owedTheRecordSomething({
       wroteSomething: result.toolCalls.some((c) => c.status === 'succeeded' && c.isWrite),
       canWrite: allowed.some((n) => n !== 'query_status' && n !== 'check_sent_mail'),
@@ -432,6 +440,32 @@ export async function runAgent(opts: {
 }
 
 /**
+ * Practice mode. Only these run; they look things up and change nothing (the
+ * same look-up-only set the team's emailed questions get, see nightly-pass).
+ * Everything else is answered with what it would have done.
+ */
+export const PRACTICE_TOOLS = new Set(['query_status', 'check_sent_mail', 'draft_order_links', 'unpaid_live_sales', 'request_deep_analysis'])
+
+/** In practice, what a tool that would change something hands back instead of running. Null means run it. Pure. */
+export function practiceStop(practice: boolean, name: string, input: unknown) {
+  if (!practice || PRACTICE_TOOLS.has(name)) return null
+  return { skipped: 'practice', wouldHave: { tool: name, input }, note: 'Practice conversation: this was NOT done. Tell the person what you would have done.' }
+}
+
+const PRACTICE_RULES = `# PRACTICE CONVERSATION
+
+This is a practice conversation: someone is learning how to use you. The
+records you see are real, and questions get real answers. But nothing you do
+here is kept: every tool that would change something (stock, notes, to-dos,
+orders, emails, Shopify) is stopped before it runs and hands back what it
+would have done.
+
+So behave exactly as you would for real, including asking when something is
+missing or unclear, and then say plainly what you WOULD have done, starting
+with "Practice:". For example: "Practice: I'd have added the to-do *Order more
+Boy Belts in Small*." Never say something was done, saved, sent or updated.`
+
+/**
  * Convenience for chat, which persists its turns.
  *
  * The route saves the user's message before calling this, so it's already the
@@ -455,7 +489,9 @@ export async function runAgent(opts: {
 function withActions(content: string, toolCallsJson: unknown): string {
   if (!Array.isArray(toolCallsJson) || !toolCallsJson.length) return content
   const done = (toolCallsJson as Array<{ name?: string; status?: string; input?: Record<string, unknown>; result?: Record<string, unknown> }>)
-    .filter((t) => t?.name && t.status !== 'failed')
+    // A practice turn's stopped calls did nothing; replaying them as "carried
+    // out" would teach Mouse that they happened.
+    .filter((t) => t?.name && t.status !== 'failed' && t.result?.skipped !== 'practice')
     .map((t) => {
       // A stock change is spelled out in full: item, change, new count and
       // where it was pushed. "log_inventory_event" alone was too thin to
@@ -473,7 +509,7 @@ function withActions(content: string, toolCallsJson: unknown): string {
   return `${content}\n\n[actions actually carried out on this turn: ${done.join('; ')}]`
 }
 
-export async function chatTurn(threadId: string, message: string, attachments?: AgentAttachment[], source = 'chat') {
+export async function chatTurn(threadId: string, message: string, attachments?: AgentAttachment[], source = 'chat', practice = false) {
   const rows = await db.chatMessage.findMany({
     where: { threadId },
     orderBy: { createdAt: 'desc' },
@@ -487,6 +523,7 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
     // Chat is the only caller whose instruction is something a person typed,
     // so it is the only one whose instruction is read for corrections.
     fromAPerson: true,
+    practice,
     history: history.map((m) => ({
       role: m.role === 'USER' ? 'user' : 'assistant',
       content: m.role === 'USER' ? m.content : withActions(stripForgedActions(m.content), m.toolCallsJson),

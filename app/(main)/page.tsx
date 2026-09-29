@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
@@ -29,6 +30,18 @@ function sinceLabel(d: Date): string {
   if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
   const days = Math.round(hours / 24)
   return days === 1 ? 'yesterday' : `${days} days ago`
+}
+
+/**
+ * Opened from a personal link on a phone (/?k=<key>), the page offers a
+ * manifest whose start_url keeps that key, so the icon Add to Home Screen
+ * makes signs its person in. See app/api/manifest/route.ts.
+ */
+export async function generateMetadata({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }): Promise<Metadata> {
+  const k = (await searchParams).k
+  return typeof k === 'string' && /^[A-Za-z0-9_-]{20,100}$/.test(k)
+    ? { manifest: `/api/manifest?k=${encodeURIComponent(k)}` }
+    : {}
 }
 
 export default async function Today() {

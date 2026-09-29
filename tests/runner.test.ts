@@ -185,3 +185,24 @@ test('an answer written alongside a tool call reaches the person (the 25 Sept la
   assert.match(r.text, /Also retired/)
   assert.ok(r.text.indexOf('4,010') < r.text.indexOf('Also retired'), 'kept in the order it was said')
 })
+
+test('a brief 503 from the model is tried once more, and the turn finishes', async () => {
+  let n = 0
+  const r = await runLoop({ ...base, sleep: async () => {},
+    create: async () => { if (n++ === 0) throw Object.assign(new Error('503 status code (no body)'), { status: 503 }); return answer },
+    execute: async () => ({}),
+  })
+  assert.equal(r.usage.stopReason, 'complete')
+  assert.equal(r.text, 'Done.')
+  assert.equal(r.usage.attemptedRequests, 2)
+})
+
+test('a second 503 in the same turn is reported, not retried forever', async () => {
+  let n = 0
+  const r = await runLoop({ ...base, sleep: async () => {},
+    create: async () => { n++; throw Object.assign(new Error('overloaded'), { status: 529 }) },
+    execute: async () => ({}),
+  })
+  assert.equal(r.usage.stopReason, 'provider_error')
+  assert.equal(n, 2)
+})

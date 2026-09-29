@@ -32,19 +32,32 @@ export async function proxy(req: NextRequest) {
     pathname === '/api/say' ||
     // Trading a personal link for a session cannot itself require a session.
     pathname === '/enter' ||
-    pathname === '/manifest.webmanifest'
+    pathname === '/manifest.webmanifest' ||
+    // Echoes back only the key it is given; see the route.
+    pathname === '/api/manifest'
   ) {
     return NextResponse.next()
   }
 
+  // The phone's home-screen icon opens /?k=<their key>. An installed web app
+  // on iPhone does not always share Safari's cookies, so the key in the
+  // address is what signs them in: through /enter, once, unless the session
+  // already knows who they are.
+  const key = pathname === '/' ? req.nextUrl.searchParams.get('k') : null
   const token = req.cookies.get(COOKIE)?.value
   if (token) {
     try {
-      await jwtVerify(token, new TextEncoder().encode(process.env.SESSION_SECRET))
-      return NextResponse.next()
+      const { payload } = await jwtVerify(token, new TextEncoder().encode(process.env.SESSION_SECRET))
+      if (!key || payload.sub) return NextResponse.next()
     } catch {
-      // fall through to the redirect
+      // fall through
     }
+  }
+  if (key) {
+    const url = req.nextUrl.clone()
+    url.pathname = '/enter'
+    url.search = `?k=${encodeURIComponent(key)}&to=app`
+    return NextResponse.redirect(url)
   }
 
   const url = req.nextUrl.clone()

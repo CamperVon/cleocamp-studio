@@ -29,15 +29,11 @@ export function PhoneSetup({
 
   const links = live
     ? {
-        phone: `${origin}/enter?k=${live}&to=say`,
+        // The full app, with the key kept in the address so the Home Screen
+        // icon signs them in. Say Cheese, the dictate-only page, is retired
+        // (30 Sept 2026); see app/api/manifest/route.ts.
+        phone: `${origin}/enter?k=${live}&to=app`,
         computer: `${origin}/enter?k=${live}`,
-        // The secret rides in the URL rather than an Authorization header.
-        // The endpoint reads either, and the header screen in Shortcuts is
-        // buried behind Show More and asks for a name and value in two
-        // separate boxes — Brandon, 21 Sept 2026: "i don't see where you add
-        // new header name and value." A URL somebody can paste in one go
-        // removes the step instead of explaining it better.
-        siri: `${origin}/api/say?format=text&k=${live}`,
       }
     : null
 
@@ -152,7 +148,7 @@ export function PhoneSetup({
             id={`${personId}-phone`}
             label="Phone"
             value={links.phone}
-            note="Open on their phone, then Share → Add to Home Screen from that page. It comes up named Say Cheese."
+            note="Open on their phone in Safari, then Share → Add to Home Screen. The icon opens the full app, signed in as them."
           />
           <Row
             id={`${personId}-computer`}
@@ -160,58 +156,6 @@ export function PhoneSetup({
             value={links.computer}
             note="Open once in their browser. Signs them in as themselves for a month."
           />
-          <details className="text-xs">
-            <summary className="cursor-pointer text-faint">
-              Siri, if they want it &mdash; &ldquo;Hey Siri, Log Update to Studio Mouse&rdquo;
-            </summary>
-            <div className="mt-3 space-y-3">
-              <p className="text-faint">
-                Optional. The home screen icon already does all of this &mdash; Siri only saves
-                getting the phone out.
-              </p>
-              <ol className="list-decimal space-y-1.5 pl-4 text-faint">
-                <li>Shortcuts app → <span className="text-ink">+</span></li>
-                <li>Search <span className="text-ink">Dictate Text</span>, add it</li>
-                <li>Search <span className="text-ink">Get Contents of URL</span>, add it</li>
-                <li>Paste the URL below into its URL box</li>
-                <li>Tap <span className="text-ink">Show More</span> on that action</li>
-                <li>Method → <span className="text-ink">POST</span></li>
-                <li>
-                  Request Body → <span className="text-ink">JSON</span> → add one field, named{' '}
-                  <code className="text-ink">text</code>, whose value is the{' '}
-                  <span className="text-ink">Dictated Text</span> variable
-                </li>
-                <li>Search <span className="text-ink">Speak Text</span>, add it</li>
-                <li>
-                  Name the shortcut exactly{' '}
-                  <span className="text-ink">Log Update to Studio Mouse</span>, then say
-                  &ldquo;Hey Siri, Log Update to Studio Mouse&rdquo;
-                </li>
-              </ol>
-              {/* THIS NAME IS TESTED, on Brandon's phone, 21 Sept 2026. Do not
-                  tidy it into something shorter without testing the new one on
-                  a real phone.
-                  "Tell Mouse" sent an empty text to the Mouse contact instead
-                  of running anything — Siri owns "tell <someone> <something>"
-                  and a matching contact wins it. It reached the inbox through
-                  T-Mobile's SMS-to-email gateway and got raised as a question.
-                  "Say Cheese" and other short names kept falling through to a
-                  contact search too. What works is a name whose opening words
-                  are not a system command, which "Log Update to…" is not.
-                  Guessing at Siri's intent matching from a keyboard cost an
-                  evening; the only evidence that counts is a phone. */}
-              <p className="text-faint">
-                That exact name matters. Anything starting &ldquo;Tell&rdquo; or
-                &ldquo;Say&rdquo; gets taken as a command to message a contact, and shorter names
-                fall through to a contact search. This one is tested.
-              </p>
-              <Row id={`${personId}-siri`} label="URL (step 4)" value={links.siri} />
-              <p className="text-faint">
-                No headers to set &mdash; this URL carries the key. If Form or File is easier to
-                reach than JSON in step 7, either works.
-              </p>
-            </div>
-          </details>
         </div>
       ) : null}
     </div>

@@ -1,3 +1,4 @@
+import { PRACTICE_TITLE } from '@/lib/mouse/practice'
 import { db } from '@/lib/db'
 import { laMidnight } from '@/lib/dates'
 import { escapeHtml } from '@/lib/mouse/daily-cheese'
@@ -50,7 +51,8 @@ export async function whoSaidWhat(excludeNames: string[] = []): Promise<Said[]> 
   const skip = new Set(excludeNames.map((n) => n.trim().toLowerCase()).filter(Boolean))
 
   const messages = await db.chatMessage.findMany({
-    where: { createdAt: { gte: since }, role: 'USER', content: { startsWith: '[' } },
+    // Practice conversations are training, not news.
+    where: { createdAt: { gte: since }, role: 'USER', content: { startsWith: '[' }, NOT: { thread: { title: PRACTICE_TITLE } } },
     orderBy: { createdAt: 'asc' },
     select: { id: true, threadId: true, content: true, createdAt: true },
   })

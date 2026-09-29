@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { chatTurn } from '@/lib/mouse/agent'
 import { currentPersonId } from '@/lib/session'
+import { PRACTICE_TITLE } from '@/lib/mouse/practice'
 
 export const maxDuration = 300
 
@@ -37,6 +38,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     threadId: thread.id,
+    practice: thread.title === PRACTICE_TITLE,
     messages: thread.messages.map((m) => ({
       // The persisted id travels to the client so a reply can be reported as
       // a gap later — a gap report points at the message rather than copying
@@ -58,6 +60,8 @@ export async function POST(req: NextRequest) {
     threadId?: string
     message: string
     attachments?: InAttachment[]
+    /** Start the conversation as practice. Only read when it is new; after that the thread decides. */
+    practice?: boolean
   }
   const message = body.message ?? ''
   const attachments = body.attachments ?? []
@@ -89,11 +93,13 @@ export async function POST(req: NextRequest) {
   // a first message used to learn its thread id only from the response it
   // never got — so there was nothing to go back and fetch the reply from.
   const clientNamed = typeof body.threadId === 'string' && /^[0-9a-f-]{36}$/i.test(body.threadId)
+  const title = body.practice === true ? PRACTICE_TITLE : undefined
   const thread = body.threadId
     ? (await db.chatThread.findUnique({ where: { id: body.threadId } })) ??
-      (clientNamed ? await db.chatThread.create({ data: { id: body.threadId } }) : null)
-    : await db.chatThread.create({ data: {} })
+      (clientNamed ? await db.chatThread.create({ data: { id: body.threadId, title } }) : null)
+    : await db.chatThread.create({ data: { title } })
   if (!thread) return NextResponse.json({ error: 'no such thread' }, { status: 404 })
+  const practice = thread.title === PRACTICE_TITLE
 
   // A photo of an invoice with no caption still needs an instruction — tell
   // Studio Mouse to look at it rather than sending it an empty message.
@@ -140,6 +146,8 @@ export async function POST(req: NextRequest) {
     thread.id,
     authored,
     attachments.map((a) => ({ mediaType: a.mediaType, base64: a.base64, filename: a.filename })),
+    practice ? 'chat-practice' : 'chat',
+    practice,
   ))
 
   const saved = await db.chatMessage.create({
@@ -154,6 +162,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     threadId: thread.id,
+    practice,
     messageId: saved.id,
     reply: r.text,
     writes: r.writes,

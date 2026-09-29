@@ -317,6 +317,10 @@ export function Chat() {
     return () => { alive.current = false }
   }, [])
   const [restoring, setRestoring] = useState(true)
+  // Practice: Mouse answers from the real records but changes nothing. Set
+  // when a conversation starts and kept by the conversation itself, so a
+  // reload comes back in the same mode. Brandon, 29 Sept 2026.
+  const [practice, setPractice] = useState(false)
   const [files, setFiles] = useState<PendingFile[]>([])
   const [fileError, setFileError] = useState<string | null>(null)
   // Brandon, 18 Sept 2026: "I need to be able to type in box while it's
@@ -342,6 +346,24 @@ export function Chat() {
   useEffect(() => {
     let cancelled = false
     async function restore() {
+      // "Try it" in the Mouse Manual opens here as /?practice=1&try=<text>:
+      // a fresh practice conversation with the example typed in, ready to
+      // send. Only those two are taken out of the address; a personal key
+      // (?k=) must stay, since the Home Screen icon is saved from it.
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('practice') === '1') {
+        const example = params.get('try') ?? ''
+        params.delete('practice')
+        params.delete('try')
+        const rest = params.toString()
+        window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`)
+        threadRef.current = undefined
+        try { localStorage.removeItem(THREAD_KEY) } catch { /* ignore */ }
+        setPractice(true)
+        setInput(example)
+        setRestoring(false)
+        return
+      }
       let saved: string | null = null
       try { saved = localStorage.getItem(THREAD_KEY) } catch { /* private window, etc. */ }
       if (!saved) { setRestoring(false); return }
@@ -351,6 +373,7 @@ export function Chat() {
         const d = await res.json()
         if (cancelled) return
         setMessages(d.messages)
+        setPractice(d.practice === true)
         threadRef.current = d.threadId
         // Came back to a question Mouse is still answering — the last word in
         // the thread is yours, from the last few minutes. Show it thinking and
@@ -386,6 +409,7 @@ export function Chat() {
   // the next message starts a new one instead of picking the old one back up.
   function startNewConversation() {
     setMessages([])
+    setPractice(false)
     threadRef.current = undefined
     try { localStorage.removeItem(THREAD_KEY) } catch { /* ignore */ }
   }
@@ -505,7 +529,7 @@ export function Chat() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId: id, message: text, attachments: attached }),
+        body: JSON.stringify({ threadId: id, message: text, attachments: attached, practice }),
       })
       if (!res.ok) {
         // A 413 comes from Vercel, not from us, and answers in plain text —
@@ -567,19 +591,43 @@ export function Chat() {
 
   return (
     <div className="flex flex-col">
-      {messages.length > 0 ? (
-        <div className="flex flex-col gap-1 border-b border-line px-4 py-1.5 sm:px-5">
-          <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1.5">
-            <SendToBrandon threadId={() => threadRef.current} />
+      {practice ? (
+        <div className="flex items-center justify-between gap-3 border-b border-warn bg-warn-soft px-4 py-2 sm:px-5">
+          <p className="text-xs text-ink">
+            <span className="font-medium">Practice.</span> Mouse answers from the real records, but nothing you do here is saved, sent or changed.
+          </p>
+          <button type="button" onClick={startNewConversation} className="shrink-0 text-xs font-medium underline">
+            Stop practice
+          </button>
+        </div>
+      ) : null}
+      {!practice || messages.length > 0 ? (
+      <div className="flex flex-col gap-1 border-b border-line px-4 py-1.5 sm:px-5">
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1.5">
+          {!practice ? (
             <button
               type="button"
-              onClick={startNewConversation}
-              className="text-xs text-faint hover:text-ink"
+              disabled={!!pending}
+              onClick={() => { startNewConversation(); setPractice(true) }}
+              className="mr-auto text-xs text-faint hover:text-ink disabled:opacity-40"
             >
-              New conversation
+              Practice
             </button>
-          </div>
+          ) : null}
+          {messages.length > 0 ? (
+            <>
+              {!practice ? <SendToBrandon threadId={() => threadRef.current} /> : null}
+              <button
+                type="button"
+                onClick={startNewConversation}
+                className="text-xs text-faint hover:text-ink"
+              >
+                New conversation
+              </button>
+            </>
+          ) : null}
         </div>
+      </div>
       ) : null}
       <div ref={scrollRef} className="max-h-[50dvh] min-h-[7rem] overflow-y-auto px-4 py-3 sm:max-h-[36rem] sm:min-h-[20rem] sm:px-5">
         {restoring ? null : messages.length === 0 ? (
@@ -711,7 +759,7 @@ export function Chat() {
             // sending. Only the send button should fire." Dictated messages
             // arrive with line breaks in them, and every one of those breaks
             // used to fire a half-written thought at Mouse.
-            placeholder="Say cheese…"
+            placeholder={practice ? 'Practice: try anything…' : 'Say cheese…'}
             rows={1}
             className="min-w-0 flex-1 resize-none rounded-lg border border-line bg-bg px-3.5 py-2.5
                        text-base leading-snug outline-none focus-visible:border-accent

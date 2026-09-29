@@ -35,6 +35,8 @@ export async function runLoop(opts: {
   effort?: 'low' | 'medium' | 'high'
   maxRequests?: number
   maxOutputTokens?: number
+  /** For tests: how to wait before retrying a request the server briefly refused. */
+  sleep?: (ms: number) => Promise<void>
 }): Promise<LoopResult> {
   const started = Date.now()
   const maxRequests = Math.max(1, Math.min(12, Math.trunc(opts.maxRequests ?? 6)))
@@ -59,6 +61,8 @@ export async function runLoop(opts: {
   let providerError: string | null = null
   let effort = opts.effort
   let retriedOverthinking = false
+  let retriedProvider = false
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
 
   for (let round = 0; round < maxRequests && spent < maxOutputTokens; round++) {
     const at = Date.now()
@@ -76,6 +80,17 @@ export async function runLoop(opts: {
         output_config: { effort: effort ?? (model === opts.deepModel ? 'high' : 'medium') },
       })
     } catch (e) {
+      // The model's servers briefly unavailable (a 503 or "overloaded"): the
+      // request never ran, so sending the same one again cannot repeat
+      // anything. Once per turn. On 29 Sept 2026 "Add to todo: order more boy
+      // belts in size small" came back "The model connection failed" after
+      // two seconds, on a single 503, and the to-do was never made.
+      if (!retriedProvider && isTransient(e)) {
+        retriedProvider = true
+        await sleep(2000)
+        round--
+        continue
+      }
       // Preserve outcomes from earlier rounds instead of losing them in a 500.
       stopReason = 'provider_error'
       providerError = String(diagnosticValue((e as Error).message))
@@ -163,6 +178,13 @@ export async function runLoop(opts: {
   }
   return { text, writes: completedWrites(calls), toolCalls: calls, model, escalated,
     usage: { requests, attemptedRequests, providerError, durationMs: Date.now() - started, stopReason, escalationReason: escalated } }
+}
+
+/** A failure on the model provider's side that is worth one more try. Pure. */
+export function isTransient(e: unknown): boolean {
+  const status = (e as { status?: unknown })?.status
+  if (typeof status === 'number') return status === 429 || status === 529 || (status >= 500 && status < 600)
+  return /\b(?:50[0-4]|529)\b|overloaded|ECONNRESET|ETIMEDOUT|socket hang up/i.test(String((e as Error)?.message ?? e))
 }
 
 /** Non-chat callers must not close tasks or consume mail after an interrupted run. */
