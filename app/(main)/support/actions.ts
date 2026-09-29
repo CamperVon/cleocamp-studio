@@ -7,7 +7,7 @@ import { sendEmail } from '@/lib/email'
 import { grantedScopes } from '@/lib/integrations/shopify'
 import { draftForCase, refreshOrder } from '@/lib/support/draft'
 import { cancelAndRefund, cancelUnshippedLines, freshOrder, removeUnshippedUnits, setShippingAddress } from '@/lib/support/orders'
-import { addressChangeProblems, claimsNotYetDone, partlyShipped, refundIssued, SUPPORT_FROM, SUPPORT_REPLY_TO, unfilled, unshippedLines, type DraftAddress } from '@/lib/support/reply'
+import { addressChangeProblems, claimsNotYetDone, partlyShipped, refundIssued, SUPPORT_FROM, SUPPORT_REPLY_TO, TOLD_MOUSE, unfilled, unshippedLines, type DraftAddress } from '@/lib/support/reply'
 import { namesMatch } from '@/lib/support/core'
 import type { OrderSnapshot } from '@/lib/support/orders'
 
@@ -333,6 +333,106 @@ export async function cancelOrderAndReply(id: string, text: string): Promise<Res
         body: `Cancelled in Shopify (not shipped): ${open.map((l) => l.label).join(', ')}. ${done.refunded} refunded to the original payment. The rest of ${c.shopifyOrderName} had already shipped.`,
       },
     })
+  }
+  return sendReply(id, text)
+}
+
+/**
+ * Tell Mouse what to do on a case, and get a reply drafted that does it.
+ * Brandon, 29 Sept 2026, on #2104: "I would tell mouse to go ahead and refund
+ * her and draft an email to that effect."
+ *
+ * The words go to the drafter only, which has no tools, as a TEAM
+ * INSTRUCTION it follows over the default policy. Nothing is refunded or sent
+ * here: the reply box then offers the tap that does what the draft says. The
+ * instruction is kept on the case as a note, so later redrafts still follow it.
+ */
+export async function tellMouse(id: string, text: string): Promise<Result> {
+  const who = await approver()
+  if (!who) return { ok: false, error: 'Sign in again — only the team can do this.' }
+  const said = text.trim()
+  if (!said) return { ok: false, error: 'Say what Mouse should do.' }
+  const c = await db.supportCase.findUnique({ where: { id }, select: { status: true, category: true } })
+  if (!c) return { ok: false, error: 'Case not found.' }
+  if (c.category === 'SPAM') return { ok: false, error: 'This case is marked as spam, so Mouse does not draft for it.' }
+  await db.supportMessage.create({ data: { caseId: id, direction: 'NOTE', fromAddress: who.name, body: `${TOLD_MOUSE}${said.slice(0, 1500)}` } })
+  // The team is working on it again, so a closed case opens back up.
+  if (c.status === 'RESOLVED') await db.supportCase.update({ where: { id }, data: { status: 'OPEN', resolvedAt: null } })
+  await refreshOrder(id).catch((e) => console.error('[support] order refresh', e))
+  await draftForCase(id)
+  revalidatePath('/support')
+  const d = await db.supportCase.findUnique({ where: { id }, select: { draftReply: true, draftNeeds: true } })
+  return d?.draftReply || d?.draftNeeds ? { ok: true } : { ok: false, error: "Mouse couldn't write the draft. Try again, or write it yourself." }
+}
+
+/** The order on a case, read fresh, if the person writing in is its customer. */
+async function ownedOrder(c: { shopifyOrderId: string | null; customerEmail: string; customerName: string | null }): Promise<{ ok: true; order: OrderSnapshot } | { ok: false; error: string }> {
+  if (!c.shopifyOrderId) return { ok: false, error: 'No order on this case.' }
+  let fresh
+  try {
+    fresh = await freshOrder(c.shopifyOrderId)
+  } catch (e) {
+    return { ok: false, error: `Could not read the order from Shopify: ${e instanceof Error ? e.message.slice(0, 160) : String(e)}` }
+  }
+  if (!fresh) return { ok: false, error: 'Shopify has no such order.' }
+  // Same rule as a cancel: the money can only go back to the card that paid,
+  // so the order's own email or a matching name is enough.
+  const sameEmail = !!fresh.email && fresh.email.toLowerCase() === c.customerEmail.toLowerCase()
+  if (!sameEmail && !namesMatch(c.customerName, c.customerEmail, [fresh.shipTo?.name, fresh.billName])) {
+    return { ok: false, error: `The name on this order does not match the person writing in${fresh.email ? ` (it was placed with ${fresh.email})` : ''}. If you are sure it is theirs, refund it in Shopify.` }
+  }
+  return { ok: true, order: fresh }
+}
+
+/** What refunding the case's shipped order in full would pay back, from Shopify. Changes nothing. */
+export async function quoteOrderRefund(id: string): Promise<{ ok: true; amount: number } | { ok: false; error: string }> {
+  if (!(await approver())) return { ok: false, error: 'Sign in again — only the team can do this.' }
+  const c = await db.supportCase.findUnique({ where: { id } })
+  if (!c) return { ok: false, error: 'Case not found.' }
+  const o = await ownedOrder(c)
+  if (!o.ok) return o
+  if (unshippedLines(o.order).length) return { ok: false, error: 'Part of this order has not shipped. Cancel that part instead.' }
+  const { quoteFullRefund } = await import('@/lib/support/refund')
+  try {
+    const amount = await quoteFullRefund(o.order.id)
+    return amount > 0 ? { ok: true, amount } : { ok: false, error: 'Nothing is left to refund on this order.' }
+  } catch (e) {
+    return { ok: false, error: `Shopify could not work it out: ${e instanceof Error ? e.message.slice(0, 160) : String(e)}` }
+  }
+}
+
+/**
+ * Refund a shipped order in full in Shopify, then send the reply that says
+ * so. The tap is the approval, and it carries the figure the person was
+ * shown: if Shopify's has moved, nothing is refunded or sent. Items are not
+ * restocked; they are with the customer.
+ */
+export async function refundOrderAndReply(id: string, text: string, expected: number): Promise<Result> {
+  const who = await approver()
+  if (!who) return { ok: false, error: 'Sign in again — only the team can do this.' }
+  if (unfilled(text).length) return { ok: false, error: 'Fill in the bracketed gaps in the reply first.' }
+  const c = await db.supportCase.findUnique({ where: { id } })
+  if (!c) return { ok: false, error: 'Case not found.' }
+  const o = await ownedOrder(c)
+  if (!o.ok) return o
+  if (unshippedLines(o.order).length) return { ok: false, error: 'Part of this order has not shipped. Cancel that part instead. Nothing was refunded or sent.' }
+
+  if (!/REFUNDED/i.test(o.order.financialStatus ?? '')) {
+    const { refundInFull } = await import('@/lib/support/refund')
+    let paid
+    try {
+      paid = await refundInFull(o.order.id, expected, `support-refund-${o.order.id.split('/').pop()}-${id}`, `Refunded in full at the team's say-so (support case), by ${who.name} in the Studio app.`)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return { ok: false, error: /access|scope|denied|permission/i.test(msg) ? await permissionError('refund this order', 'write_orders', msg) : `${msg.slice(0, 200)} Nothing was sent.` }
+    }
+    const now = await freshOrder(o.order.id).catch(() => null)
+    await db.$transaction([
+      ...(now ? [db.supportCase.update({ where: { id }, data: { orderSnapshot: now as unknown as Prisma.InputJsonValue } })] : []),
+      db.supportMessage.create({
+        data: { caseId: id, direction: 'NOTE', fromAddress: who.name, body: `${c.shopifyOrderName} refunded in full in Shopify: $${paid.toFixed(2)} to the original payment (items, shipping and any duty). Nothing restocked; the goods are with the customer.` },
+      }),
+    ])
   }
   return sendReply(id, text)
 }

@@ -5,7 +5,7 @@ import { CHAT_MODEL } from '@/lib/mouse/agent'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
 import { findOrder, type OrderSnapshot } from '@/lib/support/orders'
 import { isConfigured, shopifyGraphQL } from '@/lib/integrations/shopify'
-import { addressChangeProblems, DRAFT_INSTRUCTIONS, orderFacts, parseDraft } from '@/lib/support/reply'
+import { addressChangeProblems, DRAFT_INSTRUCTIONS, orderFacts, parseDraft, teamInstructions } from '@/lib/support/reply'
 import { orderNumbersIn, trimQuoted } from '@/lib/support/core'
 
 /**
@@ -22,13 +22,16 @@ import { orderNumbersIn, trimQuoted } from '@/lib/support/core'
 export async function draftForCase(caseId: string): Promise<void> {
   const c = await db.supportCase.findUnique({
     where: { id: caseId },
-    include: { messages: { orderBy: { createdAt: 'asc' }, take: 12 } },
+    include: { messages: { orderBy: { createdAt: 'desc' }, take: 40 } },
   })
   if (!c || c.category === 'SPAM' || c.status === 'RESOLVED') return
+  c.messages.reverse()
 
   const order = (c.orderSnapshot as OrderSnapshot | null) ?? null
+  const told = teamInstructions(c.messages)
   const thread = c.messages
     .filter((m) => m.direction !== 'NOTE')
+    .slice(-12)
     .map((m) => `${m.direction === 'INBOUND' ? 'CUSTOMER' : 'US'} (${m.createdAt.toISOString().slice(0, 10)}):\n${trimQuoted(m.body).text.slice(0, 2500)}`)
     .join('\n---\n')
 
@@ -60,6 +63,7 @@ export async function draftForCase(caseId: string): Promise<void> {
             (catalog ? `CATALOG FACTS for products the customer names (from the shop, just now):\n${catalog}\n\n` : '') +
             (examples ? `${examples}\n\n` : '') +
             `<conversation>\n${thread.slice(-9000)}\n</conversation>\n\n` +
+            (told.length ? `TEAM INSTRUCTIONS (typed into the app by the team, newest last; follow them):\n${told.map((t) => `- ${t.slice(0, 600)}`).join('\n')}\n\n` : '') +
             `Draft the reply to the customer's latest email.`,
         }],
       })
