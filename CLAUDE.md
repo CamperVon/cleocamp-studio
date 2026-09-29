@@ -254,6 +254,13 @@ Framework-level conventions from the Next.js scaffold live in `AGENTS.md`.
   in `lib/friends-family.ts`), a named price is checked against Shopify's own
   on the draft (`aboveRetail`), and a note never tells Mouse to calculate a
   price.
+- **A delivery is not received until its PO says so.** Until 29 Sept 2026
+  nothing ticked deliveries off on purchase-order lines: stock was logged,
+  the lines stayed at 0 received, and Mouse told Brandon Staples still owed
+  all 101 skirts on PO 2362 when 20 had been logged in on 25 Sept. The
+  forecast reads the same lines for what is still on order. A RECEIVED
+  stock entry now ticks its PO off (`lib/po-receipts.ts`), from the number
+  given or the "PO 1234" in the note.
 - **Studio Mouse must be told the date.** Without it in context it cannot reason
   about lead times or due dates, and correctly refuses to guess — which means
   asking Cleo what day it is.

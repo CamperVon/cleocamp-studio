@@ -322,6 +322,10 @@ export const TOOLS: Record<string, Tool> = {
         'If our own count for a variant is unknown, you do not need to ask the user to sync ' +
         'from Shopify first — this checks Shopify live on its own and uses that as the ' +
         'baseline. Just mention in your reply that it did, so it is not silent.\n\n' +
+        'Goods arriving on a purchase order: type RECEIVED with purchaseOrderNumber, so the PO ' +
+        'shows them received and what is still owed stays true. When asked what a PO still owes, ' +
+        'answer from the PO\'s received quantities, and check logged stock before ever saying ' +
+        'nothing has arrived.\n\n' +
         'Where: logged stock is at the studio (Brandon, 25 Sept 2026: "If we are logging ' +
         'inventory it\'s studio"), and a component event with no place defaults there. Use ' +
         'atVendorId only when the person says the stock is at a vendor.',
@@ -347,6 +351,7 @@ export const TOOLS: Record<string, Tool> = {
           deltaQty: num('Signed change. Negative for things leaving. Omit for COUNTED — give countedQty instead.'),
           countedQty: num('For COUNTED only: the absolute number stated, AT THE PLACE GIVEN — not a total across every place this component lives.'),
           note: str('Who it went to, why, anything worth keeping.'),
+          purchaseOrderNumber: str('For RECEIVED on a purchase order: its number, e.g. "2362". Ticks the delivery off on the PO.'),
           separateDelivery: {
             type: 'boolean' as const,
             description:
@@ -408,7 +413,18 @@ export const TOOLS: Record<string, Tool> = {
           }
         }
       }
-      return writeEvent(i)
+      const r = await writeEvent(i)
+      // Tick the delivery off on its PO, from the number given or the one in
+      // the note (Mouse nearly always writes "PO 2362" there).
+      if (i.type === 'RECEIVED' && r.eventId && typeof i.deltaQty === 'number' && i.deltaQty > 0) {
+        const { receiveOnPo, poNumberIn } = await import('@/lib/po-receipts')
+        const po = (typeof i.purchaseOrderNumber === 'string' && i.purchaseOrderNumber.replace(/\D/g, '')) || poNumberIn(i.note)
+        if (po) {
+          const t = await receiveOnPo(po, { productVariantId: i.productVariantId, componentId: i.componentId }, i.deltaQty)
+          return { ...r, purchaseOrder: t.message }
+        }
+      }
+      return r
     },
   },
 
