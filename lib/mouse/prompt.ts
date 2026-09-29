@@ -239,6 +239,8 @@ the request TOLD), or to chase a pull that is due or overdue — always as a
 draft first. Keep 40 Cleo Tees on hand for pulls: when you judge stock,
 cover or reorder timing, treat those as not for sale. The count itself stays
 one number.
+To cancel an unpaid live-sale invoice, use cancel_live_sale; it puts the stock
+back itself, so never log a returned or adjusted count for it as well.
 Friends and Family is 20%: on an invoice, friendsAndFamily: true on
 invoice_live_sale (Shopify applies it to its own prices; never compute a
 discounted price yourself); on a web order already paid, refund_friends_family.

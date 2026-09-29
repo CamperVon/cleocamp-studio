@@ -3876,6 +3876,65 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  cancel_live_sale: {
+    def: {
+      name: 'cancel_live_sale',
+      description:
+        'Cancel an UNPAID live-sale invoice by its order number ("2635"): undoes "handed over", cancels ' +
+        'it in Shopify with the items put back on stock, and puts back the app\'s count for items only ' +
+        'the app holds. Never log a RETURNED or other stock event for it yourself — that would count it ' +
+        'twice. Leave confirmed out to SHOW what will happen; confirmed: true only once a person says ' +
+        'cancel. A paid invoice is refused: money going back is done in Shopify.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          order: str('The order number, e.g. "2635"'),
+          confirmed: { type: 'boolean' as const, description: 'Leave out to check. true only after a person has seen it and said cancel.' },
+        },
+        required: ['order'],
+      },
+    },
+    run: async (i) => {
+      const { checkCancelLiveSale, cancelLiveSale } = await import('@/lib/live-sale')
+      const c = await checkCancelLiveSale(String(i.order ?? ''))
+      if (!c) return { done: false, reason: `No Shopify order #${String(i.order).replace(/^#/, '')}. Ask for the number again.` }
+      if (c.blocked) return { done: false, reason: c.blocked }
+      // Items only the app counts came off its count when the invoice went
+      // (a MANUAL_ADJUST naming the order); those are what gets put back.
+      const sold = await db.inventoryEvent.findMany({
+        where: { type: 'MANUAL_ADJUST', note: { startsWith: `Sold on invoice ${c.orderName} ` } },
+        select: { productVariantId: true, deltaQty: true },
+      })
+      const lines = c.lines.map((l) => `${l.quantity} × ${l.label}${l.inShopify ? ' — back on Shopify stock' : ' — not in Shopify'}`)
+      if (i.confirmed !== true) {
+        return {
+          done: false, check: true, order: c.orderName, to: c.email, total: `$${c.total.toFixed(2)} (unpaid)`, lines,
+          ...(sold.length ? { appCount: `${sold.length} item(s) only the app counts go back on its count.` } : {}),
+          tellTheUser: `Show what will happen: ${c.orderName} is cancelled in Shopify, the items go back on stock, and the unpaid invoice link stops working. Shopify does not email the customer. Wait for a yes.`,
+        }
+      }
+      const r = await cancelLiveSale(c, 'Cancelled from Studio Mouse: unpaid live-sale invoice.')
+      if (!r.ok) return { done: false, reason: r.error }
+      const back: string[] = []
+      for (const e of sold) {
+        if (!e.productVariantId) continue
+        const qty = Math.abs(Number(e.deltaQty))
+        const why = `Invoice ${c.orderName} cancelled, back in stock.`
+        if (!inventoryWritesEnabled()) {
+          await db.actionItem.create({ data: { kind: 'TODO', title: `Put ${qty} back on the count: ${c.orderName} cancelled`, detail: `${why} Stock writing was paused, so it was not applied.`, source: 'CHAT' } })
+          back.push(`stock writing is paused, so a todo was made to put ${qty} back.`)
+          continue
+        }
+        const w = await writeEvent({ productVariantId: e.productVariantId, deltaQty: qty, type: 'MANUAL_ADJUST', note: why })
+        back.push(w.eventId ? `${qty} back on the app's count.` : `NOT put back on the app's count (${'error' in w ? w.error : 'unknown'}).`)
+      }
+      return {
+        done: true, order: c.orderName, lines, ...(back.length ? { appCount: back } : {}),
+        tellTheUser: `Say ${c.orderName} is cancelled and the items are back on stock. Shopify did not email the customer; offer to tell them if that is wanted.`,
+      }
+    },
+  },
+
   unpaid_live_sales: {
     def: {
       name: 'unpaid_live_sales',

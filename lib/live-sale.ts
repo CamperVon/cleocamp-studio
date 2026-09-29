@@ -559,3 +559,77 @@ export async function unpaidLiveSales(): Promise<Array<{ name: string; email: st
   )
   return d.orders.nodes.map((o) => ({ name: o.name, email: o.email, total: money(o.totalPriceSet), createdAt: o.createdAt, status: o.displayFinancialStatus ?? 'unknown' }))
 }
+
+export type CancelCheck = {
+  orderId: string
+  orderName: string
+  email: string | null
+  total: number
+  lines: Array<{ label: string; quantity: number; inShopify: boolean }>
+  fulfillmentIds: string[]
+  /** Why it cannot be cancelled here, in words for the person; null when it can. */
+  blocked: string | null
+}
+
+/**
+ * An unpaid live-sale invoice, read for cancelling. Brandon, 29 Sept 2026,
+ * #2635: Mouse had no way to cancel one, and offered to log the belt as
+ * RETURNED by hand, which would have counted it back twice once Shopify's
+ * own restock synced. Paid invoices are refused: money going back is the
+ * Support tab's refund, not this.
+ */
+export async function checkCancelLiveSale(orderNameIn: string): Promise<CancelCheck | null> {
+  const name = `#${orderNameIn.replace(/^#/, '').trim()}`
+  const d = await shopifyGraphQL<{ orders: { nodes: Array<{
+    id: string; name: string; email: string | null; cancelledAt: string | null; displayFinancialStatus: string | null; tags: string[]
+    totalPriceSet: Money; lineItems: { nodes: Array<{ title: string; variantTitle: string | null; quantity: number; variant: { id: string } | null }> }
+    fulfillments: Array<{ id: string; status: string }>
+  }> } }>(
+    `query($q: String!) { orders(first: 5, query: $q) { nodes { id name email cancelledAt displayFinancialStatus tags totalPriceSet { shopMoney { amount } }
+      lineItems(first: 50) { nodes { title variantTitle quantity variant { id } } } fulfillments { id status } } } }`,
+    { q: `name:${name}` },
+  )
+  const o = d.orders.nodes.find((n) => n.name === name)
+  if (!o) return null
+  let blocked: string | null = null
+  if (o.cancelledAt) blocked = `${o.name} is already cancelled.`
+  else if (!o.tags.includes('live-sale')) blocked = `${o.name} is not a live-sale invoice. Cancel it in Shopify, or from the Support tab if it is a customer's web order.`
+  else if (o.displayFinancialStatus !== 'PENDING') blocked = `${o.name} is ${String(o.displayFinancialStatus ?? '').toLowerCase().replace(/_/g, ' ')}, not unpaid. Money has to go back, so do it in Shopify rather than here.`
+  return {
+    orderId: o.id, orderName: o.name, email: o.email, total: money(o.totalPriceSet),
+    lines: o.lineItems.nodes.map((l) => ({ label: `${l.title}${l.variantTitle ? ` — ${l.variantTitle}` : ''}`, quantity: l.quantity, inShopify: !!l.variant })),
+    fulfillmentIds: o.fulfillments.filter((f) => f.status === 'SUCCESS').map((f) => f.id),
+    blocked,
+  }
+}
+
+/**
+ * Cancel it: undo "handed over" (Shopify only puts unfulfilled items back on
+ * stock), then cancel with restock and no refund, since nothing was paid.
+ * The customer is not emailed by Shopify; the unpaid invoice link simply
+ * stops working.
+ */
+export async function cancelLiveSale(c: CancelCheck, note: string): Promise<{ ok: boolean; error?: string }> {
+  if (c.blocked) return { ok: false, error: c.blocked }
+  for (const id of c.fulfillmentIds) {
+    const f = await shopifyGraphQL<{ fulfillmentCancel: { fulfillment: { status: string } | null; userErrors: Array<{ message: string }> } }>(
+      `mutation($id: ID!) { fulfillmentCancel(id: $id) { fulfillment { id status } userErrors { field message } } }`,
+      { id },
+    )
+    if (!f.fulfillmentCancel.fulfillment) return { ok: false, error: `Shopify would not undo "handed over": ${f.fulfillmentCancel.userErrors.map((e) => e.message).join('; ') || 'no reason given'}. Nothing was cancelled.` }
+  }
+  const r = await shopifyGraphQL<{ orderCancel: { job: { id: string } | null; orderCancelUserErrors: Array<{ message: string }> } }>(
+    `mutation($orderId: ID!, $note: String) { orderCancel(orderId: $orderId, reason: CUSTOMER, refundMethod: { originalPaymentMethodsRefund: false }, restock: true, notifyCustomer: false, staffNote: $note) { job { id done } orderCancelUserErrors { field message code } } }`,
+    { orderId: c.orderId, note: note.slice(0, 250) },
+  )
+  if (r.orderCancel.orderCancelUserErrors.length) {
+    return { ok: false, error: `Shopify refused the cancel: ${r.orderCancel.orderCancelUserErrors.map((e) => e.message).join('; ')}.${c.fulfillmentIds.length ? ' "Handed over" was already undone, so the order now shows unfulfilled — check it in Shopify.' : ''}` }
+  }
+  // The cancel runs as a job; wait until the order says so.
+  for (let i = 0; i < 8; i++) {
+    const o = await shopifyGraphQL<{ order: { cancelledAt: string | null } | null }>(`query($id: ID!) { order(id: $id) { cancelledAt } }`, { id: c.orderId })
+    if (o.order?.cancelledAt) return { ok: true }
+    await new Promise((res) => setTimeout(res, 1000))
+  }
+  return { ok: false, error: 'Shopify accepted the cancel but had not cancelled the order after 8 seconds. Check it in Shopify.' }
+}
