@@ -355,6 +355,19 @@ export function claimsRefunded(reply: string): boolean {
     /\brefunded (?:in full|you|your|it|them|that|this|the item)\b/i.test(text)
 }
 
+/**
+ * The reply tells the customer a refund is coming or done: "we've refunded",
+ * "we are going to refund", "we'll refund". On #2104 (29 Sept 2026) the
+ * reply was edited to "we are going to refund order #2104 in full", which is
+ * not a claim that it is done, so no refund button showed; Send went, and
+ * nothing was refunded. A promise gets the refund tap too. Pure.
+ */
+export function mentionsRefundToCustomer(reply: string): boolean {
+  const text = reply.replace(/\s+/g, ' ')
+  return claimsRefunded(reply) ||
+    /\b(?:we(?:'ll| will| are| 're|'re| can)|i(?:'ll| will| am|'m))\s+(?:going to\s+|now\s+|happy to\s+|be\s+)?(?:issu(?:e|ing) (?:you )?a (?:full )?refund|refund(?:ing)?)\b/i.test(text)
+}
+
 export function claimsNotYetDone(reply: string, order: (Pick<OrderSnapshot, 'name' | 'financialStatus' | 'cancelledAt'> & Partial<Pick<OrderSnapshot, 'refunded' | 'items'>>) | null): string[] {
   const saysCancelled = claimsCancelled(reply)
   const saysRefunded = claimsRefunded(reply)

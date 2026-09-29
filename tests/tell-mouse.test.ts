@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { claimsCancelled, claimsRefunded, TOLD_MOUSE, teamInstructions } from '../lib/support/reply'
+import { claimsCancelled, claimsRefunded, mentionsRefundToCustomer, TOLD_MOUSE, teamInstructions } from '../lib/support/reply'
 
 test('only notes written from the Tell Mouse box are instructions', () => {
   const msgs = [
@@ -18,4 +18,13 @@ test('a refund reply is told apart from a cancel', () => {
   assert.equal(claimsCancelled("We've refunded order #2104 in full to your original payment."), false)
   assert.equal(claimsRefunded('Once it arrives we will process the refund.'), false)
   assert.equal(claimsCancelled("We've cancelled your order and refunded it."), true)
+})
+
+test('a promised refund gets the refund tap too (#2104)', () => {
+  assert.equal(mentionsRefundToCustomer('She says we are going to refund order #2104 in full to your original payment'), true)
+  assert.equal(mentionsRefundToCustomer("We'll refund you in full."), true)
+  assert.equal(mentionsRefundToCustomer("We've refunded order #2104 in full."), true)
+  assert.equal(mentionsRefundToCustomer('We are happy to issue a full refund.'), true)
+  assert.equal(mentionsRefundToCustomer('Returns for a refund carry a 10% restocking fee.'), false)
+  assert.equal(mentionsRefundToCustomer('Once it arrives we process the refund.'), false)
 })

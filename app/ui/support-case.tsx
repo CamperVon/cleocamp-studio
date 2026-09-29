@@ -2,7 +2,7 @@
 import { useState, useTransition } from 'react'
 import type { Reviewer } from '@/app/(main)/support/actions'
 import { addCaseNote, applyAddressAndReply, approveReturnRefund, cancelOrderAndReply, flagForReview, markReviewed, quoteCaseRefund, quoteOrderRefund, redraftReply, refundOrderAndReply, removeUnshippedItem, sendReply, setCaseStatus, tellMouse } from '@/app/(main)/support/actions'
-import { claimsCancelled, claimsNotYetDone, claimsRefunded, mentionsDiscount, partlyShipped, refundIssued, unfilled, unshippedLines } from '@/lib/support/reply'
+import { claimsCancelled, claimsNotYetDone, claimsRefunded, mentionsDiscount, mentionsRefundToCustomer, teamInstructions, partlyShipped, refundIssued, unfilled, unshippedLines } from '@/lib/support/reply'
 import { trimQuoted } from '@/lib/support/core'
 import { ReturnIntake } from '@/app/ui/return-intake'
 
@@ -271,11 +271,15 @@ function ReplyBox({ c }: { c: CaseView }) {
   const cancels = !!o && !done && (!o.emailMismatch || !!o.sameName) && (!partial || open.length > 0) &&
     claimsNotYetDone(text, { name: '', financialStatus: '', cancelledAt: null }).length > 0
   const what = open.map((l) => l.label).join(', ')
+  // A promise ("we are going to refund") counts only when the team told Mouse
+  // to refund; a return reply ("we'll refund it once it arrives") must not
+  // offer a full refund before the parcel is back.
+  const toldToRefund = teamInstructions(c.messages).some((t) => /refund/i.test(t))
   // Everything has shipped and the reply says the customer is refunded: the
   // tap refunds the order in full first (refundOrderAndReply). Shopify's
   // figure is fetched and shown on the first tap, paid on the second.
   const refunds = !!o && partial && !open.length && !refundIssued(o) && (!o.emailMismatch || !!o.sameName) &&
-    claimsRefunded(text) && !claimsCancelled(text)
+    (claimsRefunded(text) || (mentionsRefundToCustomer(text) && toldToRefund)) && !claimsCancelled(text)
   const primary = canMove || cancels || refunds
   const blocked = pending || !!gaps.length || !text.trim()
   const run = (fn: () => Promise<{ ok: true } | { ok: false; error: string }>) =>
@@ -304,7 +308,7 @@ function ReplyBox({ c }: { c: CaseView }) {
       {refunds ? (
         <p className="text-xs text-muted">
           {refund === null
-            ? <>This reply says {o?.name} is refunded. Tap to see what Shopify will refund, then tap again to refund it and send.</>
+            ? <>This reply tells the customer {o?.name} is being refunded. Tap to see what Shopify will refund, then tap again to refund it and send. &quot;Send reply only&quot; refunds nothing.</>
             : <>Shopify will refund <span className="font-medium text-ink">${refund.toFixed(2)}</span> to the original payment: the items, shipping and any duty. Nothing is restocked. Tap again to refund and send.</>}
         </p>
       ) : null}
