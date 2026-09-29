@@ -11,6 +11,23 @@
 import type { PrismaClient } from '@/generated/prisma/client'
 import { fetchAllVariants, fetchLocations, fetchSoldLines } from './shopify'
 
+/**
+ * Shopify variant ids that sold before a listing was rebuilt, and the id that
+ * replaced each. The Black and White Cleo Tees were relisted in May 2026; the
+ * old ids carried every sale from April into June (201 tees), and with nothing
+ * matching them those sales never reached the sales history, so Mouse counted
+ * 1,525 tees for the year when Shopify said 1,826 (29 Sept 2026). Old sales
+ * now count against the size they always were.
+ */
+export const LEGACY_VARIANT_IDS: Record<string, string> = {
+  '46933801566461': '47536483238141', // Black / 1
+  '46933824241917': '47536483270909', // Black / 2
+  '46933824307453': '47536483303677', // Black / 3
+  '46933801599229': '47536483336445', // White / 1
+  '46933824274685': '47536483369213', // White / 2
+  '46933824340221': '47536483401981', // White / 3
+}
+
 export type ShopifySyncResult = {
   location: string | null
   variantsUpdated: number
@@ -103,7 +120,8 @@ export async function syncShopify(db: PrismaClient, sinceISO: string): Promise<S
 
   const byKey = new Map<string, number>()
   for (const l of lines) {
-    const id = l.variantId.split('/').pop()!
+    const raw = l.variantId.split('/').pop()!
+    const id = LEGACY_VARIANT_IDS[raw] ?? raw
     byKey.set(`${id}|${l.date}`, (byKey.get(`${id}|${l.date}`) ?? 0) + l.quantity)
   }
 

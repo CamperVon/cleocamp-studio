@@ -2888,17 +2888,21 @@ export const TOOLS: Record<string, Tool> = {
         'Pull fresh variant counts, prices and sales history from Shopify. Read-only — ' +
         'it never changes anything in Shopify. Use it when someone asks whether the ' +
         'numbers are current, or before answering a question where a stale count would ' +
-        'mislead. It takes a few seconds, so do not run it for casual questions.',
-      input_schema: { type: 'object', properties: {} },
+        'mislead. It takes a few seconds, so do not run it for casual questions. Give since ' +
+        'only when a person asks to re-read sales history from a date ("resync sales since ' +
+        'January 1"): it re-reads every order from then and takes up to a minute or two.',
+      input_schema: { type: 'object', properties: { since: str('YYYY-MM-DD: re-read sales history from this date. Omit for the usual last 3 weeks.') } },
     },
-    run: async () => {
+    run: async (i) => {
       // Same pull the nightly cron runs — one implementation, not two that
       // can quietly drift apart. A 21-day window is plenty for a spot check;
       // the full order history is a deliberate once-only script, not this.
       const { syncShopify } = await import('@/lib/integrations/shopify-sync')
-      const since = new Date(Date.now() - 21 * 864e5).toISOString().slice(0, 10)
+      const asked = typeof i.since === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(i.since) ? i.since : null
+      const since = asked ?? new Date(Date.now() - 21 * 864e5).toISOString().slice(0, 10)
       const r = await syncShopify(db, since)
       return {
+        salesFrom: since, unitsSold: r.unitsSold,
         updated: r.variantsUpdated, seenInShopify: r.variantsUpdated + r.variantsUnknown.length,
         salesWritten: r.salesWritten, onHand: `${r.onHandCounted}/${r.onHandTotal}`,
       }
@@ -4328,6 +4332,11 @@ export const TOOLS: Record<string, Tool> = {
         'over a window, recent inbound email, or a units-sold TOTAL. For "how many did we ' +
         'sell" over any real window (this year, last quarter, since a date) use "salesTotal" ' +
         '— it is a single database sum, not something to add up by hand from "sales" rows. ' +
+        '"This year" means since January 1 (Los Angeles), never the last 365 days: pass since, ' +
+        'e.g. since "2026-01-01". The history counts retail orders only (not wholesale, not ' +
+        'cancelled), so it can sit a little under Shopify\'s own sales report; say so if asked ' +
+        'to compare. The result says where the records begin: never describe a window that ' +
+        'starts before them as complete. ' +
         '"sales" returns raw daily numbers for ONE variant and is for looking at a pattern ' +
         '(is it trending up, did a day spike), never for arithmetic across many days or ' +
         'variants — that is exactly what burned a whole turn\'s budget on 10 Sept trying to ' +
@@ -4343,13 +4352,16 @@ export const TOOLS: Record<string, Tool> = {
           what: { type: 'string', enum: ['events', 'sales', 'salesTotal', 'email', 'notes', 'retiredNotes'] },
           entityId: str('Component or variant id, for events or sales'),
           productId: str('For salesTotal: sum every variant of this product. Omit entityId when using this.'),
-          days: num('How far back, default 56. For salesTotal, pass how many days back you actually mean — e.g. 365 for "this year".'),
+          days: num('How far back, default 56. For a rolling window ("the last 30 days").'),
+          since: str('YYYY-MM-DD start date, for calendar windows: "this year" is since YYYY-01-01. Wins over days.'),
         },
         required: ['what'],
       },
     },
     run: async (i) => {
-      const since = new Date(Date.now() - (i.days ?? 56) * 864e5)
+      const since = typeof i.since === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(i.since)
+        ? new Date(`${i.since}T00:00:00Z`)
+        : new Date(Date.now() - (i.days ?? 56) * 864e5)
       if (i.what === 'notes') {
         if (!i.entityId) return { error: 'Give the entityId (for an order: its id or PO number).' }
         // Notes on an order are keyed by its id, its number, or "PO <number>".
@@ -4399,8 +4411,15 @@ export const TOOLS: Record<string, Tool> = {
         if (i.productId) where.variant = { productId: i.productId }
         else if (i.entityId) where.productVariantId = i.entityId
         else return { error: 'Give a productId (sums every variant) or entityId (one variant).' }
-        const agg = await db.salesSnapshot.aggregate({ where, _sum: { unitsSold: true } })
-        return { totalUnits: agg._sum.unitsSold ?? 0, sinceDate: since.toISOString().slice(0, 10), days: i.days ?? 56 }
+        const [agg, first] = await Promise.all([
+          db.salesSnapshot.aggregate({ where, _sum: { unitsSold: true } }),
+          db.salesSnapshot.aggregate({ _min: { date: true } }),
+        ])
+        const recordsBegin = first._min.date?.toISOString().slice(0, 10) ?? null
+        return {
+          totalUnits: agg._sum.unitsSold ?? 0, sinceDate: since.toISOString().slice(0, 10), recordsBegin,
+          ...(recordsBegin && since.toISOString().slice(0, 10) < recordsBegin ? { note: `Sales records begin ${recordsBegin}; nothing before that is counted.` } : {}),
+        }
       }
       return db.inboundEmail.findMany({
         // Never customer mail: this Mouse has write tools, and anyone on the
