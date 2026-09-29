@@ -310,9 +310,9 @@ export async function runAgent(opts: {
     })
   }
 
-  // Attachments ride along only on the turn they were sent — by the time it
-  // matters again there is a written record (a PO field, a note, a todo) to
-  // point at instead of the raw bytes, and history is replayed as text only.
+  // Attachments ride along on the turn they were sent. Chat also replays the
+  // files from its last two file-bearing messages (see chatTurn), so a
+  // follow-up about the same document can still read it.
   const instructionContent: Anthropic.MessageParam['content'] = opts.attachments?.length
     ? [...opts.attachments.map(attachmentBlock), { type: 'text', text: opts.instruction }]
     : opts.instruction
@@ -514,8 +514,16 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
     where: { threadId },
     orderBy: { createdAt: 'desc' },
     take: 21,
+    include: { attachments: { select: { mediaType: true, data: true, filename: true } } },
   })
   const history = rows.reverse().slice(0, -1)
+  // The files from the last two messages that had any ride along again, so a
+  // follow-up can still read them. Until 29 Sept 2026 a file was seen on its
+  // own turn only: Brandon sent the Grandpa pop-up sheet, then answered
+  // Mouse's question about which tee "Aqua" was, and Mouse replied "I don't
+  // actually have the sheet's numbers in front of me — can you read those off
+  // for me?" Older files are left out to keep each turn a sensible size.
+  const withFiles = new Set(history.filter((m) => m.role === 'USER' && m.attachments.length).slice(-2).map((m) => m.id))
   return runAgent({
     instruction: message,
     source,
@@ -524,9 +532,16 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
     // so it is the only one whose instruction is read for corrections.
     fromAPerson: true,
     practice,
-    history: history.map((m) => ({
+    history: history.map((m): Anthropic.MessageParam => ({
       role: m.role === 'USER' ? 'user' : 'assistant',
-      content: m.role === 'USER' ? m.content : withActions(stripForgedActions(m.content), m.toolCallsJson),
+      content: m.role !== 'USER'
+        ? withActions(stripForgedActions(m.content), m.toolCallsJson)
+        : withFiles.has(m.id)
+          ? [
+              ...m.attachments.filter((a) => a.data).map((a) => attachmentBlock({ mediaType: a.mediaType, base64: a.data! })),
+              { type: 'text', text: m.content },
+            ]
+          : m.content,
     })),
   })
 }
