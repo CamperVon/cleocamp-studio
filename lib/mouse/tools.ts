@@ -3897,8 +3897,24 @@ export const TOOLS: Record<string, Tool> = {
     run: async (i) => {
       const { checkCancelLiveSale, cancelLiveSale } = await import('@/lib/live-sale')
       const c = await checkCancelLiveSale(String(i.order ?? ''))
-      if (!c) return { done: false, reason: `No Shopify order #${String(i.order).replace(/^#/, '')}. Ask for the number again.` }
-      if (c.blocked) return { done: false, reason: c.blocked }
+      // A mistyped number is the likeliest reason the wrong order comes back:
+      // Brandon, 29 Sept 2026, asked four times to cancel "#2365" (an old web
+      // order) meaning #2635, Jody's unpaid invoice from the same chat. Offer
+      // the unpaid invoice whose number is the same digits, or one digit off.
+      const nearMiss = async () => {
+        const typed = String(i.order ?? '').replace(/\D/g, '')
+        const { unpaidLiveSales } = await import('@/lib/live-sale')
+        const hits = (await unpaidLiveSales()).filter((u) => {
+          const n = u.name.replace(/\D/g, '')
+          if (n === typed || n.length !== typed.length) return false
+          const sameDigits = [...n].sort().join('') === [...typed].sort().join('')
+          const oneOff = [...n].filter((ch, k) => ch !== typed[k]).length === 1
+          return sameDigits || oneOff
+        })
+        return hits.length ? ` Did they mean ${hits.map((h) => `${h.name} (${h.email ?? 'no email'}, $${h.total.toFixed(2)}, unpaid)`).join(' or ')}? Ask, naming it.` : ''
+      }
+      if (!c) return { done: false, reason: `No Shopify order #${String(i.order).replace(/^#/, '')}.${await nearMiss()}` }
+      if (c.blocked) return { done: false, reason: `${c.blocked}${await nearMiss()}` }
       // Items only the app counts came off its count when the invoice went
       // (a MANUAL_ADJUST naming the order); those are what gets put back.
       const sold = await db.inventoryEvent.findMany({
