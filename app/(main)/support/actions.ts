@@ -31,31 +31,63 @@ export async function setCaseStatus(id: string, status: Status) {
  * support (Brandon, 25 Sept 2026: "CS notes to the team should be sent back
  * to jane's email"), unless she wrote it. Replies go to whoever wrote it.
  */
-export async function addCaseNote(id: string, text: string) {
-  if (!text.trim()) return
+/** Who a note can be sent to for review. Brandon, 29 Sept 2026: "flag for cleo or jane". */
+const REVIEWERS = { jane: 'per_jane', cleo: 'per_cleo' } as const
+export type Reviewer = keyof typeof REVIEWERS
+
+/**
+ * A note on a case, and — only when ticked — the case sent to Jane and/or
+ * Cleo for review. Brandon, 29 Sept 2026: "make it a checkbox and then have
+ * the flag email jane or cleo, forwarding the email for their review with a
+ * note from mouse." Until then every note went to Jane automatically.
+ *
+ * The email carries the note, Mouse's summary and the order's state, and the
+ * customer's own latest email below. It goes to team inboxes only; nothing
+ * reaches the customer. Replies go to whoever wrote the note.
+ */
+export async function addCaseNote(id: string, text: string, sendTo: Reviewer[] = []) {
+  const to = [...new Set(sendTo.filter((r) => r in REVIEWERS))]
+  if (!text.trim() && !to.length) return
   const who = await currentPersonId()
   const person = who ? await db.person.findUnique({ where: { id: who }, select: { name: true, email: true } }) : null
+  const body = text.trim() || 'Please take a look.'
   const note = await db.supportMessage.create({
-    data: { caseId: id, direction: 'NOTE', fromAddress: person?.name ?? null, body: text.trim() },
+    data: { caseId: id, direction: 'NOTE', fromAddress: person?.name ?? null, body },
   })
-  const jane = await db.person.findFirst({ where: { email: 'jane@cleocamp.com', active: true }, select: { email: true } })
-  if (jane?.email && person?.email?.toLowerCase() !== jane.email) {
-    const c = await db.supportCase.findUnique({ where: { id }, select: { customerName: true, customerEmail: true, subject: true, shopifyOrderName: true } })
-    if (c) {
-      const who = c.customerName ?? c.customerEmail
-      await sendEmail({
-        to: [jane.email],
+  if (to.length) {
+    // Her own words only, not the quoted thread below them.
+    const { trimQuoted } = await import('@/lib/support/core')
+    const [people, c, last] = await Promise.all([
+      db.person.findMany({ where: { id: { in: to.map((r) => REVIEWERS[r]) }, active: true }, select: { name: true, email: true } }),
+      db.supportCase.findUnique({ where: { id }, select: { customerName: true, customerEmail: true, subject: true, shopifyOrderName: true, summary: true, orderSnapshot: true, draftReply: true, status: true } }),
+      db.supportMessage.findFirst({ where: { caseId: id, direction: 'INBOUND' }, orderBy: { createdAt: 'desc' }, select: { body: true, fromAddress: true, createdAt: true } }),
+    ])
+    // Nobody is emailed their own note.
+    const recipients = people.filter((p) => p.email && p.email.toLowerCase() !== person?.email?.toLowerCase())
+    if (c && recipients.length) {
+      const customer = c.customerName ?? c.customerEmail
+      const o = c.orderSnapshot as { name?: string; createdAt?: string; financialStatus?: string | null; fulfillmentStatus?: string | null; total?: string | null } | null
+      const la = (d: string | Date) => new Date(d).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' })
+      const orderLine = o?.name
+        ? `Order ${o.name}${o.createdAt ? `, placed ${la(o.createdAt)}` : ''}: ${[o.financialStatus, o.fulfillmentStatus].filter(Boolean).join(', ').toLowerCase() || 'status unknown'}${o.total ? `, ${/^[\d.]+ USD$/.test(o.total) ? `$${Number(o.total.split(' ')[0]).toFixed(2)}` : o.total}` : ''}.`
+        : 'No Shopify order is matched to this case.'
+      const draftLine = c.draftReply && c.status !== 'RESOLVED' ? 'Mouse has a reply drafted on the case, waiting for someone to check it and send.' : 'No reply is drafted yet.'
+      const sent = await sendEmail({
+        to: recipients.map((p) => p.email!),
         ...(person?.email ? { replyTo: person.email } : {}),
-        subject: `Support note from ${person?.name ?? 'the team'}: ${who}${c.shopifyOrderName ? ` · ${c.shopifyOrderName}` : ''}`,
+        subject: `For your review: ${customer}${c.shopifyOrderName ? ` · ${c.shopifyOrderName}` : ''}${c.subject ? ` · ${c.subject}` : ''}`,
         text:
-          `${person?.name ?? 'Someone on the team'} left a note on ${who}'s case${c.subject ? ` ("${c.subject}")` : ''}:\n\n` +
-          `${text.trim()}\n\n` +
-          `Open it: https://admin.cleocamp.com/support#${id}\n\n` +
+          `${person?.name ?? 'Someone on the team'} flagged this support case for you:\n\n${body}\n\n` +
+          `From Mouse: ${c.summary ?? 'no summary yet.'}\n${orderLine}\n${draftLine}\n\n` +
+          `Open the case: https://admin.cleocamp.com/support#${id}\n\n` +
+          (last
+            ? `---------- The customer's email ----------\nFrom: ${customer} <${c.customerEmail}>\nDate: ${la(last.createdAt)}\n${c.subject ? `Subject: ${c.subject}\n` : ''}\n${trimQuoted(last.body).text.slice(0, 6000)}\n\n`
+            : '') +
           `Nothing has been sent to the customer.\n— Studio Mouse`,
-      })
-        // Marked only once it went, so the page never shows a note as sent that was not.
-        .then(() => db.supportMessage.update({ where: { id: note.id }, data: { emailedTo: jane.email } }))
-        .catch((e) => console.error('[support] note email failed', e))
+      }).catch((e) => ({ sent: false as const, reason: String(e) }))
+      // Marked only once it went, so the page never shows a note as sent that was not.
+      if (sent.sent) await db.supportMessage.update({ where: { id: note.id }, data: { emailedTo: recipients.map((p) => p.name.split(' ')[0]).join(', ') } })
+      else console.error('[support] review email failed', sent)
     }
   }
   revalidatePath('/support')

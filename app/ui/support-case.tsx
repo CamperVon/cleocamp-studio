@@ -1,5 +1,6 @@
 'use client'
 import { useState, useTransition } from 'react'
+import type { Reviewer } from '@/app/(main)/support/actions'
 import { addCaseNote, applyAddressAndReply, approveReturnRefund, cancelOrderAndReply, flagForReview, markReviewed, quoteCaseRefund, redraftReply, removeUnshippedItem, sendReply, setCaseStatus } from '@/app/(main)/support/actions'
 import { claimsNotYetDone, mentionsDiscount, partlyShipped, refundIssued, unfilled, unshippedLines } from '@/lib/support/reply'
 import { trimQuoted } from '@/lib/support/core'
@@ -15,6 +16,9 @@ type Order = {
 
 
 /** The day an order was placed, in Los Angeles: "Sep 12". Brandon, 29 Sept 2026: show it on the case line. */
+/** Who a note went to. Early notes stored Jane's address; later ones store first names. Pure. */
+const sentTo = (v: string) => (v.includes('@') ? 'Jane' : v)
+
 const orderDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' })
 
 export type CaseView = {
@@ -72,9 +76,11 @@ const day = (iso: string) =>
 export function SupportCase({ c }: { c: CaseView }) {
   const [pending, start] = useTransition()
   const [note, setNote] = useState('')
+  const [reviewers, setReviewers] = useState<Reviewer[]>([])
+  const tick = (r: Reviewer) => setReviewers((cur) => (cur.includes(r) ? cur.filter((x) => x !== r) : [...cur, r]))
 
   const move = (s: CaseView['status']) => start(() => setCaseStatus(c.id, s))
-  // Brandon, 25 Sept 2026: notes emailed to Jane should stand out on the page.
+  // Brandon, 25 Sept 2026: notes emailed to the team should stand out on the page.
   const toJane = c.messages.some((m) => m.emailedTo)
   return (
     <li id={c.id}>
@@ -89,7 +95,7 @@ export function SupportCase({ c }: { c: CaseView }) {
               {c.who}
               <span className="font-normal text-muted"> · {c.category}{c.orderName ? ` · ${c.orderName}` : ''}{c.order?.createdAt ? ` (ordered ${orderDay(c.order.createdAt)})` : ''}{c.draft?.reply && c.status !== 'RESOLVED' ? ' · reply drafted' : ''}</span>
               {c.review ? <span className="ml-1.5 whitespace-nowrap rounded bg-urgent/15 px-1.5 py-0.5 text-[11px] font-medium text-urgent">⚑ For Brandon &amp; Claude</span> : null}
-              {toJane ? <span className="ml-1.5 whitespace-nowrap rounded bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent">★ Note to Jane</span> : null}
+              {toJane ? <span className="ml-1.5 whitespace-nowrap rounded bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent">★ Sent for review</span> : null}
             </p>
             <p className="text-xs leading-snug text-muted">{c.summary ?? c.subject ?? '(no summary)'}</p>
           </div>
@@ -145,7 +151,7 @@ export function SupportCase({ c }: { c: CaseView }) {
               >
                 <p className="mb-1 text-[11px] text-faint">
                   {m.direction === 'NOTE' ? `Note${m.fromAddress ? ` — ${m.fromAddress}` : ''}` : m.direction === 'INBOUND' ? 'Customer' : `Sent${m.fromAddress ? ` — ${m.fromAddress}` : ''}`} · {day(m.at)}
-                  {m.emailedTo ? <span className="ml-1.5 font-medium text-accent">★ Emailed to Jane</span> : null}
+                  {m.emailedTo ? <span className="ml-1.5 font-medium text-accent">★ Emailed to {sentTo(m.emailedTo)}</span> : null}
                 </p>
                 <MessageBody body={m.body} quoted={m.direction === 'INBOUND'} />
               </li>
@@ -182,21 +188,33 @@ export function SupportCase({ c }: { c: CaseView }) {
             )}
           </div>
 
-          <div className="flex gap-2">
-            <input
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Note for the team (emailed to Jane, never to the customer)"
-              className="min-w-0 flex-1 rounded border border-line bg-bg px-2.5 py-1.5 text-sm"
-            />
-            <button
-              type="button"
-              disabled={pending || !note.trim()}
-              onClick={() => start(async () => { await addCaseNote(c.id, note); setNote('') })}
-              className="shrink-0 rounded border border-line px-2.5 py-1.5 text-xs disabled:opacity-40"
-            >
-              Add
-            </button>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex gap-2">
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Note for the team (never goes to the customer)"
+                className="min-w-0 flex-1 rounded border border-line bg-bg px-2.5 py-1.5 text-sm"
+              />
+              <button
+                type="button"
+                disabled={pending || (!note.trim() && !reviewers.length)}
+                onClick={() => start(async () => { await addCaseNote(c.id, note, reviewers); setNote(''); setReviewers([]) })}
+                className="shrink-0 rounded border border-line px-2.5 py-1.5 text-xs disabled:opacity-40"
+              >
+                {reviewers.length ? 'Send' : 'Add'}
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
+              <span>Email for review:</span>
+              {(['jane', 'cleo'] as const).map((r) => (
+                <label key={r} className="flex items-center gap-1.5">
+                  <input type="checkbox" checked={reviewers.includes(r)} onChange={() => tick(r)} className="accent-[var(--color-accent)]" />
+                  {r === 'jane' ? 'Jane' : 'Cleo'}
+                </label>
+              ))}
+            </div>
+            {reviewers.length ? <p className="text-[11px] text-faint">Sends your note, Mouse&apos;s summary and the customer&apos;s email to {reviewers.map((r) => (r === 'jane' ? 'Jane' : 'Cleo')).join(' and ')}.</p> : null}
           </div>
         </div>
       </details>
