@@ -55,3 +55,42 @@ export async function receiveOnPo(
   const owed = after.reduce((n, l) => n + Math.max(0, l.ordered - l.received), 0)
   return { ok: true, message: `Ticked off ${qty} on PO ${poNumber}; ${owed ? `${owed} still owed on the PO` : 'the PO is now fully received'}.` }
 }
+
+/**
+ * Take `qty` back off the PO's line(s) for this item, when a receipt it
+ * ticked off turns out never to have happened. Empties the last line first,
+ * the reverse of how receiveOnPo fills them. Status follows: nothing left
+ * received → SENT, some → PARTIALLY_RECEIVED. On 21 Sept 2026 Brandon said
+ * the 18 Sept Lorena pickup had fallen through; Mouse fixed the notes and
+ * runs and left the stock and the order saying it had arrived.
+ */
+export async function unreceiveOnPo(
+  poNumber: string,
+  item: { productVariantId?: string | null; componentId?: string | null },
+  qty: number,
+): Promise<{ ok: boolean; message: string }> {
+  const po = await db.purchaseOrder.findFirst({ where: { poNumber }, include: { lines: { orderBy: { id: 'asc' } } } })
+  if (!po) return { ok: false, message: `PO ${poNumber} is not on file, so nothing was taken off a PO.` }
+  if (po.status === 'DRAFT' || po.status === 'CANCELLED') return { ok: false, message: `PO ${poNumber} is ${po.status.toLowerCase()}, so nothing was taken off it.` }
+  const lines = po.lines.filter((l) =>
+    (item.productVariantId && l.productVariantId === item.productVariantId) || (item.componentId && l.componentId === item.componentId))
+  if (!lines.length) return { ok: false, message: `This item is not a line on PO ${poNumber}, so nothing was taken off it.` }
+
+  let left = qty
+  const updates: Array<{ id: string; received: number }> = []
+  for (const l of [...lines].reverse()) {
+    const take = Math.min(left, Number(l.qtyReceived))
+    if (take > 0) updates.push({ id: l.id, received: Number(l.qtyReceived) - take })
+    left -= take
+    if (left <= 0) break
+  }
+  if (!updates.length) return { ok: false, message: `PO ${poNumber} had nothing received on this item, so nothing was taken off it.` }
+  const after = po.lines.map((l) => ({ ordered: Number(l.qtyOrdered), received: updates.find((u) => u.id === l.id)?.received ?? Number(l.qtyReceived) }))
+  const status = after.every((l) => l.received >= l.ordered) ? 'RECEIVED' : after.some((l) => l.received > 0) ? 'PARTIALLY_RECEIVED' : 'SENT'
+  await db.$transaction([
+    ...updates.map((u) => db.purchaseOrderLine.update({ where: { id: u.id }, data: { qtyReceived: String(u.received) } })),
+    ...(status !== po.status ? [db.purchaseOrder.update({ where: { id: po.id }, data: { status } })] : []),
+  ])
+  const owed = after.reduce((n, l) => n + Math.max(0, l.ordered - l.received), 0)
+  return { ok: true, message: `Took ${qty - Math.max(0, left)} back off PO ${poNumber}; ${owed} now owed on it.` }
+}

@@ -433,7 +433,11 @@ export const TOOLS: Record<string, Tool> = {
       name: 'correct_inventory_event',
       description:
         'Undo an earlier event. Writes a CORRECTION that nets it out; the original stays ' +
-        'in the ledger. Never edit or delete an event.',
+        'in the ledger. Never edit or delete an event. Reversing a RECEIVED entry also ' +
+        'takes it back off its purchase order. When a person says a delivery or pickup ' +
+        'you logged did not happen ("fell through", "not picked up after all"), THIS is ' +
+        'the fix: find the RECEIVED entries with query_status events and reverse each ' +
+        'one. Fixing the notes and runs alone leaves the goods counted, in Shopify too.',
       input_schema: {
         type: 'object',
         properties: {
@@ -464,6 +468,16 @@ export const TOOLS: Record<string, Tool> = {
         where: { id: r.eventId as string },
         data: { correctsEventId: orig.id },
       })
+      // A receipt that never happened comes back off its PO too, or the order
+      // goes on saying the goods arrived.
+      if (orig.type === 'RECEIVED' && Number(orig.deltaQty) > 0) {
+        const { unreceiveOnPo, poNumberIn } = await import('@/lib/po-receipts')
+        const po = poNumberIn(orig.note)
+        if (po) {
+          const t = await unreceiveOnPo(po, { productVariantId: orig.productVariantId, componentId: orig.componentId }, Number(orig.deltaQty))
+          return { ...r, reversed: orig.id, purchaseOrder: t.message }
+        }
+      }
       return { ...r, reversed: orig.id }
     },
   },
