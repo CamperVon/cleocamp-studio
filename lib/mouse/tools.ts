@@ -1,7 +1,8 @@
+import { currentActor } from '@/lib/mouse/actor'
 import type Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { chooseDeliverTo } from '@/lib/po-deliver-to'
-import { DUPLICATE_WINDOW_MS, isRepeatOf } from '@/lib/inventory-duplicate'
+import { DUPLICATE_WINDOW_MS, SAME_DELIVERY_WINDOW_MS, isRepeatOf, looksLikeSameDelivery } from '@/lib/inventory-duplicate'
 import { laMidnight } from '@/lib/dates'
 import { poLineLabel } from '@/lib/po'
 import { asDocLanguage } from '@/lib/po-strings'
@@ -94,7 +95,7 @@ async function writeEvent(args: {
           data: {
             componentId: args.componentId, deltaQty: String(resolvedDelta),
             countedQty: args.countedQty === undefined ? null : String(args.countedQty),
-            type: args.type as never, source: 'CHAT', note: args.note ?? null,
+            type: args.type as never, source: 'CHAT', note: args.note ?? null, createdById: currentActor(),
           },
         })
         await tx.component.update({ where: { id: args.componentId! }, data: { onHandQty: String(next) } })
@@ -137,7 +138,7 @@ async function writeEvent(args: {
         data: {
           componentId: args.componentId, deltaQty: String(resolvedDelta),
           countedQty: args.countedQty === undefined ? null : String(args.countedQty),
-          type: args.type as never, source: 'CHAT', note: args.note ?? null,
+          type: args.type as never, source: 'CHAT', note: args.note ?? null, createdById: currentActor(),
           locationId, atVendorId,
         },
       })
@@ -265,7 +266,7 @@ async function writeEvent(args: {
         data: {
           id: eventId, productVariantId: args.productVariantId, deltaQty: String(resolvedDelta),
           countedQty: args.countedQty === undefined ? null : String(args.countedQty),
-          type: args.type as never, source: 'CHAT', note: args.note ?? null,
+          type: args.type as never, source: 'CHAT', note: args.note ?? null, createdById: currentActor(),
         },
       })
       await tx.productVariant.update({
@@ -355,10 +356,11 @@ export const TOOLS: Record<string, Tool> = {
           separateDelivery: {
             type: 'boolean' as const,
             description:
-              'Only when this exact change (same item, place, type and quantity) was already ' +
-              'logged in the last day AND the person has told you this is a second, separate ' +
-              'one. Never set it to "make sure" something went through: if you are unsure ' +
-              'whether you logged it, look with query_status events.',
+              'Only after this tool stopped and said it may already be on file (the same change ' +
+              'in the last day, another receipt of the item this week, or more than its PO ' +
+              'still owes) AND the person has told you this is a second, separate one. Never ' +
+              'set it to "make sure" something went through: if you are unsure whether you ' +
+              'logged it, look with query_status events.',
           },
         },
         // deltaQty is deliberately not required here — COUNTED gives
@@ -391,25 +393,51 @@ export const TOOLS: Record<string, Tool> = {
         }
       }
       if (i.separateDelivery !== true && i.type !== 'COUNTED' && typeof i.deltaQty === 'number') {
+        // Anything already on file that this might be: the same change in the
+        // last day, or another receipt of the same item in the last week. Who
+        // logged it is named, so a second person logging the same pickup hears
+        // that Jane already did. Receipts since reversed do not count.
         const recent = await db.inventoryEvent.findMany({
           where: {
             componentId: i.componentId ?? null, productVariantId: i.productVariantId ?? null,
-            type: i.type, createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
+            type: i.type, createdAt: { gte: new Date(Date.now() - Math.max(DUPLICATE_WINDOW_MS, SAME_DELIVERY_WINDOW_MS)) },
+            correctedBy: { none: {} },
           },
           orderBy: { createdAt: 'desc' },
-          select: { id: true, componentId: true, productVariantId: true, locationId: true, atVendorId: true, type: true, deltaQty: true, createdAt: true, note: true },
+          select: { id: true, componentId: true, productVariantId: true, locationId: true, atVendorId: true, type: true, deltaQty: true, createdAt: true, note: true, createdBy: { select: { name: true } } },
         })
-        const same = recent.find((e) => isRepeatOf(i, { ...e, deltaQty: Number(e.deltaQty) }))
-        if (same) {
-          const when = same.createdAt.toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit' })
+        const asKey = (e: (typeof recent)[number]) => ({ ...e, deltaQty: Number(e.deltaQty) })
+        const same = recent.find((e) => isRepeatOf(i, asKey(e)))
+        const earlier = same ?? recent.find((e) => looksLikeSameDelivery(i, asKey(e)))
+        if (earlier) {
+          const when = earlier.createdAt.toLocaleString('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+          const who = earlier.createdBy?.name ?? 'someone (no name on it)'
           return {
             applied: false,
-            duplicateOf: same.id,
+            possibleDuplicateOf: earlier.id,
             error:
-              `Not logged: this exact change (${i.type} ${i.deltaQty}) was already logged for this item at ${when} today ` +
-              `("${same.note ?? ''}"), and applied everywhere it goes, Shopify included. It is DONE; do not log it again. ` +
-              `Tell the person it was already recorded at ${when}. Only if they say this is a second, separate ` +
-              `delivery of the same amount, call again with separateDelivery: true.`,
+              `Not logged yet. ${who} already logged ${i.type} ${Number(earlier.deltaQty)} of this item on ${when} ` +
+              `("${earlier.note ?? ''}"), and it is already applied everywhere it goes. ` +
+              (same ? 'This is the exact same change. ' : 'It may be the same delivery told twice, or told before it happened. ') +
+              `Ask the person, naming that entry: is this the same one, or a second, separate delivery? ` +
+              `Only if they say it is a second one, call again with separateDelivery: true. If they say the ` +
+              `earlier one never happened, reverse it with correct_inventory_event and log this one.`,
+          }
+        }
+      }
+      // More in than the PO still owes means it was probably logged already,
+      // or the PO is wrong. Either way a person should say which.
+      if (i.separateDelivery !== true && i.type === 'RECEIVED' && typeof i.deltaQty === 'number' && i.deltaQty > 0) {
+        const { owedOnPo, poNumberIn } = await import('@/lib/po-receipts')
+        const po = (typeof i.purchaseOrderNumber === 'string' && i.purchaseOrderNumber.replace(/\D/g, '')) || poNumberIn(i.note)
+        const owed = po ? await owedOnPo(po, { productVariantId: i.productVariantId, componentId: i.componentId }) : null
+        if (owed !== null && i.deltaQty > owed) {
+          return {
+            applied: false,
+            error:
+              `Not logged yet. PO ${po} only has ${owed} of this still owed, and this would log ${i.deltaQty} in. ` +
+              `Either some of it was logged already or the vendor sent extra. Ask the person which, naming the PO. ` +
+              `If they confirm these really are ${i.deltaQty} more, call again with separateDelivery: true.`,
           }
         }
       }

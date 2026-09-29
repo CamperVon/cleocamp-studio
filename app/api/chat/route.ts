@@ -1,3 +1,4 @@
+import { asPerson } from '@/lib/mouse/actor'
 import { completedWrites } from '@/lib/mouse/outcomes'
 import { NextResponse, type NextRequest } from 'next/server'
 import { db } from '@/lib/db'
@@ -135,11 +136,11 @@ export async function POST(req: NextRequest) {
     ? `[${person.name}${person.role ? `, ${person.role}` : ''}] ${instruction}`
     : instruction
 
-  const r = await chatTurn(
+  const r = await asPerson(personId, () => chatTurn(
     thread.id,
     authored,
     attachments.map((a) => ({ mediaType: a.mediaType, base64: a.base64, filename: a.filename })),
-  )
+  ))
 
   const saved = await db.chatMessage.create({
     data: {

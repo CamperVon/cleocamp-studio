@@ -40,3 +40,22 @@ export function isRepeatOf(next: EventKey, prior: EventKey & { createdAt: Date }
     Number(next.deltaQty) === Number(prior.deltaQty)
   )
 }
+
+/**
+ * A second receipt of the same item within a week, whatever the amount, is
+ * worth a question before it goes in. On 18 Sept 2026 a Lorena pickup was
+ * logged that never happened; the real one on 22 Sept went in on top of it,
+ * twice, and Shopify showed 9 Black Cleo Bags against 1 in the studio. The
+ * exact-repeat check above only looks back a day and needs the same number.
+ * This does not block for good: a person saying "yes, that's a second lot" is
+ * enough. Receipts already reversed are left out by the caller. Pure.
+ */
+export const SAME_DELIVERY_WINDOW_MS = 7 * 864e5
+
+export function looksLikeSameDelivery(next: EventKey, prior: EventKey & { createdAt: Date }, now = new Date()): boolean {
+  if (next.type !== 'RECEIVED' || prior.type !== 'RECEIVED') return false
+  if (!(Number(next.deltaQty) > 0) || !(Number(prior.deltaQty) > 0)) return false
+  if (now.getTime() - prior.createdAt.getTime() > SAME_DELIVERY_WINDOW_MS) return false
+  return (next.componentId ?? null) === (prior.componentId ?? null) &&
+    (next.productVariantId ?? null) === (prior.productVariantId ?? null)
+}

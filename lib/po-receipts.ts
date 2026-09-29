@@ -94,3 +94,19 @@ export async function unreceiveOnPo(
   const owed = after.reduce((n, l) => n + Math.max(0, l.ordered - l.received), 0)
   return { ok: true, message: `Took ${qty - Math.max(0, left)} back off PO ${poNumber}; ${owed} now owed on it.` }
 }
+
+/**
+ * How many of this item the PO still owes, or null when that cannot be said
+ * (no such PO, a draft or cancelled one, or the item is not a line on it).
+ */
+export async function owedOnPo(
+  poNumber: string,
+  item: { productVariantId?: string | null; componentId?: string | null },
+): Promise<number | null> {
+  const po = await db.purchaseOrder.findFirst({ where: { poNumber }, include: { lines: true } })
+  if (!po || po.status === 'DRAFT' || po.status === 'CANCELLED') return null
+  const lines = po.lines.filter((l) =>
+    (item.productVariantId && l.productVariantId === item.productVariantId) || (item.componentId && l.componentId === item.componentId))
+  if (!lines.length) return null
+  return lines.reduce((n, l) => n + Math.max(0, Number(l.qtyOrdered) - Number(l.qtyReceived)), 0)
+}
