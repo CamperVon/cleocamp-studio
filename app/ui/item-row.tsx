@@ -9,9 +9,11 @@ import { Chip } from './primitives'
  * takes one tap, because a list you cannot clear stops being read.
  */
 export function ItemRow({
-  id, kind, title, detail, due, yes,
+  id, kind, title, detail, due, yes, plain,
 }: {
   id: string; kind: string; title: string; detail: string | null; due?: string | null
+  /** No ask/do chip: on a page where every row is the same kind (the Stylists page). */
+  plain?: boolean
   /** A one-tap answer, e.g. "Yes, add it" on the Stylists page: the label, and the answer it sends. */
   yes?: { label: string; answer: string }
 }) {
@@ -42,7 +44,7 @@ export function ItemRow({
     <li>
       <details className="group">
         <summary className="flex cursor-pointer items-center gap-2.5 px-4 py-2 hover:bg-sunk sm:px-5">
-          <Chip tone={kind === 'TODO' ? 'accent' : 'neutral'}>{kind === 'TODO' ? 'do' : 'ask'}</Chip>
+          {plain ? null : <Chip tone={kind === 'TODO' ? 'accent' : 'neutral'}>{kind === 'TODO' ? 'do' : 'ask'}</Chip>}
           <p className="min-w-0 flex-1 truncate text-sm">{title}</p>
           {due ? <span className="shrink-0 text-xs text-warn">{due}</span> : null}
         </summary>
