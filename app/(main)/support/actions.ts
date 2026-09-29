@@ -32,7 +32,7 @@ export async function setCaseStatus(id: string, status: Status) {
  * to jane's email"), unless she wrote it. Replies go to whoever wrote it.
  */
 /** Who a note can be sent to for review. Brandon, 29 Sept 2026: "flag for cleo or jane". */
-const REVIEWERS = { jane: 'per_jane', cleo: 'per_cleo' } as const
+const REVIEWERS = { jane: 'per_jane', cleo: 'per_cleo', brandon: 'per_brandon' } as const
 export type Reviewer = keyof typeof REVIEWERS
 
 /**

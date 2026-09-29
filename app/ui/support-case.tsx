@@ -18,6 +18,7 @@ type Order = {
 /** The day an order was placed, in Los Angeles: "Sep 12". Brandon, 29 Sept 2026: show it on the case line. */
 /** Who a note went to. Early notes stored Jane's address; later ones store first names. Pure. */
 const sentTo = (v: string) => (v.includes('@') ? 'Jane' : v)
+const NAME: Record<Reviewer, string> = { jane: 'Jane', cleo: 'Cleo', brandon: 'Brandon' }
 
 const orderDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' })
 
@@ -207,14 +208,14 @@ export function SupportCase({ c }: { c: CaseView }) {
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
               <span>Email for review:</span>
-              {(['jane', 'cleo'] as const).map((r) => (
+              {(['jane', 'cleo', 'brandon'] as const).map((r) => (
                 <label key={r} className="flex items-center gap-1.5">
                   <input type="checkbox" checked={reviewers.includes(r)} onChange={() => tick(r)} className="accent-[var(--color-accent)]" />
-                  {r === 'jane' ? 'Jane' : 'Cleo'}
+                  {NAME[r]}
                 </label>
               ))}
             </div>
-            {reviewers.length ? <p className="text-[11px] text-faint">Sends your note, Mouse&apos;s summary and the customer&apos;s email to {reviewers.map((r) => (r === 'jane' ? 'Jane' : 'Cleo')).join(' and ')}.</p> : null}
+            {reviewers.length ? <p className="text-[11px] text-faint">Sends your note, Mouse&apos;s summary and the customer&apos;s email to {reviewers.map((r) => NAME[r]).join(' and ')}.</p> : null}
           </div>
         </div>
       </details>
