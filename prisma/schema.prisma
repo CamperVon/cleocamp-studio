@@ -1057,6 +1057,9 @@ model InboundEmail {
   /// thinks failed, and a retry must not send the same mail twice. Claimed
   /// with a conditional update, so two concurrent deliveries cannot both win.
   forwardedAt DateTime?
+  /// When Mouse emailed an answer to a question in this mail. Claimed
+  /// before the reply is written, so two passes can never answer it twice.
+  answeredAt  DateTime?
   createdAt   DateTime  @default(now())
 
   @@index([processedAt, receivedAt])

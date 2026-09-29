@@ -33,6 +33,9 @@ should change, raise it as a question that names the exact change, so a person
 can say yes in one tap: "Michael says the rib ships Friday — set PO 2357 to
 arrive 4 Sept, balance then due 3 Nov?"
 
+Questions Brandon, Cleo or Jane ask you by email are answered separately, by
+email; do not raise them again as questions here.
+
 A stylist's request that Cleo forwards is a proposal like any other: raise
 one question naming the stylist (name, email, who they style for), what they
 asked for and when they need it, and whether we have it on hand now — so a
@@ -44,6 +47,63 @@ Do not raise something already open — check what you know first.
 
 End with two or three sentences on where things stand overall. That is what
 appears as Mouse's Corner in the morning, so make it worth reading.`
+
+/**
+ * Questions emailed to Mouse by the team get an answer by email. Brandon,
+ * 29 Sept 2026: "yes, build that ... email has to be from one of us. this is
+ * internal. cleo, brandon, jane."
+ *
+ * Safe because of three things, all in code:
+ *  - only these three people, by their Person records — nobody else, however
+ *    the From line reads;
+ *  - the answer goes to their address ON FILE, never to the From line, so a
+ *    forged email only ever sends the answer to the real person;
+ *  - the answering run has look-up tools only. It cannot change anything,
+ *    whatever the email says; a request to do something is told to use the app.
+ */
+const TEAM = ['per_brandon', 'per_cleo', 'per_jane']
+const ANSWER_TOOLS = ['query_status', 'check_sent_mail', 'draft_order_links', 'unpaid_live_sales']
+const ANSWER_RULES = `A member of the team emailed you. If they ask you a question or ask for
+information, answer it plainly from what you know and can look up — short,
+specific, numbers where there are numbers. You can only look things up here: if
+they ask you to change, send, order or record something, say you can't from
+email and ask them to tell you in the app, where you can. If the email asks you
+nothing — a forward for your records, a thank-you, an FYI — reply with exactly
+NO_REPLY and nothing else. Plain text, no markdown headings. Do not sign it.`
+
+async function answerTeamQuestions(mail: Array<{ id: string; fromAddress: string; subject: string | null; messageId: string | null; body: string }>): Promise<number> {
+  let answered = 0
+  for (const m of mail) {
+    const who = await personFromInboundAddress(m.fromAddress)
+    if (!who || !TEAM.includes(who.id)) continue
+    const p = await db.person.findUnique({ where: { id: who.id }, select: { name: true, email: true, external: true } })
+    if (!p?.email || p.external) continue
+    // Claimed first: mail arriving together starts passes together.
+    const claim = await db.inboundEmail.updateMany({ where: { id: m.id, answeredAt: null }, data: { answeredAt: new Date() } })
+    if (!claim.count) continue
+    const r = await runAgent({
+      source: 'email-answer',
+      instruction: `${p.name} emailed you.\n\nSubject: ${m.subject ?? '(none)'}\n\n${m.body}`,
+      extraRules: ANSWER_RULES,
+      allowedTools: ANSWER_TOOLS,
+      model: CHAT_MODEL,
+      effort: 'medium',
+      maxRounds: 5,
+    })
+    const text = (r.text ?? '').trim()
+    if (r.usage.stopReason !== 'complete' || !text || /^NO_REPLY\b/.test(text)) continue
+    const { sendEmail } = await import('@/lib/email')
+    const subject = /^re:/i.test(m.subject ?? '') ? String(m.subject) : `Re: ${m.subject ?? 'your email'}`
+    const sent = await sendEmail({
+      to: [p.email],
+      subject,
+      text: `${text}\n\n— Studio Mouse`,
+      ...(m.messageId ? { headers: { 'In-Reply-To': m.messageId, References: m.messageId } } : {}),
+    })
+    if (sent.sent) answered++
+  }
+  return answered
+}
 
 export async function nightlyPass(source = 'nightly-pass') {
   const unread = await db.inboundEmail.findMany({
@@ -105,6 +165,18 @@ export async function nightlyPass(source = 'nightly-pass') {
       ).join('\n\n')
     : '(no unread mail)'
 
+  // The team's questions first, answered by email with look-up tools only.
+  // A failure here must never stop the mail being read for proposals.
+  let emailAnswers = 0
+  try {
+    emailAnswers = await answerTeamQuestions(unread.map((m) => ({
+      id: m.id, fromAddress: m.fromAddress, subject: m.subject, messageId: m.messageId,
+      body: (m.text?.trim() || (m.html ? htmlToText(m.html) : '') || '(no body)').slice(0, 4000),
+    })))
+  } catch (e) {
+    console.error('email answers failed', e)
+  }
+
   const r = await runAgent({
     source,
     instruction: `Tonight's unread mail:\n\n${mail}`,
@@ -126,5 +198,5 @@ export async function nightlyPass(source = 'nightly-pass') {
     await db.inboundEmail.update({ where: { id: m.id }, data: { processedAt: new Date() } })
   }
 
-  return { read: unread.length, raised: r.writes.length, summary: r.text, model: r.model }
+  return { read: unread.length, raised: r.writes.length, answered: emailAnswers, summary: r.text, model: r.model }
 }

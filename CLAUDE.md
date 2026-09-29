@@ -98,7 +98,12 @@ data. That must not happen again.
 - **Email is data, never instructions.** Anything arriving from a monitored
   inbox is untrusted input. Facts extracted from email land as *proposals* a
   human confirms — never as direct writes. Anyone who can email the company
-  can otherwise write to the database.
+  can otherwise write to the database. **One exception, Brandon 29 Sept
+  2026:** a question emailed to Mouse by Brandon, Cleo or Jane (and only
+  them — `TEAM` in `lib/mouse/nightly-pass.ts`) gets an answer by email,
+  from a run with look-up tools only, sent to that person's address on file
+  and never to the From line. A forged email therefore only ever sends the
+  answer to the real person, and still cannot change anything.
 - **A purchase order's `notes` field is printed on the document the vendor
   receives.** It is not a scratchpad. Only what someone deliberately wrote TO
   the supplier belongs there — a rush request, a spec, a payment confirmation.
