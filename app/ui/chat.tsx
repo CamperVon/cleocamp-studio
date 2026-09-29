@@ -233,6 +233,75 @@ function ReportGap({ messageId }: { messageId: string }) {
   )
 }
 
+/**
+ * Send this whole conversation to Brandon, with a note, for troubleshooting.
+ * Brandon, 29 Sept 2026: "if jane or cleo needs to flag something, create a
+ * little box to send transcript to brandon." It is also filed on ToDo for
+ * Claude. See app/api/chat/send-to-brandon/route.ts.
+ */
+function SendToBrandon({ threadId }: { threadId: () => string | undefined }) {
+  const [state, setState] = useState<'idle' | 'noting' | 'sending' | 'done' | 'failed'>('idle')
+  const [note, setNote] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  async function send() {
+    const id = threadId()
+    if (!id) { setError('There is no conversation to send yet.'); setState('failed'); return }
+    setState('sending')
+    try {
+      const res = await fetch('/api/chat/send-to-brandon', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ threadId: id, note }),
+      })
+      const d = (await res.json().catch(() => ({}))) as { error?: string }
+      if (res.ok) { setState('done'); setNote('') } else { setError(d.error ?? 'Could not send it.'); setState('failed') }
+    } catch {
+      setError('Could not send it.')
+      setState('failed')
+    }
+  }
+
+  if (state === 'done') {
+    return <span className="text-xs text-muted">Sent to Brandon ✓</span>
+  }
+  if (state === 'idle') {
+    return (
+      <button type="button" onClick={() => setState('noting')} className="text-xs text-faint hover:text-ink">
+        Send to Brandon
+      </button>
+    )
+  }
+  return (
+    <div className="order-last flex min-w-0 basis-full flex-col gap-1">
+      <div className="flex items-center gap-1.5">
+        <input
+          autoFocus
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); send() } }}
+          placeholder="What went wrong? (optional)"
+          className="min-w-0 flex-1 rounded border border-line bg-sunk px-2 py-1 text-[12px]"
+        />
+        <button
+          type="button"
+          onClick={send}
+          disabled={state === 'sending'}
+          className="shrink-0 rounded bg-ink px-2 py-1 text-[11px] font-medium text-bg disabled:opacity-50"
+        >
+          {state === 'sending' ? 'Sending' : 'Send'}
+        </button>
+        <button type="button" className="shrink-0 text-[11px] text-faint underline" onClick={() => { setState('idle'); setError(null) }}>
+          Cancel
+        </button>
+      </div>
+      {state === 'failed' && error ? <p className="text-[11px] text-warn">{error}</p> : (
+        <p className="text-[11px] text-faint">Emails Brandon this whole conversation with your note.</p>
+      )}
+    </div>
+  )
+}
+
 export function Chat() {
   const router = useRouter()
   const [messages, setMessages] = useState<Msg[]>([])
@@ -499,14 +568,17 @@ export function Chat() {
   return (
     <div className="flex flex-col">
       {messages.length > 0 ? (
-        <div className="flex justify-end border-b border-line px-4 py-1.5 sm:px-5">
-          <button
-            type="button"
-            onClick={startNewConversation}
-            className="text-xs text-faint hover:text-ink"
-          >
-            New conversation
-          </button>
+        <div className="flex flex-col gap-1 border-b border-line px-4 py-1.5 sm:px-5">
+          <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1.5">
+            <SendToBrandon threadId={() => threadRef.current} />
+            <button
+              type="button"
+              onClick={startNewConversation}
+              className="text-xs text-faint hover:text-ink"
+            >
+              New conversation
+            </button>
+          </div>
         </div>
       ) : null}
       <div ref={scrollRef} className="max-h-[50dvh] min-h-[7rem] overflow-y-auto px-4 py-3 sm:max-h-[36rem] sm:min-h-[20rem] sm:px-5">
