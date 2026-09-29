@@ -14,7 +14,8 @@ export function ReturnIntake({ orderName, compact }: { orderName?: string; compa
   const [num, setNum] = useState(orderName ?? '')
   const [found, setFound] = useState<Extract<ReturnLookup, { ok: true }> | null>(null)
   const [qty, setQty] = useState<Record<string, number>>({})
-  const [kind, setKind] = useState<'REFUND' | 'EXCHANGE'>('REFUND')
+  // A refund on our mistake (wrong item, damaged, faulty) keeps no restocking fee. Brandon, 29 Sept 2026.
+  const [kind, setKind] = useState<'REFUND' | 'REFUND_OURS' | 'EXCHANGE'>('REFUND')
   const [msg, setMsg] = useState<{ text: string; bad: boolean; caseId?: string } | null>(null)
   const [pending, start] = useTransition()
 
@@ -28,10 +29,10 @@ export function ReturnIntake({ orderName, compact }: { orderName?: string; compa
   })
   const receive = () => start(async () => {
     if (!found) return
-    const r = await receiveReturn({ orderName: found.order.name, kind, lines: found.order.items.map((i) => ({ lineItemId: i.id, quantity: qty[i.id] ?? 0 })) })
+    const r = await receiveReturn({ orderName: found.order.name, kind: kind === 'EXCHANGE' ? 'EXCHANGE' : 'REFUND', ourMistake: kind === 'REFUND_OURS', lines: found.order.items.map((i) => ({ lineItemId: i.id, quantity: qty[i.id] ?? 0 })) })
     if (!r.ok) { setMsg({ text: r.error, bad: true }); return }
     setMsg({
-      text: kind === 'REFUND'
+      text: kind !== 'EXCHANGE'
         ? `${found.order.name}: received and the customer emailed. The refund waits on the case for someone to approve.`
         : `${found.order.name}: received, the customer emailed, and the case closed. Send the replacement.`,
       bad: false, caseId: r.caseId,
@@ -83,8 +84,9 @@ export function ReturnIntake({ orderName, compact }: { orderName?: string; compa
               </li>
             ))}
           </ul>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
             <label className="flex items-center gap-1.5"><input type="radio" checked={kind === 'REFUND'} onChange={() => setKind('REFUND')} /> Refund (10% fee)</label>
+            <label className="flex items-center gap-1.5"><input type="radio" checked={kind === 'REFUND_OURS'} onChange={() => setKind('REFUND_OURS')} /> Refund, our mistake (no fee)</label>
             <label className="flex items-center gap-1.5"><input type="radio" checked={kind === 'EXCHANGE'} onChange={() => setKind('EXCHANGE')} /> Exchange</label>
           </div>
           <button type="button" onClick={receive} disabled={pending || !any} className="self-start rounded bg-accent px-3 py-1.5 text-sm font-medium text-bg disabled:opacity-40">

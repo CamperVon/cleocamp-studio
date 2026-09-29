@@ -25,3 +25,14 @@ test('the customer emails are fixed text that says what happens next', () => {
   assert.doesNotMatch(returnReceivedText(null, { orderName: '#2237', kind: 'EXCHANGE', lines }), /fee/)
   assert.match(returnRefundedText('Elisabeth', '#2237', { refund: 87.78, fee: 8.8 }), /refunded \$87\.78 .* \(\$8\.80\)/)
 })
+
+test('no restocking fee when the mistake was ours', () => {
+  assert.deepEqual(refundLessFee(96.58, 88, true), { fee: 0, refund: 96.58 })
+  const lines = [{ lineItemId: 'gid://shopify/LineItem/1', quantity: 1, label: 'Cleo Tee Black / 1' }]
+  const r = returnReceivedText('Marjan', { orderName: '#2104', kind: 'REFUND', lines, ourMistake: true })
+  assert.match(r, /in full, with no restocking fee/)
+  assert.doesNotMatch(r, /10%/)
+  const done = returnRefundedText('Marjan', '#2104', { refund: 132.99, fee: 0 })
+  assert.match(done, /refunded \$132\.99 .* no restocking fee/)
+  assert.doesNotMatch(done, /less/)
+})

@@ -32,13 +32,19 @@ export type ReturnInfo = {
   refundedAt?: string
   refunded?: number
   fee?: number
+  /**
+   * We sent the wrong item, or it arrived damaged or faulty: no restocking
+   * fee (Brandon, 29 Sept 2026). Chosen by a person, at the parcel or at the
+   * refund; never inferred.
+   */
+  ourMistake?: boolean
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
-/** The fee kept and the amount refunded, from Shopify's own figures. Pure. */
-export function refundLessFee(suggestedTotal: number, itemsSubtotal: number): { fee: number; refund: number } {
-  const fee = round2(itemsSubtotal * RESTOCKING_FEE)
+/** The fee kept and the amount refunded, from Shopify's own figures. No fee when the mistake was ours. Pure. */
+export function refundLessFee(suggestedTotal: number, itemsSubtotal: number, ourMistake = false): { fee: number; refund: number } {
+  const fee = ourMistake ? 0 : round2(itemsSubtotal * RESTOCKING_FEE)
   return { fee, refund: round2(Math.max(0, suggestedTotal - fee)) }
 }
 
@@ -108,10 +114,10 @@ async function suggest(orderId: string, lines: ReturnLine[], locationId: string)
 export type RefundQuote = { itemsSubtotal: number; tax: number; fee: number; refund: number }
 
 /** What the refund will be. Changes nothing. */
-export async function quoteReturnRefund(orderId: string, lines: ReturnLine[], locationId: string): Promise<RefundQuote> {
+export async function quoteReturnRefund(orderId: string, lines: ReturnLine[], locationId: string, ourMistake = false): Promise<RefundQuote> {
   const s = await suggest(orderId, lines, locationId)
   const itemsSubtotal = Number(s.subtotalSet.shopMoney.amount)
-  const { fee, refund } = refundLessFee(Number(s.amountSet.shopMoney.amount), itemsSubtotal)
+  const { fee, refund } = refundLessFee(Number(s.amountSet.shopMoney.amount), itemsSubtotal, ourMistake)
   return { itemsSubtotal, tax: Number(s.totalTaxSet.shopMoney.amount), fee, refund }
 }
 
@@ -120,10 +126,10 @@ export async function quoteReturnRefund(orderId: string, lines: ReturnLine[], lo
  * stock. The idempotency key is the order and the case, so a second tap is
  * the same refund to Shopify and cannot pay out twice.
  */
-export async function refundReturn(orderId: string, lines: ReturnLine[], locationId: string, key: string, note: string): Promise<RefundQuote> {
+export async function refundReturn(orderId: string, lines: ReturnLine[], locationId: string, key: string, note: string, ourMistake = false): Promise<RefundQuote> {
   const s = await suggest(orderId, lines, locationId)
   const itemsSubtotal = Number(s.subtotalSet.shopMoney.amount)
-  const { fee, refund } = refundLessFee(Number(s.amountSet.shopMoney.amount), itemsSubtotal)
+  const { fee, refund } = refundLessFee(Number(s.amountSet.shopMoney.amount), itemsSubtotal, ourMistake)
   const paid = s.suggestedTransactions.filter((t) => Number(t.amountSet.shopMoney.amount) > 0)
   if (paid.length !== 1 || !paid[0].parentTransaction) {
     throw new Error('This order was paid in more than one way, so the refund has to be split by hand in Shopify.')
@@ -146,14 +152,19 @@ export async function refundReturn(orderId: string, lines: ReturnLine[], locatio
 const listOf = (lines: ReturnLine[]) => lines.map((l) => `${l.quantity > 1 ? `${l.quantity} × ` : ''}${l.label}`).join(', ')
 
 /** Fixed text, not a model's: what the customer hears when the parcel lands. Pure. */
-export function returnReceivedText(firstName: string | null, info: Pick<ReturnInfo, 'orderName' | 'kind' | 'lines'>): string {
+export function returnReceivedText(firstName: string | null, info: Pick<ReturnInfo, 'orderName' | 'kind' | 'lines' | 'ourMistake'>): string {
   const next = info.kind === 'REFUND'
-    ? "We'll check it over and refund it to your original payment, less the 10% restocking fee. You'll get another email from us when that's done."
+    ? info.ourMistake
+      ? "We'll refund it to your original payment in full, with no restocking fee since the mistake was ours. You'll get another email from us when that's done."
+      : "We'll check it over and refund it to your original payment, less the 10% restocking fee. You'll get another email from us when that's done."
     : "We'll send your replacement out and let you know when it's on its way."
   return `Hi ${firstName ?? 'there'},\n\nYour return for order ${info.orderName} (${listOf(info.lines)}) has arrived at the studio. ${next}\n\nKindly,\nCleo Studio`
 }
 
 /** Fixed text: the refund has been issued. Pure. */
 export function returnRefundedText(firstName: string | null, orderName: string, q: Pick<RefundQuote, 'refund' | 'fee'>): string {
+  if (q.fee === 0) {
+    return `Hi ${firstName ?? 'there'},\n\nWe've refunded $${q.refund.toFixed(2)} for your return on order ${orderName} to your original payment, with no restocking fee. It can take a few days to show on your statement.\n\nKindly,\nCleo Studio`
+  }
   return `Hi ${firstName ?? 'there'},\n\nWe've refunded $${q.refund.toFixed(2)} for your return on order ${orderName} to your original payment, less the 10% restocking fee ($${q.fee.toFixed(2)}). It can take a few days to show on your statement.\n\nKindly,\nCleo Studio`
 }

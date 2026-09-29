@@ -592,6 +592,8 @@ export async function receiveReturn(input: {
   orderName: string
   lines: Array<{ lineItemId: string; quantity: number }>
   kind: 'REFUND' | 'EXCHANGE'
+  /** We sent the wrong item or it was faulty: no restocking fee. A person's choice. */
+  ourMistake?: boolean
 }): Promise<Result & { caseId?: string }> {
   const who = await approver()
   if (!who) return { ok: false, error: 'Sign in again — only the team can do this.' }
@@ -624,13 +626,14 @@ export async function receiveReturn(input: {
     })
     caseId = c.id
   }
-  const info = { orderId: order.id, orderName: order.name, kind: input.kind, lines, receivedAt: new Date().toISOString(), receivedBy: who.name }
+  const ourMistake = input.kind === 'REFUND' && input.ourMistake === true
+  const info = { orderId: order.id, orderName: order.name, kind: input.kind, lines, receivedAt: new Date().toISOString(), receivedBy: who.name, ...(ourMistake ? { ourMistake } : {}) }
   await db.$transaction([
     db.supportCase.update({ where: { id: caseId }, data: { returnInfo: info as unknown as Prisma.InputJsonValue } }),
     db.supportMessage.create({
       data: {
         caseId, direction: 'NOTE', fromAddress: who.name,
-        body: `Return received at the studio: ${lines.map((l) => `${l.quantity} × ${l.label}`).join(', ')}. ${input.kind === 'REFUND' ? 'Refund to approve once it has been checked.' : 'Exchange: send the replacement.'}`,
+        body: `Return received at the studio: ${lines.map((l) => `${l.quantity} × ${l.label}`).join(', ')}. ${input.kind === 'REFUND' ? `Refund to approve once it has been checked${ourMistake ? ', in full: our mistake, no restocking fee' : ''}.` : 'Exchange: send the replacement.'}`,
       },
     }),
   ])
@@ -652,7 +655,7 @@ async function studioLocation(): Promise<string | null> {
 }
 
 /** What approving the refund on this case would pay back. Changes nothing. */
-export async function quoteCaseRefund(caseId: string): Promise<{ ok: true; refund: number; fee: number } | { ok: false; error: string }> {
+export async function quoteCaseRefund(caseId: string, ourMistake = false): Promise<{ ok: true; refund: number; fee: number } | { ok: false; error: string }> {
   if (!(await approver())) return { ok: false, error: 'Sign in again — only the team can do this.' }
   const c = await db.supportCase.findUnique({ where: { id: caseId } })
   const info = c?.returnInfo as import('@/lib/returns').ReturnInfo | null
@@ -661,15 +664,15 @@ export async function quoteCaseRefund(caseId: string): Promise<{ ok: true; refun
   if (!loc) return { ok: false, error: 'The studio has no Shopify location on record.' }
   const { quoteReturnRefund } = await import('@/lib/returns')
   try {
-    const q = await quoteReturnRefund(info.orderId, info.lines, loc)
+    const q = await quoteReturnRefund(info.orderId, info.lines, loc, ourMistake)
     return { ok: true, refund: q.refund, fee: q.fee }
   } catch (e) {
     return { ok: false, error: `Shopify could not work it out: ${e instanceof Error ? e.message.slice(0, 160) : String(e)}` }
   }
 }
 
-/** Approved: refund less the fee, restock, email the customer, close. */
-export async function approveReturnRefund(caseId: string): Promise<Result> {
+/** Approved: refund less the fee (none when the mistake was ours), restock, email the customer, close. */
+export async function approveReturnRefund(caseId: string, ourMistake = false): Promise<Result> {
   const who = await approver()
   if (!who) return { ok: false, error: 'Sign in again — only the team can do this.' }
   const c = await db.supportCase.findUnique({ where: { id: caseId } })
@@ -681,12 +684,16 @@ export async function approveReturnRefund(caseId: string): Promise<Result> {
   const { refundReturn, returnRefundedText } = await import('@/lib/returns')
   let q
   try {
-    q = await refundReturn(info.orderId, info.lines, loc, `return-${info.orderId.split('/').pop()}-${caseId}`, `Return, less 10% restocking fee. Approved by ${who.name} in the Studio app.`)
+    q = await refundReturn(
+      info.orderId, info.lines, loc, `return-${info.orderId.split('/').pop()}-${caseId}`,
+      `Return, ${ourMistake ? 'in full (our mistake, no restocking fee)' : 'less 10% restocking fee'}. Approved by ${who.name} in the Studio app.`,
+      ourMistake,
+    )
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return { ok: false, error: /access|scope|denied|permission/i.test(msg) ? await permissionError('refund this return', 'write_orders', msg) : `Shopify refused: ${msg.slice(0, 200)}. Nothing was sent.` }
   }
-  const done = { ...info, refundedAt: new Date().toISOString(), refunded: q.refund, fee: q.fee }
+  const done = { ...info, refundedAt: new Date().toISOString(), refunded: q.refund, fee: q.fee, ourMistake }
   const now = await freshOrder(info.orderId).catch(() => null)
   await db.$transaction([
     db.supportCase.update({
@@ -694,7 +701,7 @@ export async function approveReturnRefund(caseId: string): Promise<Result> {
       data: { returnInfo: done as unknown as Prisma.InputJsonValue, ...(now ? { orderSnapshot: now as unknown as Prisma.InputJsonValue } : {}) },
     }),
     db.supportMessage.create({
-      data: { caseId, direction: 'NOTE', fromAddress: who.name, body: `Refunded $${q.refund.toFixed(2)} in Shopify (10% restocking fee of $${q.fee.toFixed(2)} kept); items back in the studio's stock.` },
+      data: { caseId, direction: 'NOTE', fromAddress: who.name, body: `Refunded $${q.refund.toFixed(2)} in Shopify (${ourMistake ? 'in full, our mistake, no restocking fee' : `10% restocking fee of $${q.fee.toFixed(2)} kept`}); items back in the studio's stock.` },
     }),
   ])
   const sent = await sendReply(caseId, returnRefundedText(c.customerName, info.orderName, q))

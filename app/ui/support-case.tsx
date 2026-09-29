@@ -35,7 +35,7 @@ export type CaseView = {
   /** A return that reached the studio, if any. See lib/returns.ts. */
   returnInfo: {
     orderName: string; kind: 'REFUND' | 'EXCHANGE'; receivedAt: string; receivedBy: string
-    lines: Array<{ label: string; quantity: number }>; refundedAt?: string; refunded?: number; fee?: number
+    lines: Array<{ label: string; quantity: number }>; refundedAt?: string; refunded?: number; fee?: number; ourMistake?: boolean
   } | null
   /** Open flag for Brandon & Claude, if any. */
   review: { by: string | null; reason: string; at: string } | null
@@ -565,6 +565,9 @@ function ReviewFlag({ c }: { c: CaseView }) {
 function ReturnBox({ c }: { c: CaseView }) {
   const r = c.returnInfo!
   const [quote, setQuote] = useState<{ refund: number; fee: number } | null>(null)
+  // Ticked to start with when the parcel was booked in as our mistake, or the
+  // case is about a wrong or damaged item. A person decides before any money moves.
+  const [ours, setOurs] = useState(r.ourMistake ?? (c.category === 'WRONG_ITEM' || c.category === 'DAMAGED'))
   const [msg, setMsg] = useState<{ text: string; bad: boolean } | null>(null)
   const [pending, start] = useTransition()
   const what = r.lines.map((l) => `${l.quantity} × ${l.label}`).join(', ')
@@ -572,28 +575,34 @@ function ReturnBox({ c }: { c: CaseView }) {
     <div className="flex flex-col gap-1.5 rounded border border-line bg-bg px-3 py-2 text-xs">
       <p>
         <span className="font-medium">Return received</span> {r.receivedAt.slice(0, 10)} by {r.receivedBy}: {what}.{' '}
-        {r.kind === 'EXCHANGE' ? 'Exchange.' : r.refundedAt ? `Refunded $${r.refunded?.toFixed(2)} (fee $${r.fee?.toFixed(2)} kept) on ${r.refundedAt.slice(0, 10)}.` : 'Refund waiting for approval.'}
+        {r.kind === 'EXCHANGE' ? 'Exchange.' : r.refundedAt ? `Refunded $${r.refunded?.toFixed(2)} (${r.fee ? `fee $${r.fee.toFixed(2)} kept` : 'no restocking fee'}) on ${r.refundedAt.slice(0, 10)}.` : 'Refund waiting for approval.'}
       </p>
       {r.kind === 'REFUND' && !r.refundedAt ? (
         quote ? (
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button" disabled={pending}
-              onClick={() => start(async () => { const x = await approveReturnRefund(c.id); setMsg(x.ok ? { text: 'Refunded and the customer emailed.', bad: false } : { text: x.error, bad: true }) })}
+              onClick={() => start(async () => { const x = await approveReturnRefund(c.id, ours); setMsg(x.ok ? { text: 'Refunded and the customer emailed.', bad: false } : { text: x.error, bad: true }) })}
               className="rounded bg-accent px-2.5 py-1.5 font-medium text-bg disabled:opacity-40"
             >
               {pending ? 'Refunding…' : `Refund $${quote.refund.toFixed(2)} & email`}
             </button>
-            <span className="text-muted">10% restocking fee of ${quote.fee.toFixed(2)} kept; items go back into studio stock.</span>
+            <span className="text-muted">{quote.fee ? `10% restocking fee of $${quote.fee.toFixed(2)} kept` : 'No restocking fee (our mistake)'}; items go back into studio stock.</span>
           </div>
         ) : (
-          <button
-            type="button" disabled={pending}
-            onClick={() => start(async () => { const x = await quoteCaseRefund(c.id); if (x.ok) setQuote(x); else setMsg({ text: x.error, bad: true }) })}
-            className="self-start rounded border border-line px-2.5 py-1.5 font-medium"
-          >
-            {pending ? 'Working it out…' : 'Checked it — work out the refund'}
-          </button>
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-center gap-1.5 text-muted">
+              <input type="checkbox" checked={ours} onChange={() => setOurs(!ours)} className="accent-[var(--color-accent)]" />
+              Our mistake (wrong item, damaged or faulty): no restocking fee
+            </label>
+            <button
+              type="button" disabled={pending}
+              onClick={() => start(async () => { const x = await quoteCaseRefund(c.id, ours); if (x.ok) setQuote(x); else setMsg({ text: x.error, bad: true }) })}
+              className="self-start rounded border border-line px-2.5 py-1.5 font-medium"
+            >
+              {pending ? 'Working it out…' : 'Checked it — work out the refund'}
+            </button>
+          </div>
         )
       ) : null}
       {msg ? <p className={msg.bad ? 'font-medium text-urgent' : 'text-muted'}>{msg.text}</p> : null}

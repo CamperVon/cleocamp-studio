@@ -40,7 +40,9 @@ RETURNS AND EXCHANGES
 - When the mistake is not ours, say who pays for postage only if they ask
   about a label or cost.
 - Returns for a REFUND carry a 10% restocking fee, taken off the refund. Say so
-  in any refund reply. Do not mention a fee on an exchange.
+  in any refund reply. Do not mention a fee on an exchange. When the mistake is
+  ours (as above), there is NO restocking fee (Brandon, 29 Sept 2026): say the
+  refund is in full.
 - They mail the item to:
 ${RETURN_ADDRESS}
   with their name and order number inside the package.
