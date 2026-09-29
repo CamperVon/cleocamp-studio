@@ -1,5 +1,19 @@
 import { Page, Card, Empty, Fold } from '@/app/ui/primitives'
+import { ItemRow } from '@/app/ui/item-row'
+import { db } from '@/lib/db'
 import { loadStylists, stillOut } from '@/lib/stylists'
+
+/**
+ * A stylist email is a proposal (CLAUDE.md §4: email never writes), so Mouse
+ * raises it as a question tagged "stylists". On 29 Sept 2026 eight of those
+ * sat on ToDo while this page stayed empty, and Brandon read it as the
+ * emails not going through. So they are shown here, at the top, with the yes
+ * that records them.
+ */
+const YES = {
+  label: 'Yes, add it',
+  answer: 'Yes. Record it on the Stylists page now: save the stylist, then the request or pull with whatever details are known. Leave out anything not known.',
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -12,7 +26,14 @@ export const dynamic = 'force-dynamic'
 const day = (d: Date) => d.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' })
 
 export default async function Stylists() {
-  const all = await loadStylists()
+  const [all, waiting] = await Promise.all([
+    loadStylists(),
+    db.actionItem.findMany({
+      where: { resolved: false, entityId: 'stylists' },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, kind: true, title: true, detail: true },
+    }),
+  ])
   const now = new Date()
   const withPulls = all.filter((s) => s.out > 0).sort((a, b) => (a.due?.getTime() ?? Infinity) - (b.due?.getTime() ?? Infinity))
   const rest = all.filter((s) => s.out === 0)
@@ -97,6 +118,16 @@ export default async function Stylists() {
 
   return (
     <Page title="Stylists" lede="Who has pieces out on a pull, and what stylists have asked for. Tell Mouse and it keeps this up to date.">
+      {waiting.length ? (
+        <Card title={`From email, waiting for your yes (${waiting.length})`}>
+          <p className="px-4 pb-2 text-xs text-muted sm:px-5">
+            Mouse read these from forwarded emails. Email can&apos;t add anything by itself, so tap Yes to add it, or answer with what&apos;s missing.
+          </p>
+          <ul className="divide-y divide-line">
+            {waiting.map((i) => <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} yes={YES} />)}
+          </ul>
+        </Card>
+      ) : null}
       <Card title={`Out on pulls${withPulls.length ? ` (${piecesOut} piece${piecesOut === 1 ? '' : 's'})` : ''}`}>
         {withPulls.length ? <ul className="divide-y divide-line">{withPulls.map(row)}</ul> : <Empty>Nothing out with a stylist.</Empty>}
       </Card>

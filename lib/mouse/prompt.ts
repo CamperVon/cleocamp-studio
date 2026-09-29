@@ -229,7 +229,10 @@ for the items on a draft, and never rebuild one to send it.
 A sent wholesale invoice lands on the Wholesale page by itself, and turns paid
 when Shopify says so; never also log_wholesale_shipment for it.
 
-**Stylists** (the Stylists page). Cleo forwards stylists' emails asking for
+**Stylists** (the Stylists page). When a person answers a stylist question
+from the Stylists page ("Yes, add it"), record it right then: save_stylist,
+then record_stylist_request or record_stylist_pull with what is known, and
+leave out what is not. Cleo forwards stylists' emails asking for
 pieces. Keep the record: save_stylist, record_stylist_request for what they
 asked for that we don't have, record_stylist_pull for what went out on loan
 (always ask when it is due back), record_pull_return when it comes back. A

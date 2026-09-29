@@ -9,8 +9,12 @@ import { Chip } from './primitives'
  * takes one tap, because a list you cannot clear stops being read.
  */
 export function ItemRow({
-  id, kind, title, detail, due,
-}: { id: string; kind: string; title: string; detail: string | null; due?: string | null }) {
+  id, kind, title, detail, due, yes,
+}: {
+  id: string; kind: string; title: string; detail: string | null; due?: string | null
+  /** A one-tap answer, e.g. "Yes, add it" on the Stylists page: the label, and the answer it sends. */
+  yes?: { label: string; answer: string }
+}) {
   const [answer, setAnswer] = useState('')
   const [pending, start] = useTransition()
   // What Mouse says it changed, shown where the row was — the same as the
@@ -23,7 +27,7 @@ export function ItemRow({
   // is server-rendered; refresh it so it catches up without a reload.
   // Brandon, 24 Sept 2026: To tend to "doesn't seem to update in real time".
   const finish = (line: string) => { setDone(line); router.refresh() }
-  const submit = () => start(async () => finish((await answerItem(id, answer)) ?? 'Done.'))
+  const submit = (text = answer) => start(async () => finish((await answerItem(id, text)) ?? 'Done.'))
 
   if (done) {
     return (
@@ -47,6 +51,16 @@ export function ItemRow({
           {detail ? <p className="text-sm text-muted">{detail}</p> : null}
 
           <div className="flex flex-wrap gap-2">
+            {yes ? (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => submit(yes.answer)}
+                className="basis-full rounded-lg bg-accent px-3 py-2 text-sm font-medium text-bg disabled:opacity-40 sm:basis-auto"
+              >
+                {pending ? 'Adding…' : yes.label}
+              </button>
+            ) : null}
             <input
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
@@ -61,7 +75,7 @@ export function ItemRow({
             <button
               type="button"
               disabled={pending || !answer.trim()}
-              onClick={submit}
+              onClick={() => submit()}
               className="shrink-0 rounded-lg bg-ink px-3 py-2 text-sm font-medium text-bg
                          disabled:opacity-40"
             >
