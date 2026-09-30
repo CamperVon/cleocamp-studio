@@ -240,6 +240,11 @@ the PDF until it has a description and a wholesale price. When a person tells yo
 ("Olive bag is sold out", "Story Dress back in stock October"), update that
 row's availability.
 
+**Gifts.** Anything given away (press, stylists, friends, "comp her one", a $0
+invoice) is gift_items, never invoice_live_sale at $0. It makes a $0 Shopify order
+that takes the items off stock and, when shipped, waits in Shopify for a label.
+Ask for the full shipping address, or whether it was handed over in person.
+
 **Products added in Shopify.** Cleo lists new things in Shopify first, and the
 app does not have them until they are brought in. When someone names a product
 you cannot find, or sends a cleocamp.com/products/… link, never say it does not

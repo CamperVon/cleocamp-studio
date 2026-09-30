@@ -139,7 +139,8 @@ const money = (m: Money | null | undefined) => Number(m?.shopMoney.amount ?? 0)
 
 function draftInput(email: string, lines: SaleLine[], note: string, opts: InvoiceOptions = {}) {
   return {
-    email,
+    // A gift can have no email: nobody is invoiced.
+    ...(email ? { email } : {}),
     note,
     tags: opts.tags ?? ['live-sale', 'studio-mouse'],
     ...(opts.taxExempt ? { taxExempt: true } : {}),
@@ -593,8 +594,10 @@ export async function checkCancelLiveSale(orderNameIn: string): Promise<CancelCh
   if (!o) return null
   let blocked: string | null = null
   if (o.cancelledAt) blocked = `${o.name} is already cancelled.`
-  else if (!o.tags.includes('live-sale')) blocked = `${o.name} is not a live-sale invoice. Cancel it in Shopify, or from the Support tab if it is a customer's web order.`
-  else if (o.displayFinancialStatus !== 'PENDING') blocked = `${o.name} is ${String(o.displayFinancialStatus ?? '').toLowerCase().replace(/_/g, ' ')}, not unpaid. Money has to go back, so do it in Shopify rather than here.`
+  else if (!o.tags.includes('live-sale') && !o.tags.includes('gift')) blocked = `${o.name} is not a live-sale invoice or a gift. Cancel it in Shopify, or from the Support tab if it is a customer's web order.`
+  // A $0 order reads "paid" in Shopify with nothing to give back (#2664, a
+  // $0 hair tie, 30 Sept 2026): cancelling it moves no money.
+  else if (o.displayFinancialStatus !== 'PENDING' && money(o.totalPriceSet) > 0) blocked = `${o.name} is ${String(o.displayFinancialStatus ?? '').toLowerCase().replace(/_/g, ' ')}, not unpaid. Money has to go back, so do it in Shopify rather than here.`
   return {
     orderId: o.id, orderName: o.name, email: o.email, total: money(o.totalPriceSet),
     lines: o.lineItems.nodes.map((l) => ({ label: `${l.title}${l.variantTitle ? ` — ${l.variantTitle}` : ''}`, quantity: l.quantity, inShopify: !!l.variant })),
@@ -633,3 +636,72 @@ export async function cancelLiveSale(c: CancelCheck, note: string): Promise<{ ok
   }
   return { ok: false, error: 'Shopify accepted the cancel but had not cancelled the order after 8 seconds. Check it in Shopify.' }
 }
+
+export type GiftResult = { orderName: string | null; orderId: string | null; handedOver: boolean; problems: string[] }
+
+/**
+ * A gift, as a Shopify order. Brandon, 30 Sept 2026: "cleo meant to gift these
+ * and was trying to get them into shopify shipping label queue ... can we tell
+ * mouse we want to gift this or that and it will take care of inventory and
+ * label?" She had been using $0 invoices: Shopify will not email one, a $0
+ * order marked handed over never reaches the label queue, and the hair tie on
+ * #2664 was a loose line, so Shopify's count never moved.
+ *
+ * This makes a real order at retail with a 100% "Gift" discount, so the
+ * books show what went out and what it was worth. No tax, nothing owed, no
+ * email to the recipient. Shipped: the address goes on it and it is left
+ * unfulfilled, so it waits in Orders with "Create shipping label". Handed
+ * over: marked fulfilled so it is never packed. Shopify takes the items off
+ * stock itself; tagged "gift" so it stays out of sales history.
+ */
+export async function giftOrder(args: { email: string | null; lines: SaleLine[]; note: string; shipTo?: ShipAddress }): Promise<GiftResult> {
+  const out: GiftResult = { orderName: null, orderId: null, handedOver: false, problems: [] }
+  const opts: InvoiceOptions = {
+    tags: ['gift', 'studio-mouse'], taxExempt: true, discount: GIFT_DISCOUNT,
+    ...(args.shipTo ? { shipTo: args.shipTo, shippingCharge: 0, shippingTitle: 'Gift, no charge' } : {}),
+  }
+  const created = await shopifyGraphQL<DraftCreated>(
+    `mutation($input: DraftOrderInput!) { draftOrderCreate(input: $input) { draftOrder { id } userErrors { message } } }`,
+    { input: draftInput(args.email ?? '', args.lines, args.note, opts) },
+  )
+  const draftId = created.draftOrderCreate.draftOrder?.id
+  if (!draftId) {
+    out.problems.push(`Shopify would not create the gift order: ${created.draftOrderCreate.userErrors.map((e) => e.message).join('; ') || 'no reason given'}. Nothing was created and stock has not moved.`)
+    return out
+  }
+  // Nothing is owed, so not "payment pending".
+  const done = await shopifyGraphQL<{ draftOrderComplete: { draftOrder: { order: { id: string; name: string } | null } | null; userErrors: Array<{ message: string }> } }>(
+    `mutation($id: ID!) { draftOrderComplete(id: $id, paymentPending: false) { draftOrder { order { id name } } userErrors { message } } }`,
+    { id: draftId },
+  )
+  const order = done.draftOrderComplete.draftOrder?.order
+  if (!order) {
+    out.problems.push(`The gift was drafted but Shopify would not turn it into an order: ${done.draftOrderComplete.userErrors.map((e) => e.message).join('; ') || 'no reason given'}. Stock has not moved; the draft is under Orders → Drafts in Shopify.`)
+    return out
+  }
+  out.orderId = order.id
+  out.orderName = order.name
+  if (args.shipTo) return out
+
+  let foIds: string[] = []
+  for (let i = 0; i < 5 && !foIds.length; i++) {
+    const fo = await shopifyGraphQL<{ order: { fulfillmentOrders: { nodes: Array<{ id: string; status: string }> } } | null }>(
+      `query($id: ID!) { order(id: $id) { fulfillmentOrders(first: 5) { nodes { id status } } } }`,
+      { id: order.id },
+    )
+    foIds = (fo.order?.fulfillmentOrders.nodes ?? []).filter((n) => n.status === 'OPEN').map((n) => n.id)
+    if (!foIds.length) await new Promise((r) => setTimeout(r, 800))
+  }
+  if (foIds.length) {
+    const f = await shopifyGraphQL<{ fulfillmentCreate: { fulfillment: { id: string } | null; userErrors: Array<{ message: string }> } }>(
+      `mutation($f: FulfillmentInput!) { fulfillmentCreate(fulfillment: $f) { fulfillment { id } userErrors { message } } }`,
+      { f: { notifyCustomer: false, lineItemsByFulfillmentOrder: foIds.map((id) => ({ fulfillmentOrderId: id })) } },
+    )
+    out.handedOver = !!f.fulfillmentCreate.fulfillment
+  }
+  if (!out.handedOver) out.problems.push(`${order.name} was not marked handed over. Mark it fulfilled in Shopify, or it will show up to be packed and shipped.`)
+  return out
+}
+
+/** Every gift carries the whole price as a discount, so its value shows. */
+export const GIFT_DISCOUNT = { percent: 100, title: 'Gift' }

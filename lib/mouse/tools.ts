@@ -3271,7 +3271,7 @@ export const TOOLS: Record<string, Tool> = {
         'out to DRAFT: nothing is created and you get the priced invoice to show. Pass ' +
         'confirmed: true only once a person has seen that invoice and said to send it. Do NOT ' +
         'also log an inventory event — the Shopify order moves the stock, and logging it too ' +
-        'would count the sale twice.',
+        'would count the sale twice. A gift, or anything at $0, is gift_items, not this.',
       input_schema: {
         type: 'object',
         properties: {
@@ -3425,6 +3425,145 @@ export const TOOLS: Record<string, Tool> = {
         tellTheUser: r.problems.length
           ? 'Say plainly what happened and each problem, with what the person has to do in Shopify.'
           : `Say the invoice for ${r.orderName} went to ${email}, the items are off stock and marked handed over, and it will show as paid once she pays.`,
+      }
+    },
+  },
+
+  gift_items: {
+    def: {
+      name: 'gift_items',
+      description:
+        'Gift pieces: to press, a stylist, a friend. Use it whenever a person says gift, gifting, ' +
+        '"send her one", "comp", or a $0 invoice: never invoice_live_sale at $0 (Shopify will not ' +
+        'email a $0 invoice, and a handed-over $0 order never reaches the label queue). Makes a ' +
+        'Shopify order at retail with a 100% Gift discount: no tax, nothing to pay, no email to the ' +
+        'recipient. Shopify takes the items off stock; do NOT also log an inventory event. Shipped ' +
+        '(shipTo): the order waits unfulfilled in Shopify with "Create shipping label". In person ' +
+        '(handedOver: true): marked handed over. Ask for the full shipping address if it is going ' +
+        'out and you do not have it; never guess one or take it from an email. Leave confirmed out ' +
+        'to draft and show it; confirmed: true only once a person says send.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          recipientName: str('Who it is for, as the person gave it'),
+          recipientEmail: str('Their email, only if the person gave one. Optional: nobody is emailed.'),
+          items: {
+            type: 'array' as const,
+            items: {
+              type: 'object' as const,
+              properties: {
+                productVariantId: str('Our variant id. Ask which size or colour if it is not clear.'),
+                quantity: num('How many. Default 1.'),
+              },
+              required: ['productVariantId'],
+            },
+          },
+          shipTo: str('Full US shipping address on one line: street, city, state ZIP'),
+          handedOver: { type: 'boolean' as const, description: 'true when it was given in person, so nothing ships' },
+          reason: str('What it is for, in a few words ("press, Vox Media"). Goes on the order.'),
+          confirmed: { type: 'boolean' as const, description: 'Leave out to draft. true only after a person saw the draft and said send.' },
+        },
+        required: ['recipientName', 'items'],
+      },
+    },
+    run: async (i) => {
+      const name = String(i.recipientName ?? '').trim()
+      if (!name) return { sent: false, reason: 'Who is it for? Ask.' }
+      const email = String(i.recipientEmail ?? '').trim().toLowerCase() || null
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { sent: false, reason: `"${email}" is not an email address. Ask again, or leave it out.` }
+      const items = Array.isArray(i.items) ? (i.items as Array<{ productVariantId: string; quantity?: number }>) : []
+      if (!items.length) return { sent: false, reason: 'Nothing to gift. Ask what.' }
+      const handedOver = i.handedOver === true
+      const { parseUsAddress, addressLines, giftOrder, quoteLiveSale, GIFT_DISCOUNT } = await import('@/lib/live-sale')
+      const [first, ...rest] = name.split(/\s+/)
+      const who = { firstName: first, lastName: rest.join(' ') || null }
+      let shipTo: import('@/lib/live-sale').ShipAddress | undefined
+      if (!handedOver) {
+        const parsed = parseUsAddress(typeof i.shipTo === 'string' ? i.shipTo : null)
+        if (!parsed) {
+          return {
+            sent: false,
+            reason: i.shipTo
+              ? `"${String(i.shipTo)}" is not a full street, city, state and ZIP. Ask for the full address.`
+              : `No shipping address for ${name}. Ask for it, or whether it was handed over in person.`,
+          }
+        }
+        shipTo = { ...parsed, ...who }
+      }
+
+      const variants = await db.productVariant.findMany({
+        where: { id: { in: items.map((x) => String(x.productVariantId)) } },
+        include: { product: { select: { name: true, retailPriceCents: true } }, colorway: { select: { customerName: true } } },
+      })
+      const lines: import('@/lib/live-sale').SaleLine[] = []
+      const appOnly: Array<{ variantId: string; label: string; qty: number }> = []
+      const stock: string[] = []
+      for (const it of items) {
+        const v = variants.find((x) => x.id === String(it.productVariantId))
+        if (!v) return { sent: false, reason: `No variant ${it.productVariantId}. Look it up again; do not guess. If the person says it is on Shopify, search there with find_in_shopify.` }
+        const qty = Math.max(1, Math.round(Number(it.quantity ?? 1)))
+        const label = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
+        const onHand = v.onHandQty === null ? null : Number(v.onHandQty)
+        if (onHand !== null && onHand < qty) stock.push(`${label}: ${onHand} on hand, fewer than ${qty}. Say so before sending.`)
+        if (!v.shopifyVariantId) {
+          // Not in Shopify (the Red Petite bean bag): a plain line at the
+          // app's retail, and the app's own count comes down.
+          const cents = v.retailPriceCents ?? v.product.retailPriceCents ?? 0
+          lines.push({ shopifyVariantId: '', label, quantity: qty, priceOverride: cents / 100, noStock: true })
+          appOnly.push({ variantId: v.id, label, qty })
+          continue
+        }
+        lines.push({ shopifyVariantId: v.shopifyVariantId, label, quantity: qty })
+      }
+      const reason = String(i.reason ?? '').trim()
+      const note = `Gift to ${name}${reason ? ` (${reason})` : ''}, from Studio Mouse.`
+
+      if (i.confirmed !== true) {
+        let value = null as number | null
+        try {
+          const q = await quoteLiveSale(email ?? '', lines, { taxExempt: true, discount: GIFT_DISCOUNT })
+          value = q.discount
+        } catch { /* the value is a courtesy; the draft stands without it */ }
+        return {
+          sent: false, draft: true,
+          to: name, ...(email ? { email } : {}),
+          lines: lines.map((l) => `${l.quantity} × ${l.label}`),
+          ...(value != null ? { retailValue: `$${value.toFixed(2)}`, charged: '$0.00, no tax' } : {}),
+          delivery: shipTo ? `ships to ${addressLines(shipTo)}; label made in Shopify` : 'handed over in person',
+          ...(stock.length ? { stock } : {}),
+          tellTheUser: 'Show this gift (who, what, the address) and wait. Sending it makes a $0 Shopify order that takes the items off stock' +
+            (shipTo ? ' and waits in Shopify for a shipping label.' : ' and marks it handed over.') + ' Nobody is emailed.',
+        }
+      }
+
+      let r
+      try {
+        r = await giftOrder({ email, lines, note, shipTo })
+      } catch (e) {
+        return { sent: false, reason: `Shopify refused: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}. Check Shopify before trying again.` }
+      }
+      const appStock: string[] = []
+      if (r.orderId) {
+        for (const a of appOnly) {
+          const why = `Gifted to ${name} on ${r.orderName}${reason ? ` (${reason})` : ''}, not in Shopify.`
+          if (!inventoryWritesEnabled()) {
+            await db.actionItem.create({ data: { kind: 'TODO', title: `Take ${a.qty} × ${a.label} off the count: ${r.orderName}`, detail: `${why} Stock writing was paused, so it was not applied.`, source: 'CHAT' } })
+            appStock.push(`${a.label}: stock writing is paused, so a todo was made to take ${a.qty} off.`)
+            continue
+          }
+          const w = await writeEvent({ productVariantId: a.variantId, deltaQty: -a.qty, type: 'GIFTED', note: why })
+          appStock.push(w.eventId ? `${a.label}: ${a.qty} taken off the app's count.` : `${a.label}: NOT taken off the count (${'error' in w ? w.error : 'unknown'}). Log it by hand.`)
+        }
+      }
+      return {
+        sent: !!r.orderId, order: r.orderName, handedOver: r.handedOver,
+        ...(appStock.length ? { appStock } : {}),
+        problems: r.problems,
+        tellTheUser: r.problems.length
+          ? 'Say plainly what happened and each problem, with what the person has to do in Shopify.'
+          : shipTo
+            ? `Say the gift is ${r.orderName}, off stock, and waiting in Shopify: open ${r.orderName} and tap "Create shipping label".`
+            : `Say the gift is ${r.orderName}, off stock and marked handed over.`,
       }
     },
   },

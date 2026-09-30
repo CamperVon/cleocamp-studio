@@ -199,7 +199,8 @@ export async function fetchSoldLines(sinceISO: string): Promise<SoldLine[]> {
       if (o.cancelledAt) continue
       // A store's order is not retail demand: counted as sales history it
       // would read as a rush and inflate the next reorder (27 Sept 2026).
-      if ((o.tags ?? []).some((t: string) => t.toLowerCase() === 'wholesale')) continue
+      // Nor is a gift (gift_items, 30 Sept 2026): nobody bought it.
+      if ((o.tags ?? []).some((t: string) => ['wholesale', 'gift'].includes(t.toLowerCase()))) continue
       const date = fmt.format(new Date(o.createdAt))
       for (const li of o.lineItems.nodes) {
         if (!li.variant?.id) continue // deleted product, or a custom line

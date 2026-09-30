@@ -173,6 +173,23 @@ export default function Manual() {
             </ul>
           </Section>
 
+          <Section title="Gifts">
+            <p>
+              Tell Mouse who it&rsquo;s for, what, and the shipping address (or that you handed it
+              over). Mouse makes a $0 order in Shopify, marked Gift: it comes off stock, nobody is
+              charged or emailed, and it stays out of sales.
+            </p>
+            <p>
+              <b>Shipped:</b> it waits in Shopify under Orders, unfulfilled. Open it and tap
+              <b> Create shipping label</b>. <b>Handed over:</b> it&rsquo;s marked done. Never use a
+              $0 invoice for a gift: Shopify won&rsquo;t email it and it never reaches the label queue.
+            </p>
+            <ul className="flex flex-col gap-2">
+              <Try say="Gift Carol Lee a Sardine, Naked, for press. Ship to 1 Main St, Los Angeles, CA 90012" />
+              <Try say="I handed Sofie a Flower Hair Tie as a gift" />
+            </ul>
+          </Section>
+
           <Section title="Stylists">
             <p>
               The <b>Stylists</b> tab lists stylists, with anyone who has pieces out at the top. Tell
