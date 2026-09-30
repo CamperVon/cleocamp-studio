@@ -3,6 +3,7 @@ import path from 'node:path'
 import { Document, Page, Text, View, Image, Font, StyleSheet, renderToBuffer } from '@react-pdf/renderer'
 import { db } from '@/lib/db'
 import { asDocLanguage, confirmSentence, formatDate, label, type DocLanguage } from '@/lib/po-strings'
+import { wordmark, WORDMARK_RATIO } from '@/lib/brand'
 
 /**
  * The same purchase order as app/po/[poNumber]/page.tsx, as an actual PDF
@@ -51,7 +52,7 @@ Font.registerHyphenationCallback((word) => [word])
 const styles = StyleSheet.create({
   page: { padding: 48, fontSize: 10, fontFamily: 'PTSerif', color: '#14181A' },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  wordmark: { fontSize: 20, fontStyle: 'italic', fontWeight: 'bold' },
+  wordmark: { width: 120, height: 120 / WORDMARK_RATIO },
   sub: { marginTop: 3, fontSize: 8, letterSpacing: 1, color: '#6A736F' },
   docTitle: { fontSize: 13, letterSpacing: 1 },
   // Capped and right-aligned. Without a width the block grows until it runs
@@ -140,8 +141,9 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
       <Page size="LETTER" style={styles.page}>
         <View style={styles.row}>
           <View>
-            <Text style={styles.wordmark}>Cleo</Text>
-            <Text style={styles.sub}>CLEO COUTURE LLC</Text>
+            {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf's Image takes no alt */}
+            <Image src={wordmark()} style={styles.wordmark} />
+            <Text style={[styles.sub, { marginTop: 6 }]}>CLEO COUTURE LLC</Text>
           </View>
           <View style={styles.headerMeta}>
             <Text style={styles.docTitle}>{t('purchaseOrder')}</Text>

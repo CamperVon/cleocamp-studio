@@ -2,6 +2,7 @@ import path from 'node:path'
 import { Document, Page, Text, View, Image, Font, StyleSheet, renderToBuffer } from '@react-pdf/renderer'
 import { shopifyGraphQL } from '@/lib/integrations/shopify'
 import { db } from '@/lib/db'
+import { wordmark, WORDMARK_RATIO } from '@/lib/brand'
 
 /**
  * A Shopify draft order as a PDF, for passing round inside the studio before
@@ -28,7 +29,7 @@ Font.registerHyphenationCallback((word) => [word])
 const styles = StyleSheet.create({
   page: { padding: 48, fontSize: 10, fontFamily: 'PTSerif', color: '#14181A' },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  wordmark: { fontSize: 20, fontStyle: 'italic', fontWeight: 'bold' },
+  wordmark: { width: 120, height: 120 / WORDMARK_RATIO },
   sub: { marginTop: 3, fontSize: 8, letterSpacing: 1, color: '#6A736F' },
   stamp: { borderWidth: 1, borderColor: '#C0306A', color: '#C0306A', fontSize: 8, letterSpacing: 1, paddingVertical: 3, paddingHorizontal: 6 },
   muted: { color: '#6A736F' },
@@ -137,8 +138,9 @@ export function DraftDoc({ d }: { d: DraftForPdf }) {
       <Page size="LETTER" style={styles.page}>
         <View style={styles.row}>
           <View>
-            <Text style={styles.wordmark}>Cleo Camp</Text>
-            <Text style={styles.sub}>INVOICE {open ? '— DRAFT' : ''}</Text>
+            {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf's Image takes no alt */}
+            <Image src={wordmark()} style={styles.wordmark} />
+            <Text style={[styles.sub, { marginTop: 6 }]}>INVOICE {open ? '— DRAFT' : ''}</Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             {open ? <Text style={styles.stamp}>DRAFT · NOT SENT</Text> : null}

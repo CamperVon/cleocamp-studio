@@ -1477,8 +1477,8 @@ model LineSheetRow {
   description          String
   /// Only for a row with no product: the wholesale price as the team set it.
   wholesaleCents       Int?
-  /// Suggested retail as printed, when it is a range ("$88 – $128+"). Null:
-  /// the Shopify retail price of the linked product, read live.
+  /// Only for a row with no product: suggested retail as printed. A linked
+  /// row always prints Shopify's price (Brandon, 30 Sept 2026).
   msrp                 String?
   sizing               String
   minOrder             String

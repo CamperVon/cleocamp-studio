@@ -9,11 +9,11 @@ const nextConfig: NextConfig = {
   // Vercel's own deployment-protection blocks a function from fetching its
   // own deployment URL, even server-to-server.
   outputFileTracingIncludes: {
-    "/po/[poNumber]/pdf": ["./assets/fonts/*.ttf"],
-    "/po/[poNumber]/exports": ["./assets/fonts/*.ttf"],
-    "/api/chat": ["./assets/fonts/*.ttf"],
-    "/drafts/[id]/pdf": ["./assets/fonts/*.ttf"],
-    "/wholesale/line-sheet/pdf": ["./assets/fonts/*.ttf"],
+    "/po/[poNumber]/pdf": ["./assets/fonts/*.ttf", "./assets/brand/*.png"],
+    "/po/[poNumber]/exports": ["./assets/fonts/*.ttf", "./assets/brand/*.png"],
+    "/api/chat": ["./assets/fonts/*.ttf", "./assets/brand/*.png"],
+    "/drafts/[id]/pdf": ["./assets/fonts/*.ttf", "./assets/brand/*.png"],
+    "/wholesale/line-sheet/pdf": ["./assets/fonts/*.ttf", "./assets/brand/*.png"],
   },
 };
 

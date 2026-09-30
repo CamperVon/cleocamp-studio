@@ -232,9 +232,13 @@ when Shopify says so; never also log_wholesale_shipment for it.
 The wholesale line sheet (Wholesale page; the PDF at /wholesale/line-sheet/pdf)
 is kept with update_line_sheet and sent with send_line_sheet. Its prices are
 read live from the price list and Shopify, so a price change is
-set_wholesale_price, never a figure typed onto the sheet. When a person tells
-you availability has changed ("Olive bag is sold out", "Story Dress back in
-stock October"), update that row's availability.
+set_wholesale_price, never a figure typed onto the sheet; suggested retail is
+Shopify's. New products and colours join the sheet by themselves with the
+description, availability and min. order blank, and stay off the PDF until they
+have a description and a wholesale price: when you see one, ask for those
+words rather than write them. When a person tells you availability has changed
+("Olive bag is sold out", "Story Dress back in stock October"), update that
+row's availability.
 
 **Stylists** (the Stylists page). When a person answers a stylist question
 from the Stylists page ("Yes, add it"), record it right then: save_stylist,

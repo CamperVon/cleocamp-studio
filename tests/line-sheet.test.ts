@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { dollars, ditto, lineSheetFileName, resolveRow, variantsFor } from '../lib/line-sheet'
+import { chargedDifferently, dollars, ditto, heldBackFor, lineSheetFileName, missingRows, onThePdf, resolveRow, variantsFor } from '../lib/line-sheet'
 
 const v = (colour: string | null, ws: number | null, retail: number | null, onHand = 1, img: string | null = null) =>
   ({ wholesalePriceCents: ws, retailPriceCents: retail, imageUrl: img, onHandQty: onHand, colorway: colour ? { customerName: colour } : null })
@@ -25,7 +25,8 @@ test('prices are read from the product, never from the row, when the row has one
   assert.equal(champagne.photo, 'https://x/c.jpg')
   assert.equal(champagne.onHand, 4)
   assert.equal(resolveRow({ colorway: null, wholesaleCents: null, msrp: null }, bean).retail, '$368 – $398')
-  assert.equal(resolveRow({ colorway: 'Champagne', wholesaleCents: null, msrp: '$368 – $420+' }, bean).retail, '$368 – $420+')
+  // Suggested retail is Shopify's on a linked row, whatever range the row carries.
+  assert.equal(resolveRow({ colorway: 'Champagne', wholesaleCents: null, msrp: '$368 – $420+' }, bean).retail, '$368')
 })
 
 test('a row with no product carries its own price', () => {
@@ -41,4 +42,59 @@ test('ditto repeats only an identical cell below a non-empty one', () => {
 
 test('file name is dated in Los Angeles', () => {
   assert.equal(lineSheetFileName(new Date('2026-10-01T05:00:00Z')), 'Cleo-Camp-Line-Sheet-2026-09-30.pdf')
+})
+
+const sv = (colour: string | null, size: string | null, shop = true, active = true) =>
+  ({ size, shopifyVariantId: shop ? `gid://${colour}/${size}` : null, colorway: colour ? { customerName: colour, active } : null })
+
+test('a new product on Shopify gets a row; a part, or one not on Shopify, does not', () => {
+  const add = missingRows([
+    { id: 'ls', name: 'Little Sister', variants: [sv('Black', '1'), sv('Black', '2')] },
+    { id: 'body', name: 'Bateau Body — Muslin Canvas (part)', variants: [sv(null, null)] },
+    { id: 'dev', name: 'Hair Tie', variants: [sv(null, null, false)] },
+  ], [])
+  assert.deepEqual(add, [{ productId: 'ls', item: 'Little Sister', colorway: null, colorLabel: 'Black', sizing: '1, 2' }])
+})
+
+test('a new colour of a product sold colour by colour gets its own row', () => {
+  const tee = { id: 'tee', name: 'Cleo Tee', variants: [sv('White', '1'), sv('Red (Wiltshire)', '1'), sv('Ruby Red', '1', true, false), sv('Bean Red', '1', false)] }
+  const add = missingRows([tee], [{ productId: 'tee', colorway: 'White' }, { productId: 'tee', colorway: 'Red' }])
+  assert.deepEqual(add, [])
+  const more = missingRows([{ ...tee, variants: [...tee.variants, sv('New Blue', '1'), sv('New Blue', '2')] }], [{ productId: 'tee', colorway: 'White' }, { productId: 'tee', colorway: 'Red' }])
+  assert.deepEqual(more, [{ productId: 'tee', item: 'Cleo Tee', colorway: 'New Blue', colorLabel: 'New Blue', sizing: '1, 2' }])
+})
+
+test('a row for the whole product, or a removed one, counts as there', () => {
+  const bag = { id: 'bag', name: 'Bateau Bag', variants: [sv('Gold', null), sv('Silver', null)] }
+  assert.deepEqual(missingRows([bag], [{ productId: 'bag', colorway: null }]), [])
+  assert.deepEqual(missingRows([bag], []), [{ productId: 'bag', item: 'Bateau Bag', colorway: null, colorLabel: 'Gold, Silver', sizing: '' }])
+})
+
+test('a row is held off the PDF until it has a wholesale price and a description', () => {
+  assert.equal(onThePdf({ wholesaleCents: 5400, hidden: false, description: 'Rib cotton.' }), true)
+  assert.equal(onThePdf({ wholesaleCents: null, hidden: false, description: 'Rib cotton.' }), false)
+  assert.equal(onThePdf({ wholesaleCents: 5400, hidden: false, description: ' ' }), false)
+  assert.equal(onThePdf({ wholesaleCents: 5400, hidden: true, description: 'Rib cotton.' }), false)
+  assert.deepEqual(heldBackFor({ wholesaleCents: null, description: '' }), ['a wholesale price', 'a description'])
+})
+
+test('the newest invoice charging off the list is flagged, on the list is not', () => {
+  const products = [
+    { name: 'Boy Belt', wholesalePriceCents: 13000, variants: [] },
+    { name: 'Cleo Tee', wholesalePriceCents: 5400, variants: [] },
+  ]
+  const shipments = [
+    { sentAt: new Date('2026-08-25'), invoiceName: null, account: 'Grandpa LA', lines: [{ item: 'Cleo Tee / Black / 1', qty: 2, wholesaleCents: 10200 }] },
+    { sentAt: new Date('2026-09-28'), invoiceName: '#2644', account: 'Grandpa LA', lines: [
+      { item: 'Cleo Tee / Black / 1', qty: 7, wholesaleCents: 37800 },
+      { item: 'Boy Belt / Small', qty: 2, wholesaleCents: 18000 },
+      { item: 'Boy Belt / Medium', qty: 1, wholesaleCents: 8000 },
+      { item: 'Boy Belt / size 90', qty: 1, wholesaleCents: 0 },
+    ] },
+  ]
+  const off = chargedDifferently(products, shipments)
+  assert.equal(off.length, 1)
+  assert.equal(off[0].product, 'Boy Belt')
+  assert.deepEqual(off[0].charged, [8000, 9000])
+  assert.equal(off[0].invoice, '#2644')
 })

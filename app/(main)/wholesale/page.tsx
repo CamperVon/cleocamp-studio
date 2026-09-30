@@ -1,4 +1,4 @@
-import { dollars, loadLineSheet } from '@/lib/line-sheet'
+import { chargedDifferently, dollars, heldBackFor, loadLineSheet, onThePdf } from '@/lib/line-sheet'
 import { db } from '@/lib/db'
 import { Page, Card, Chip, Empty, Money, Fold } from '@/app/ui/primitives'
 
@@ -20,6 +20,9 @@ export const dynamic = 'force-dynamic'
  * wholesale tab"). Loaded from the Jan 2026 line sheet; changed by telling
  * Mouse, which uses set_wholesale_price.
  */
+/** The window an off-list invoice price is flagged in. */
+const sixMonthsAgo = () => Date.now() - 180 * 86_400_000
+
 export default async function Wholesale() {
   // Invoices sent through Shopify: paid when Shopify says so. A failed check
   // leaves them as they were rather than blanking the page.
@@ -43,6 +46,11 @@ export default async function Wholesale() {
   })
   const sheet = await loadLineSheet()
   const soldOutButListed = sheet.lines.filter((l) => /in stock/i.test(l.availability) && l.onHand != null && l.onHand <= 0).length
+  const heldBack = sheet.lines.filter((l) => !onThePdf(l))
+  const since = sixMonthsAgo()
+  const offList = chargedDifferently(products, accounts.flatMap((a) => a.shipments
+    .filter((s) => s.sentAt.getTime() >= since)
+    .map((s) => ({ sentAt: s.sentAt, invoiceName: s.invoiceName, account: a.name, lines: s.lines }))))
   const unpriced = products.filter((p) => p.wholesalePriceCents == null && !p.variants.some((v) => v.wholesalePriceCents != null)).length
 
   const row = (a: (typeof accounts)[number]) => {
@@ -203,7 +211,9 @@ export default async function Wholesale() {
               <span className="shrink-0 whitespace-nowrap font-serif text-[17px] italic text-accent">Line sheet</span>
               <span className="text-xs text-muted">
                 {sheet.lines.length} piece{sheet.lines.length === 1 ? '' : 's'}
+                {heldBack.length ? <span className="text-warn"> · {heldBack.length} off the PDF</span> : null}
                 {soldOutButListed ? <span className="text-warn"> · {soldOutButListed} say in stock with none on hand</span> : null}
+                {offList.length ? <span className="text-warn"> · {offList.length} invoiced off-list</span> : null}
               </span>
             </span>
           }
@@ -211,8 +221,22 @@ export default async function Wholesale() {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-2.5 text-xs text-muted sm:px-5">
             <a href="/wholesale/line-sheet/pdf" target="_blank" rel="noreferrer" className="font-medium text-accent underline">Open the PDF</a>
             <a href="/wholesale/line-sheet/pdf?download=1" className="text-accent underline">Download</a>
-            <span>Prices are read live from the price list and Shopify. Tell Mouse to change anything, or to send it to a store.</span>
+            <span>Wholesale from the price list, suggested retail from Shopify, both read live. New products and colours on Shopify join by themselves. Tell Mouse to change anything, or to send it to a store.</span>
           </div>
+          {offList.length ? (
+            <div className="border-b border-line px-4 py-2.5 text-xs sm:px-5">
+              <p className="font-medium text-warn">The latest invoice charged a different price from the list</p>
+              <ul className="mt-1 flex flex-col gap-0.5 text-muted">
+                {offList.map((o) => (
+                  <li key={o.product}>
+                    {o.product}: {o.charged.map(dollars).join(' and ')} to {o.account}{o.invoice ? ` on ${o.invoice}` : ''}
+                    {' '}({o.sentAt.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' })}), list {o.list.map(dollars).join(' / ')}.
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-faint">The sheet prints the list. If the list is out of date, tell Mouse the new price; if it was a one-off, leave it.</p>
+            </div>
+          ) : null}
           <ul className="divide-y divide-line">
             {sheet.lines.map((l) => {
               const warn = /in stock/i.test(l.availability) && l.onHand != null && l.onHand <= 0
@@ -223,6 +247,7 @@ export default async function Wholesale() {
                     <span className={`block text-xs ${warn ? 'text-warn' : 'text-faint'}`}>
                       {l.availability || 'no availability set'}{l.onHand != null ? ` · ${l.onHand} on hand` : ''}
                     </span>
+                    {!onThePdf(l) ? <span className="block text-xs text-warn">Not on the PDF until it has {heldBackFor(l).join(' and ')}. Tell Mouse.</span> : null}
                   </span>
                   <span className="shrink-0 text-right text-xs">
                     {l.wholesaleCents != null ? <span className="text-sm font-semibold">{dollars(l.wholesaleCents)}</span> : <span className="text-warn">no price</span>}
@@ -235,12 +260,25 @@ export default async function Wholesale() {
         </Fold>
       </Card>
 
-      <Card title={`Accounts (${accounts.length})`}>
-        {accounts.length === 0 ? (
-          <Empty>No wholesale accounts yet.</Empty>
-        ) : (
-          <ul className="divide-y divide-line">{accounts.map(row)}</ul>
-        )}
+      <Card>
+        <Fold
+          summary={
+            <span className="flex items-center justify-between gap-3">
+              <span className="font-serif text-[17px] italic text-accent">Accounts</span>
+              <span className="text-xs text-muted">
+                {accounts.length} account{accounts.length === 1 ? '' : 's'}
+                {totalOutstanding ? <span className="font-medium text-ink"> · <Money cents={totalOutstanding} /> owed</span> : null}
+                {unconfirmedCount ? <span className="text-warn"> · {unconfirmedCount} not confirmed</span> : null}
+              </span>
+            </span>
+          }
+        >
+          {accounts.length === 0 ? (
+            <Empty>No wholesale accounts yet.</Empty>
+          ) : (
+            <ul className="divide-y divide-line border-t border-line">{accounts.map(row)}</ul>
+          )}
+        </Fold>
       </Card>
     </Page>
   )

@@ -3891,8 +3891,10 @@ export const TOOLS: Record<string, Tool> = {
         'Prices are NOT typed onto rows: wholesale comes from the price list (change it with ' +
         'set_wholesale_price) and suggested retail from Shopify, both read live, so link a row to ' +
         'its product (productId, and colorway for one colour). Only a row with no product carries ' +
-        'its own wholesaleCents. msrp is only for a written range like "$88 – $128+"; pass "" to go ' +
-        'back to Shopify\'s price. Change only what a person asked for.',
+        'its own wholesaleCents and msrp; a linked row always shows Shopify\'s retail. New products ' +
+        'and colours on Shopify join the sheet by themselves with blank words; fill in description, ' +
+        'availability and min. order when a person gives them. A row stays off the PDF until it has ' +
+        'a wholesale price and a description. Change only what a person asked for.',
       input_schema: {
         type: 'object',
         properties: {
@@ -3905,7 +3907,7 @@ export const TOOLS: Record<string, Tool> = {
           colorLabel: str('Colour / variant column as printed'),
           description: str('Description column'),
           wholesaleCents: num('Only for a row with no product: wholesale price in cents'),
-          msrp: str('A written suggested-retail range, or "" for Shopify\'s price'),
+          msrp: str('Only for a row with no product: suggested retail as printed'),
           sizing: str('Sizing column'),
           minOrder: str('Min. order column'),
           commission: str('Commission column, e.g. "70/30"; "" for none'),
@@ -3918,12 +3920,13 @@ export const TOOLS: Record<string, Tool> = {
       },
     },
     run: async (i) => {
-      const { loadLineSheet, dollars } = await import('@/lib/line-sheet')
+      const { loadLineSheet, dollars, heldBackFor } = await import('@/lib/line-sheet')
       const link = '/wholesale/line-sheet/pdf'
       const listed = async () => (await loadLineSheet({ includeHidden: true })).lines.map((l) => ({
         id: l.id, item: l.item, color: l.colorLabel, hidden: l.hidden || undefined,
         wholesale: l.wholesaleCents != null ? dollars(l.wholesaleCents) : 'NOT SET', retail: l.retail ?? 'not set',
         availability: l.availability, onHand: l.onHand, productId: l.productId, colorway: l.colorway,
+        ...(!l.hidden && heldBackFor(l).length ? { offThePdfUntilItHas: heldBackFor(l) } : {}),
       }))
       if (i.action === 'list') return { rows: await listed(), pdf: link }
 
@@ -3947,6 +3950,11 @@ export const TOOLS: Record<string, Tool> = {
         fields.productId = pid
       }
       if (fields.productId && fields.wholesaleCents != null) return { saved: false, reason: 'A row linked to a product takes its price from the price list. Change it with set_wholesale_price instead.' }
+      // Suggested retail on a linked row is Shopify's (Brandon, 30 Sept 2026).
+      if (fields.msrp) {
+        const linked = 'productId' in fields ? fields.productId : (i.rowId ? (await db.lineSheetRow.findUnique({ where: { id: String(i.rowId) }, select: { productId: true } }))?.productId : null)
+        if (linked) return { saved: false, reason: 'Suggested retail on a row with a product is Shopify\'s price. To change it, change the price in Shopify.' }
+      }
 
       // Position: after a given row, at the top, or at the end. Rows are
       // spaced by 10, so one can slot between two without renumbering.
