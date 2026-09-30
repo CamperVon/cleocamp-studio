@@ -2,7 +2,7 @@ import { Page, Card, Empty, Fold } from '@/app/ui/primitives'
 import { ItemRow } from '@/app/ui/item-row'
 import { db } from '@/lib/db'
 import { loadStylists, pullOut, stillOut } from '@/lib/stylists'
-import { AddByHand, NoteBox, PullCloseButtons, RequestButtons, ReturnButton } from './stylist-controls'
+import { AddByHand, NewStylist, NoteBox, PullCloseButtons, RequestButtons, ReturnButton, StylistDetails } from './stylist-controls'
 
 /**
  * A stylist email is a proposal (CLAUDE.md §4: email never writes), so Mouse
@@ -37,7 +37,8 @@ export default async function Stylists() {
       select: { id: true, kind: true, title: true, detail: true },
     }),
     db.note.findMany({
-      where: { supersededAt: null, OR: [{ entityId: 'stylists' }, { entityId: { startsWith: 'stylist:' } }] },
+      // Some notes Mouse wrote carry the stylist's bare id (Maya's did).
+      where: { supersededAt: null, OR: [{ entityId: 'stylists' }, { entityId: { startsWith: 'stylist:' } }, { entityId: { in: (await db.stylist.findMany({ select: { id: true } })).map((x) => x.id) } }] },
       orderBy: { createdAt: 'desc' },
       select: { id: true, entityId: true, content: true },
     }),
@@ -49,7 +50,7 @@ export default async function Stylists() {
   const pieces = variants
     .map((v) => ({ id: v.id, product: v.product.name, label: [v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || v.product.name }))
     .sort((a, b) => a.product.localeCompare(b.product) || a.label.localeCompare(b.label))
-  const notesFor = (id: string) => notes.filter((n) => n.entityId === `stylist:${id}`)
+  const notesFor = (id: string) => notes.filter((n) => n.entityId === `stylist:${id}` || n.entityId === id)
   const now = new Date()
   const withPulls = all.filter((s) => s.out > 0).sort((a, b) => (a.due?.getTime() ?? Infinity) - (b.due?.getTime() ?? Infinity))
   const rest = all.filter((s) => s.out === 0)
@@ -76,10 +77,7 @@ export default async function Stylists() {
           }
         >
           <div className="px-4 pb-3.5 text-sm sm:px-5">
-            <p className="text-xs text-muted">
-              {[s.email, s.phone, s.instagram ? `@${s.instagram.replace(/^@/, '')}` : null].filter(Boolean).join(' · ') || 'No contact on file'}
-            </p>
-            {s.notes ? <p className="mt-1 text-xs text-muted">{s.notes}</p> : null}
+            <StylistDetails s={{ id: s.id, name: s.name, email: s.email, phone: s.phone, company: s.company, instagram: s.instagram, notes: s.notes }} canRemove={s.out === 0} />
             <div className="mt-2"><NoteBox stylistId={s.id} notes={notesFor(s.id)} /></div>
 
             {s.pulls.length ? (
@@ -108,18 +106,24 @@ export default async function Stylists() {
                         >
                           <div className="px-4 pb-2 sm:px-5">
                             {p.notes ? <p className="pb-1 text-muted">{p.notes}</p> : null}
-                            <ul>
+                            {/* The buttons first, so a long pull does not hide them (Brandon, 30 Sept 2026). */}
+                            {out > 0 || kept ? (
+                              <div className="flex flex-col gap-1 border-b border-line pb-2">
+                                <div className="flex flex-wrap items-start gap-1.5">
+                                  {out > 0 ? <ReturnButton pullId={p.id} label="All returned, restock" /> : null}
+                                  <PullCloseButtons pullId={p.id} closedAs={p.closedAs} />
+                                </div>
+                                {out > 0 ? <p className="text-[11px] text-faint">Returned puts pieces back on stock. Close out: they kept it, so it stays off stock. Remove: it never happened.</p> : null}
+                              </div>
+                            ) : null}
+                            <ul className="pt-1">
                               {p.lines.map((l) => (
                                 <li key={l.id} className="flex items-center justify-between gap-3 py-0.5 text-muted">
                                   <span>{l.qty} × {l.item}{l.returnedQty ? ` · ${l.returnedQty} back` : ''}</span>
-                                  {!kept && stillOut(l) > 0 ? <ReturnButton pullId={p.id} lineId={l.id} qty={stillOut(l)} label={stillOut(l) > 1 ? `${stillOut(l)} back` : 'Back'} /> : null}
+                                  {!kept && stillOut(l) > 0 ? <ReturnButton pullId={p.id} lineId={l.id} qty={stillOut(l)} label={stillOut(l) > 1 ? `${stillOut(l)} returned` : 'Returned'} /> : null}
                                 </li>
                               ))}
                             </ul>
-                            <div className="flex flex-wrap items-start justify-end gap-1.5 pt-1.5">
-                              {out > 0 && p.lines.length > 1 ? <ReturnButton pullId={p.id} label="All back" /> : null}
-                              {out > 0 || kept ? <PullCloseButtons pullId={p.id} closedAs={p.closedAs} /> : null}
-                            </div>
                           </div>
                         </Fold>
                       </li>
@@ -163,8 +167,16 @@ export default async function Stylists() {
       <Card title={`Out on pulls${withPulls.length ? ` (${piecesOut} piece${piecesOut === 1 ? '' : 's'})` : ''}`}>
         {withPulls.length ? <ul className="divide-y divide-line">{withPulls.map(row)}</ul> : <Empty>Nothing out with a stylist.</Empty>}
       </Card>
-      <Card title={`Stylists (${rest.length})`}>
-        {rest.length ? <ul className="divide-y divide-line">{rest.map(row)}</ul> : <Empty>No other stylists yet. Forward Mouse a stylist&apos;s email, or tell it about one.</Empty>}
+      {/* Folded by default, like every list here (Brandon, 30 Sept 2026). */}
+      <Card>
+        <Fold summary={<span className="flex items-center justify-between gap-3"><span className="font-serif text-[17px] italic text-accent">Stylists</span><span className="text-xs text-muted">{rest.length} with nothing out</span></span>}>
+          <div className="border-t border-line">
+            <Fold summary={<span className="text-sm font-medium">+ Add a stylist</span>}>
+              <div className="px-4 pb-4 sm:px-5"><NewStylist /></div>
+            </Fold>
+          </div>
+          {rest.length ? <ul className="divide-y divide-line border-t border-line">{rest.map(row)}</ul> : <Empty>No other stylists yet.</Empty>}
+        </Fold>
       </Card>
       <Card>
         <Fold summary={<span className="font-medium">Add by hand</span>}>

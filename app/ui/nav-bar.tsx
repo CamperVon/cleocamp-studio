@@ -38,17 +38,19 @@ const DAILY: Item[] = [
   { href: '/items', label: 'ToDo', icon: <IconCheck /> },
 ]
 
+// A to Z, kept that way by the sort, so a new tab lands in its place
+// (Brandon, 30 Sept 2026: "need to alphabetize the MORE drop down menu").
 const OCCASIONAL: Item[] = [
-  { href: '/support', label: 'Support' },
-  { href: '/manual', label: 'Mouse Manual' },
   { href: '/components', label: 'Components' },
-  { href: '/vendors', label: 'Vendors' },
-  { href: '/wholesale', label: 'Wholesale' },
-  { href: '/stylists', label: 'Stylists' },
   { href: '/finances', label: 'Finances' },
   { href: '/inbox', label: 'Inbox' },
+  { href: '/manual', label: 'Mouse Manual' },
   { href: '/phones', label: 'Phones' },
-]
+  { href: '/stylists', label: 'Stylists' },
+  { href: '/support', label: 'Support' },
+  { href: '/vendors', label: 'Vendors' },
+  { href: '/wholesale', label: 'Wholesale' },
+].sort((a, b) => a.label.localeCompare(b.label))
 
 // Desktop has room for one more in the row, and Support is used daily now
 // (Brandon, 27 Sept 2026: "remove support from the drop down and put at top").

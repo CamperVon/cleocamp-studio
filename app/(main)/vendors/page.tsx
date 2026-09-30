@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
-import { Page, Card, Chip, Value } from '@/app/ui/primitives'
+import { Page, Card, Chip, Value, Fold } from '@/app/ui/primitives'
+import { NewVendor, VendorEditor } from './vendor-controls'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,13 +17,19 @@ export default async function Vendors() {
   const active = vendors.filter((v) => v.active)
   const retired = vendors.filter((v) => !v.active)
 
+  // Each vendor folds closed; what needs attention (no email, so a PO cannot
+  // be sent) stays on the closed line.
   const row = (v: (typeof vendors)[number]) => (
-    <li key={v.id} className="px-4 py-3.5 sm:px-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="font-medium">{v.name}</p>
+    <li key={v.id}>
+     <Fold summary={
+      <span className="flex flex-wrap items-center gap-2">
+        <span className="font-medium">{v.name}</span>
         <Chip tone={v.role === 'MANUFACTURER' ? 'accent' : 'neutral'}>{ROLE[v.role]}</Chip>
         {v.legalName ? <span className="text-xs text-faint">{v.legalName}</span> : null}
-      </div>
+        {v.active && !v.email ? <span className="text-xs text-warn">no email</span> : null}
+      </span>
+     }>
+     <div className="px-4 pb-3.5 sm:px-5">
       <dl className="mt-1.5 grid grid-cols-1 gap-x-6 gap-y-0.5 text-sm text-muted sm:grid-cols-2">
         {v.contactName || v.contactInfo ? (
           <div className="flex gap-2">
@@ -60,16 +67,26 @@ export default async function Vendors() {
         </div>
       </dl>
       {v.notes ? <p className="mt-1.5 text-sm text-muted">{v.notes}</p> : null}
+      <VendorEditor id={v.id} active={v.active} start={{
+        name: v.name, role: v.role, legalName: v.legalName ?? '', contactName: v.contactName ?? '', email: v.email ?? '',
+        ccEmails: v.ccEmails ?? '', address: v.address ?? '', orderMethod: v.orderMethod ?? '', paymentTerms: v.paymentTerms ?? '',
+        leadTimeDays: v.leadTimeDays == null ? '' : String(v.leadTimeDays), notes: v.notes ?? '',
+      }} />
+     </div>
+     </Fold>
     </li>
   )
 
   return (
     <Page title="Vendors" lede="Who supplies what, and how you actually place the order.">
       <Card title={`Active (${active.length})`}>
-        <ul className="divide-y divide-line">{active.map(row)}</ul>
+        <Fold summary={<span className="text-sm font-medium">+ Add a vendor</span>}>
+          <div className="px-4 pb-4 sm:px-5"><NewVendor /></div>
+        </Fold>
+        <ul className="divide-y divide-line border-t border-line">{active.map(row)}</ul>
       </Card>
       {retired.length ? (
-        <Card title={`Replaced (${retired.length})`}>
+        <Card title={`Removed or replaced (${retired.length})`}>
           <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
             Kept with their history intact. None of their prices or lead times carry
             forward to whoever replaced them.

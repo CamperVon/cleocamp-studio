@@ -121,3 +121,79 @@ export async function closePull(pullId: string, as: 'KEPT' | 'REMOVED' | 'OPEN')
   const back = Array.isArray(r.putBack) ? (r.putBack as string[]).length : 0
   return { ok: true, message: as === 'REMOVED' ? (back ? `Removed; ${back} piece${back === 1 ? '' : 's'} back on stock.` : 'Removed; it had taken nothing off stock.') : undefined }
 }
+
+/**
+ * A stylist's details, edited on the page. Brandon, 30 Sept 2026: "the notes
+ * need to be editable. for example maya is outdated and we want all the info
+ * removed." Blank clears a field, which save_stylist (Mouse's) never does.
+ */
+export async function updateStylist(input: { id: string; name: string; email: string; phone: string; company: string; instagram: string; notes: string }): Promise<Result> {
+  const who = await person()
+  if (!who) return NO_NAME
+  const name = input.name.trim()
+  if (!name) return { ok: false, error: 'A stylist needs a name.' }
+  const email = input.email.trim().toLowerCase() || null
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: false, error: 'That email does not look right.' }
+  const clean = (v: string) => v.trim() || null
+  const r = await db.stylist.update({
+    where: { id: input.id },
+    data: { name, email, phone: clean(input.phone), company: clean(input.company), instagram: clean(input.instagram)?.replace(/^@/, '') ?? null, notes: clean(input.notes) },
+    select: { id: true },
+  }).catch((e) => (String(e).includes('Unique constraint') ? 'dup' : null))
+  if (r === 'dup') return { ok: false, error: 'Another stylist already has that email.' }
+  if (!r) return { ok: false, error: 'No such stylist.' }
+  revalidatePath('/stylists')
+  return { ok: true, message: 'Saved.' }
+}
+
+/**
+ * Take a stylist off the page entirely: their details, requests, closed pulls
+ * and notes. Refused while anything is still out with them; close or return
+ * those pulls first. Stock history stays in the ledger.
+ */
+export async function removeStylist(id: string): Promise<Result> {
+  const who = await person()
+  if (!who) return NO_NAME
+  const s = await db.stylist.findUnique({ where: { id }, include: { pulls: { include: { lines: true } } } })
+  if (!s) return { ok: false, error: 'No such stylist.' }
+  const { pullOut } = await import('@/lib/stylists')
+  if (s.pulls.some((p) => pullOut(p) > 0)) return { ok: false, error: `${s.name} still has pieces out. Mark them back or close the pull first.` }
+  await db.$transaction([
+    db.note.updateMany({ where: { supersededAt: null, OR: [{ entityId: `stylist:${id}` }, { entityId: id }] }, data: { supersededAt: new Date() } }),
+    db.stylistRequest.deleteMany({ where: { stylistId: id } }),
+    db.stylistPull.deleteMany({ where: { stylistId: id } }),
+    db.stylist.delete({ where: { id } }),
+  ])
+  revalidatePath('/stylists')
+  return { ok: true }
+}
+
+/** Edit a team note: the old one is retired (never deleted) and the new words saved in its place. */
+export async function editStylistNote(noteId: string, text: string): Promise<Result> {
+  const who = await person()
+  if (!who) return NO_NAME
+  const n = await db.note.findUnique({ where: { id: noteId }, select: { entityId: true, entityType: true, content: true, supersededAt: true } })
+  if (!n || n.supersededAt) return { ok: false, error: 'That note is gone. Reload the page.' }
+  if (!/^stylist/.test(n.entityId ?? '')) return { ok: false, error: 'Not a stylist note.' }
+  const t = text.trim()
+  if (!t) return removeStylistNote(noteId)
+  const prefix = /^(Stylists?(?: [^:]+)?: )/.exec(n.content)?.[1] ?? ''
+  const day = new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' })
+  await db.$transaction([
+    db.note.update({ where: { id: noteId }, data: { supersededAt: new Date() } }),
+    db.note.create({ data: { entityType: n.entityType, entityId: n.entityId, content: `${prefix}${t} (${who.name.split(' ')[0]}, ${day})`, source: 'MANUAL' } }),
+  ])
+  revalidatePath('/stylists')
+  return { ok: true }
+}
+
+/** Remove a team note: retired, so Mouse stops reading it; nothing is deleted. */
+export async function removeStylistNote(noteId: string): Promise<Result> {
+  const who = await person()
+  if (!who) return NO_NAME
+  const n = await db.note.findUnique({ where: { id: noteId }, select: { entityId: true } })
+  if (!n || !/^stylist/.test(n.entityId ?? '')) return { ok: false, error: 'Not a stylist note.' }
+  await db.note.update({ where: { id: noteId }, data: { supersededAt: new Date() } })
+  revalidatePath('/stylists')
+  return { ok: true }
+}

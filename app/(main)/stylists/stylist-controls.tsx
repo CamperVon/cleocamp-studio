@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { addPull, addRequest, addStylist, addStylistNote, closePull, returnPieces, setRequestStatus } from './actions'
+import { addPull, addRequest, addStylist, addStylistNote, closePull, editStylistNote, removeStylist, removeStylistNote, returnPieces, setRequestStatus, updateStylist } from './actions'
 
 type Res = { ok: true; message?: string } | { ok: false; error: string }
 const input = 'min-w-0 rounded-lg border border-line bg-bg px-3 py-2 text-sm'
@@ -22,7 +22,7 @@ function useAction() {
   return { pending, go, note }
 }
 
-/** "Back" for one line of a pull, or "All back" for the whole pull. Puts the pieces back on stock. */
+/** "Returned" for one line of a pull, or for the whole pull. Puts the pieces back on stock. */
 export function ReturnButton({ pullId, lineId, qty, label }: { pullId: string; lineId?: string; qty?: number; label: string }) {
   const { pending, go, note } = useAction()
   return (
@@ -58,15 +58,47 @@ export function RequestButtons({ requestId, status }: { requestId: string; statu
   )
 }
 
-/** Notes from anyone on the team: on one stylist, or on the page as a whole. */
+/** One team note: Edit changes the words (the old one is retired), Remove retires it. */
+function NoteLine({ id, content }: { id: string; content: string }) {
+  const shown = content.replace(/^Stylists?(?: [^:]+)?: /, '')
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(shown.replace(/ \([A-Z][a-z]+, [A-Z][a-z]{2} \d{1,2}\)$/, ''))
+  const { pending, go, note } = useAction()
+  if (!editing) {
+    return (
+      <li className="flex flex-col gap-0.5">
+        <span className="flex items-start justify-between gap-2">
+          <span className="min-w-0">{shown}</span>
+          <span className="flex shrink-0 gap-2 text-[11px]">
+            <button type="button" className="underline" onClick={() => setEditing(true)}>Edit</button>
+            <button type="button" disabled={pending} className="underline disabled:opacity-40" onClick={() => go(() => removeStylistNote(id))}>{pending ? '…' : 'Remove'}</button>
+          </span>
+        </span>
+        {note}
+      </li>
+    )
+  }
+  return (
+    <li className="flex flex-col gap-1.5">
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} className={`${input} text-xs`} />
+      <span className="flex gap-2">
+        <button type="button" disabled={pending} className="rounded-lg bg-ink px-2.5 py-1 text-xs text-bg disabled:opacity-40" onClick={() => go(() => editStylistNote(id, text), () => setEditing(false))}>{pending ? 'Saving…' : 'Save'}</button>
+        <button type="button" disabled={pending} className="text-xs underline" onClick={() => setEditing(false)}>Cancel</button>
+      </span>
+      {note}
+    </li>
+  )
+}
+
+/** Notes from anyone on the team, on one stylist, or on the page as a whole. Each can be edited or removed. */
 export function NoteBox({ stylistId, notes }: { stylistId?: string; notes: Array<{ id: string; content: string }> }) {
   const [text, setText] = useState('')
   const { pending, go, note } = useAction()
   return (
     <div className="flex flex-col gap-1.5">
       {notes.length ? (
-        <ul className="flex flex-col gap-1 text-xs text-muted">
-          {notes.map((n) => <li key={n.id}>{n.content.replace(/^Stylists?(?: [^:]+)?: /, '')}</li>)}
+        <ul className="flex flex-col gap-1.5 text-xs text-muted">
+          {notes.map((n) => <NoteLine key={n.id} id={n.id} content={n.content} />)}
         </ul>
       ) : null}
       <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); go(() => addStylistNote({ stylistId, text }), () => setText('')) }}>
@@ -77,6 +109,66 @@ export function NoteBox({ stylistId, notes }: { stylistId?: string; notes: Array
       </form>
       {note}
     </div>
+  )
+}
+
+type StylistInfo = { id: string; name: string; email: string | null; phone: string | null; company: string | null; instagram: string | null; notes: string | null }
+
+/**
+ * A stylist's contact details and notes, with Edit (blank clears a field) and
+ * Remove (two taps; refused while pieces are out).
+ */
+export function StylistDetails({ s, canRemove }: { s: StylistInfo; canRemove: boolean }) {
+  const blank = { name: s.name, email: s.email ?? '', phone: s.phone ?? '', company: s.company ?? '', instagram: s.instagram ?? '', notes: s.notes ?? '' }
+  const [editing, setEditing] = useState(false)
+  const [sure, setSure] = useState(false)
+  const [f, setF] = useState(blank)
+  const { pending, go, note } = useAction()
+  const set = (k: keyof typeof f) => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value })
+  if (!editing) {
+    const ig = s.instagram?.replace(/^@/, '')
+    return (
+      <div className="flex flex-col gap-1 text-xs text-muted">
+        <p className="flex flex-wrap gap-x-3 gap-y-0.5">
+          {s.email ? <a href={`mailto:${s.email}`} className="text-accent underline">{s.email}</a> : null}
+          {s.phone ? <a href={`tel:${s.phone.replace(/[^+\d]/g, '')}`} className="text-accent underline">{s.phone}</a> : null}
+          {ig ? <a href={`https://instagram.com/${ig}`} target="_blank" rel="noreferrer" className="text-accent underline">@{ig}</a> : null}
+          {!s.email && !s.phone && !ig ? <span>No contact on file</span> : null}
+        </p>
+        {s.notes ? <p className="whitespace-pre-line">{s.notes}</p> : null}
+        <span className="flex flex-wrap items-center gap-2 pt-0.5">
+          <button type="button" className={small} onClick={() => { setF(blank); setEditing(true) }}>Edit details</button>
+          {sure ? (
+            <>
+              <button type="button" disabled={pending} className="rounded border border-urgent px-2 py-1 text-[11px] font-medium text-urgent disabled:opacity-40"
+                onClick={() => go(() => removeStylist(s.id), () => setSure(false))}>{pending ? '…' : `Yes, remove ${s.name}`}</button>
+              <button type="button" className={small} onClick={() => setSure(false)}>Cancel</button>
+            </>
+          ) : (
+            <button type="button" disabled={!canRemove} title={canRemove ? '' : 'Pieces are still out'} className={small} onClick={() => setSure(true)}>Remove stylist</button>
+          )}
+        </span>
+        {note}
+      </div>
+    )
+  }
+  return (
+    <form className="flex flex-col gap-2 text-xs" onSubmit={(e) => { e.preventDefault(); go(() => updateStylist({ id: s.id, ...f }), () => setEditing(false)) }}>
+      <input value={f.name} onChange={set('name')} placeholder="Name" className={input} />
+      <input value={f.company} onChange={set('company')} placeholder="Agency, or who they style for" className={input} />
+      <input value={f.email} onChange={set('email')} placeholder="Email" type="email" className={input} />
+      <div className="flex gap-2">
+        <input value={f.phone} onChange={set('phone')} placeholder="Phone" className={`${input} flex-1`} />
+        <input value={f.instagram} onChange={set('instagram')} placeholder="Instagram" className={`${input} flex-1`} />
+      </div>
+      <textarea value={f.notes} onChange={set('notes')} rows={4} placeholder="Notes about this stylist" className={input} />
+      <p className="text-[11px] text-faint">Clear a box to remove what was there.</p>
+      <span className="flex gap-2">
+        <button type="submit" disabled={pending || !f.name.trim()} className={`${button} text-xs`}>{pending ? 'Saving…' : 'Save'}</button>
+        <button type="button" className={small} onClick={() => setEditing(false)}>Cancel</button>
+      </span>
+      {note}
+    </form>
   )
 }
 
@@ -116,12 +208,12 @@ function StylistPicker({ stylists, value, onChange }: { stylists: Array<{ id: st
   )
 }
 
-function NewStylist({ onDone }: { onDone: () => void }) {
+export function NewStylist({ onDone }: { onDone?: () => void }) {
   const [f, setF] = useState({ name: '', email: '', company: '', phone: '', instagram: '' })
   const { pending, go, note } = useAction()
   const set = (k: keyof typeof f) => (e: ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value })
   return (
-    <form className="flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); go(() => addStylist(f), () => { setF({ name: '', email: '', company: '', phone: '', instagram: '' }); onDone() }) }}>
+    <form className="flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); go(() => addStylist(f), () => { setF({ name: '', email: '', company: '', phone: '', instagram: '' }); onDone?.() }) }}>
       <input value={f.name} onChange={set('name')} placeholder="Name" className={input} />
       <input value={f.email} onChange={set('email')} placeholder="Email" type="email" className={input} />
       <input value={f.company} onChange={set('company')} placeholder="Agency, or who they style for" className={input} />
@@ -209,7 +301,7 @@ export function PullCloseButtons({ pullId, closedAs }: { pullId: string; closedA
   return (
     <span className="inline-flex flex-col items-end gap-0.5">
       <span className="flex flex-wrap justify-end gap-1.5">
-        <button type="button" disabled={pending} className={small} onClick={() => go(() => closePull(pullId, 'KEPT'))}>Close, they kept it</button>
+        <button type="button" disabled={pending} className={small} onClick={() => go(() => closePull(pullId, 'KEPT'))}>Close out, they kept it</button>
         {sure ? (
           <>
             <button type="button" disabled={pending} className="rounded border border-urgent px-2 py-1 text-[11px] font-medium text-urgent disabled:opacity-40"
@@ -217,7 +309,7 @@ export function PullCloseButtons({ pullId, closedAs }: { pullId: string; closedA
             <button type="button" disabled={pending} className={small} onClick={() => setSure(false)}>Cancel</button>
           </>
         ) : (
-          <button type="button" disabled={pending} className={small} onClick={() => setSure(true)}>Remove (logged by mistake)</button>
+          <button type="button" disabled={pending} className={small} onClick={() => setSure(true)}>Remove, logged by mistake</button>
         )}
       </span>
       {note}

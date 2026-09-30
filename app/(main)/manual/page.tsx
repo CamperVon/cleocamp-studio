@@ -203,8 +203,8 @@ export default function Manual() {
               aside for pulls.
             </p>
             <p>
-              Each pull opens on its own. Tap <b>Back</b> on a piece, or <b>All back</b>, when it
-              returns. <b>Close, they kept it</b> when the stylist keeps what&rsquo;s out: it stays off
+              Each pull opens on its own. Tap <b>Returned</b> on a piece, or <b>All returned, restock</b>, when it
+              returns. <b>Close out, they kept it</b> when the stylist keeps what&rsquo;s out: it stays off
               stock. <b>Remove</b> is for a pull logged by mistake: it puts the pieces back on stock
               and takes the pull off the page.
             </p>

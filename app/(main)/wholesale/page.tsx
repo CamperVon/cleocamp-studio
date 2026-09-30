@@ -2,6 +2,7 @@ import { chargedDifferently, dollars, heldBackFor, loadLineSheet, onThePdf, vari
 import { db } from '@/lib/db'
 import { Page, Card, Chip, Empty, Money, Fold } from '@/app/ui/primitives'
 import { LineSheetRowEditor, OneOffButton, PriceEdit, RestoreRow } from './line-sheet-row'
+import { AccountEditor, NewAccount, RestoreAccount } from './account-controls'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,6 +41,7 @@ export default async function Wholesale() {
     orderBy: { name: 'asc' },
     include: { shipments: { include: { lines: true }, orderBy: { sentAt: 'desc' } } },
   })
+  const removedAccounts = await db.wholesaleAccount.findMany({ where: { active: false }, orderBy: { name: 'asc' }, select: { id: true, name: true } })
   // Things we sell: active, with a retail price (the muslin bodies are parts).
   const products = await db.product.findMany({
     where: { status: 'ACTIVE', retailPriceCents: { not: null } },
@@ -138,6 +140,10 @@ export default async function Wholesale() {
             )
           })}
         </ul> : null}
+        <AccountEditor id={a.id} start={{
+          name: a.name, type: a.type, commissionSplit: a.commissionSplit ?? '', contactName: a.contactName ?? '',
+          email: a.email ?? '', address: a.address ?? '', notes: a.notes ?? '',
+        }} />
         </div>
         </Fold>
       </li>
@@ -324,11 +330,22 @@ export default async function Wholesale() {
             </span>
           }
         >
+          <div className="border-t border-line">
+            <Fold summary={<span className="text-sm font-medium">+ Add an account</span>}>
+              <div className="px-4 pb-4 sm:px-5"><NewAccount /></div>
+            </Fold>
+          </div>
           {accounts.length === 0 ? (
             <Empty>No wholesale accounts yet.</Empty>
           ) : (
             <ul className="divide-y divide-line border-t border-line">{accounts.map(row)}</ul>
           )}
+          {removedAccounts.length ? (
+            <div className="border-t border-line py-2">
+              <p className="px-4 pb-1 text-xs text-faint sm:px-5">Removed</p>
+              <ul>{removedAccounts.map((a) => <RestoreAccount key={a.id} id={a.id} name={a.name} />)}</ul>
+            </div>
+          ) : null}
         </Fold>
       </Card>
     </Page>
