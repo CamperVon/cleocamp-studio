@@ -3949,11 +3949,13 @@ export const TOOLS: Record<string, Tool> = {
         if (pid && !(await db.product.findUnique({ where: { id: pid }, select: { id: true } }))) return { saved: false, reason: `No product ${pid}. Look it up; do not guess.` }
         fields.productId = pid
       }
-      if (fields.productId && fields.wholesaleCents != null) return { saved: false, reason: 'A row linked to a product takes its price from the price list. Change it with set_wholesale_price instead.' }
-      // Suggested retail on a linked row is Shopify's (Brandon, 30 Sept 2026).
-      if (fields.msrp) {
-        const linked = 'productId' in fields ? fields.productId : (i.rowId ? (await db.lineSheetRow.findUnique({ where: { id: String(i.rowId) }, select: { productId: true } }))?.productId : null)
-        if (linked) return { saved: false, reason: 'Suggested retail on a row with a product is Shopify\'s price. To change it, change the price in Shopify.' }
+      // A row with a product takes wholesale from the price list and suggested
+      // retail from Shopify (Brandon, 30 Sept 2026), whether it is being added
+      // or edited.
+      if (fields.wholesaleCents != null || fields.msrp) {
+        const linked = 'productId' in fields ? fields.productId : (i.action === 'edit' && i.rowId ? (await db.lineSheetRow.findUnique({ where: { id: String(i.rowId) }, select: { productId: true } }))?.productId : null)
+        if (linked && fields.wholesaleCents != null) return { saved: false, reason: 'A row linked to a product takes its price from the price list. Change it with set_wholesale_price instead.' }
+        if (linked && fields.msrp) return { saved: false, reason: 'Suggested retail on a row with a product is Shopify\'s price. To change it, change the price in Shopify.' }
       }
 
       // Position: after a given row, at the top, or at the end. Rows are

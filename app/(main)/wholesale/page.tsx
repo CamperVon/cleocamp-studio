@@ -1,6 +1,7 @@
 import { chargedDifferently, dollars, heldBackFor, loadLineSheet, onThePdf } from '@/lib/line-sheet'
 import { db } from '@/lib/db'
 import { Page, Card, Chip, Empty, Money, Fold } from '@/app/ui/primitives'
+import { LineSheetRowEditor, RestoreRow } from './line-sheet-row'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,7 +45,9 @@ export default async function Wholesale() {
       },
     },
   })
-  const sheet = await loadLineSheet()
+  const everyRow = await loadLineSheet({ includeHidden: true })
+  const sheet = { ...everyRow, lines: everyRow.lines.filter((l) => !l.hidden) }
+  const removed = everyRow.lines.filter((l) => l.hidden)
   const soldOutButListed = sheet.lines.filter((l) => /in stock/i.test(l.availability) && l.onHand != null && l.onHand <= 0).length
   const heldBack = sheet.lines.filter((l) => !onThePdf(l))
   const since = sixMonthsAgo()
@@ -221,7 +224,7 @@ export default async function Wholesale() {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-2.5 text-xs text-muted sm:px-5">
             <a href="/wholesale/line-sheet/pdf" target="_blank" rel="noreferrer" className="font-medium text-accent underline">Open the PDF</a>
             <a href="/wholesale/line-sheet/pdf?download=1" className="text-accent underline">Download</a>
-            <span>Wholesale from the price list, suggested retail from Shopify, both read live. New products and colours on Shopify join by themselves. Tell Mouse to change anything, or to send it to a store.</span>
+            <span>Wholesale from the price list, suggested retail from Shopify, both read live. New products and colours on Shopify join by themselves. Tap a piece to change its words or remove it; tell Mouse to change a price or send the sheet to a store.</span>
           </div>
           {offList.length ? (
             <div className="border-b border-line px-4 py-2.5 text-xs sm:px-5">
@@ -241,22 +244,34 @@ export default async function Wholesale() {
             {sheet.lines.map((l) => {
               const warn = /in stock/i.test(l.availability) && l.onHand != null && l.onHand <= 0
               return (
-                <li key={l.id} className="flex items-baseline justify-between gap-3 px-4 py-2 text-sm sm:px-5">
+                <LineSheetRowEditor key={l.id} row={{
+                  id: l.id, linked: !!l.productId, item: l.item, colorLabel: l.colorLabel, description: l.description,
+                  sizing: l.sizing, minOrder: l.minOrder, commission: l.commission, availability: l.availability,
+                  wholesale: !l.productId && l.wholesaleCents != null ? String(l.wholesaleCents / 100) : '', msrp: l.msrp,
+                }}>
+                <span className="flex items-baseline justify-between gap-3 text-sm">
                   <span className="min-w-0">
                     <span className="font-medium">{l.item}</span> <span className="text-muted">{l.colorLabel}</span>
                     <span className={`block text-xs ${warn ? 'text-warn' : 'text-faint'}`}>
                       {l.availability || 'no availability set'}{l.onHand != null ? ` · ${l.onHand} on hand` : ''}
                     </span>
-                    {!onThePdf(l) ? <span className="block text-xs text-warn">Not on the PDF until it has {heldBackFor(l).join(' and ')}. Tell Mouse.</span> : null}
+                    {!onThePdf(l) ? <span className="block text-xs text-warn">Not on the PDF until it has {heldBackFor(l).join(' and ')}. Tap to add.</span> : null}
                   </span>
                   <span className="shrink-0 text-right text-xs">
                     {l.wholesaleCents != null ? <span className="text-sm font-semibold">{dollars(l.wholesaleCents)}</span> : <span className="text-warn">no price</span>}
                     <span className="block text-faint">retail {l.retail ?? '—'}</span>
                   </span>
-                </li>
+                </span>
+                </LineSheetRowEditor>
               )
             })}
           </ul>
+          {removed.length ? (
+            <div className="border-t border-line py-2">
+              <p className="px-4 pb-1 text-xs text-faint sm:px-5">Removed from the sheet</p>
+              <ul>{removed.map((l) => <RestoreRow key={l.id} rowId={l.id} label={[l.item, l.colorLabel].filter(Boolean).join(' · ')} />)}</ul>
+            </div>
+          ) : null}
         </Fold>
       </Card>
 
