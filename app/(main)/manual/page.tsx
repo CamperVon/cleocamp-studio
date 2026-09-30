@@ -202,6 +202,12 @@ export default function Manual() {
               Mouse when pieces go out to a stylist and when they come back. 40 Cleo Tees are kept
               aside for pulls.
             </p>
+            <p>
+              Each pull opens on its own. Tap <b>Back</b> on a piece, or <b>All back</b>, when it
+              returns. <b>Close, they kept it</b> when the stylist keeps what&rsquo;s out: it stays off
+              stock. <b>Remove</b> is for a pull logged by mistake: it puts the pieces back on stock
+              and takes the pull off the page.
+            </p>
             <ul className="flex flex-col gap-2">
               <Try say="Sofie took 3 Cleo Tees, Black size 1, for a shoot" />
             </ul>

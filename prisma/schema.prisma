@@ -1412,6 +1412,13 @@ model StylistPull {
   /// The shoot, talent or publication, as told.
   project   String?
   notes     String?
+  /// Closed by a person on the Stylists page (Brandon, 30 Sept 2026). KEPT:
+  /// the stylist kept what was still out (gifted, lost), so it stays off
+  /// stock and no longer counts as out. REMOVED: logged by mistake; what it
+  /// took off stock was put back with CORRECTION events, and it leaves the
+  /// page. Null: open.
+  closedAs  String?
+  closedAt  DateTime?
   createdAt DateTime  @default(now())
 
   stylist Stylist           @relation(fields: [stylistId], references: [id])

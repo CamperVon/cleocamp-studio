@@ -26,3 +26,17 @@ test('two matches is a question, none is a question', () => {
   assert.match((pickStylist(all, null, 'Sofie') as { reason: string }).reason, /No stylist called/)
   assert.match((pickStylist(all, 'nope', null) as { reason: string }).reason, /No stylist nope/)
 })
+
+test('removing a pull gives back only what it took and has not had back', async () => {
+  const { stillTaken, pullOut } = await import('../lib/stylists')
+  const m = stillTaken([
+    { productVariantId: 'splish1', deltaQty: -1 },
+    { productVariantId: 'shell2', deltaQty: -2 }, { productVariantId: 'shell2', deltaQty: 1 },
+    { productVariantId: 'belt', deltaQty: -1 }, { productVariantId: 'belt', deltaQty: 1 },
+  ])
+  assert.deepEqual([...m], [['splish1', 1], ['shell2', 1]])
+  // The black tee Shopify refused has no event, so it is not in the map at all.
+  assert.equal(m.has('black1'), false)
+  assert.equal(pullOut({ closedAs: null, lines: [{ qty: 2, returnedQty: 1 }] }), 1)
+  assert.equal(pullOut({ closedAs: 'KEPT', lines: [{ qty: 2, returnedQty: 0 }] }), 0)
+})

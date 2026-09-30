@@ -104,3 +104,20 @@ export async function addStylistNote(input: { stylistId?: string; text: string }
   revalidatePath('/stylists')
   return { ok: true }
 }
+
+/**
+ * Close a pull from the page. Brandon, 30 Sept 2026: "I need to be able close
+ * or remove stylist pulls from the page." KEPT leaves what is out off stock;
+ * REMOVED puts back what the pull took; OPEN reopens a kept one.
+ */
+export async function closePull(pullId: string, as: 'KEPT' | 'REMOVED' | 'OPEN'): Promise<Result> {
+  const who = await person()
+  if (!who) return NO_NAME
+  const r = await run('close_stylist_pull', { pullId, as }, who)
+  if (r.saved === false) {
+    const failed = Array.isArray(r.notPutBack) ? ` ${(r.notPutBack as string[]).join('; ')}` : ''
+    return { ok: false, error: `${String(r.reason ?? 'That did not save.')}${failed}` }
+  }
+  const back = Array.isArray(r.putBack) ? (r.putBack as string[]).length : 0
+  return { ok: true, message: as === 'REMOVED' ? (back ? `Removed; ${back} piece${back === 1 ? '' : 's'} back on stock.` : 'Removed; it had taken nothing off stock.') : undefined }
+}

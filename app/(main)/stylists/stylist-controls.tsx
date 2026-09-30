@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { addPull, addRequest, addStylist, addStylistNote, returnPieces, setRequestStatus } from './actions'
+import { addPull, addRequest, addStylist, addStylistNote, closePull, returnPieces, setRequestStatus } from './actions'
 
 type Res = { ok: true; message?: string } | { ok: false; error: string }
 const input = 'min-w-0 rounded-lg border border-line bg-bg px-3 py-2 text-sm'
@@ -187,5 +187,40 @@ function NewPull({ stylists, variants }: { stylists: Array<{ id: string; name: s
       <button type="submit" disabled={pending || !ready} className={`${button} self-start`}>{pending ? 'Saving…' : 'Log pull'}</button>
       {note}
     </form>
+  )
+}
+
+/**
+ * Close a pull: "Kept" when the stylist kept what is out, "Remove" when it was
+ * logged by mistake (two taps: it puts pieces back on stock), "Reopen" for a
+ * kept one.
+ */
+export function PullCloseButtons({ pullId, closedAs }: { pullId: string; closedAs: string | null }) {
+  const { pending, go, note } = useAction()
+  const [sure, setSure] = useState(false)
+  if (closedAs === 'KEPT') {
+    return (
+      <span className="inline-flex flex-col items-end gap-0.5">
+        <button type="button" disabled={pending} className={small} onClick={() => go(() => closePull(pullId, 'OPEN'))}>{pending ? '…' : 'Reopen'}</button>
+        {note}
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex flex-col items-end gap-0.5">
+      <span className="flex flex-wrap justify-end gap-1.5">
+        <button type="button" disabled={pending} className={small} onClick={() => go(() => closePull(pullId, 'KEPT'))}>Close, they kept it</button>
+        {sure ? (
+          <>
+            <button type="button" disabled={pending} className="rounded border border-urgent px-2 py-1 text-[11px] font-medium text-urgent disabled:opacity-40"
+              onClick={() => go(() => closePull(pullId, 'REMOVED'), () => setSure(false))}>{pending ? '…' : 'Yes, remove and restock'}</button>
+            <button type="button" disabled={pending} className={small} onClick={() => setSure(false)}>Cancel</button>
+          </>
+        ) : (
+          <button type="button" disabled={pending} className={small} onClick={() => setSure(true)}>Remove (logged by mistake)</button>
+        )}
+      </span>
+      {note}
+    </span>
   )
 }

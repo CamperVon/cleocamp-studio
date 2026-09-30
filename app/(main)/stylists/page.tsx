@@ -1,8 +1,8 @@
 import { Page, Card, Empty, Fold } from '@/app/ui/primitives'
 import { ItemRow } from '@/app/ui/item-row'
 import { db } from '@/lib/db'
-import { loadStylists, stillOut } from '@/lib/stylists'
-import { AddByHand, NoteBox, RequestButtons, ReturnButton } from './stylist-controls'
+import { loadStylists, pullOut, stillOut } from '@/lib/stylists'
+import { AddByHand, NoteBox, PullCloseButtons, RequestButtons, ReturnButton } from './stylist-controls'
 
 /**
  * A stylist email is a proposal (CLAUDE.md §4: email never writes), so Mouse
@@ -88,7 +88,8 @@ export default async function Stylists() {
                 {/* Each pull on its own, folded: a stylist can have several out at once. */}
                 <ul className="mt-1 divide-y divide-line rounded-lg border border-line">
                   {s.pulls.map((p) => {
-                    const out = p.lines.reduce((n, l) => n + stillOut(l), 0)
+                    const out = pullOut(p)
+                    const kept = p.closedAs === 'KEPT'
                     const late = out > 0 && !!p.dueBackAt && p.dueBackAt < now
                     return (
                       <li key={p.id} className="text-xs">
@@ -100,7 +101,7 @@ export default async function Stylists() {
                                 <span className="text-muted"> · sent {day(p.sentAt)}</span>
                               </span>
                               <span className={`shrink-0 ${late ? 'font-semibold text-urgent' : out ? 'text-muted' : 'text-faint'}`}>
-                                {out ? `${out} out · ${p.dueBackAt ? `${late ? 'overdue ' : 'due '}${day(p.dueBackAt)}` : 'no return date'}` : 'all back'}
+                                {kept ? 'closed, kept' : out ? `${out} out · ${p.dueBackAt ? `${late ? 'overdue ' : 'due '}${day(p.dueBackAt)}` : 'no return date'}` : 'all back'}
                               </span>
                             </span>
                           }
@@ -111,11 +112,14 @@ export default async function Stylists() {
                               {p.lines.map((l) => (
                                 <li key={l.id} className="flex items-center justify-between gap-3 py-0.5 text-muted">
                                   <span>{l.qty} × {l.item}{l.returnedQty ? ` · ${l.returnedQty} back` : ''}</span>
-                                  {stillOut(l) > 0 ? <ReturnButton pullId={p.id} lineId={l.id} qty={stillOut(l)} label={stillOut(l) > 1 ? `${stillOut(l)} back` : 'Back'} /> : null}
+                                  {!kept && stillOut(l) > 0 ? <ReturnButton pullId={p.id} lineId={l.id} qty={stillOut(l)} label={stillOut(l) > 1 ? `${stillOut(l)} back` : 'Back'} /> : null}
                                 </li>
                               ))}
                             </ul>
-                            {out > 0 && p.lines.length > 1 ? <div className="flex justify-end pt-1"><ReturnButton pullId={p.id} label="All back" /></div> : null}
+                            <div className="flex flex-wrap items-start justify-end gap-1.5 pt-1.5">
+                              {out > 0 && p.lines.length > 1 ? <ReturnButton pullId={p.id} label="All back" /> : null}
+                              {out > 0 || kept ? <PullCloseButtons pullId={p.id} closedAs={p.closedAs} /> : null}
+                            </div>
                           </div>
                         </Fold>
                       </li>

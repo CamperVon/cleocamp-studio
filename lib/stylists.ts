@@ -12,17 +12,24 @@ import { db } from '@/lib/db'
 /** Pieces still out on a pull line. Pure. */
 export const stillOut = (l: { qty: number; returnedQty: number }) => Math.max(0, l.qty - l.returnedQty)
 
+/** Pieces a pull still has out. A closed pull (kept, or removed) has none. Pure. */
+export const pullOut = (p: { closedAs?: string | null; lines: Array<{ qty: number; returnedQty: number }> }) =>
+  p.closedAs ? 0 : p.lines.reduce((n, l) => n + stillOut(l), 0)
+
 export async function loadStylists() {
   const stylists = await db.stylist.findMany({
     orderBy: { name: 'asc' },
     include: {
-      pulls: { orderBy: { sentAt: 'desc' }, include: { lines: true } },
+      // A pull removed as a mistake leaves the page; its history is in the ledger.
+      // Spelled out with null: NOT { closedAs: 'REMOVED' } is false in SQL for
+      // an open pull (NULL), and hid every one of them.
+      pulls: { where: { OR: [{ closedAs: null }, { closedAs: { not: 'REMOVED' } }] }, orderBy: { sentAt: 'desc' }, include: { lines: true } },
       requests: { orderBy: { createdAt: 'desc' } },
     },
   })
   return stylists.map((s) => {
-    const out = s.pulls.reduce((n, p) => n + p.lines.reduce((m, l) => m + stillOut(l), 0), 0)
-    const openPulls = s.pulls.filter((p) => p.lines.some((l) => stillOut(l) > 0))
+    const out = s.pulls.reduce((n, p) => n + pullOut(p), 0)
+    const openPulls = s.pulls.filter((p) => pullOut(p) > 0)
     const due = openPulls.map((p) => p.dueBackAt).filter((d): d is Date => !!d).sort((a, b) => a.getTime() - b.getTime())[0] ?? null
     const openRequests = s.requests.filter((r) => r.status === 'OPEN' || r.status === 'TOLD')
     return { ...s, out, openPulls, due, openRequests }
@@ -52,7 +59,7 @@ export async function stylistContext(now = new Date()): Promise<string> {
   for (const r of reserve) lines.push(`- Keep ${r.stylistReserveQty} ${r.name}s on hand for stylist pulls; they are not for sale when judging stock or cover.`)
   for (const s of withPulls) {
     const overdue = s.due && s.due < now
-    lines.push(`- ${s.name}${s.company ? ` (${s.company})` : ''}: ${s.out} piece${s.out === 1 ? '' : 's'} out${s.due ? `, due back ${day(s.due)}${overdue ? ' — OVERDUE' : ''}` : ', no return date agreed'} [${s.openPulls.map((p) => `pull ${p.id}${p.project ? ` "${p.project}"` : ''}: ${p.lines.reduce((n, l) => n + stillOut(l), 0)} out, ${p.dueBackAt ? `due ${day(p.dueBackAt)}` : 'no return date'}`).join('; ')}].`)
+    lines.push(`- ${s.name}${s.company ? ` (${s.company})` : ''}: ${s.out} piece${s.out === 1 ? '' : 's'} out${s.due ? `, due back ${day(s.due)}${overdue ? ' — OVERDUE' : ''}` : ', no return date agreed'} [${s.openPulls.map((p) => `pull ${p.id}${p.project ? ` "${p.project}"` : ''}: ${pullOut(p)} out, ${p.dueBackAt ? `due ${day(p.dueBackAt)}` : 'no return date'}`).join('; ')}].`)
   }
   for (const { s, r } of reqs) {
     const c = r.productVariantId ? counts.get(r.productVariantId) : undefined
@@ -80,4 +87,18 @@ export function pickStylist<S extends { id: string; name: string }>(all: S[], id
   if (byName.length === 1) return { stylist: byName[0] }
   if (!byName.length) return { reason: `No stylist called ${name}. Add them with save_stylist, or check the name.` }
   return { reason: `More than one stylist matches ${name}: ${byName.map((s) => s.name).join(', ')}. Ask which.` }
+}
+
+/**
+ * What a pull actually took off stock and has not had back, per variant,
+ * from the ledger: every event carrying its "[pull id]" marker, summed. A
+ * line whose write Shopify refused took nothing (the Black size 1 tee on
+ * Natasha's Adriana Lima pull), so it gives nothing back. Corrections carry
+ * the marker too, so a second removal finds nothing left. Pure.
+ */
+export function stillTaken(events: Array<{ productVariantId: string | null; deltaQty: number }>): Map<string, number> {
+  const net = new Map<string, number>()
+  for (const e of events) if (e.productVariantId) net.set(e.productVariantId, (net.get(e.productVariantId) ?? 0) + e.deltaQty)
+  for (const [k, v] of net) if (v >= 0) net.delete(k); else net.set(k, -v)
+  return net
 }

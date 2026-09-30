@@ -4148,6 +4148,7 @@ export const TOOLS: Record<string, Tool> = {
     run: async (i) => {
       const pull = await db.stylistPull.findUnique({ where: { id: String(i.pullId) }, include: { lines: true, stylist: { select: { name: true } } } })
       if (!pull) return { saved: false, reason: 'No such pull.' }
+      if (pull.closedAs) return { saved: false, reason: `That pull was closed (${pull.closedAs === 'KEPT' ? 'kept' : 'removed as a mistake'}). Reopen it with close_stylist_pull (as: OPEN) first if pieces really came back.` }
       if (i.dueBackAt) await db.stylistPull.update({ where: { id: pull.id }, data: { dueBackAt: new Date(`${String(i.dueBackAt)}T12:00:00-07:00`) } })
       const { stillOut } = await import('@/lib/stylists')
       const back = i.everythingBack === true
@@ -4173,6 +4174,61 @@ export const TOOLS: Record<string, Tool> = {
         done.push(w.eventId ? `${l.item}: ${b.qty} back on stock.` : `${l.item}: ${b.qty} back, but NOT put on stock (${'error' in w ? w.error : 'unknown'}).`)
       }
       return { saved: true, pullId: pull.id, returned: done }
+    },
+  },
+
+  close_stylist_pull: {
+    def: {
+      name: 'close_stylist_pull',
+      description:
+        'Close a stylist pull. KEPT: the stylist kept what is still out (gifted, lost, bought): it stays ' +
+        'off stock and stops counting as out. REMOVED: the pull was logged by mistake: whatever it took off ' +
+        'stock and has not had back goes back on (CORRECTION events, in Shopify too) and it leaves the page. ' +
+        'OPEN reopens a KEPT pull. Pieces that came back are record_pull_return, not this. Only when a ' +
+        'person says which.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          pullId: str('The pull'),
+          as: { type: 'string' as const, enum: ['KEPT', 'REMOVED', 'OPEN'] },
+        },
+        required: ['pullId', 'as'],
+      },
+    },
+    run: async (i) => {
+      const pull = await db.stylistPull.findUnique({ where: { id: String(i.pullId) }, include: { lines: true, stylist: { select: { name: true } } } })
+      if (!pull) return { saved: false, reason: 'No such pull.' }
+      const as = String(i.as)
+      if (as === 'OPEN') {
+        if (pull.closedAs === 'REMOVED') return { saved: false, reason: 'A removed pull put its stock back; reopening it would leave the count wrong. Log it again with record_stylist_pull if it did happen.' }
+        await db.stylistPull.update({ where: { id: pull.id }, data: { closedAs: null, closedAt: null } })
+        return { saved: true, reopened: pull.id }
+      }
+      if (as === 'KEPT') {
+        if (pull.closedAs === 'REMOVED') return { saved: false, reason: 'That pull was already removed as a mistake.' }
+        await db.stylistPull.update({ where: { id: pull.id }, data: { closedAs: 'KEPT', closedAt: new Date() } })
+        return { saved: true, closed: `${pull.stylist.name}'s pull closed as kept; what was out stays off stock.` }
+      }
+      if (as !== 'REMOVED') return { saved: false, reason: 'Say KEPT, REMOVED or OPEN.' }
+      const marker = `[pull ${pull.id}]`
+      const { stillTaken } = await import('@/lib/stylists')
+      const events = await db.inventoryEvent.findMany({ where: { note: { contains: marker } }, select: { id: true, productVariantId: true, deltaQty: true, type: true }, orderBy: { createdAt: 'asc' } })
+      const taken = stillTaken(events.map((e) => ({ productVariantId: e.productVariantId, deltaQty: Number(e.deltaQty) })))
+      if (taken.size && !inventoryWritesEnabled()) return { saved: false, reason: 'Inventory writing is paused, so the stock cannot be put back. Nothing changed.' }
+      const label = (vid: string) => pull.lines.find((l) => l.productVariantId === vid)?.item ?? vid
+      const back: string[] = [], failed: string[] = []
+      for (const [vid, qty] of taken) {
+        const w = await writeEvent({ productVariantId: vid, deltaQty: qty, type: 'CORRECTION', note: `Stylist pull logged by mistake, removed: back on stock ${marker}` })
+        if (!w.eventId) { failed.push(`${label(vid)}: ${'error' in w ? w.error : 'unknown'}`); continue }
+        const orig = [...events].reverse().find((e) => e.productVariantId === vid && e.type === 'STYLIST_PULL_OUT')
+        if (orig) await db.inventoryEvent.update({ where: { id: w.eventId as string }, data: { correctsEventId: orig.id } })
+        back.push(`${label(vid)}: ${qty} back on stock.`)
+      }
+      if (failed.length) {
+        return { saved: false, putBack: back, notPutBack: failed, reason: 'Some pieces could not go back on stock, so the pull is still open. Say what failed; removing it again later only puts back what is still missing.' }
+      }
+      await db.stylistPull.update({ where: { id: pull.id }, data: { closedAs: 'REMOVED', closedAt: new Date() } })
+      return { saved: true, removed: pull.id, putBack: back, ...(back.length ? {} : { note: 'It had taken nothing off stock, so nothing went back.' }) }
     },
   },
 

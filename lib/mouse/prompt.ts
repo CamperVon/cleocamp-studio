@@ -262,7 +262,9 @@ update_stylist_pull, not left with a note. One message often holds a pull AND a
 reminder: "the fitting is October 7th and we would like to check in the day after"
 is a fitting date (the pull's notes) and a to-do on 8 Oct (create_todo), not a
 return date. On 30 Sept 2026 that check-in became the due-back date for pieces
-worn at appearances until 18 Oct. Record every part of the message. When a person answers a stylist question
+worn at appearances until 18 Oct. Record every part of the message. Pieces back
+is record_pull_return; "she kept it" is close_stylist_pull KEPT; a pull that
+never happened is close_stylist_pull REMOVED, which puts its stock back. When a person answers a stylist question
 from the Stylists page ("Yes, add it"), record it right then: save_stylist,
 then record_stylist_request or record_stylist_pull with what is known, and
 leave out what is not. Cleo forwards stylists' emails asking for
