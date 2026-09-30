@@ -359,7 +359,7 @@ async function completeAndInvoice(draftId: string, email: string, customerName: 
  * renames someone. Returns null (and the draft goes out by email alone) if
  * the app may not read or write customers.
  */
-export async function storeCustomer(email: string, name: { firstName: string; lastName?: string | null }): Promise<{ id: string | null; problem?: string }> {
+export async function storeCustomer(email: string, name: { firstName: string; lastName?: string | null }, tags: string[] = ['wholesale']): Promise<{ id: string | null; problem?: string }> {
   try {
     const found = await shopifyGraphQL<{ customers: { nodes: Array<{ id: string; firstName: string | null; lastName: string | null }> } }>(
       `query($q: String!) { customers(first: 1, query: $q) { nodes { id firstName lastName } } }`,
@@ -377,7 +377,7 @@ export async function storeCustomer(email: string, name: { firstName: string; la
     }
     const made = await shopifyGraphQL<{ customerCreate: { customer: { id: string } | null; userErrors: Array<{ message: string }> } }>(
       `mutation($input: CustomerInput!) { customerCreate(input: $input) { customer { id } userErrors { message } } }`,
-      { input: { email, firstName: name.firstName, lastName: name.lastName ?? null, tags: ['wholesale'] } },
+      { input: { email, firstName: name.firstName, lastName: name.lastName ?? null, tags } },
     )
     return made.customerCreate.customer
       ? { id: made.customerCreate.customer.id }
@@ -654,10 +654,12 @@ export type GiftResult = { orderName: string | null; orderId: string | null; han
  * over: marked fulfilled so it is never packed. Shopify takes the items off
  * stock itself; tagged "gift" so it stays out of sales history.
  */
-export async function giftOrder(args: { email: string | null; lines: SaleLine[]; note: string; shipTo?: ShipAddress }): Promise<GiftResult> {
+export async function giftOrder(args: { email: string | null; name: { firstName: string; lastName?: string | null }; lines: SaleLine[]; note: string; shipTo?: ShipAddress }): Promise<GiftResult> {
   const out: GiftResult = { orderName: null, orderId: null, handedOver: false, problems: [] }
+  const who = await giftCustomer(args.email, args.name, args.shipTo)
+  if (who.problem) out.problems.push(who.problem)
   const opts: InvoiceOptions = {
-    tags: ['gift', 'studio-mouse'], taxExempt: true, discount: GIFT_DISCOUNT,
+    tags: ['gift', 'studio-mouse'], taxExempt: true, discount: GIFT_DISCOUNT, customerId: who.id,
     ...(args.shipTo ? { shipTo: args.shipTo, shippingCharge: 0, shippingTitle: 'Gift, no charge' } : {}),
   }
   const created = await shopifyGraphQL<DraftCreated>(
@@ -705,3 +707,72 @@ export async function giftOrder(args: { email: string | null; lines: SaleLine[];
 
 /** Every gift carries the whole price as a discount, so its value shows. */
 export const GIFT_DISCOUNT = { percent: 100, title: 'Gift' }
+
+/**
+ * A gift when we do not have the address: the draft itself is emailed, and
+ * its checkout link asks the recipient for where to send it, with nothing to
+ * pay. Brandon, 30 Sept 2026, for Carol Lee: "create a $0 invoice for a gift
+ * ... that will email her so she can input address." It has to stay a draft:
+ * #2664 was completed into a $0 order first, Shopify closed it, and a closed
+ * order will not email.
+ *
+ * Nothing leaves stock until she checks out; then Shopify makes the order,
+ * with her address, unfulfilled and tagged gift, and it waits for a label.
+ */
+export async function giftInvite(args: { email: string; firstName: string; lastName?: string | null; lines: SaleLine[]; note: string; message?: string | null }): Promise<{ draftName: string | null; sent: boolean; problems: string[] }> {
+  const who = await giftCustomer(args.email, { firstName: args.firstName, lastName: args.lastName })
+  const opts: InvoiceOptions = { tags: ['gift', 'studio-mouse'], taxExempt: true, discount: GIFT_DISCOUNT, shippingCharge: 0, shippingTitle: 'Gift, no charge', customerId: who.id }
+  const created = await shopifyGraphQL<{ draftOrderCreate: { draftOrder: { id: string; name: string } | null; userErrors: Array<{ message: string }> } }>(
+    `mutation($input: DraftOrderInput!) { draftOrderCreate(input: $input) { draftOrder { id name } userErrors { message } } }`,
+    { input: draftInput(args.email, args.lines, args.note, opts) },
+  )
+  const d = created.draftOrderCreate.draftOrder
+  if (!d) return { draftName: null, sent: false, problems: [`Shopify would not create the gift: ${created.draftOrderCreate.userErrors.map((e) => e.message).join('; ') || 'no reason given'}. Nothing was created or sent.`] }
+  const base = {
+    to: args.email,
+    subject: 'A gift from Cleo Camp',
+    customMessage: giftInviteText(args.firstName, args.message),
+  }
+  const send = (e: Record<string, unknown>) => shopifyGraphQL<{ draftOrderInvoiceSend: { draftOrder: { id: string } | null; userErrors: Array<{ message: string }> } }>(
+    `mutation($id: ID!, $email: EmailInput) { draftOrderInvoiceSend(id: $id, email: $email) { draftOrder { id } userErrors { message } } }`,
+    { id: d.id, email: e },
+  )
+  let r = await send({ ...base, from: INVOICE_FROM })
+  if (!r.draftOrderInvoiceSend.draftOrder || r.draftOrderInvoiceSend.userErrors.length) r = await send(base)
+  const sent = !!r.draftOrderInvoiceSend.draftOrder && !r.draftOrderInvoiceSend.userErrors.length
+  return {
+    draftName: d.name, sent,
+    problems: sent ? [] : [`The gift ${d.name} was made but the email did not go (${r.draftOrderInvoiceSend.userErrors.map((e) => e.message).join('; ') || 'no reason given'}). Open ${d.name} under Orders → Drafts in Shopify and use "Send invoice".`],
+  }
+}
+
+/** The words above the link in the gift email. A line from the person goes in first. Pure. */
+export function giftInviteText(firstName: string, message?: string | null): string {
+  const extra = message?.trim() ? `${message.trim()}\n\n` : ''
+  return `Hi ${firstName}, ${extra}Cleo would like to send you a gift. Tap the link below and add the address you'd like it sent to. There is nothing to pay.\n\nKindly,\nCleo Studio`
+}
+
+/**
+ * Who a gift is for, as a Shopify customer, so the order shows their name
+ * (Brandon, 30 Sept 2026, on #2667: "Shouldn't the customer name be filled
+ * out"). By email when we have one, the same customer every time; otherwise
+ * made from the name and shipping address. If Shopify will not, the gift
+ * still goes and the order carries the name on its address.
+ */
+export async function giftCustomer(email: string | null, name: { firstName: string; lastName?: string | null }, address?: ShipAddress): Promise<{ id: string | null; problem?: string }> {
+  if (email) {
+    const r = await storeCustomer(email, name, ['gift'])
+    return r.id ? r : { id: null, problem: `No Shopify customer was attached (${r.problem ?? 'no reason given'}); the name is on the address.` }
+  }
+  try {
+    const made = await shopifyGraphQL<{ customerCreate: { customer: { id: string } | null; userErrors: Array<{ message: string }> } }>(
+      `mutation($input: CustomerInput!) { customerCreate(input: $input) { customer { id } userErrors { message } } }`,
+      { input: { firstName: name.firstName, lastName: name.lastName ?? null, tags: ['gift'], ...(address ? { addresses: [{ ...address, company: address.company ?? null }] } : {}) } },
+    )
+    return made.customerCreate.customer
+      ? { id: made.customerCreate.customer.id }
+      : { id: null, problem: `No Shopify customer was attached (${made.customerCreate.userErrors.map((e) => e.message).join('; ')}); the name is on the address.` }
+  } catch (e) {
+    return { id: null, problem: `No Shopify customer was attached (${e instanceof Error ? e.message.slice(0, 120) : String(e)}); the name is on the address.` }
+  }
+}

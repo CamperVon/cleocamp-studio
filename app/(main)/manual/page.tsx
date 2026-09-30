@@ -184,9 +184,15 @@ export default function Manual() {
               <b> Create shipping label</b>. <b>Handed over:</b> it&rsquo;s marked done. Never use a
               $0 invoice for a gift: Shopify won&rsquo;t email it and it never reaches the label queue.
             </p>
+            <p>
+              <b>No address?</b> Give Mouse their email and say to ask for it. Shopify emails them a
+              link to add their address, with nothing to pay. When they do, it comes off stock and
+              waits for a label like any other gift.
+            </p>
             <ul className="flex flex-col gap-2">
               <Try say="Gift Carol Lee a Sardine, Naked, for press. Ship to 1 Main St, Los Angeles, CA 90012" />
               <Try say="I handed Sofie a Flower Hair Tie as a gift" />
+              <Try say="Gift Carol Lee a Sardine, Naked, carol.lee@voxmedia.com. Email her for her address" />
             </ul>
           </Section>
 

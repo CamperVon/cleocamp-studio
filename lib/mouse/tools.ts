@@ -3439,9 +3439,11 @@ export const TOOLS: Record<string, Tool> = {
         'Shopify order at retail with a 100% Gift discount: no tax, nothing to pay, no email to the ' +
         'recipient. Shopify takes the items off stock; do NOT also log an inventory event. Shipped ' +
         '(shipTo): the order waits unfulfilled in Shopify with "Create shipping label". In person ' +
-        '(handedOver: true): marked handed over. Ask for the full shipping address if it is going ' +
-        'out and you do not have it; never guess one or take it from an email. Leave confirmed out ' +
-        'to draft and show it; confirmed: true only once a person says send.',
+        '(handedOver: true): marked handed over. No address? askForAddress: true with their email: ' +
+        'Shopify emails them a link to enter where to send it, nothing to pay, and the order lands ' +
+        'waiting for a label once they do (stock moves then, not now). Otherwise ask for the full ' +
+        'address; never guess one or take it from an email. Leave confirmed out to draft and show ' +
+        'it; confirmed: true only once a person says send.',
       input_schema: {
         type: 'object',
         properties: {
@@ -3460,6 +3462,8 @@ export const TOOLS: Record<string, Tool> = {
           },
           shipTo: str('Full US shipping address on one line: street, city, state ZIP'),
           handedOver: { type: 'boolean' as const, description: 'true when it was given in person, so nothing ships' },
+          askForAddress: { type: 'boolean' as const, description: 'true when we have their email but not their address: they are emailed a link to give it' },
+          message: str('Optional line from the person to go in the gift email, in their words'),
           reason: str('What it is for, in a few words ("press, Vox Media"). Goes on the order.'),
           confirmed: { type: 'boolean' as const, description: 'Leave out to draft. true only after a person saw the draft and said send.' },
         },
@@ -3474,11 +3478,13 @@ export const TOOLS: Record<string, Tool> = {
       const items = Array.isArray(i.items) ? (i.items as Array<{ productVariantId: string; quantity?: number }>) : []
       if (!items.length) return { sent: false, reason: 'Nothing to gift. Ask what.' }
       const handedOver = i.handedOver === true
-      const { parseUsAddress, addressLines, giftOrder, quoteLiveSale, GIFT_DISCOUNT } = await import('@/lib/live-sale')
+      const ask = i.askForAddress === true && !handedOver
+      if (ask && !email) return { sent: false, reason: `To ask ${name} for their address, I need their email. Ask for it.` }
+      const { parseUsAddress, addressLines, giftOrder, giftInvite, giftInviteText, quoteLiveSale, GIFT_DISCOUNT } = await import('@/lib/live-sale')
       const [first, ...rest] = name.split(/\s+/)
       const who = { firstName: first, lastName: rest.join(' ') || null }
       let shipTo: import('@/lib/live-sale').ShipAddress | undefined
-      if (!handedOver) {
+      if (!handedOver && !ask) {
         const parsed = parseUsAddress(typeof i.shipTo === 'string' ? i.shipTo : null)
         if (!parsed) {
           return {
@@ -3506,6 +3512,9 @@ export const TOOLS: Record<string, Tool> = {
         const onHand = v.onHandQty === null ? null : Number(v.onHandQty)
         if (onHand !== null && onHand < qty) stock.push(`${label}: ${onHand} on hand, fewer than ${qty}. Say so before sending.`)
         if (!v.shopifyVariantId) {
+          // Its count only moves when the recipient checks out, which the
+          // app never hears about for a piece Shopify does not stock.
+          if (ask) return { sent: false, reason: `${label} is not in Shopify, so it cannot go in an address link. Ask for ${name}'s address instead.` }
           // Not in Shopify (the Red Petite bean bag): a plain line at the
           // app's retail, and the app's own count comes down.
           const cents = v.retailPriceCents ?? v.product.retailPriceCents ?? 0
@@ -3516,7 +3525,8 @@ export const TOOLS: Record<string, Tool> = {
         lines.push({ shopifyVariantId: v.shopifyVariantId, label, quantity: qty })
       }
       const reason = String(i.reason ?? '').trim()
-      const note = `Gift to ${name}${reason ? ` (${reason})` : ''}, from Studio Mouse.`
+      // "(gift)" said nothing on #2667; only a real reason goes in.
+      const note = `Gift to ${name}${reason && !/^gift$/i.test(reason) ? ` (${reason})` : ''}, from Studio Mouse.`
 
       if (i.confirmed !== true) {
         let value = null as number | null
@@ -3529,16 +3539,33 @@ export const TOOLS: Record<string, Tool> = {
           to: name, ...(email ? { email } : {}),
           lines: lines.map((l) => `${l.quantity} × ${l.label}`),
           ...(value != null ? { retailValue: `$${value.toFixed(2)}`, charged: '$0.00, no tax' } : {}),
-          delivery: shipTo ? `ships to ${addressLines(shipTo)}; label made in Shopify` : 'handed over in person',
+          delivery: ask ? `${email} is emailed a link to give their address` : shipTo ? `ships to ${addressLines(shipTo)}; label made in Shopify` : 'handed over in person',
+          ...(ask ? { giftEmail: { to: email, subject: 'A gift from Cleo Camp', text: giftInviteText(first, i.message ? String(i.message) : null) } } : {}),
           ...(stock.length ? { stock } : {}),
-          tellTheUser: 'Show this gift (who, what, the address) and wait. Sending it makes a $0 Shopify order that takes the items off stock' +
-            (shipTo ? ' and waits in Shopify for a shipping label.' : ' and marks it handed over.') + ' Nobody is emailed.',
+          tellTheUser: ask
+            ? 'Show this gift and the email word for word, and wait. Sending emails them a link to add their address, nothing to pay. Stock comes off, and the order waits for a label, when they fill it in.'
+            : 'Show this gift (who, what, the address) and wait. Sending it makes a $0 Shopify order that takes the items off stock' +
+              (shipTo ? ' and waits in Shopify for a shipping label.' : ' and marks it handed over.') + ' Nobody is emailed.',
+        }
+      }
+
+      if (ask) {
+        try {
+          const g = await giftInvite({ email: email!, firstName: first, lastName: who.lastName, lines, note, message: i.message ? String(i.message) : null })
+          return {
+            sent: g.sent, draft: g.draftName, problems: g.problems,
+            tellTheUser: g.problems.length
+              ? 'Say plainly what happened and what to do in Shopify.'
+              : `Say ${name} was emailed a link to add their address (${g.draftName}). Once they do, it comes off stock and waits in Shopify for a label. If they never do, nothing moves; the draft is under Orders → Drafts.`,
+          }
+        } catch (e) {
+          return { sent: false, reason: `Shopify refused: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}. Check Shopify before trying again.` }
         }
       }
 
       let r
       try {
-        r = await giftOrder({ email, lines, note, shipTo })
+        r = await giftOrder({ email, name: who, lines, note, shipTo })
       } catch (e) {
         return { sent: false, reason: `Shopify refused: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}. Check Shopify before trying again.` }
       }

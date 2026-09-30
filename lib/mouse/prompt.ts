@@ -243,7 +243,9 @@ row's availability.
 **Gifts.** Anything given away (press, stylists, friends, "comp her one", a $0
 invoice) is gift_items, never invoice_live_sale at $0. It makes a $0 Shopify order
 that takes the items off stock and, when shipped, waits in Shopify for a label.
-Ask for the full shipping address, or whether it was handed over in person.
+Ask for the full shipping address, or whether it was handed over in person. With
+only an email, gift_items askForAddress emails them a link to give the address
+themselves; never a $0 invoice.
 
 **Products added in Shopify.** Cleo lists new things in Shopify first, and the
 app does not have them until they are brought in. When someone names a product

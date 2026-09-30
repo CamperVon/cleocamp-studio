@@ -21,3 +21,12 @@ test('a similar name in the app is found before making a second one', () => {
   assert.deepEqual(lookalikes('Sardine', app), [])
   assert.deepEqual(lookalikes('Cleo Tee', app).map((p) => p.name), ['Cleo Tee'])
 })
+
+test('the gift email asks for an address and says there is nothing to pay', async () => {
+  const { giftInviteText } = await import('../lib/live-sale')
+  const t = giftInviteText('Carol', null)
+  assert.match(t, /^Hi Carol, Cleo would like to send you a gift/)
+  assert.match(t, /nothing to pay/)
+  assert.match(t, /Kindly,\nCleo Studio$/)
+  assert.match(giftInviteText('Carol', 'Loved your piece on us.'), /^Hi Carol, Loved your piece on us\.\n\nCleo would like/)
+})
