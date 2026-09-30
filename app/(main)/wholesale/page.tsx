@@ -1,7 +1,7 @@
-import { chargedDifferently, dollars, heldBackFor, loadLineSheet, onThePdf } from '@/lib/line-sheet'
+import { chargedDifferently, dollars, heldBackFor, loadLineSheet, onThePdf, variantsFor } from '@/lib/line-sheet'
 import { db } from '@/lib/db'
 import { Page, Card, Chip, Empty, Money, Fold } from '@/app/ui/primitives'
-import { LineSheetRowEditor, OneOffButton, RestoreRow } from './line-sheet-row'
+import { LineSheetRowEditor, OneOffButton, PriceEdit, RestoreRow } from './line-sheet-row'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +21,13 @@ export const dynamic = 'force-dynamic'
  * wholesale tab"). Loaded from the Jan 2026 line sheet; changed by telling
  * Mouse, which uses set_wholesale_price.
  */
+/** "12 on hand", "none on hand", "none on hand · 83 pre-ordered". Negative on-hand is pre-orders waiting. */
+function stockWords(n: number | null): string {
+  if (n == null) return ''
+  if (n > 0) return `${n} on hand`
+  return n === 0 ? 'none on hand' : `none on hand · ${-n} pre-ordered`
+}
+
 /** The window an off-list invoice price is flagged in. */
 const sixMonthsAgo = () => Date.now() - 180 * 86_400_000
 
@@ -56,6 +63,18 @@ export default async function Wholesale() {
     .filter((s) => s.sentAt.getTime() >= since)
     .map((s) => ({ id: s.id, sentAt: s.sentAt, invoiceName: s.invoiceName, account: a.name, lines: s.lines }))), oneOffs)
   const name = (l: { item: string; colorLabel: string }) => [l.item, l.colorLabel].filter(Boolean).join(' ')
+  // Where a wholesale price typed on a line sheet row goes: the colour's own
+  // variants when that colour is priced apart (Bean Bag Silver), else the
+  // whole product, which moves every colour.
+  const priceFor = (l: (typeof sheet.lines)[number]) => {
+    const p = products.find((x) => x.id === l.productId)
+    if (!p) return undefined
+    const vs = variantsFor(p, l.colorway)
+    const apart = !!l.colorway && vs.some((v) => v.wholesalePriceCents != null)
+    return apart
+      ? { productId: p.id, variantIds: vs.map((v) => v.id), scope: `${p.name} ${l.colorway} only` }
+      : { productId: p.id, scope: `every ${p.name}` }
+  }
   const alerts = soldOutButListed.length + heldBack.length + offList.length
   const unpriced = products.filter((p) => p.wholesalePriceCents == null && !p.variants.some((v) => v.wholesalePriceCents != null)).length
 
@@ -163,8 +182,8 @@ export default async function Wholesale() {
           }
         >
         <p className="border-b border-line px-4 py-2.5 text-xs text-muted sm:px-5">
-          What a store pays, and what Mouse invoices unless you name a price for one order. To change one, tell Mouse
-          {' '}(&ldquo;wholesale on the Cleo Tee is $56&rdquo;). Shipped orders add $25 shipping &amp; handling, waived over $2,500.
+          What a store pays, and what Mouse invoices unless you name a price for one order. Tap a price to change it, or
+          {' '}tell Mouse (&ldquo;wholesale on the Cleo Tee is $56&rdquo;). Shipped orders add $25 shipping &amp; handling, waived over $2,500.
           {unpriced ? <span className="text-warn"> {unpriced} not set yet — Mouse will ask.</span> : null}
         </p>
         <ul className="divide-y divide-line">
@@ -174,15 +193,17 @@ export default async function Wholesale() {
             const pct = (w: number | null, r: number | null) => (w != null && r ? ` · ${Math.round((w / r) * 100)}%` : '')
             return (
               <li key={p.id} className="px-4 py-2.5 text-sm sm:px-5">
-                <div className="flex items-baseline justify-between gap-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <p className="font-medium">{p.name}</p>
-                  <p className="shrink-0 text-right">
+                  <p className="ml-auto text-right">
                     {byVariant ? (
                       <span className="text-xs text-muted">by colour &amp; size</span>
-                    ) : p.wholesalePriceCents == null ? (
-                      <span className="text-xs text-warn">not set</span>
                     ) : (
-                      <span className="font-semibold"><Money cents={p.wholesalePriceCents} /></span>
+                      <PriceEdit productId={p.id} cents={p.wholesalePriceCents} scope={`every ${p.name}`}>
+                        {p.wholesalePriceCents == null
+                          ? <span className="text-xs text-warn">not set</span>
+                          : <span className="font-semibold"><Money cents={p.wholesalePriceCents} /></span>}
+                      </PriceEdit>
                     )}
                     {byVariant ? null : <span className="text-xs text-faint"> · retail <Money cents={p.retailPriceCents} />{pct(p.wholesalePriceCents, p.retailPriceCents)}</span>}
                   </p>
@@ -195,7 +216,10 @@ export default async function Wholesale() {
                         <li key={v.id} className="flex items-baseline justify-between gap-3 text-xs">
                           <span className="text-muted">{[v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'One size'}</span>
                           <span className="shrink-0">
-                            {v.wholesalePriceCents == null ? <span className="text-warn">not set</span> : <Money cents={v.wholesalePriceCents} />}
+                            <PriceEdit productId={p.id} variantIds={[v.id]} cents={v.wholesalePriceCents}
+                              scope={[p.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ') + ' only'}>
+                              {v.wholesalePriceCents == null ? <span className="text-warn">not set</span> : <Money cents={v.wholesalePriceCents} />}
+                            </PriceEdit>
                             <span className="text-faint"> · retail <Money cents={retail} />{pct(v.wholesalePriceCents, retail)}</span>
                           </span>
                         </li>
@@ -237,7 +261,7 @@ export default async function Wholesale() {
               ) : null}
               {soldOutButListed.length ? (
                 <p className="text-muted">
-                  <span className="text-ink">Say In Stock with none on hand:</span> {soldOutButListed.map(name).join(', ')}. Change the availability, or check the count.
+                  <span className="text-ink">None on hand, but the PDF tells stores it&rsquo;s available now:</span> {soldOutButListed.map(name).join(', ')}. Tap one to change its availability (&ldquo;Ships in 3 weeks&rdquo;), or check the count.
                 </p>
               ) : null}
               {offList.map((o) => (
@@ -259,13 +283,13 @@ export default async function Wholesale() {
                   id: l.id, linked: !!l.productId, item: l.item, colorLabel: l.colorLabel, description: l.ownDescription,
                   fromShopify: !l.ownDescription.trim() ? l.description : '',
                   sizing: l.sizing, minOrder: l.minOrder, commission: l.commission, availability: l.availability,
-                  wholesale: !l.productId && l.wholesaleCents != null ? String(l.wholesaleCents / 100) : '', msrp: l.msrp,
+                  wholesale: l.wholesaleCents != null ? String(l.wholesaleCents / 100) : '', msrp: l.msrp, price: priceFor(l),
                 }}>
                 <span className="flex items-baseline justify-between gap-3 text-sm">
                   <span className="min-w-0">
                     <span className="font-medium">{l.item}</span> <span className="text-muted">{l.colorLabel}</span>
                     <span className={`block text-xs ${warn ? 'text-warn' : 'text-faint'}`}>
-                      {l.availability || 'no availability set'}{l.onHand != null ? ` · ${l.onHand} on hand` : ''}
+                      {[stockWords(l.onHand), /^\s*in stock\s*$/i.test(l.availability) ? '' : l.availability].filter(Boolean).join(' · ') || '—'}
                     </span>
                     {!onThePdf(l) ? <span className="block text-xs text-warn">Not on the PDF until it has {heldBackFor(l).join(' and ')}. Tap to add.</span> : null}
                   </span>

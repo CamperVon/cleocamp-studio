@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { editLineSheetRow, markPriceOneOff, removeLineSheetRow, restoreLineSheetRow, type RowEdit } from './actions'
+import { editLineSheetRow, markPriceOneOff, removeLineSheetRow, restoreLineSheetRow, setWholesalePrice, type RowEdit } from './actions'
 
 const input = 'w-full min-w-0 rounded-lg border border-line bg-bg px-3 py-2 text-sm'
 const small = 'rounded-lg border border-line px-3 py-1.5 text-xs disabled:opacity-40'
@@ -18,9 +18,11 @@ export type SheetRow = {
   minOrder: string
   commission: string | null
   availability: string
-  /** The row's own, only for a row with no product. Dollars. */
+  /** Dollars: the row's own for a row with no product, else the price list's. */
   wholesale: string
   msrp: string | null
+  /** For a row with a product: where a new wholesale price goes, and what it covers. */
+  price?: { productId: string; variantIds?: string[]; scope: string }
 }
 
 function useSave() {
@@ -63,7 +65,14 @@ export function LineSheetRowEditor({ row, children }: { row: SheetRow; children:
       minOrder: f.minOrder, commission: f.commission ?? '', availability: f.availability,
       ...(row.linked ? {} : { wholesale: f.wholesale, msrp: f.msrp ?? '' }),
     }
-    go(() => editLineSheetRow(row.id, edit), () => setOpen(false))
+    const newPrice = row.linked && row.price && f.wholesale.trim() !== row.wholesale.trim() ? row.price : null
+    go(async () => {
+      if (newPrice) {
+        const p = await setWholesalePrice({ productId: newPrice.productId, variantIds: newPrice.variantIds, dollars: f.wholesale })
+        if (!p.ok) return p
+      }
+      return editLineSheetRow(row.id, edit)
+    }, () => setOpen(false))
   }
 
   return (
@@ -89,9 +98,15 @@ export function LineSheetRowEditor({ row, children }: { row: SheetRow; children:
             <Field label="Availability"><input value={f.availability} onChange={set('availability')} placeholder="In Stock" className={input} /></Field>
           </div>
           {row.linked ? (
-            <p className="text-[11px] text-faint">
-              Wholesale comes from the price list and suggested retail from Shopify. To change a price, tell Mouse.
-            </p>
+            <div className="flex flex-col gap-1">
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Wholesale ($)"><input value={f.wholesale} onChange={set('wholesale')} inputMode="decimal" className={input} disabled={!row.price} /></Field>
+              </div>
+              <p className="text-[11px] text-faint">
+                {row.price ? `A new wholesale price here goes on the price list for ${row.price.scope}. ` : ''}
+                Suggested retail is Shopify&rsquo;s price; change it in Shopify.
+              </p>
+            </div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
               <Field label="Wholesale ($)"><input value={f.wholesale} onChange={set('wholesale')} inputMode="decimal" className={input} /></Field>
@@ -140,6 +155,37 @@ export function OneOffButton(props: { priceKey: string; product: string; charged
         onClick={() => go(() => markPriceOneOff({ key: props.priceKey, product: props.product, charged: props.charged, account: props.account, invoice: props.invoice, list: props.list }))}>
         {pending ? '…' : 'One-off deal'}
       </button>
+      {error ? <span className="text-xs text-urgent">{error}</span> : null}
+    </span>
+  )
+}
+
+/**
+ * A wholesale price on the price list, changed by tapping it. What it changes
+ * is said beside the box, since a product-wide price moves every colour.
+ */
+export function PriceEdit({ productId, variantIds, cents, scope, children }: { productId: string; variantIds?: string[]; cents: number | null; scope: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const [val, setVal] = useState(cents != null ? String(cents / 100) : '')
+  const { pending, error, go } = useSave()
+  if (!open) {
+    return (
+      <button type="button" onClick={() => { setVal(cents != null ? String(cents / 100) : ''); setOpen(true) }} className="underline decoration-dotted underline-offset-2">
+        {children}
+      </button>
+    )
+  }
+  return (
+    <span className="inline-flex flex-col items-end gap-1">
+      <span className="flex items-center gap-1.5">
+        <span className="text-xs text-muted">$</span>
+        <input value={val} onChange={(e) => setVal(e.target.value)} inputMode="decimal" autoFocus
+          className="w-20 rounded-lg border border-line bg-bg px-2 py-1 text-right text-sm" aria-label="Wholesale price" />
+        <button type="button" disabled={pending} onClick={() => go(() => setWholesalePrice({ productId, variantIds, dollars: val }), () => setOpen(false))}
+          className="rounded-lg bg-ink px-2.5 py-1 text-xs font-medium text-bg disabled:opacity-40">{pending ? '…' : 'Save'}</button>
+        <button type="button" disabled={pending} onClick={() => setOpen(false)} className="text-xs text-muted underline">Cancel</button>
+      </span>
+      <span className="text-[11px] text-faint">Sets the wholesale price for {scope}.</span>
       {error ? <span className="text-xs text-urgent">{error}</span> : null}
     </span>
   )

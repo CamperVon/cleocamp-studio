@@ -83,3 +83,27 @@ export async function markPriceOneOff(input: { key: string; product: string; cha
   revalidatePath('/wholesale')
   return { ok: true }
 }
+
+/**
+ * A wholesale price by hand. Brandon, 30 Sept 2026: "We need to be able to
+ * update the wholesale price manually as well." Goes through
+ * set_wholesale_price, as telling Mouse does: the standing price for the
+ * whole product, or for the given variants only where they are priced apart
+ * (Bean Bag Silver). Never a price for one invoice; that is named on the
+ * invoice.
+ */
+export async function setWholesalePrice(input: { productId: string; variantIds?: string[]; dollars: string }): Promise<Result> {
+  const who = await person()
+  if (!who) return { ok: false, error: 'Open the app from your own link so this carries your name.' }
+  const price = Number(input.dollars.replace(/[$,\s]/g, ''))
+  if (!input.dollars.trim() || !Number.isFinite(price) || price <= 0) return { ok: false, error: 'Type a price, like 54.' }
+  const calls = input.variantIds?.length
+    ? input.variantIds.map((productVariantId) => ({ productId: input.productId, productVariantId, price }))
+    : [{ productId: input.productId, price }]
+  for (const c of calls) {
+    const r = (await asPerson(who.id, () => TOOLS.set_wholesale_price.run(c))) as Record<string, unknown>
+    if (r.saved === false) { revalidatePath('/wholesale'); return { ok: false, error: String(r.reason ?? 'That did not save.') } }
+  }
+  revalidatePath('/wholesale')
+  return { ok: true }
+}
