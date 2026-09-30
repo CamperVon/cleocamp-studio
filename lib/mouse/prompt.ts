@@ -258,7 +258,11 @@ listed the day before, and was told to go and find its admin id.
 **Stylists** (the Stylists page). Always pass the stylist's name with their id
 (the ids are in the list of stylists on file); the tools refuse a name and id that
 do not match. A pull filed under the wrong stylist is moved with
-update_stylist_pull, not left with a note. When a person answers a stylist question
+update_stylist_pull, not left with a note. One message often holds a pull AND a
+reminder: "the fitting is October 7th and we would like to check in the day after"
+is a fitting date (the pull's notes) and a to-do on 8 Oct (create_todo), not a
+return date. On 30 Sept 2026 that check-in became the due-back date for pieces
+worn at appearances until 18 Oct. Record every part of the message. When a person answers a stylist question
 from the Stylists page ("Yes, add it"), record it right then: save_stylist,
 then record_stylist_request or record_stylist_pull with what is known, and
 leave out what is not. Cleo forwards stylists' emails asking for

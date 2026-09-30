@@ -4020,7 +4020,9 @@ export const TOOLS: Record<string, Tool> = {
       description:
         'Pieces lent to a stylist for a shoot. Takes them off stock as STYLIST_PULL_OUT (a loan, never ' +
         'demand) and records who has them and when they are due back. Only what a person in the chat ' +
-        'says went out. Ask for a return date if none was given — it is what gets chased.',
+        'says went out. dueBackAt is ONLY the date the pieces come back: a fitting, a shoot or "check in ' +
+        'the day after" is not it. Put a fitting or shoot date in notes, and anything to do on a date ' +
+        '(check in, follow up, chase) in create_todo as well. Ask for the return date if none was given.',
       input_schema: {
         type: 'object',
         properties: {
@@ -4094,8 +4096,9 @@ export const TOOLS: Record<string, Tool> = {
           pullId: str('The pull'),
           stylistId: str('Move it to this stylist (id)'),
           stylistName: str('Move it to this stylist (name); pass with the id, the tool checks they match'),
-          dueBackAt: str('YYYY-MM-DD'),
+          dueBackAt: str('YYYY-MM-DD the pieces are due BACK; "" clears a date that was wrong'),
           project: str('The shoot, talent or publication'),
+          notes: str('Replaces the notes: fitting date, where it went, anything else about the pull'),
         },
         required: ['pullId'],
       },
@@ -4103,7 +4106,7 @@ export const TOOLS: Record<string, Tool> = {
     run: async (i) => {
       const pull = await db.stylistPull.findUnique({ where: { id: String(i.pullId) }, select: { id: true, stylist: { select: { id: true, name: true } } } })
       if (!pull) return { saved: false, reason: 'No such pull.' }
-      const data: { stylistId?: string; dueBackAt?: Date; project?: string } = {}
+      const data: { stylistId?: string; dueBackAt?: Date | null; project?: string; notes?: string } = {}
       let movedTo: string | null = null
       if (i.stylistId || i.stylistName) {
         const { pickStylist } = await import('@/lib/stylists')
@@ -4111,8 +4114,10 @@ export const TOOLS: Record<string, Tool> = {
         if ('reason' in picked) return { saved: false, reason: picked.reason }
         if (picked.stylist.id !== pull.stylist.id) { data.stylistId = picked.stylist.id; movedTo = picked.stylist.name }
       }
-      if (i.dueBackAt) data.dueBackAt = new Date(`${String(i.dueBackAt)}T12:00:00-07:00`)
+      if (i.dueBackAt === '') data.dueBackAt = null
+      else if (i.dueBackAt) data.dueBackAt = new Date(`${String(i.dueBackAt)}T12:00:00-07:00`)
       if (typeof i.project === 'string' && i.project.trim()) data.project = i.project.trim()
+      if (typeof i.notes === 'string' && i.notes.trim()) data.notes = i.notes.trim()
       if (!Object.keys(data).length) return { saved: false, reason: 'Nothing to change.' }
       await db.stylistPull.update({ where: { id: pull.id }, data })
       return { saved: true, ...(movedTo ? { moved: `from ${pull.stylist.name} to ${movedTo}` } : {}), changed: Object.keys(data) }

@@ -52,7 +52,7 @@ export async function stylistContext(now = new Date()): Promise<string> {
   for (const r of reserve) lines.push(`- Keep ${r.stylistReserveQty} ${r.name}s on hand for stylist pulls; they are not for sale when judging stock or cover.`)
   for (const s of withPulls) {
     const overdue = s.due && s.due < now
-    lines.push(`- ${s.name}${s.company ? ` (${s.company})` : ''}: ${s.out} piece${s.out === 1 ? '' : 's'} out${s.due ? `, due back ${day(s.due)}${overdue ? ' — OVERDUE' : ''}` : ', no return date agreed'} [${s.openPulls.map((p) => `pull ${p.id}${p.project ? `: ${p.project}` : ''}`).join('; ')}].`)
+    lines.push(`- ${s.name}${s.company ? ` (${s.company})` : ''}: ${s.out} piece${s.out === 1 ? '' : 's'} out${s.due ? `, due back ${day(s.due)}${overdue ? ' — OVERDUE' : ''}` : ', no return date agreed'} [${s.openPulls.map((p) => `pull ${p.id}${p.project ? ` "${p.project}"` : ''}: ${p.lines.reduce((n, l) => n + stillOut(l), 0)} out, ${p.dueBackAt ? `due ${day(p.dueBackAt)}` : 'no return date'}`).join('; ')}].`)
   }
   for (const { s, r } of reqs) {
     const c = r.productVariantId ? counts.get(r.productVariantId) : undefined

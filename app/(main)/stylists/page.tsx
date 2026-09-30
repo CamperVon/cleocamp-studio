@@ -69,7 +69,7 @@ export default async function Stylists() {
               </span>
               {s.out ? (
                 <span className={`shrink-0 text-right text-xs ${overdue ? 'text-urgent font-semibold' : 'text-muted'}`}>
-                  {s.out} out{s.due ? ` · ${overdue ? 'overdue ' : 'back '}${day(s.due)}` : ' · no date'}
+                  {s.openPulls.length > 1 ? `${s.openPulls.length} pulls · ` : ''}{s.out} out{s.due ? ` · ${overdue ? 'overdue ' : s.openPulls.length > 1 ? 'next back ' : 'back '}${day(s.due)}` : ' · no date'}
                 </span>
               ) : null}
             </span>
@@ -84,31 +84,40 @@ export default async function Stylists() {
 
             {s.pulls.length ? (
               <div className="mt-3 border-t border-line pt-2">
-                <p className="text-[11px] uppercase tracking-wide text-faint">Pulls</p>
-                <ul className="mt-1 flex flex-col gap-2">
+                <p className="text-[11px] uppercase tracking-wide text-faint">Pulls ({s.pulls.length})</p>
+                {/* Each pull on its own, folded: a stylist can have several out at once. */}
+                <ul className="mt-1 divide-y divide-line rounded-lg border border-line">
                   {s.pulls.map((p) => {
                     const out = p.lines.reduce((n, l) => n + stillOut(l), 0)
                     const late = out > 0 && !!p.dueBackAt && p.dueBackAt < now
                     return (
                       <li key={p.id} className="text-xs">
-                        <p className="flex flex-wrap items-baseline gap-x-2">
-                          <span>
-                          <span className="text-muted">{day(p.sentAt)}</span>
-                          {p.project ? ` · ${p.project}` : ''}
-                          <span className={late ? ' text-urgent' : ' text-muted'}>
-                            {' · '}{out ? `${out} still out${p.dueBackAt ? `, due ${day(p.dueBackAt)}` : ', no return date'}` : 'all back'}
-                          </span>
-                          </span>
-                          {out > 0 && p.lines.length > 1 ? <ReturnButton pullId={p.id} label="All back" /> : null}
-                        </p>
-                        <ul className="mt-0.5 pl-3">
-                          {p.lines.map((l) => (
-                            <li key={l.id} className="flex items-center justify-between gap-3 py-0.5 text-muted">
-                              <span>{l.qty} × {l.item}{l.returnedQty ? ` · ${l.returnedQty} back` : ''}</span>
-                              {stillOut(l) > 0 ? <ReturnButton pullId={p.id} lineId={l.id} qty={stillOut(l)} label={stillOut(l) > 1 ? `${stillOut(l)} back` : 'Back'} /> : null}
-                            </li>
-                          ))}
-                        </ul>
+                        <Fold
+                          summary={
+                            <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                              <span className="min-w-0">
+                                <span className="font-medium text-ink">{p.project || 'Pull'}</span>
+                                <span className="text-muted"> · sent {day(p.sentAt)}</span>
+                              </span>
+                              <span className={`shrink-0 ${late ? 'font-semibold text-urgent' : out ? 'text-muted' : 'text-faint'}`}>
+                                {out ? `${out} out · ${p.dueBackAt ? `${late ? 'overdue ' : 'due '}${day(p.dueBackAt)}` : 'no return date'}` : 'all back'}
+                              </span>
+                            </span>
+                          }
+                        >
+                          <div className="px-4 pb-2 sm:px-5">
+                            {p.notes ? <p className="pb-1 text-muted">{p.notes}</p> : null}
+                            <ul>
+                              {p.lines.map((l) => (
+                                <li key={l.id} className="flex items-center justify-between gap-3 py-0.5 text-muted">
+                                  <span>{l.qty} × {l.item}{l.returnedQty ? ` · ${l.returnedQty} back` : ''}</span>
+                                  {stillOut(l) > 0 ? <ReturnButton pullId={p.id} lineId={l.id} qty={stillOut(l)} label={stillOut(l) > 1 ? `${stillOut(l)} back` : 'Back'} /> : null}
+                                </li>
+                              ))}
+                            </ul>
+                            {out > 0 && p.lines.length > 1 ? <div className="flex justify-end pt-1"><ReturnButton pullId={p.id} label="All back" /></div> : null}
+                          </div>
+                        </Fold>
                       </li>
                     )
                   })}
