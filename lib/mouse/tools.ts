@@ -1543,7 +1543,7 @@ export const TOOLS: Record<string, Tool> = {
           error:
             `${product.name} is already listed on Shopify, and a variant made here would have ` +
             `no Shopify link — its count could never write back, and the two would drift. It ` +
-            `has to be added in Shopify and pulled in with sync_shopify. That is about the ` +
+            `has to be added in Shopify and brought in with import_from_shopify. That is about the ` +
             `COUNT and nothing else: to order this, write the purchase order line as a ` +
             `description instead. No variant is needed to place an order, so do not hold up ` +
             `a document waiting for one.`,
@@ -2918,10 +2918,74 @@ export const TOOLS: Record<string, Tool> = {
       const asked = typeof i.since === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(i.since) ? i.since : null
       const since = asked ?? new Date(Date.now() - 21 * 864e5).toISOString().slice(0, 10)
       const r = await syncShopify(db, since)
+      // Listed in Shopify, not in the app: say so, by product, so the person
+      // can say whether to bring them in (import_from_shopify).
+      const fresh = [...new Set(r.variantsUnknown.filter((u) => !u.includes('[draft')).map((u) => u.split(' / ')[0]))]
       return {
         salesFrom: since, unitsSold: r.unitsSold,
         updated: r.variantsUpdated, seenInShopify: r.variantsUpdated + r.variantsUnknown.length,
         salesWritten: r.salesWritten, onHand: `${r.onHandCounted}/${r.onHandTotal}`,
+        ...(fresh.length ? { newInShopify: fresh, tellTheUser: `On Shopify but not in the app yet: ${fresh.join(', ')}. Ask whether to bring them in.` } : {}),
+      }
+    },
+  },
+
+  find_in_shopify: {
+    def: {
+      name: 'find_in_shopify',
+      description:
+        'Search Shopify\'s products by name, or by a product link (cleocamp.com/products/…). ' +
+        'Read-only. Use it whenever a person names a product you do not have ("Sardine", "the new ' +
+        'hair tie"), before saying it does not exist: Cleo adds products in Shopify first. Says for ' +
+        'each whether it is in the app; if not, offer to bring it in with import_from_shopify.',
+      input_schema: { type: 'object', properties: { query: str('A name, or a product link') }, required: ['query'] },
+    },
+    run: async (i) => {
+      const q = String(i.query ?? '').trim()
+      if (!q) return { found: [], reason: 'Say what to look for.' }
+      const { findInShopify } = await import('@/lib/shopify-import')
+      const found = await findInShopify(q)
+      return found.length ? { found } : { found: [], reason: `Nothing on Shopify matches "${q}". Ask for the exact name or the product link.` }
+    },
+  },
+
+  import_from_shopify: {
+    def: {
+      name: 'import_from_shopify',
+      description:
+        'Bring a Shopify product into the app: its colours, sizes, prices, photo, description and ' +
+        'Shopify\'s counts, linked so stock writes back and it can be invoiced and put on the line ' +
+        'sheet. Changes nothing in Shopify. Only when a person has said to (show them what ' +
+        'find_in_shopify found first). Safe to run again: variants already in are left alone, so ' +
+        'it also picks up a colour added to a product already here. If the app has a product with ' +
+        'a similar name, nothing is written and you get the lookalikes: ask whether it is one of ' +
+        'them (intoProductId) or a new product (asNew: true). Never guess which.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          shopifyProductId: str('From find_in_shopify'),
+          intoProductId: str('The app product this listing is, when the person said so'),
+          asNew: { type: 'boolean' as const, description: 'true when the person said it is a new product, not one of the lookalikes' },
+        },
+        required: ['shopifyProductId'],
+      },
+    },
+    run: async (i) => {
+      const { fetchShopifyProduct, importShopifyProduct } = await import('@/lib/shopify-import')
+      const { currentActor } = await import('@/lib/mouse/actor')
+      const p = await fetchShopifyProduct(String(i.shopifyProductId ?? ''))
+      if (!p) return { imported: false, reason: `No Shopify product ${i.shopifyProductId}. Search again with find_in_shopify.` }
+      const r = await importShopifyProduct(p, {
+        intoProductId: typeof i.intoProductId === 'string' && i.intoProductId ? i.intoProductId : undefined,
+        asNew: i.asNew === true, actorId: currentActor(),
+      })
+      if (!r.imported) return r
+      return {
+        ...r,
+        tellTheUser:
+          `Say ${r.product} is in: what was added or linked, and Shopify's counts. It can be invoiced now, and ` +
+          'it joins the line sheet by itself if it is for sale. Wholesale price is not on Shopify: ask for it if ' +
+          'it will be sold wholesale.',
       }
     },
   },
@@ -3264,7 +3328,7 @@ export const TOOLS: Record<string, Tool> = {
       const named = (items as Array<{ price?: number }>).some((x) => x.price != null)
       for (const it of items as Array<{ productVariantId: string; quantity?: number; price?: number }>) {
         const v = variants.find((x) => x.id === String(it.productVariantId))
-        if (!v) return { sent: false, reason: `No variant ${it.productVariantId}. Look it up again; do not guess.` }
+        if (!v) return { sent: false, reason: `No variant ${it.productVariantId}. Look it up again; do not guess. If the person says it is on Shopify, search there with find_in_shopify.` }
         const qty = Math.max(1, Math.round(Number(it.quantity ?? 1)))
         const label = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
         const price = it.price == null ? null : Number(it.price)
@@ -3459,7 +3523,7 @@ export const TOOLS: Record<string, Tool> = {
       const stockNotes: string[] = []
       for (const it of items) {
         const v = variants.find((x) => x.id === String(it.productVariantId))
-        if (!v) return { sent: false, reason: `No variant ${it.productVariantId}. Look it up again; do not guess.` }
+        if (!v) return { sent: false, reason: `No variant ${it.productVariantId}. Look it up again; do not guess. If the person says it is on Shopify, search there with find_in_shopify.` }
         const named = it.price != null && String(it.price).trim() !== ''
         const sheetCents = v.wholesalePriceCents ?? v.product.wholesalePriceCents
         const price = named ? Number(it.price) : sheetCents == null ? NaN : sheetCents / 100
@@ -3813,7 +3877,7 @@ export const TOOLS: Record<string, Tool> = {
       const lines: Array<{ productVariantId: string; item: string; qty: number }> = []
       for (const it of items) {
         const v = vs.find((x) => x.id === String(it.productVariantId))
-        if (!v) return { saved: false, reason: `No variant ${it.productVariantId}. Look it up again; do not guess.` }
+        if (!v) return { saved: false, reason: `No variant ${it.productVariantId}. Look it up again; do not guess. If the person says it is on Shopify, search there with find_in_shopify.` }
         const qty = Math.round(Number(it.qty))
         if (!(qty > 0)) return { saved: false, reason: `"${it.qty}" is not a quantity.` }
         lines.push({ productVariantId: v.id, item: [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / '), qty })

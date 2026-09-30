@@ -444,7 +444,7 @@ export async function runAgent(opts: {
  * same look-up-only set the team's emailed questions get, see nightly-pass).
  * Everything else is answered with what it would have done.
  */
-export const PRACTICE_TOOLS = new Set(['query_status', 'check_sent_mail', 'draft_order_links', 'unpaid_live_sales', 'request_deep_analysis'])
+export const PRACTICE_TOOLS = new Set(['query_status', 'check_sent_mail', 'draft_order_links', 'unpaid_live_sales', 'request_deep_analysis', 'find_in_shopify'])
 
 /** In practice, what a tool that would change something hands back instead of running. Null means run it. Pure. */
 export function practiceStop(practice: boolean, name: string, input: unknown) {

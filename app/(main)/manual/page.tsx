@@ -105,6 +105,14 @@ export default function Manual() {
               <Try say="The pickup I told you about yesterday didn't happen" />
             </ul>
             <p>
+              <b>New product on Shopify?</b> Mouse doesn&rsquo;t know it until it&rsquo;s brought in.
+              Tell Mouse its name or paste its cleocamp.com link, and say yes when it asks to bring it
+              in. Then it can be invoiced, counted and put on the line sheet.
+            </p>
+            <ul className="flex flex-col gap-2">
+              <Try say="Find Sardine on Shopify" />
+            </ul>
+            <p>
               <b>Something didn&rsquo;t happen after all?</b> Tell Mouse and it takes it back out of
               stock and off the PO.
             </p>
