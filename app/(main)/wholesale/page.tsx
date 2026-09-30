@@ -1,3 +1,4 @@
+import { dollars, loadLineSheet } from '@/lib/line-sheet'
 import { db } from '@/lib/db'
 import { Page, Card, Chip, Empty, Money, Fold } from '@/app/ui/primitives'
 
@@ -40,6 +41,8 @@ export default async function Wholesale() {
       },
     },
   })
+  const sheet = await loadLineSheet()
+  const soldOutButListed = sheet.lines.filter((l) => /in stock/i.test(l.availability) && l.onHand != null && l.onHand <= 0).length
   const unpriced = products.filter((p) => p.wholesalePriceCents == null && !p.variants.some((v) => v.wholesalePriceCents != null)).length
 
   const row = (a: (typeof accounts)[number]) => {
@@ -190,6 +193,45 @@ export default async function Wholesale() {
             )
           })}
         </ul>
+        </Fold>
+      </Card>
+
+      <Card>
+        <Fold
+          summary={
+            <span className="flex items-center justify-between gap-3">
+              <span className="shrink-0 whitespace-nowrap font-serif text-[17px] italic text-accent">Line sheet</span>
+              <span className="text-xs text-muted">
+                {sheet.lines.length} piece{sheet.lines.length === 1 ? '' : 's'}
+                {soldOutButListed ? <span className="text-warn"> · {soldOutButListed} say in stock with none on hand</span> : null}
+              </span>
+            </span>
+          }
+        >
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-2.5 text-xs text-muted sm:px-5">
+            <a href="/wholesale/line-sheet/pdf" target="_blank" rel="noreferrer" className="font-medium text-accent underline">Open the PDF</a>
+            <a href="/wholesale/line-sheet/pdf?download=1" className="text-accent underline">Download</a>
+            <span>Prices are read live from the price list and Shopify. Tell Mouse to change anything, or to send it to a store.</span>
+          </div>
+          <ul className="divide-y divide-line">
+            {sheet.lines.map((l) => {
+              const warn = /in stock/i.test(l.availability) && l.onHand != null && l.onHand <= 0
+              return (
+                <li key={l.id} className="flex items-baseline justify-between gap-3 px-4 py-2 text-sm sm:px-5">
+                  <span className="min-w-0">
+                    <span className="font-medium">{l.item}</span> <span className="text-muted">{l.colorLabel}</span>
+                    <span className={`block text-xs ${warn ? 'text-warn' : 'text-faint'}`}>
+                      {l.availability || 'no availability set'}{l.onHand != null ? ` · ${l.onHand} on hand` : ''}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right text-xs">
+                    {l.wholesaleCents != null ? <span className="text-sm font-semibold">{dollars(l.wholesaleCents)}</span> : <span className="text-warn">no price</span>}
+                    <span className="block text-faint">retail {l.retail ?? '—'}</span>
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
         </Fold>
       </Card>
 

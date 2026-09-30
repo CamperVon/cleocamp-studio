@@ -1,0 +1,225 @@
+import path from 'node:path'
+import { Document, Page, Text, View, Image, Font, StyleSheet, renderToBuffer } from '@react-pdf/renderer'
+import { db } from '@/lib/db'
+
+/**
+ * The wholesale line sheet: what stores see before they order. Brandon,
+ * 30 Sept 2026: "In the wholesale section I want to build a line sheet that
+ * mouse can update and send as a pdf as we go", laid out like
+ * Cleo_Line_Sheet_2026 (January 2026): photo, item, colour, description,
+ * wholesale, suggested retail, sizing, minimum order, commission,
+ * availability, then press, contact and a footnote.
+ *
+ * Prices are never copied onto the sheet. Wholesale comes from the price
+ * list (the variant's, then the product's), and suggested retail from the
+ * Shopify price the nightly sync keeps on each variant, both read when the
+ * sheet is drawn. The January sheet had drifted from both (Denim $98 against
+ * $115, Bean Bag Petite retail $348 against Shopify's $368), which is the
+ * whole reason not to keep a second copy. A written-in range ("$88 – $128+")
+ * is printed only where a person or Mouse put one on the row.
+ *
+ * Fonts come off disk for the reasons given at the top of lib/po-pdf.tsx.
+ */
+const FONT_DIR = path.join(process.cwd(), 'assets', 'fonts')
+Font.register({
+  family: 'PTSerif',
+  fonts: [
+    { src: path.join(FONT_DIR, 'PTSerif-Regular.ttf') },
+    { src: path.join(FONT_DIR, 'PTSerif-Bold.ttf'), fontWeight: 'bold' },
+    { src: path.join(FONT_DIR, 'PTSerif-Italic.ttf'), fontStyle: 'italic' },
+    { src: path.join(FONT_DIR, 'PTSerif-BoldItalic.ttf'), fontWeight: 'bold', fontStyle: 'italic' },
+  ],
+})
+Font.registerHyphenationCallback((word) => [word])
+
+export type LineSheetMetaText = { title: string; tagline: string; materials: string; press: string; contact: string; footnote: string }
+
+export type LineSheetLine = {
+  id: string
+  position: number
+  productId: string | null
+  colorway: string | null
+  item: string
+  colorLabel: string
+  description: string
+  /** What prints: the live price, or the row's own when it has no product. Null: not set anywhere. */
+  wholesaleCents: number | null
+  retail: string | null
+  msrp: string | null
+  sizing: string
+  minOrder: string
+  commission: string | null
+  availability: string
+  photo: string | null
+  /** For the team only, never printed: Shopify's on-hand for what the row sells. */
+  onHand: number | null
+  hidden: boolean
+}
+
+type Variant = { wholesalePriceCents: number | null; retailPriceCents: number | null; imageUrl: string | null; onHandQty: unknown; colorway: { customerName: string } | null }
+type Product = { id: string; wholesalePriceCents: number | null; retailPriceCents: number | null; variants: Variant[] }
+
+/** "$54", "$54.50". Pure. */
+export function dollars(cents: number): string {
+  return `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 })}`
+}
+
+/** The variants a row means: its colourway's, or all of them. Matched loosely: "Red" finds "Red (Wiltshire)". Pure. */
+export function variantsFor(p: Pick<Product, 'variants'>, colorway: string | null): Variant[] {
+  if (!colorway) return p.variants
+  const want = colorway.trim().toLowerCase()
+  const exact = p.variants.filter((v) => v.colorway?.customerName.toLowerCase() === want)
+  return exact.length ? exact : p.variants.filter((v) => v.colorway?.customerName.toLowerCase().startsWith(want))
+}
+
+/** Price, suggested retail, photo and stock for one row, from its product as it is now. Pure. */
+export function resolveRow(
+  row: { colorway: string | null; wholesaleCents: number | null; msrp: string | null },
+  p: Product | null,
+): Pick<LineSheetLine, 'wholesaleCents' | 'retail' | 'photo' | 'onHand'> {
+  if (!p) return { wholesaleCents: row.wholesaleCents, retail: row.msrp, photo: null, onHand: null }
+  const vs = variantsFor(p, row.colorway)
+  const ws = vs.find((v) => v.wholesalePriceCents != null)?.wholesalePriceCents ?? p.wholesalePriceCents ?? row.wholesaleCents
+  const prices = [...new Set(vs.map((v) => v.retailPriceCents).filter((c): c is number => c != null))].sort((a, b) => a - b)
+  const live = prices.length
+    ? prices.length > 1 ? `${dollars(prices[0])} – ${dollars(prices[prices.length - 1])}` : dollars(prices[0])
+    : p.retailPriceCents != null ? dollars(p.retailPriceCents) : null
+  const counts = vs.map((v) => (v.onHandQty == null ? null : Number(v.onHandQty)))
+  return {
+    wholesaleCents: ws,
+    retail: row.msrp ?? live,
+    photo: vs.find((v) => v.imageUrl)?.imageUrl ?? null,
+    onHand: counts.some((c) => c == null) || !counts.length ? null : counts.reduce((a, b) => a! + b!, 0),
+  }
+}
+
+/** Shopify's CDN sends WebP to a browser; the PDF needs a JPEG, a bit larger than an invoice thumb. Pure. */
+export function sheetPhoto(url: string | null): string | null {
+  if (!url) return null
+  if (!/^https:\/\/cdn\.shopify\.com\//.test(url)) return url
+  return `${url}${url.includes('?') ? '&' : '?'}width=240&format=jpg`
+}
+
+export async function loadLineSheet(opts: { includeHidden?: boolean } = {}): Promise<{ meta: LineSheetMetaText | null; lines: LineSheetLine[] }> {
+  const [meta, rows] = await Promise.all([
+    db.lineSheetMeta.findUnique({ where: { id: 'main' } }),
+    db.lineSheetRow.findMany({ where: opts.includeHidden ? {} : { hidden: false }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
+  ])
+  const ids = [...new Set(rows.map((r) => r.productId).filter((x): x is string => !!x))]
+  const products = await db.product.findMany({
+    where: { id: { in: ids } },
+    select: {
+      id: true, wholesalePriceCents: true, retailPriceCents: true,
+      variants: { select: { wholesalePriceCents: true, retailPriceCents: true, imageUrl: true, onHandQty: true, colorway: { select: { customerName: true } } } },
+    },
+  })
+  const byId = new Map(products.map((p) => [p.id, p]))
+  return {
+    meta: meta ? { title: meta.title, tagline: meta.tagline, materials: meta.materials, press: meta.press, contact: meta.contact, footnote: meta.footnote } : null,
+    lines: rows.map((r) => ({
+      id: r.id, position: r.position, productId: r.productId, colorway: r.colorway, item: r.item, colorLabel: r.colorLabel,
+      description: r.description, msrp: r.msrp, sizing: r.sizing, minOrder: r.minOrder, commission: r.commission,
+      availability: r.availability, hidden: r.hidden,
+      ...resolveRow(r, r.productId ? byId.get(r.productId) ?? null : null),
+    })),
+  }
+}
+
+const INK = '#14181A'
+const MUTED = '#6A736F'
+const RULE = '#DEDFDB'
+const styles = StyleSheet.create({
+  page: { paddingTop: 30, paddingBottom: 40, paddingHorizontal: 30, fontSize: 7.5, fontFamily: 'PTSerif', color: INK },
+  title: { fontSize: 17, fontStyle: 'italic', fontWeight: 'bold' },
+  tagline: { marginTop: 4, fontSize: 8.5 },
+  materials: { marginTop: 2, fontSize: 8, color: MUTED },
+  thead: { flexDirection: 'row', marginTop: 14, borderBottomWidth: 1, borderBottomColor: INK, paddingBottom: 4 },
+  th: { fontSize: 6.5, letterSpacing: 0.4, color: MUTED, paddingRight: 5 },
+  tr: { flexDirection: 'row', alignItems: 'flex-start', borderBottomWidth: 0.5, borderBottomColor: RULE, paddingVertical: 5 },
+  td: { paddingRight: 5 },
+  photo: { width: 48, height: 60, objectFit: 'cover', borderRadius: 2 },
+  noPhoto: { width: 48, height: 60, backgroundColor: '#F0F0EC', borderRadius: 2 },
+  bold: { fontWeight: 'bold' },
+  foot: { marginTop: 14, paddingTop: 8, borderTopWidth: 1, borderTopColor: INK },
+  footHead: { fontSize: 9, fontStyle: 'italic', fontWeight: 'bold', marginBottom: 4 },
+  footText: { fontSize: 7.5, lineHeight: 1.4, marginBottom: 4 },
+  pageNo: { position: 'absolute', bottom: 18, left: 30, right: 30, fontSize: 6.5, color: MUTED, flexDirection: 'row', justifyContent: 'space-between' },
+})
+
+// Widths add up to the page's 732pt of room (landscape Letter less margins).
+const COLS: Array<{ key: string; label: string; w: number }> = [
+  { key: 'photo', label: 'IMAGE', w: 56 },
+  { key: 'item', label: 'ITEM', w: 72 },
+  { key: 'color', label: 'COLOR / VARIANT', w: 64 },
+  { key: 'desc', label: 'DESCRIPTION', w: 182 },
+  { key: 'ws', label: 'WHOLESALE', w: 50 },
+  { key: 'msrp', label: 'SUGGESTED RETAIL', w: 62 },
+  { key: 'size', label: 'SIZING', w: 60 },
+  { key: 'moq', label: 'MIN. ORDER', w: 64 },
+  { key: 'comm', label: 'COMMISSION', w: 54 },
+  { key: 'avail', label: 'AVAILABILITY', w: 68 },
+]
+const w = (key: string) => ({ width: COLS.find((c) => c.key === key)!.w })
+
+/** The row above says the same thing: print a ditto mark, as the January sheet did. Pure. */
+export function ditto(prev: string | undefined, cur: string): string {
+  return prev !== undefined && prev.trim() && prev.trim() === cur.trim() ? '"' : cur
+}
+
+export function LineSheetDoc({ meta, lines, asOf }: { meta: LineSheetMetaText; lines: LineSheetLine[]; asOf: Date }) {
+  const date = asOf.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'long', day: 'numeric', year: 'numeric' })
+  return (
+    <Document title={meta.title} author="Cleo Camp">
+      <Page size="LETTER" orientation="landscape" style={styles.page}>
+        <Text style={styles.title}>{meta.title}</Text>
+        <Text style={styles.tagline}>{meta.tagline}</Text>
+        <Text style={styles.materials}>{meta.materials}</Text>
+
+        <View style={styles.thead} fixed>
+          {COLS.map((c) => <Text key={c.key} style={[styles.th, { width: c.w }]}>{c.label}</Text>)}
+        </View>
+        {lines.map((l, i) => (
+          <View key={l.id} style={styles.tr} wrap={false}>
+            <View style={[styles.td, w('photo')]}>
+              {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf's Image takes no alt */}
+              {l.photo ? <Image src={sheetPhoto(l.photo)!} style={styles.photo} /> : <View style={styles.noPhoto} />}
+            </View>
+            <Text style={[styles.td, w('item'), styles.bold]}>{l.item}</Text>
+            <Text style={[styles.td, w('color')]}>{l.colorLabel}</Text>
+            <Text style={[styles.td, w('desc')]}>{ditto(lines[i - 1]?.description, l.description)}</Text>
+            <Text style={[styles.td, w('ws'), styles.bold]}>{l.wholesaleCents != null ? dollars(l.wholesaleCents) : '—'}</Text>
+            <Text style={[styles.td, w('msrp')]}>{l.retail ?? '—'}</Text>
+            <Text style={[styles.td, w('size')]}>{l.sizing || '—'}</Text>
+            <Text style={[styles.td, w('moq')]}>{ditto(lines[i - 1]?.minOrder, l.minOrder) || '—'}</Text>
+            <Text style={[styles.td, w('comm')]}>{l.commission || '—'}</Text>
+            <Text style={[styles.td, w('avail')]}>{l.availability || '—'}</Text>
+          </View>
+        ))}
+
+        <View style={styles.foot} wrap={false}>
+          <Text style={styles.footHead}>Press &amp; Collaborations</Text>
+          {meta.press.split(/\n\s*\n/).map((para, i) => <Text key={i} style={styles.footText}>{para.trim()}</Text>)}
+          <Text style={[styles.footText, { marginTop: 4 }]}>{meta.contact}</Text>
+          <Text style={[styles.footText, { color: MUTED }]}>{meta.footnote}</Text>
+        </View>
+
+        <View style={styles.pageNo} fixed>
+          <Text>Cleo Camp · Wholesale line sheet · Prices as of {date}</Text>
+          <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
+        </View>
+      </Page>
+    </Document>
+  )
+}
+
+export async function renderLineSheetPdf(asOf = new Date()): Promise<Buffer | null> {
+  const { meta, lines } = await loadLineSheet()
+  if (!meta || !lines.length) return null
+  return renderToBuffer(<LineSheetDoc meta={meta} lines={lines} asOf={asOf} />)
+}
+
+/** "Cleo-Camp-Line-Sheet-2026-09-30.pdf", dated in Los Angeles. Pure. */
+export function lineSheetFileName(asOf = new Date()): string {
+  const d = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(asOf)
+  return `Cleo-Camp-Line-Sheet-${d}.pdf`
+}

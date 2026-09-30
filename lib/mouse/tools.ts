@@ -3880,6 +3880,174 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  update_line_sheet: {
+    def: {
+      name: 'update_line_sheet',
+      description:
+        'The wholesale line sheet (Wholesale page, and the PDF stores get). action "list" shows every ' +
+        'row with its id, live prices and on-hand. "add" / "edit" change a row; "remove" hides one ' +
+        '(restore brings it back); "move" puts a row after another (after: rowId, or "top"); "meta" ' +
+        'changes the words around the table (title, tagline, materials, press, contact, footnote). ' +
+        'Prices are NOT typed onto rows: wholesale comes from the price list (change it with ' +
+        'set_wholesale_price) and suggested retail from Shopify, both read live, so link a row to ' +
+        'its product (productId, and colorway for one colour). Only a row with no product carries ' +
+        'its own wholesaleCents. msrp is only for a written range like "$88 – $128+"; pass "" to go ' +
+        'back to Shopify\'s price. Change only what a person asked for.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string' as const, enum: ['list', 'add', 'edit', 'remove', 'restore', 'move', 'meta'] },
+          rowId: str('The row, for edit / remove / restore / move'),
+          after: str('For add or move: the row id to go after, or "top". Default: the end.'),
+          productId: str('The product the row sells, for its live price and photo'),
+          colorway: str('One colour of it, by its customer name ("Sunshine"); "" for all colours'),
+          item: str('Item name as printed'),
+          colorLabel: str('Colour / variant column as printed'),
+          description: str('Description column'),
+          wholesaleCents: num('Only for a row with no product: wholesale price in cents'),
+          msrp: str('A written suggested-retail range, or "" for Shopify\'s price'),
+          sizing: str('Sizing column'),
+          minOrder: str('Min. order column'),
+          commission: str('Commission column, e.g. "70/30"; "" for none'),
+          availability: str('Availability column, e.g. "In Stock", "3 week lead time"'),
+          title: str('meta: title'), tagline: str('meta: tagline'), materials: str('meta: materials line'),
+          press: str('meta: press & collaborations text (blank line between paragraphs)'),
+          contact: str('meta: contact line'), footnote: str('meta: footnote'),
+        },
+        required: ['action'],
+      },
+    },
+    run: async (i) => {
+      const { loadLineSheet, dollars } = await import('@/lib/line-sheet')
+      const link = '/wholesale/line-sheet/pdf'
+      const listed = async () => (await loadLineSheet({ includeHidden: true })).lines.map((l) => ({
+        id: l.id, item: l.item, color: l.colorLabel, hidden: l.hidden || undefined,
+        wholesale: l.wholesaleCents != null ? dollars(l.wholesaleCents) : 'NOT SET', retail: l.retail ?? 'not set',
+        availability: l.availability, onHand: l.onHand, productId: l.productId, colorway: l.colorway,
+      }))
+      if (i.action === 'list') return { rows: await listed(), pdf: link }
+
+      if (i.action === 'meta') {
+        const data: Record<string, string> = {}
+        for (const k of ['title', 'tagline', 'materials', 'press', 'contact', 'footnote'] as const) if (typeof i[k] === 'string' && i[k].trim()) data[k] = i[k].trim()
+        if (!Object.keys(data).length) return { saved: false, reason: 'Nothing to change. Say which words.' }
+        await db.lineSheetMeta.update({ where: { id: 'main' }, data })
+        return { saved: true, changed: Object.keys(data), pdf: link }
+      }
+
+      const fields: Record<string, unknown> = {}
+      for (const k of ['item', 'colorLabel', 'description', 'sizing', 'minOrder', 'availability'] as const) if (typeof i[k] === 'string') fields[k] = i[k].trim()
+      if (typeof i.commission === 'string') fields.commission = i.commission.trim() || null
+      if (typeof i.msrp === 'string') fields.msrp = i.msrp.trim() || null
+      if (typeof i.colorway === 'string') fields.colorway = i.colorway.trim() || null
+      if (typeof i.wholesaleCents === 'number') fields.wholesaleCents = Math.round(i.wholesaleCents)
+      if (typeof i.productId === 'string') {
+        const pid = i.productId.trim() || null
+        if (pid && !(await db.product.findUnique({ where: { id: pid }, select: { id: true } }))) return { saved: false, reason: `No product ${pid}. Look it up; do not guess.` }
+        fields.productId = pid
+      }
+      if (fields.productId && fields.wholesaleCents != null) return { saved: false, reason: 'A row linked to a product takes its price from the price list. Change it with set_wholesale_price instead.' }
+
+      // Position: after a given row, at the top, or at the end. Rows are
+      // spaced by 10, so one can slot between two without renumbering.
+      const place = async (after: unknown, self?: string) => {
+        const rows = await db.lineSheetRow.findMany({ where: self ? { id: { not: self } } : {}, orderBy: { position: 'asc' }, select: { id: true, position: true } })
+        if (after === 'top') return (rows[0]?.position ?? 10) - 10
+        const k = rows.findIndex((r) => r.id === after)
+        if (typeof after === 'string' && after && k < 0) return null
+        if (k < 0) return (rows[rows.length - 1]?.position ?? 0) + 10
+        const next = rows[k + 1]?.position
+        if (next == null) return rows[k].position + 10
+        if (next - rows[k].position > 1) return Math.floor((rows[k].position + next) / 2)
+        // No room: renumber everything by tens, then slot in.
+        await db.$transaction(rows.map((r, n) => db.lineSheetRow.update({ where: { id: r.id }, data: { position: (n + 1) * 10 } })))
+        return (k + 1) * 10 + 5
+      }
+
+      if (i.action === 'add') {
+        for (const k of ['item', 'colorLabel', 'description'] as const) if (!fields[k]) return { saved: false, reason: `A new row needs ${k}. Ask for it.` }
+        if (!fields.productId && fields.wholesaleCents == null) return { saved: false, reason: 'Link the row to its product (productId) so its price is read live, or, for something we do not sell as a product, give wholesaleCents.' }
+        const position = await place(i.after)
+        if (position == null) return { saved: false, reason: `No row ${String(i.after)}. List the rows first.` }
+        const r = await db.lineSheetRow.create({
+          data: {
+            position, item: String(fields.item), colorLabel: String(fields.colorLabel), description: String(fields.description),
+            productId: (fields.productId as string) ?? null, colorway: (fields.colorway as string) ?? null,
+            wholesaleCents: (fields.wholesaleCents as number) ?? null, msrp: (fields.msrp as string) ?? null,
+            sizing: (fields.sizing as string) ?? '', minOrder: (fields.minOrder as string) ?? '', commission: (fields.commission as string) ?? null,
+            availability: (fields.availability as string) ?? '',
+          },
+          select: { id: true },
+        })
+        return { saved: true, rowId: r.id, pdf: link }
+      }
+
+      const row = i.rowId ? await db.lineSheetRow.findUnique({ where: { id: String(i.rowId) }, select: { id: true } }) : null
+      if (!row) return { saved: false, reason: 'No such row. List the rows first.' }
+      if (i.action === 'remove' || i.action === 'restore') {
+        await db.lineSheetRow.update({ where: { id: row.id }, data: { hidden: i.action === 'remove' } })
+        return { saved: true, pdf: link }
+      }
+      if (i.action === 'move') {
+        const position = await place(i.after ?? 'end', row.id)
+        if (position == null) return { saved: false, reason: `No row ${String(i.after)}. List the rows first.` }
+        await db.lineSheetRow.update({ where: { id: row.id }, data: { position } })
+        return { saved: true, pdf: link }
+      }
+      if (!Object.keys(fields).length) return { saved: false, reason: 'Nothing to change. Say what.' }
+      await db.lineSheetRow.update({ where: { id: row.id }, data: fields })
+      return { saved: true, pdf: link }
+    },
+  },
+
+  send_line_sheet: {
+    def: {
+      name: 'send_line_sheet',
+      description:
+        'Email the wholesale line sheet as a PDF, drawn now with today\'s prices, to a store or buyer. ' +
+        'ONLY when a person in the chat asked. It comes from Cleo Camp and replies go to studio@. ' +
+        'Leave confirmed out first: that sends nothing and hands back exactly what would go, to show ' +
+        'the person. Pass confirmed: true only once they have said to send it.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          to: str('The recipient\'s address, as the person gave it or as held for the account'),
+          name: str('Who it is for, for the greeting ("Leigh"), if known'),
+          note: str('A line or two the person wants in the email, in their words; optional'),
+          confirmed: { type: 'boolean' as const, description: 'true only after a person saw the draft and said send.' },
+        },
+        required: ['to'],
+      },
+    },
+    run: async (i) => {
+      const to = String(i.to ?? '').trim().toLowerCase()
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return { sent: false, reason: `"${to}" is not an email address. Ask for the right one.` }
+      const known = !!(await db.wholesaleAccount.findFirst({ where: { email: { equals: to, mode: 'insensitive' } }, select: { id: true } }))
+      const subject = 'Cleo Camp wholesale line sheet'
+      const text =
+        `Hi${i.name ? ` ${String(i.name).trim()}` : ''},\n\n` +
+        (i.note ? `${String(i.note).trim()}\n\n` : '') +
+        `Our current wholesale line sheet is attached, with this season's pieces, wholesale and suggested retail prices, minimums and availability.\n\n` +
+        `To place an order or ask about anything on it, just reply to this email.\n\nBest,\nCleo Camp\nstudio@cleocamp.com`
+      if (i.confirmed !== true) {
+        return {
+          sent: false, draft: { to, subject, text, attachment: 'the line sheet PDF, drawn at send time', preview: '/wholesale/line-sheet/pdf' },
+          ...(known ? {} : { check: `${to} is not the email on any wholesale account. Confirm it is right before sending.` }),
+          tellTheUser: 'Show this draft and ask whether to send it.',
+        }
+      }
+      const { renderLineSheetPdf, lineSheetFileName } = await import('@/lib/line-sheet')
+      const pdf = await renderLineSheetPdf()
+      if (!pdf) return { sent: false, reason: 'The line sheet has no rows, so there is nothing to send.' }
+      const { sendEmail } = await import('@/lib/email')
+      const r = await sendEmail({
+        from: 'Cleo Camp <studio@send.cleocamp.com>', to: [to], replyTo: 'studio@cleocamp.com', subject, text,
+        attachments: [{ filename: lineSheetFileName(), content: pdf }],
+      })
+      return r.sent ? { sent: true, to, tellTheUser: `Say the line sheet went to ${to}.` } : { sent: false, reason: `It did not send (${'reason' in r ? r.reason : 'unknown'}).` }
+    },
+  },
+
   email_invoice_copy: {
     def: {
       name: 'email_invoice_copy',

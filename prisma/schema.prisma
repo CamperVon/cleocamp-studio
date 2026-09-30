@@ -1456,3 +1456,50 @@ model StylistRequest {
 
   @@index([status])
 }
+
+/// One row of the wholesale line sheet (Wholesale page, and the PDF sent to
+/// stores). Brandon, 30 Sept 2026: "a line sheet that mouse can update and
+/// send as a pdf as we go", laid out like Cleo_Line_Sheet_2026 (Jan 2026).
+/// The wholesale price is never stored here when the row is linked to a
+/// product: it is read from the price list (variant, then product) every time
+/// the sheet is drawn, so the sheet can't drift from what we invoice.
+model LineSheetRow {
+  id                   String   @id @default(cuid())
+  position             Int
+  /// The product this row sells, for its price and photo. Null for a row we
+  /// don't stock as a product (custom pouches).
+  productId            String?
+  /// Which colourway's photo and price, matched on the colourway's customer
+  /// name ("Sunshine"). Null: the product's own.
+  colorway             String?
+  item                 String
+  colorLabel           String
+  description          String
+  /// Only for a row with no product: the wholesale price as the team set it.
+  wholesaleCents       Int?
+  /// Suggested retail as printed, when it is a range ("$88 – $128+"). Null:
+  /// the Shopify retail price of the linked product, read live.
+  msrp                 String?
+  sizing               String
+  minOrder             String
+  commission           String?
+  availability         String
+  hidden               Boolean  @default(false)
+  updatedAt            DateTime @updatedAt
+  createdAt            DateTime @default(now())
+
+  @@index([position])
+}
+
+/// The line sheet's words around the table: title, tagline, materials, the
+/// press paragraph, contact line and footnote. One row, id "main".
+model LineSheetMeta {
+  id         String   @id @default("main")
+  title      String
+  tagline    String
+  materials  String
+  press      String
+  contact    String
+  footnote   String
+  updatedAt  DateTime @updatedAt
+}

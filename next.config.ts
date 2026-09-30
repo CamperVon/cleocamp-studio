@@ -13,6 +13,7 @@ const nextConfig: NextConfig = {
     "/po/[poNumber]/exports": ["./assets/fonts/*.ttf"],
     "/api/chat": ["./assets/fonts/*.ttf"],
     "/drafts/[id]/pdf": ["./assets/fonts/*.ttf"],
+    "/wholesale/line-sheet/pdf": ["./assets/fonts/*.ttf"],
   },
 };
 
