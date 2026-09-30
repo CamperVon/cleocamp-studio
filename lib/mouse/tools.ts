@@ -3960,19 +3960,22 @@ export const TOOLS: Record<string, Tool> = {
       input_schema: {
         type: 'object',
         properties: {
-          stylistId: str('The stylist'),
+          stylistId: str('The stylist\'s id, from the stylists on file'),
+          stylistName: str('The stylist\'s name as the person said it. Always pass it: the tool checks it matches the id.'),
           what: str('What they asked for, in their words or close to it'),
           productVariantId: str('Our variant, if it is one. Ask rather than pick a size or colour.'),
           qty: num('How many, if said'),
           neededBy: str('YYYY-MM-DD, if they gave a date'),
           notes: str('Anything else'),
         },
-        required: ['stylistId', 'what'],
+        required: ['stylistName', 'what'],
       },
     },
     run: async (i) => {
-      const s = await db.stylist.findUnique({ where: { id: String(i.stylistId) }, select: { id: true, name: true } })
-      if (!s) return { saved: false, reason: 'No such stylist. Add them with save_stylist first.' }
+      const { pickStylist } = await import('@/lib/stylists')
+      const picked = pickStylist(await db.stylist.findMany({ select: { id: true, name: true } }), i.stylistId ? String(i.stylistId) : null, i.stylistName ? String(i.stylistName) : null)
+      if ('reason' in picked) return { saved: false, reason: picked.reason }
+      const s = picked.stylist
       const r = await db.stylistRequest.create({
         data: {
           stylistId: s.id, what: String(i.what), productVariantId: i.productVariantId ? String(i.productVariantId) : null,
@@ -4021,7 +4024,8 @@ export const TOOLS: Record<string, Tool> = {
       input_schema: {
         type: 'object',
         properties: {
-          stylistId: str('The stylist'),
+          stylistId: str('The stylist\'s id, from the stylists on file'),
+          stylistName: str('The stylist\'s name as the person said it. Always pass it: the tool checks it matches the id.'),
           items: {
             type: 'array' as const,
             items: { type: 'object' as const, properties: { productVariantId: str('Our variant. Ask about size or colour rather than picking.'), qty: num('How many') }, required: ['productVariantId', 'qty'] },
@@ -4031,12 +4035,14 @@ export const TOOLS: Record<string, Tool> = {
           project: str('The shoot, talent or publication'),
           notes: str('Anything else'),
         },
-        required: ['stylistId', 'items'],
+        required: ['stylistName', 'items'],
       },
     },
     run: async (i) => {
-      const s = await db.stylist.findUnique({ where: { id: String(i.stylistId) }, select: { id: true, name: true } })
-      if (!s) return { saved: false, reason: 'No such stylist. Add them with save_stylist first.' }
+      const { pickStylist } = await import('@/lib/stylists')
+      const picked = pickStylist(await db.stylist.findMany({ select: { id: true, name: true } }), i.stylistId ? String(i.stylistId) : null, i.stylistName ? String(i.stylistName) : null)
+      if ('reason' in picked) return { saved: false, reason: picked.reason }
+      const s = picked.stylist
       const items = (Array.isArray(i.items) ? i.items : []) as Array<{ productVariantId: string; qty: number }>
       if (!items.length) return { saved: false, reason: 'Nothing listed. Ask what went out.' }
       const vs = await db.productVariant.findMany({ where: { id: { in: items.map((x) => String(x.productVariantId)) } }, include: { product: { select: { name: true } }, colorway: { select: { customerName: true } } } })
@@ -4072,6 +4078,44 @@ export const TOOLS: Record<string, Tool> = {
         saved: true, pullId: pull.id, stylist: s.name, stock,
         ...(i.dueBackAt ? {} : { ask: 'No return date was given. Ask when it is due back, then set it with record_pull_return (dueBackAt).' }),
       }
+    },
+  },
+
+  update_stylist_pull: {
+    def: {
+      name: 'update_stylist_pull',
+      description:
+        'Fix a pull already logged: move it to the right stylist, or change its return date or ' +
+        'project. Stock does not move; only the record. Use it the moment a pull is found under the ' +
+        'wrong name, rather than a note saying so.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          pullId: str('The pull'),
+          stylistId: str('Move it to this stylist (id)'),
+          stylistName: str('Move it to this stylist (name); pass with the id, the tool checks they match'),
+          dueBackAt: str('YYYY-MM-DD'),
+          project: str('The shoot, talent or publication'),
+        },
+        required: ['pullId'],
+      },
+    },
+    run: async (i) => {
+      const pull = await db.stylistPull.findUnique({ where: { id: String(i.pullId) }, select: { id: true, stylist: { select: { id: true, name: true } } } })
+      if (!pull) return { saved: false, reason: 'No such pull.' }
+      const data: { stylistId?: string; dueBackAt?: Date; project?: string } = {}
+      let movedTo: string | null = null
+      if (i.stylistId || i.stylistName) {
+        const { pickStylist } = await import('@/lib/stylists')
+        const picked = pickStylist(await db.stylist.findMany({ select: { id: true, name: true } }), i.stylistId ? String(i.stylistId) : null, i.stylistName ? String(i.stylistName) : null)
+        if ('reason' in picked) return { saved: false, reason: picked.reason }
+        if (picked.stylist.id !== pull.stylist.id) { data.stylistId = picked.stylist.id; movedTo = picked.stylist.name }
+      }
+      if (i.dueBackAt) data.dueBackAt = new Date(`${String(i.dueBackAt)}T12:00:00-07:00`)
+      if (typeof i.project === 'string' && i.project.trim()) data.project = i.project.trim()
+      if (!Object.keys(data).length) return { saved: false, reason: 'Nothing to change.' }
+      await db.stylistPull.update({ where: { id: pull.id }, data })
+      return { saved: true, ...(movedTo ? { moved: `from ${pull.stylist.name} to ${movedTo}` } : {}), changed: Object.keys(data) }
     },
   },
 

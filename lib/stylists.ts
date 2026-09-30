@@ -41,18 +41,43 @@ export async function stylistContext(now = new Date()): Promise<string> {
   const withPulls = all.filter((s) => s.out > 0)
   const reqs = all.flatMap((s) => s.openRequests.map((r) => ({ s, r })))
   const reserve = await db.product.findMany({ where: { stylistReserveQty: { gt: 0 } }, select: { name: true, stylistReserveQty: true } })
-  if (!withPulls.length && !reqs.length && !reserve.length) return ''
+  if (!all.length && !reserve.length) return ''
   const variantIds = reqs.map(({ r }) => r.productVariantId).filter((x): x is string => !!x)
   const counts = new Map((await db.productVariant.findMany({ where: { id: { in: variantIds } }, select: { id: true, onHandQty: true } })).map((v) => [v.id, v.onHandQty]))
   const lines: string[] = ['STYLISTS (the Stylists page)']
+  // Every stylist with their id. Without it Mouse filed Natasha Colvin's
+  // Adriana Lima pull under Maya, reusing an id it had seen earlier
+  // (30 Sept 2026). Use these ids, and pass the name too: the tools check.
+  if (all.length) lines.push(`On file: ${all.map((s) => `${s.name} [stylist ${s.id}]`).join('; ')}.`)
   for (const r of reserve) lines.push(`- Keep ${r.stylistReserveQty} ${r.name}s on hand for stylist pulls; they are not for sale when judging stock or cover.`)
   for (const s of withPulls) {
     const overdue = s.due && s.due < now
-    lines.push(`- ${s.name}${s.company ? ` (${s.company})` : ''}: ${s.out} piece${s.out === 1 ? '' : 's'} out${s.due ? `, due back ${day(s.due)}${overdue ? ' — OVERDUE' : ''}` : ', no return date agreed'}.`)
+    lines.push(`- ${s.name}${s.company ? ` (${s.company})` : ''}: ${s.out} piece${s.out === 1 ? '' : 's'} out${s.due ? `, due back ${day(s.due)}${overdue ? ' — OVERDUE' : ''}` : ', no return date agreed'} [${s.openPulls.map((p) => `pull ${p.id}${p.project ? `: ${p.project}` : ''}`).join('; ')}].`)
   }
   for (const { s, r } of reqs) {
     const c = r.productVariantId ? counts.get(r.productVariantId) : undefined
     lines.push(`- ${s.name} asked for ${r.what}${r.qty ? ` × ${r.qty}` : ''} on ${day(r.createdAt)}${r.status === 'TOLD' ? ' (told it is in stock)' : ''}${c != null ? `; ${String(c)} on hand now` : ''} [request ${r.id}].`)
   }
   return lines.join('\n')
+}
+
+/**
+ * Which stylist a tool means. By id, by name, or both; when both are given
+ * they must agree, which is what would have caught the Natasha pull filed
+ * under Maya. A name matches whole or as the start of a word ("Natasha",
+ * "Colvin"); more than one match is a question, never a pick. Pure.
+ */
+export function pickStylist<S extends { id: string; name: string }>(all: S[], id?: string | null, name?: string | null): { stylist: S } | { reason: string } {
+  const byId = id ? all.find((s) => s.id === id.trim()) : undefined
+  const words = (t: string) => t.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+  const want = words(name ?? '')
+  const n = want.length ? want.join(' ') : null
+  const byName = n ? all.filter((s) => { const w = words(s.name); return want.every((t) => w.some((x) => x.startsWith(t))) }) : []
+  if (id && !byId) return { reason: `No stylist ${id}. Use an id from the list of stylists on file.` }
+  if (byId && n && !byName.some((s) => s.id === byId.id)) return { reason: `Stylist ${id} is ${byId.name}, not ${name}. Check which one is meant.` }
+  if (byId) return { stylist: byId }
+  if (!n) return { reason: 'Say which stylist.' }
+  if (byName.length === 1) return { stylist: byName[0] }
+  if (!byName.length) return { reason: `No stylist called ${name}. Add them with save_stylist, or check the name.` }
+  return { reason: `More than one stylist matches ${name}: ${byName.map((s) => s.name).join(', ')}. Ask which.` }
 }
