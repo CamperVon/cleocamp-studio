@@ -14,6 +14,8 @@ export async function GET(
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       'Content-Type': 'application/pdf',
+      // Drawn fresh each time; a phone must not show yesterday's copy.
+      'Cache-Control': 'no-store',
       // ?inline=1 shows it in the browser's own viewer instead of forcing a
       // download — the phone's share sheet and viewer need it that way. See
       // ../pdf-button.tsx.

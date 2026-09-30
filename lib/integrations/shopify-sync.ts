@@ -28,6 +28,12 @@ export const LEGACY_VARIANT_IDS: Record<string, string> = {
   '46933824340221': '47536483401981', // White / 3
 }
 
+/** Shopify's plain-text description, tidied: no stray whitespace, empty is null. Pure. */
+export function shopifyText(description: string | null | undefined): string | null {
+  const t = (description ?? '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
+  return t || null
+}
+
 export type ShopifySyncResult = {
   location: string | null
   variantsUpdated: number
@@ -75,6 +81,13 @@ export async function syncShopify(db: PrismaClient, sinceISO: string): Promise<S
     })).map((g) => [g.productVariantId!, Number(g._sum.deltaQty ?? 0)]),
   )
 
+  // Each product's Shopify description, for the line sheet. Several Shopify
+  // listings can feed one product here (the Cleo Tee's include the
+  // Neverworns Edition, whose copy is about Splash), so the listing titled
+  // like the product wins; otherwise the first with any words.
+  const descriptions = new Map<string, { text: string; exact: boolean }>()
+  const productNames = new Map((await db.product.findMany({ select: { id: true, name: true } })).map((p) => [p.id, p.name.trim().toLowerCase()]))
+
   for (const v of variants) {
     const existing = await db.productVariant.findFirst({
       where: { shopifyVariantId: v.id.split('/').pop() },
@@ -113,6 +126,16 @@ export async function syncShopify(db: PrismaClient, sinceISO: string): Promise<S
       await update
     }
     variantsUpdated++
+    const text = shopifyText(v.product.description)
+    const exact = v.product.title.trim().toLowerCase() === productNames.get(existing.productId)
+    const had = descriptions.get(existing.productId)
+    if (text && (!had || (exact && !had.exact))) descriptions.set(existing.productId, { text, exact })
+  }
+
+  if (descriptions.size) {
+    const now = await db.product.findMany({ where: { id: { in: [...descriptions.keys()] } }, select: { id: true, shopifyDescription: true } })
+    const changed = now.filter((p) => p.shopifyDescription !== descriptions.get(p.id)!.text)
+    if (changed.length) await db.$transaction(changed.map((p) => db.product.update({ where: { id: p.id }, data: { shopifyDescription: descriptions.get(p.id)!.text } })))
   }
 
   // ── sales history ───────────────────────────────────────────

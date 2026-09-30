@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { editLineSheetRow, removeLineSheetRow, restoreLineSheetRow, type RowEdit } from './actions'
+import { editLineSheetRow, markPriceOneOff, removeLineSheetRow, restoreLineSheetRow, type RowEdit } from './actions'
 
 const input = 'w-full min-w-0 rounded-lg border border-line bg-bg px-3 py-2 text-sm'
 const small = 'rounded-lg border border-line px-3 py-1.5 text-xs disabled:opacity-40'
@@ -12,6 +12,8 @@ export type SheetRow = {
   item: string
   colorLabel: string
   description: string
+  /** Shopify's description, printing because the row has none of its own. */
+  fromShopify: string
   sizing: string
   minOrder: string
   commission: string | null
@@ -76,8 +78,9 @@ export function LineSheetRowEditor({ row, children }: { row: SheetRow; children:
             <Field label="Item"><input value={f.item} onChange={set('item')} className={input} /></Field>
             <Field label="Colour / variant"><input value={f.colorLabel} onChange={set('colorLabel')} className={input} /></Field>
           </div>
-          <Field label="Description">
-            <textarea value={f.description} onChange={set('description')} rows={3} className={input} />
+          <Field label={row.linked ? 'Description (leave blank to use Shopify’s)' : 'Description'}>
+            <textarea value={f.description} onChange={set('description')} rows={3} className={input}
+              placeholder={row.fromShopify ? `From Shopify: ${row.fromShopify}` : ''} />
           </Field>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Sizing"><input value={f.sizing} onChange={set('sizing')} className={input} /></Field>
@@ -125,5 +128,19 @@ export function RestoreRow({ rowId, label }: { rowId: string; label: string }) {
         {error ? <span className="text-urgent">{error}</span> : null}
       </span>
     </li>
+  )
+}
+
+/** "One-off": the invoice's price was a deal, the list stays. */
+export function OneOffButton(props: { priceKey: string; product: string; charged: string; account: string; invoice: string | null; list: string }) {
+  const { pending, error, go } = useSave()
+  return (
+    <span className="inline-flex flex-col items-end">
+      <button type="button" disabled={pending} className="rounded-lg border border-line px-2.5 py-1 text-xs disabled:opacity-40"
+        onClick={() => go(() => markPriceOneOff({ key: props.priceKey, product: props.product, charged: props.charged, account: props.account, invoice: props.invoice, list: props.list }))}>
+        {pending ? '…' : 'One-off deal'}
+      </button>
+      {error ? <span className="text-xs text-urgent">{error}</span> : null}
+    </span>
   )
 }

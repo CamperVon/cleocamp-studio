@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { chargedDifferently, dollars, ditto, heldBackFor, lineSheetFileName, missingRows, onThePdf, resolveRow, variantsFor } from '../lib/line-sheet'
+import { oneOffKey, sheetDescription, chargedDifferently, dollars, ditto, heldBackFor, lineSheetFileName, missingRows, onThePdf, resolveRow, variantsFor } from '../lib/line-sheet'
 
 const v = (colour: string | null, ws: number | null, retail: number | null, onHand = 1, img: string | null = null) =>
   ({ wholesalePriceCents: ws, retailPriceCents: retail, imageUrl: img, onHandQty: onHand, colorway: colour ? { customerName: colour } : null })
@@ -30,7 +30,7 @@ test('prices are read from the product, never from the row, when the row has one
 })
 
 test('a row with no product carries its own price', () => {
-  assert.deepEqual(resolveRow({ colorway: null, wholesaleCents: 9400, msrp: '$148 – $158' }, null), { wholesaleCents: 9400, retail: '$148 – $158', photo: null, onHand: null })
+  assert.deepEqual(resolveRow({ colorway: null, wholesaleCents: 9400, msrp: '$148 – $158' }, null), { wholesaleCents: 9400, retail: '$148 – $158', photo: null, onHand: null, description: '' })
 })
 
 test('ditto repeats only an identical cell below a non-empty one', () => {
@@ -84,8 +84,8 @@ test('the newest invoice charging off the list is flagged, on the list is not', 
     { name: 'Cleo Tee', wholesalePriceCents: 5400, variants: [] },
   ]
   const shipments = [
-    { sentAt: new Date('2026-08-25'), invoiceName: null, account: 'Grandpa LA', lines: [{ item: 'Cleo Tee / Black / 1', qty: 2, wholesaleCents: 10200 }] },
-    { sentAt: new Date('2026-09-28'), invoiceName: '#2644', account: 'Grandpa LA', lines: [
+    { id: 's1', sentAt: new Date('2026-08-25'), invoiceName: null, account: 'Grandpa LA', lines: [{ item: 'Cleo Tee / Black / 1', qty: 2, wholesaleCents: 10200 }] },
+    { id: 's2', sentAt: new Date('2026-09-28'), invoiceName: '#2644', account: 'Grandpa LA', lines: [
       { item: 'Cleo Tee / Black / 1', qty: 7, wholesaleCents: 37800 },
       { item: 'Boy Belt / Small', qty: 2, wholesaleCents: 18000 },
       { item: 'Boy Belt / Medium', qty: 1, wholesaleCents: 8000 },
@@ -97,4 +97,22 @@ test('the newest invoice charging off the list is flagged, on the list is not', 
   assert.equal(off[0].product, 'Boy Belt')
   assert.deepEqual(off[0].charged, [8000, 9000])
   assert.equal(off[0].invoice, '#2644')
+  assert.equal(off[0].key, oneOffKey('s2', 'Boy Belt'))
+  // Marked a one-off: not shown again.
+  assert.deepEqual(chargedDifferently(products, shipments, new Set([off[0].key])), [])
+})
+
+test('a Shopify description is cut to fit the sheet', () => {
+  assert.equal(sheetDescription('Unisex. Handcrafted in Italy. Size Guide'), 'Unisex. Handcrafted in Italy.')
+  assert.equal(sheetDescription('First paragraph.\nSecond one.'), 'First paragraph.')
+  const long = `${'A sentence of about forty characters here. '.repeat(10)}`
+  const cut = sheetDescription(long)
+  assert.ok(cut.length <= 320 && cut.endsWith('.'))
+  assert.equal(sheetDescription(null), '')
+})
+
+test('a row with its own words keeps them; one without prints Shopify\'s', () => {
+  const p = { id: 'x', wholesalePriceCents: 4000, retailPriceCents: 6800, shopifyDescription: 'Fits both Bateau bags.', variants: [v(null, null, 6800)] }
+  assert.equal(resolveRow({ colorway: null, wholesaleCents: null, msrp: null, description: '' }, p).description, 'Fits both Bateau bags.')
+  assert.equal(resolveRow({ colorway: null, wholesaleCents: null, msrp: null, description: 'Our words.' }, p).description, 'Our words.')
 })

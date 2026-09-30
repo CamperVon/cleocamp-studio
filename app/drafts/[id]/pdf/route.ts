@@ -17,6 +17,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   return new NextResponse(new Uint8Array(r.pdf), {
     headers: {
       'Content-Type': 'application/pdf',
+      // Drawn fresh each time; a phone must not show yesterday's copy.
+      'Cache-Control': 'no-store',
       'Content-Disposition': `${new URL(req.url).searchParams.get('download') ? 'attachment' : 'inline'}; filename="${file}"`,
     },
   })

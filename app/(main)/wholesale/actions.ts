@@ -59,3 +59,27 @@ export async function removeLineSheetRow(rowId: string): Promise<Result> {
 export async function restoreLineSheetRow(rowId: string): Promise<Result> {
   return run({ action: 'restore', rowId })
 }
+
+/**
+ * An invoice charged a product off the price list, and it was a deal for that
+ * order only (Brandon, 30 Sept 2026, on Grandpa's Boy Belts: "that was a
+ * special deal one time only"). Saved as a Note so the Wholesale page stops
+ * flagging it and Mouse knows not to offer that price again as a matter of
+ * course.
+ */
+export async function markPriceOneOff(input: { key: string; product: string; charged: string; account: string; invoice: string | null; list: string }): Promise<Result> {
+  const id = await currentPersonId()
+  const who = id ? await db.person.findFirst({ where: { id, active: true, external: false }, select: { name: true } }) : null
+  if (!who) return { ok: false, error: 'Open the app from your own link so this carries your name.' }
+  if (!input.key.startsWith('oneoff-price:')) return { ok: false, error: 'Not a price to mark.' }
+  if (await db.note.findFirst({ where: { entityId: input.key }, select: { id: true } })) { revalidatePath('/wholesale'); return { ok: true } }
+  const day = new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' })
+  await db.note.create({
+    data: {
+      entityType: 'GENERAL', entityId: input.key, source: 'MANUAL',
+      content: `One-time price: ${input.product} at ${input.charged} to ${input.account}${input.invoice ? ` on ${input.invoice}` : ''} was a special deal for that order only. The wholesale price stays ${input.list}; do not offer the deal again unless told to. (${who.name.split(' ')[0]}, ${day})`,
+    },
+  })
+  revalidatePath('/wholesale')
+  return { ok: true }
+}

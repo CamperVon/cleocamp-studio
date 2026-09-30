@@ -1,7 +1,7 @@
 import { chargedDifferently, dollars, heldBackFor, loadLineSheet, onThePdf } from '@/lib/line-sheet'
 import { db } from '@/lib/db'
 import { Page, Card, Chip, Empty, Money, Fold } from '@/app/ui/primitives'
-import { LineSheetRowEditor, RestoreRow } from './line-sheet-row'
+import { LineSheetRowEditor, OneOffButton, RestoreRow } from './line-sheet-row'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,12 +48,15 @@ export default async function Wholesale() {
   const everyRow = await loadLineSheet({ includeHidden: true })
   const sheet = { ...everyRow, lines: everyRow.lines.filter((l) => !l.hidden) }
   const removed = everyRow.lines.filter((l) => l.hidden)
-  const soldOutButListed = sheet.lines.filter((l) => /in stock/i.test(l.availability) && l.onHand != null && l.onHand <= 0).length
+  const soldOutButListed = sheet.lines.filter((l) => /in stock/i.test(l.availability) && l.onHand != null && l.onHand <= 0)
   const heldBack = sheet.lines.filter((l) => !onThePdf(l))
   const since = sixMonthsAgo()
+  const oneOffs = new Set((await db.note.findMany({ where: { entityId: { startsWith: 'oneoff-price:' } }, select: { entityId: true } })).map((n) => n.entityId!))
   const offList = chargedDifferently(products, accounts.flatMap((a) => a.shipments
     .filter((s) => s.sentAt.getTime() >= since)
-    .map((s) => ({ sentAt: s.sentAt, invoiceName: s.invoiceName, account: a.name, lines: s.lines }))))
+    .map((s) => ({ id: s.id, sentAt: s.sentAt, invoiceName: s.invoiceName, account: a.name, lines: s.lines }))), oneOffs)
+  const name = (l: { item: string; colorLabel: string }) => [l.item, l.colorLabel].filter(Boolean).join(' ')
+  const alerts = soldOutButListed.length + heldBack.length + offList.length
   const unpriced = products.filter((p) => p.wholesalePriceCents == null && !p.variants.some((v) => v.wholesalePriceCents != null)).length
 
   const row = (a: (typeof accounts)[number]) => {
@@ -214,9 +217,7 @@ export default async function Wholesale() {
               <span className="shrink-0 whitespace-nowrap font-serif text-[17px] italic text-accent">Line sheet</span>
               <span className="text-xs text-muted">
                 {sheet.lines.length} piece{sheet.lines.length === 1 ? '' : 's'}
-                {heldBack.length ? <span className="text-warn"> · {heldBack.length} off the PDF</span> : null}
-                {soldOutButListed ? <span className="text-warn"> · {soldOutButListed} say in stock with none on hand</span> : null}
-                {offList.length ? <span className="text-warn"> · {offList.length} invoiced off-list</span> : null}
+                {alerts ? <span className="text-warn"> · see alerts</span> : null}
               </span>
             </span>
           }
@@ -226,18 +227,28 @@ export default async function Wholesale() {
             <a href="/wholesale/line-sheet/pdf?download=1" className="text-accent underline">Download</a>
             <span>Wholesale from the price list, suggested retail from Shopify, both read live. New products and colours on Shopify join by themselves. Tap a piece to change its words or remove it; tell Mouse to change a price or send the sheet to a store.</span>
           </div>
-          {offList.length ? (
-            <div className="border-b border-line px-4 py-2.5 text-xs sm:px-5">
-              <p className="font-medium text-warn">The latest invoice charged a different price from the list</p>
-              <ul className="mt-1 flex flex-col gap-0.5 text-muted">
-                {offList.map((o) => (
-                  <li key={o.product}>
-                    {o.product}: {o.charged.map(dollars).join(' and ')} to {o.account}{o.invoice ? ` on ${o.invoice}` : ''}
-                    {' '}({o.sentAt.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' })}), list {o.list.map(dollars).join(' / ')}.
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-1 text-faint">The sheet prints the list. If the list is out of date, tell Mouse the new price; if it was a one-off, leave it.</p>
+          {alerts ? (
+            <div className="flex flex-col gap-2.5 border-b border-line px-4 py-2.5 text-xs sm:px-5">
+              <p className="font-medium text-warn">Alerts</p>
+              {heldBack.length ? (
+                <p className="text-muted">
+                  <span className="text-ink">Not on the PDF yet:</span> {heldBack.map((l) => `${name(l)} (needs ${heldBackFor(l).join(' and ')})`).join('; ')}. Tap the piece below to fill it in.
+                </p>
+              ) : null}
+              {soldOutButListed.length ? (
+                <p className="text-muted">
+                  <span className="text-ink">Say In Stock with none on hand:</span> {soldOutButListed.map(name).join(', ')}. Change the availability, or check the count.
+                </p>
+              ) : null}
+              {offList.map((o) => (
+                <div key={o.key} className="flex items-start justify-between gap-3 text-muted">
+                  <p>
+                    <span className="text-ink">Invoiced off the list:</span> {o.product} at {o.charged.map(dollars).join(' and ')} to {o.account}{o.invoice ? ` on ${o.invoice}` : ''}
+                    {' '}({o.sentAt.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' })}), list {o.list.map(dollars).join(' / ')}. The sheet prints the list. A one-off deal? Tap to clear this. A new price? Tell Mouse.
+                  </p>
+                  <OneOffButton priceKey={o.key} product={o.product} charged={o.charged.map(dollars).join(' and ')} account={o.account} invoice={o.invoice} list={o.list.map(dollars).join(' / ')} />
+                </div>
+              ))}
             </div>
           ) : null}
           <ul className="divide-y divide-line">
@@ -245,7 +256,8 @@ export default async function Wholesale() {
               const warn = /in stock/i.test(l.availability) && l.onHand != null && l.onHand <= 0
               return (
                 <LineSheetRowEditor key={l.id} row={{
-                  id: l.id, linked: !!l.productId, item: l.item, colorLabel: l.colorLabel, description: l.description,
+                  id: l.id, linked: !!l.productId, item: l.item, colorLabel: l.colorLabel, description: l.ownDescription,
+                  fromShopify: !l.ownDescription.trim() ? l.description : '',
                   sizing: l.sizing, minOrder: l.minOrder, commission: l.commission, availability: l.availability,
                   wholesale: !l.productId && l.wholesaleCents != null ? String(l.wholesaleCents / 100) : '', msrp: l.msrp,
                 }}>

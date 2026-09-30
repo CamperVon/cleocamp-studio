@@ -29,7 +29,9 @@ import { wordmark, WORDMARK_RATIO } from '@/lib/brand'
  * read, gives a row to every active product, and every active colour of one,
  * that is for sale on Shopify and not on the sheet yet. A row a person
  * removed stays removed. A row stays off the PDF until it has a wholesale
- * price and a description, and the Wholesale page says so.
+ * price and a description, and the Wholesale page says so. The description
+ * is the row's own words if someone wrote them, else the product's Shopify
+ * description (first paragraph), which the nightly sync keeps.
  *
  * Fonts come off disk for the reasons given at the top of lib/po-pdf.tsx.
  */
@@ -54,7 +56,10 @@ export type LineSheetLine = {
   colorway: string | null
   item: string
   colorLabel: string
+  /** What prints: the row's own words, or else the product's Shopify description. */
   description: string
+  /** The row's own words, for the editor. Empty: it prints Shopify's. */
+  ownDescription: string
   /** What prints: the live price, or the row's own when it has no product. Null: not set anywhere. */
   wholesaleCents: number | null
   retail: string | null
@@ -70,7 +75,20 @@ export type LineSheetLine = {
 }
 
 type Variant = { wholesalePriceCents: number | null; retailPriceCents: number | null; imageUrl: string | null; onHandQty: unknown; colorway: { customerName: string } | null }
-type Product = { id: string; wholesalePriceCents: number | null; retailPriceCents: number | null; variants: Variant[] }
+type Product = { id: string; wholesalePriceCents: number | null; retailPriceCents: number | null; shopifyDescription?: string | null; variants: Variant[] }
+
+/**
+ * Shopify's description cut to fit the sheet's column: the first paragraph,
+ * and at most about 320 characters, ended at a sentence. Pure.
+ */
+export function sheetDescription(text: string | null | undefined): string {
+  // "Size Guide" is a link on the website, meaningless on paper.
+  const para = (text ?? '').replace(/\s*\bSize Guide\b\s*/gi, ' ').trim().split(/\n\s*\n|\n/)[0]?.trim() ?? ''
+  if (para.length <= 320) return para
+  const cut = para.slice(0, 320)
+  const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '))
+  return end > 80 ? cut.slice(0, end + 1) : `${cut.slice(0, cut.lastIndexOf(' '))}…`
+}
 
 /** "$54", "$54.50". Pure. */
 export function dollars(cents: number): string {
@@ -175,10 +193,11 @@ export async function addNewToLineSheet(): Promise<NewRow[]> {
 
 /** Price, suggested retail, photo and stock for one row, from its product as it is now. Pure. */
 export function resolveRow(
-  row: { colorway: string | null; wholesaleCents: number | null; msrp: string | null },
+  row: { colorway: string | null; wholesaleCents: number | null; msrp: string | null; description?: string },
   p: Product | null,
-): Pick<LineSheetLine, 'wholesaleCents' | 'retail' | 'photo' | 'onHand'> {
-  if (!p) return { wholesaleCents: row.wholesaleCents, retail: row.msrp, photo: null, onHand: null }
+): Pick<LineSheetLine, 'wholesaleCents' | 'retail' | 'photo' | 'onHand' | 'description'> {
+  const own = row.description?.trim() ?? ''
+  if (!p) return { wholesaleCents: row.wholesaleCents, retail: row.msrp, photo: null, onHand: null, description: own }
   // Suggested retail is Shopify's, whatever the row says.
   const vs = variantsFor(p, row.colorway)
   const ws = vs.find((v) => v.wholesalePriceCents != null)?.wholesalePriceCents ?? p.wholesalePriceCents ?? row.wholesaleCents
@@ -190,12 +209,16 @@ export function resolveRow(
   return {
     wholesaleCents: ws,
     retail: live,
+    description: own || sheetDescription(p.shopifyDescription),
     photo: vs.find((v) => v.imageUrl)?.imageUrl ?? null,
     onHand: counts.some((c) => c == null) || !counts.length ? null : counts.reduce((a, b) => a! + b!, 0),
   }
 }
 
-export type ChargedDifferently = { product: string; charged: number[]; list: number[]; account: string; invoice: string | null; sentAt: Date }
+export type ChargedDifferently = { key: string; product: string; charged: number[]; list: number[]; account: string; invoice: string | null; sentAt: Date }
+
+/** The Note entityId that marks one invoice's price for one product as a one-off. Pure. */
+export const oneOffKey = (shipmentId: string, product: string) => `oneoff-price:${shipmentId}:${product.trim().toLowerCase()}`
 
 /**
  * Where the newest invoice for a product charged something other than the
@@ -203,12 +226,14 @@ export type ChargedDifferently = { product: string; charged: number[]; list: num
  * recently has"; the price list is that, since every invoice reads it, but a
  * price named for one order (Grandpa's Boy Belts at $80 and $90 on #2644,
  * against $130) is a deal, not a new price, so it is shown to a person to
- * decide rather than copied onto the list. Line totals are divided back to a
+ * decide rather than copied onto the list. Once someone marks it a one-off
+ * (a Note under oneOffKey, which Mouse reads too) it is not shown again. Line totals are divided back to a
  * unit price; lines with no price or a zero are skipped. Pure.
  */
 export function chargedDifferently(
   products: Array<{ name: string; wholesalePriceCents: number | null; variants: Array<{ wholesalePriceCents: number | null }> }>,
-  shipments: Array<{ sentAt: Date; invoiceName: string | null; account: string; lines: Array<{ item: string; qty: number; wholesaleCents: number | null }> }>,
+  shipments: Array<{ id: string; sentAt: Date; invoiceName: string | null; account: string; lines: Array<{ item: string; qty: number; wholesaleCents: number | null }> }>,
+  oneOffs: ReadonlySet<string> = new Set(),
 ): ChargedDifferently[] {
   const out: ChargedDifferently[] = []
   const newestFirst = [...shipments].sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime())
@@ -220,7 +245,7 @@ export function chargedDifferently(
       const mine = s.lines.filter((l) => l.item.split(' / ')[0].trim().toLowerCase() === name && l.qty > 0 && l.wholesaleCents)
       if (!mine.length) continue
       const charged = [...new Set(mine.map((l) => Math.round(l.wholesaleCents! / l.qty)))].sort((a, b) => a - b)
-      if (charged.some((c) => !list.includes(c))) out.push({ product: p.name, charged, list: list.sort((a, b) => a - b), account: s.account, invoice: s.invoiceName, sentAt: s.sentAt })
+      if (charged.some((c) => !list.includes(c)) && !oneOffs.has(oneOffKey(s.id, p.name))) out.push({ key: oneOffKey(s.id, p.name), product: p.name, charged, list: list.sort((a, b) => a - b), account: s.account, invoice: s.invoiceName, sentAt: s.sentAt })
       break
     }
   }
@@ -255,7 +280,7 @@ export async function loadLineSheet(opts: { includeHidden?: boolean } = {}): Pro
   const products = await db.product.findMany({
     where: { id: { in: ids } },
     select: {
-      id: true, wholesalePriceCents: true, retailPriceCents: true,
+      id: true, wholesalePriceCents: true, retailPriceCents: true, shopifyDescription: true,
       variants: { select: { wholesalePriceCents: true, retailPriceCents: true, imageUrl: true, onHandQty: true, colorway: { select: { customerName: true } } } },
     },
   })
@@ -264,7 +289,7 @@ export async function loadLineSheet(opts: { includeHidden?: boolean } = {}): Pro
     meta: meta ? { title: meta.title, tagline: meta.tagline, materials: meta.materials, press: meta.press, contact: meta.contact, footnote: meta.footnote } : null,
     lines: rows.map((r) => ({
       id: r.id, position: r.position, productId: r.productId, colorway: r.colorway, item: r.item, colorLabel: r.colorLabel,
-      description: r.description, msrp: r.msrp, sizing: r.sizing, minOrder: r.minOrder, commission: r.commission,
+      ownDescription: r.description, msrp: r.msrp, sizing: r.sizing, minOrder: r.minOrder, commission: r.commission,
       availability: r.availability, hidden: r.hidden,
       ...resolveRow(r, r.productId ? byId.get(r.productId) ?? null : null),
     })),
@@ -276,7 +301,7 @@ const MUTED = '#6A736F'
 const RULE = '#DEDFDB'
 const styles = StyleSheet.create({
   page: { paddingTop: 30, paddingBottom: 40, paddingHorizontal: 30, fontSize: 7.5, fontFamily: 'PTSerif', color: INK },
-  logo: { width: 150, height: 150 / WORDMARK_RATIO },
+  logo: { width: 200, height: 200 / WORDMARK_RATIO },
   title: { marginTop: 8, fontSize: 12, fontStyle: 'italic', fontWeight: 'bold' },
   tagline: { marginTop: 4, fontSize: 8.5 },
   materials: { marginTop: 2, fontSize: 8, color: MUTED },

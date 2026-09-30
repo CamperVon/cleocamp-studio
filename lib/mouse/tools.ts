@@ -2062,7 +2062,12 @@ export const TOOLS: Record<string, Tool> = {
       // Language inherits from the vendor the same way terms and the delivery
       // address do — "Lorena and Santos get Spanish" is said once, not on
       // every order. A single order still overrides it.
-      const vendorRow = await db.vendor.findUnique({ where: { id: i.vendorId as string }, select: { documentLanguage: true } })
+      const vendorRow = await db.vendor.findUnique({ where: { id: i.vendorId as string }, select: { documentLanguage: true, name: true } })
+      {
+        const { vendorNoteProblem } = await import('@/lib/po-notes')
+        const bad = vendorNoteProblem(i.notes as string, vendorRow?.name) ?? vendorNoteProblem(i.notesAlt as string, vendorRow?.name)
+        if (bad) return { error: bad }
+      }
       const language = take(i.language as string | undefined, vendorRow?.documentLanguage ?? null, 'document language') ?? 'en'
 
       const ship = chooseDeliverTo({ given: i.deliverTo as string | undefined, replaces, recent: recentToVendor })
@@ -2243,7 +2248,7 @@ export const TOOLS: Record<string, Tool> = {
             'line — "put Nicki on this one". Changes only this order. To change it for every ' +
             'document from now on, use update_document_defaults instead.',
           ),
-          notes: str('Anything else'),
+          notes: str('REPLACES the notes, which PRINT ON THE PDF THE VENDOR RECEIVES. Only what we are saying TO them — a rush request, a spec, a payment confirmation. Never what they told us ("Staples confirmed…"), never our own plans, prices or people. That is add_note against the purchase order. "" clears them.'),
           language: { type: 'string' as const, enum: ['en', 'es', 'it', 'en_es', 'en_it'],
             description:
               'What language the DOCUMENT is written in — "es" or "it" throughout, or ' +
@@ -2260,8 +2265,13 @@ export const TOOLS: Record<string, Tool> = {
       },
     },
     run: async ({ poNumber, ...rest }) => {
-      const po = await db.purchaseOrder.findFirst({ where: { poNumber: String(poNumber) } })
+      const po = await db.purchaseOrder.findFirst({ where: { poNumber: String(poNumber) }, include: { vendor: { select: { name: true } } } })
       if (!po) return { error: `No purchase order ${poNumber}` }
+      {
+        const { vendorNoteProblem } = await import('@/lib/po-notes')
+        const bad = vendorNoteProblem(rest.notes as string, po.vendor?.name) ?? vendorNoteProblem(rest.notesAlt as string, po.vendor?.name)
+        if (bad) return { error: bad }
+      }
       const data: any = {}
       for (const [k, v] of Object.entries(rest)) {
         if (v === undefined || v === null) continue
@@ -2511,6 +2521,13 @@ export const TOOLS: Record<string, Tool> = {
       }
       const internal = toOverride.length > 0
 
+      // Last look before the vendor's copy goes: notes written before the
+      // check existed, or by hand, still must not carry internal words.
+      if (!internal) {
+        const { vendorNoteProblem } = await import('@/lib/po-notes')
+        const bad = vendorNoteProblem(po.notes, po.vendor.name) ?? vendorNoteProblem(po.notesAlt, po.vendor.name)
+        if (bad) return { sent: false, reason: `${bad} Show the person the notes and ask whether to clear them (update_purchase_order, notes: "") before sending.` }
+      }
       if (!internal && !po.vendor.email) {
         return {
           sent: false,
@@ -3892,7 +3909,8 @@ export const TOOLS: Record<string, Tool> = {
         'set_wholesale_price) and suggested retail from Shopify, both read live, so link a row to ' +
         'its product (productId, and colorway for one colour). Only a row with no product carries ' +
         'its own wholesaleCents and msrp; a linked row always shows Shopify\'s retail. New products ' +
-        'and colours on Shopify join the sheet by themselves with blank words; fill in description, ' +
+        'and colours on Shopify join the sheet by themselves. A row with no description of its own ' +
+        'prints the product\'s Shopify description; set description "" to go back to it. Fill in ' +
         'availability and min. order when a person gives them. A row stays off the PDF until it has ' +
         'a wholesale price and a description. Change only what a person asked for.',
       input_schema: {
