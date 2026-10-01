@@ -17,3 +17,7 @@ test('a name is required; a bad email is refused; blank clears', () => {
 test('A to Z, ignoring case', () => {
   assert.deepEqual([{ name: 'laufey' }, { name: 'Audrey Hiau' }, { name: 'Zoë' }, { name: 'Álvaro' }].sort(byName).map((x) => x.name), ['Álvaro', 'Audrey Hiau', 'laufey', 'Zoë'])
 })
+
+test('kept at the top comes first, then A to Z', () => {
+  assert.deepEqual([{ name: 'Brandon Camp' }, { name: 'Cleo Camp', atTop: true }, { name: 'Anna' }].sort(byName).map((x) => x.name), ['Cleo Camp', 'Anna', 'Brandon Camp'])
+})

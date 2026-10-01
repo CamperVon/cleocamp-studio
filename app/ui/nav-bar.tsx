@@ -51,6 +51,7 @@ const OCCASIONAL: Item[] = [
   { href: '/phones', label: 'Phones' },
   { href: '/stylists', label: 'Stylists' },
   { href: '/support', label: 'Support' },
+  { href: '/cookie-jar', label: 'The Cookie Jar' },
   { href: '/vendors', label: 'Vendors' },
   { href: '/wholesale', label: 'Wholesale' },
 ].sort((a, b) => a.label.localeCompare(b.label))

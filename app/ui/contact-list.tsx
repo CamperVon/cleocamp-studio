@@ -3,7 +3,7 @@ import { ContactDetails, NewContact, PutBack, type ContactInfo } from '@/app/ui/
 
 /**
  * One list of people (a circle), A to Z, folded closed like every list here
- * (CLAUDE.md §5): the section, then each person, with "+ Add" inside.
+ * (CLAUDE.md §5): the section, then each person, with "+ Add" in pink at the end (Brandon, 1 Oct 2026).
  */
 export function ContactList({ title, circle, people, removed }: { title: string; circle: string; people: ContactInfo[]; removed: ContactInfo[] }) {
   return (
@@ -14,11 +14,6 @@ export function ContactList({ title, circle, people, removed }: { title: string;
           <span className="text-xs text-muted">{people.length}</span>
         </span>
       }>
-        <div className="border-t border-line">
-          <Fold summary={<span className="text-sm font-medium">+ Add</span>}>
-            <div className="px-4 pb-3.5 sm:px-5"><NewContact circle={circle} /></div>
-          </Fold>
-        </div>
         {people.length ? (
           <ul className="divide-y divide-line border-t border-line">
             {people.map((p) => (
@@ -35,6 +30,11 @@ export function ContactList({ title, circle, people, removed }: { title: string;
             ))}
           </ul>
         ) : null}
+        <div className="border-t border-line">
+          <Fold summary={<span className="text-sm font-medium text-accent">+ Add</span>}>
+            <div className="px-4 pb-3.5 sm:px-5"><NewContact circle={circle} /></div>
+          </Fold>
+        </div>
         {removed.length ? (
           <div className="border-t border-line">
             <Fold summary={<span className="text-xs text-muted">Removed ({removed.length})</span>}>

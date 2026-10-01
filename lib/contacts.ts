@@ -35,8 +35,9 @@ export function cleanContact(input: ContactInput, isNew: boolean): { data: Recor
   return { data }
 }
 
-/** A to Z by name, ignoring case and accents. Pure. */
-export const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })
+/** Anyone kept at the top first, then A to Z by name, ignoring case and accents. Pure. */
+export const byName = (a: { name: string; atTop?: boolean }, b: { name: string; atTop?: boolean }) =>
+  Number(!!b.atTop) - Number(!!a.atTop) || a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })
 
 export async function listContacts(circles: ContactCircle[], opts: { removed?: boolean } = {}) {
   const rows = await db.contact.findMany({ where: { circle: { in: circles }, removedAt: opts.removed ? { not: null } : null } })

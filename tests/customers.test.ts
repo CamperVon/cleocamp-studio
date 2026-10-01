@@ -44,3 +44,11 @@ test('verdicts are read defensively', () => {
   assert.deepEqual(parseVerdicts('no json here', ids), [])
   assert.deepEqual(parseVerdicts('[{"id":"a","match":"likely","who":""}]', ids), [{ id: 'a', match: 'none', who: null, source: null }])
 })
+
+test('a hand-added customer is linked by email, one each', async () => {
+  const { linkByEmail, orderSearch } = await import('../lib/customers')
+  const rows = [{ email: 'a@x.com', n: 1 }, { email: null, n: 2 }, { email: 'b@x.com', n: 3 }]
+  assert.deepEqual(linkByEmail(rows, [{ id: 'h1', email: 'B@x.com' }, { id: 'h2', email: 'c@x.com' }]).map((l) => [l.id, l.row.n]), [['h1', 3]])
+  assert.equal(orderSearch(' sophie@sophielev.xyz '), 'email:"sophie@sophielev.xyz"')
+  assert.equal(orderSearch('Sophie "Lev"'), 'Sophie Lev')
+})

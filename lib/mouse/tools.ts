@@ -3950,6 +3950,85 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  find_customer: {
+    def: {
+      name: 'find_customer',
+      description:
+        'Look up a customer by name or email: who we hold on the Customers page (id, notes, orders, spend) and ' +
+        'their Shopify orders, newest first (what they bought, when, the total, where it went). Read-only. Use it ' +
+        'before save_customer, and to fill in a customer\'s notes from their orders when asked.',
+      input_schema: {
+        type: 'object',
+        properties: { query: str('Name or email, as given') },
+        required: ['query'],
+      },
+    },
+    run: async (i) => {
+      const q = String(i.query ?? '').trim()
+      if (!q) return { found: false, reason: 'Name or email?' }
+      const { customerOrders } = await import('@/lib/customers')
+      const held = await db.customer.findMany({
+        where: q.includes('@') ? { email: { equals: q, mode: 'insensitive' } } : { name: { contains: q, mode: 'insensitive' } },
+        select: { id: true, name: true, email: true, city: true, orderCount: true, totalSpentCents: true, notes: true, pinnedAt: true, shopifyCustomerId: true, notable: true, notableWho: true, notableDismissedAt: true },
+        take: 10,
+      })
+      const orders = await customerOrders(q).catch((e: Error) => ({ error: `Shopify did not answer: ${e.message}` }))
+      return {
+        onFile: held.map((c) => ({
+          id: c.id, name: c.name, email: c.email, city: c.city, orders: c.orderCount, spent: `$${(c.totalSpentCents / 100).toFixed(2)}`,
+          notes: c.notes, onAddedByHandList: !!c.pinnedAt, onShopify: !!c.shopifyCustomerId,
+          ...(c.notable && !c.notableDismissedAt ? { notable: `${c.notable}: ${c.notableWho}` } : {}),
+        })),
+        shopifyOrders: orders,
+        ...(held.length > 1 ? { note: 'More than one customer matches. Ask which one before saving anything.' } : {}),
+      }
+    },
+  },
+
+  save_customer: {
+    def: {
+      name: 'save_customer',
+      description:
+        'Add a customer to the Customers page (the "Added by hand" list), or change their notes. With customerId ' +
+        '(from find_customer): notes replaces their notes (include what is there to add to it), pinned puts them ' +
+        'on or takes them off the list. Without it: name and/or email adds them; an email Shopify knows is that ' +
+        'customer, and a name Shopify already has comes back to ask about. Notes hold what a person told you and ' +
+        'facts from their Shopify orders (what they bought, when). Never a customer\'s own words from an email ' +
+        'or an order note, and never a guess.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          customerId: str('From find_customer, to change someone on file'),
+          name: str('For someone new: their name as given'),
+          email: str('For someone new: their email as given'),
+          notes: str('The notes. On a change this replaces what is there.'),
+          pinned: { type: 'boolean', description: 'On a change: true puts them on the Added by hand list, false takes them off' },
+        },
+        required: [],
+      },
+    },
+    run: async (i) => {
+      const { addCustomerByHand, setCustomerNotes, setCustomerPinned } = await import('@/lib/customers')
+      if (i.customerId) {
+        const id = String(i.customerId)
+        if (typeof i.notes !== 'string' && typeof i.pinned !== 'boolean') return { saved: false, reason: 'Nothing to change.' }
+        if (typeof i.notes === 'string') {
+          const r = await setCustomerNotes(id, i.notes)
+          if (!r.ok) return { saved: false, reason: r.error }
+        }
+        if (typeof i.pinned === 'boolean') {
+          const r = await setCustomerPinned(id, i.pinned)
+          if (!r.ok) return { saved: false, reason: r.error }
+        }
+        return { saved: true }
+      }
+      const r = await addCustomerByHand({ name: typeof i.name === 'string' ? i.name : undefined, email: typeof i.email === 'string' ? i.email : undefined, notes: typeof i.notes === 'string' ? i.notes : undefined })
+      return r.ok
+        ? { saved: true, customer: r.customer, onShopify: r.existing, say: r.existing ? 'Found them on Shopify and added them.' : 'Added. Shopify has no customer with that email yet.' }
+        : { saved: false, reason: r.error, matches: r.matches }
+    },
+  },
+
   save_contact: {
     def: {
       name: 'save_contact',
@@ -3974,6 +4053,7 @@ export const TOOLS: Record<string, Tool> = {
           instagram: str('Instagram handle'),
           address: str('Where to ship to, one line as given'),
           notes: str('Replaces the notes. To add to them, include what is there now.'),
+          atTop: { type: 'boolean', description: 'true lists them first, above the A to Z (only when asked)' },
         },
         required: [],
       },
@@ -3986,11 +4066,14 @@ export const TOOLS: Record<string, Tool> = {
       const c: unknown = i.circle
       const circle = isCircle(c) ? c : undefined
       if (i.contactId) {
+        if (typeof i.atTop === 'boolean') await db.contact.update({ where: { id: String(i.contactId) }, data: { atTop: i.atTop } }).catch(() => null)
+        if (!Object.keys(fields).length && !circle && typeof i.atTop === 'boolean') return { saved: true }
         const r = await updateContact(String(i.contactId), fields, circle)
         return r.ok ? { saved: true, contact: r.contact, ...(circle ? { list: CIRCLES[circle] } : {}) } : { saved: false, reason: r.error }
       }
       if (!circle) return { saved: false, reason: 'Which list: Friends of the Brand, the Cleo Crew (internal), or Friends We Like to Work With? Ask.' }
       const r = await addContact(circle, fields)
+      if (r.ok && i.atTop === true) await db.contact.update({ where: { id: r.contact.id }, data: { atTop: true } })
       return r.ok ? { saved: true, contact: r.contact, list: CIRCLES[circle] } : { saved: false, reason: r.error }
     },
   },

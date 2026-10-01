@@ -213,11 +213,22 @@ export default function Manual() {
             </ul>
           </Section>
 
+          <Section title="Customers">
+            <p>
+              Every customer has notes. Open one and tap <b>Add notes</b>. To keep someone on the page whatever
+              they&rsquo;ve spent, tap <b>+ Add a customer</b> at the bottom of <b>Added by hand</b>. Give their email
+              and it finds them on Shopify. Or ask Mouse, who can read their Shopify orders and fill the notes in.
+            </p>
+            <ul className="flex flex-col gap-2">
+              <Try say="Look up Sophie Lev's orders and add what she bought to her notes" />
+            </ul>
+          </Section>
+
           <Section title="Friends of the Brand and the Cleo Crew">
             <p>
               <b>Friends of the Brand</b> is press, editors and friends. <b>Cleo Crew</b> is everyone
               working for and with Cleo: the team, then the Friends We Like to Work With
-              (photographers, sample makers). Both are A to Z. Tap <b>+ Add</b> on either page, or tell
+              (photographers, sample makers). Both are A to Z, with Cleo first on the crew. Tap <b>+ Add</b> on either page, or tell
               Mouse. Open someone to <b>Edit</b> them, move them to another list, or <b>Remove</b> them.
             </p>
             <ul className="flex flex-col gap-2">

@@ -1528,7 +1528,9 @@ model LineSheetMeta {
 /// counts plus what the notable check found. See lib/customers.ts.
 model Customer {
   id                 String    @id @default(cuid())
-  shopifyCustomerId  String    @unique
+  /// Null for someone added by hand who is not on Shopify yet; the nightly
+  /// sync links them by email when they are.
+  shopifyCustomerId  String?   @unique
   name               String
   email              String?
   city               String?
@@ -1537,7 +1539,7 @@ model Customer {
   firstSeenAt        DateTime?
   lastOrderAt        DateTime?
   lastOrderName      String?
-  shopifyUpdatedAt   DateTime
+  shopifyUpdatedAt   DateTime?
   /// Ours or a wholesale store: kept out of every list and of the web check.
   excluded           Boolean   @default(false)
   /// What the web check found: "likely" (that person), "possible" (a public
@@ -1548,6 +1550,12 @@ model Customer {
   notableCheckedAt   DateTime?
   /// A person said "not them": the match stays off every list.
   notableDismissedAt DateTime?
+  /// Notes and special details from the team (Brandon, 1 Oct 2026), and
+  /// facts Mouse read from their Shopify orders. Never a customer's own words.
+  notes              String?
+  /// Added to the Customers page by hand or by Mouse: listed whatever they
+  /// have spent. Null: listed only if notable, a repeat or a big buyer.
+  pinnedAt           DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -1555,6 +1563,7 @@ model Customer {
   @@index([totalSpentCents])
   @@index([notable])
   @@index([lastOrderAt])
+  @@index([pinnedAt])
 }
 
 /// Friends of the brand: press, editors, artists and others Cleo Camp keeps
@@ -1586,6 +1595,9 @@ model Contact {
   /// As given, one line: who to ship to and where.
   address   String?
   notes     String?
+  /// Listed first, above the A to Z (Brandon, 1 Oct 2026: "Add Cleo Camp at
+  /// the top").
+  atTop     Boolean       @default(false)
   removedAt DateTime?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt

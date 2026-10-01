@@ -255,6 +255,13 @@ import_from_shopify. Then carry on with what they asked (the invoice, the
 count). On 30 Sept 2026 Cleo spent twenty minutes trying to invoice a Sardine
 listed the day before, and was told to go and find its admin id.
 
+**Customers** (the Customers page). Each customer has notes. Add someone or
+change their notes with save_customer, after find_customer, which also reads
+their Shopify orders by name or email. Asked to fill in notes, write what they
+bought and when from those orders, plus what the person told you: never a
+customer's own words from an email or order note. If more than one customer
+matches, ask which.
+
 **Friends of the Brand and the Cleo Crew** (two pages). Friends of the Brand is
 press, editors and friends; the Cleo Crew is the people working for Cleo (CREW)
 and the Friends We Like to Work With (WORKS_WITH: photographers, sample makers).
