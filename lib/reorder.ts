@@ -8,8 +8,9 @@ import { db } from '@/lib/db'
  * halved the Bean Bags when he said they felt high: "I just need answers based
  * on real calculations ... This is why mouse exists, period."
  *
- * The rate is retail units over the window (90 days), or since the first
- * sale when that is later, so a colour launched in July is not averaged over
+ * The rate is retail units over the whole history (a year, or since the first
+ * sale when that is later: Brandon, 1 Oct 2026, "Mouse should be looking at
+ * longer history" after 90 days let one strong August carry the Bean Bags), so a colour launched in July is not averaged over
  * days it was not for sale. Need = rate × months − on hand − still owed on
  * open POs, rounded up, never below zero. Wholesale and gifts are shown beside
  * it, not mixed in: store orders come in lumps (Café Forgot took 6 Bean Bags
@@ -26,7 +27,10 @@ export type ReorderInput = {
   storeAndGift: number
 }
 export type ReorderRow = {
-  item: string; sold: number; days: number; perMonth: number; onHand: number | null; onOrder: number
+  item: string; sold: number; days: number; perMonth: number
+  /** The last 30 days' pace, beside the long rate, so a slowdown or a spike shows. */
+  last30PerMonth: number
+  onHand: number | null; onOrder: number
   storeAndGift: number; need: Record<string, number | null>; soldOut: boolean
 }
 
@@ -34,22 +38,26 @@ const DAY = 864e5
 const MONTH = 30.44
 
 /** One product's row. Pure. */
-export function reorderRow(x: ReorderInput, today: Date, months: number[], windowDays = 90): ReorderRow {
+export function reorderRow(x: ReorderInput, today: Date, months: number[], windowDays = 365): ReorderRow {
   const windowStart = new Date(today.getTime() - windowDays * DAY)
   const start = x.firstSaleAt && x.firstSaleAt > windowStart ? x.firstSaleAt : windowStart
   const days = Math.max(1, Math.round((today.getTime() - start.getTime()) / DAY))
   const sold = x.sales.filter((s) => s.date >= start && s.date <= today).reduce((n, s) => n + s.unitsSold, 0)
   const perMonth = Math.round((sold / days) * MONTH * 10) / 10
+  const recentStart = new Date(Math.max(today.getTime() - 30 * DAY, start.getTime()))
+  const recentDays = Math.max(1, (today.getTime() - recentStart.getTime()) / DAY)
+  const recent = x.sales.filter((s) => s.date >= recentStart && s.date <= today).reduce((n, s) => n + s.unitsSold, 0)
+  const last30PerMonth = Math.round((recent / recentDays) * MONTH * 10) / 10
   const need: Record<string, number | null> = {}
   for (const m of months) {
     // Unknown stock is unknown need, never "order the full amount".
     need[`${m} mo`] = x.onHand == null ? null : Math.max(0, Math.ceil((sold / days) * MONTH * m - x.onHand - x.onOrder))
   }
-  return { item: x.label, sold, days, perMonth, onHand: x.onHand, onOrder: x.onOrder, storeAndGift: x.storeAndGift, need, soldOut: x.onHand === 0 }
+  return { item: x.label, sold, days, perMonth, last30PerMonth, onHand: x.onHand, onOrder: x.onOrder, storeAndGift: x.storeAndGift, need, soldOut: x.onHand === 0 }
 }
 
 /** Rows for every variant of the products whose names contain any of `names`. */
-export async function reorderTable(names: string[], months: number[] = [3], windowDays = 90, today = new Date()) {
+export async function reorderTable(names: string[], months: number[] = [3], windowDays = 365, today = new Date()) {
   const products = await db.product.findMany({
     where: { status: { in: ['ACTIVE', 'SAMPLING'] }, OR: names.map((n) => ({ name: { contains: n, mode: 'insensitive' as const } })), NOT: { name: { contains: '(part)' } } },
     select: { name: true, variants: { select: { id: true, size: true, onHandQty: true, colorway: { select: { customerName: true } } } } },
