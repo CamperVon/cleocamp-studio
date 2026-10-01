@@ -357,9 +357,11 @@ export function LineSheetDoc({ meta, lines, asOf }: { meta: LineSheetMetaText; l
         {lines.map((l, i) => (
           <View key={l.id} style={styles.tr} wrap={false}>
             <View style={[styles.td, w('photo')]}>
-              {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf's Image takes no alt */}
+              {/* react-pdf's Image takes no alt. */}
               {l.photoData
+                // eslint-disable-next-line jsx-a11y/alt-text
                 ? <Image src={{ data: l.photoData, format: 'jpg' }} style={styles.photo} />
+                // eslint-disable-next-line jsx-a11y/alt-text
                 : l.photo ? <Image src={sheetPhoto(l.photo)!} style={styles.photo} /> : <View style={styles.noPhoto} />}
             </View>
             <Text style={[styles.td, w('item'), styles.bold]}>{l.item}</Text>
