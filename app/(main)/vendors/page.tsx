@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
-import { Page, Card, Chip, Value, Fold } from '@/app/ui/primitives'
+import { Page, Chip, Value, Fold } from '@/app/ui/primitives'
+import { CollapsibleCard } from '@/app/ui/collapsible-card'
 import { NewVendor, VendorEditor } from './vendor-controls'
 
 export const dynamic = 'force-dynamic'
@@ -79,20 +80,21 @@ export default async function Vendors() {
 
   return (
     <Page title="Vendors" lede="Who supplies what, and how you actually place the order.">
-      <Card title={`Active (${active.length})`}>
+      {/* Folds closed like the other lists (Brandon, 1 Oct 2026). */}
+      <CollapsibleCard title={`Active (${active.length})`}>
         <Fold summary={<span className="text-sm font-medium">+ Add a vendor</span>}>
           <div className="px-4 pb-4 sm:px-5"><NewVendor /></div>
         </Fold>
         <ul className="divide-y divide-line border-t border-line">{active.map(row)}</ul>
-      </Card>
+      </CollapsibleCard>
       {retired.length ? (
-        <Card title={`Removed or replaced (${retired.length})`}>
+        <CollapsibleCard title={`Removed or replaced (${retired.length})`}>
           <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
             Kept with their history intact. None of their prices or lead times carry
             forward to whoever replaced them.
           </p>
           <ul className="divide-y divide-line">{retired.map(row)}</ul>
-        </Card>
+        </CollapsibleCard>
       ) : null}
     </Page>
   )

@@ -2,7 +2,7 @@ import { Page, Card, Empty, Fold } from '@/app/ui/primitives'
 import { ItemRow } from '@/app/ui/item-row'
 import { db } from '@/lib/db'
 import { loadStylists, pullOut, stillOut } from '@/lib/stylists'
-import { AddByHand, NewStylist, NoteBox, PullCloseButtons, RequestButtons, ReturnButton, StylistDetails } from './stylist-controls'
+import { AddByHand, NoteBox, PullCloseButtons, RequestButtons, ReturnButton, StylistDetails } from './stylist-controls'
 
 /**
  * A stylist email is a proposal (CLAUDE.md §4: email never writes), so Mouse
@@ -169,18 +169,14 @@ export default async function Stylists() {
       </Card>
       {/* Folded by default, like every list here (Brandon, 30 Sept 2026). */}
       <Card>
-        <Fold summary={<span className="flex items-center justify-between gap-3"><span className="font-serif text-[17px] italic text-accent">Stylists</span><span className="text-xs text-muted">{rest.length} with nothing out</span></span>}>
+        <Fold summary={<span className="flex items-center justify-between gap-3"><span className="font-serif text-[17px] italic text-accent">Stylists</span><span className="text-xs text-muted">{all.length} stylist{all.length === 1 ? '' : 's'}{withPulls.length ? ` · ${withPulls.length} with pieces out, above` : ''}</span></span>}>
+          {/* One "+ Add" for a stylist, a pull or a request (Brandon, 1 Oct 2026). */}
           <div className="border-t border-line">
-            <Fold summary={<span className="text-sm font-medium">+ Add a stylist</span>}>
-              <div className="px-4 pb-4 sm:px-5"><NewStylist /></div>
+            <Fold summary={<span className="text-sm font-medium">+ Add</span>}>
+              <AddByHand stylists={all.map((s) => ({ id: s.id, name: s.name }))} variants={pieces} />
             </Fold>
           </div>
-          {rest.length ? <ul className="divide-y divide-line border-t border-line">{rest.map(row)}</ul> : <Empty>No other stylists yet.</Empty>}
-        </Fold>
-      </Card>
-      <Card>
-        <Fold summary={<span className="font-medium">Add by hand</span>}>
-          <AddByHand stylists={all.map((s) => ({ id: s.id, name: s.name }))} variants={pieces} />
+          {rest.length ? <ul className="divide-y divide-line border-t border-line">{rest.map(row)}</ul> : null}
         </Fold>
       </Card>
       <Card title="Notes">

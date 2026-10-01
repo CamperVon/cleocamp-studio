@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { Page, Card } from '@/app/ui/primitives'
+import { Page } from '@/app/ui/primitives'
 import { CollapsibleCard } from '@/app/ui/collapsible-card'
 import { ComponentRow, RetiredComponentRow, type StockDisplay } from '@/app/ui/component-row'
 import { ProductSection } from '@/app/ui/product-section'
@@ -188,7 +188,8 @@ export default async function Components() {
     >
       <AddComponentForm vendors={vendors} products={products} />
 
-      <Card title={`By product (${byProduct.length})`}>
+      {/* Folds closed like the other lists (Brandon, 1 Oct 2026). */}
+      <CollapsibleCard title={`By product (${byProduct.length})`}>
         <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
           Every product, including the ones with nothing recorded yet — those are data still
           to enter, not products without parts. Open a component to change how much of it a
@@ -214,7 +215,7 @@ export default async function Components() {
             </ProductSection>
           ))}
         </div>
-      </Card>
+      </CollapsibleCard>
 
       {unassigned.length ? (
         <CollapsibleCard title={`Not on a product yet (${unassigned.length})`} defaultOpen>
