@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
   const dryRun = req.nextUrl.searchParams.get('dry') === '1'
 
   const log: Record<string, unknown> = { dryRun }
+  const began = Date.now()
   const step = async (name: string, fn: () => Promise<unknown>) => {
     // One failing step must not take the whole night with it.
     try { log[name] = await fn() } catch (e) { log[name] = { error: (e as Error).message } }
@@ -344,6 +345,21 @@ export async function GET(req: NextRequest) {
   // ~60-day gate. dryRun previews counts without touching anything, same as
   // every other side-effecting step here.
   await step('storageCleanup', () => cleanupStorage({ dryRun }))
+
+  // ── 9. Customers: repeat and big buyers, and who is notable ──
+  // Last, so a slow night here can never cost anything above it. The sync
+  // stops at its deadline and carries on tomorrow; the web check (paid, a
+  // few names a night, yesterday's buyers first) only runs with time to
+  // spare, and never on a dry run. See lib/customers.ts.
+  await step('customers', async () => {
+    if (!shopifyConfigured()) return { skipped: 'not connected' }
+    const { syncCustomers, checkNotable } = await import('@/lib/customers')
+    const sync = await syncCustomers(Math.min(began + 200_000, Date.now() + 90_000))
+    if (dryRun) return { sync, notable: { skipped: 'dry run' } }
+    if (Date.now() - began > 170_000) return { sync, notable: { skipped: 'out of time; tomorrow' } }
+    const { CHAT_MODEL } = await import('@/lib/mouse/agent')
+    return { sync, notable: await checkNotable(CHAT_MODEL) }
+  })
 
   return NextResponse.json({ ok: true, ranAt: new Date().toISOString(), ...log })
 }

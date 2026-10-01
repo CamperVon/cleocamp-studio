@@ -200,6 +200,10 @@ export function escapeHtml(s: string): string {
 export async function composeDailyCheese(): Promise<{ subject: string; text: string; html: string }> {
   const today = laMidnight(0)
   const items = await buildDailyCheeseItems()
+  // Who ordered since the last Cheese and is notable, a repeat buyer or a big
+  // one (Brandon, 30 Sept 2026). Fixed sentences, like everything here. A
+  // failure leaves the section out rather than the whole email.
+  const customers = await import('@/lib/customers').then((m) => m.customerNews()).catch(() => [] as string[])
   // quoteOfTheDay does its own LA-timezone conversion from a real "now"
   // timestamp — `today` here is already pre-shifted to UTC-midnight-of-the-
   // LA-day (see lib/dates.ts), so passing it through would convert twice and
@@ -220,6 +224,7 @@ export async function composeDailyCheese(): Promise<{ subject: string; text: str
     ...items.map((i) => `- ${i.sentence} [${i.tag}]`),
     items.length ? '' : 'Nothing needs attention today.',
     '',
+    ...(customers.length ? ['Customers:', ...customers.map((c) => `- ${c}`), ''] : []),
     'That is everything that needs attention today.',
     '— Studio Mouse',
   ].filter((l, idx, arr) => !(l === '' && arr[idx - 1] === '')).join('\n')
@@ -270,6 +275,8 @@ export async function composeDailyCheese(): Promise<{ subject: string; text: str
     </div>
     <div class="eyebrow">${items.length ? 'Needs attention today' : 'All clear'}</div>
     ${rows}
+    ${customers.length ? `<div class="eyebrow" style="margin-top:22px;">Customers</div>${customers.map((c) => `
+        <div style="border-radius:10px;background:#F4F1EA;border:1px solid #E2DCCC;margin-top:8px;padding:12px 14px;color:#3A342A;font-size:13.5px;line-height:1.5;">${escapeHtml(c)}</div>`).join('')}` : ''}
     <div class="signoff">
       That is everything that needs attention today.
       <span class="sig">— Studio Mouse</span>

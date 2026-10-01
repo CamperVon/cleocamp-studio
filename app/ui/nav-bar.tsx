@@ -42,6 +42,7 @@ const DAILY: Item[] = [
 // (Brandon, 30 Sept 2026: "need to alphabetize the MORE drop down menu").
 const OCCASIONAL: Item[] = [
   { href: '/components', label: 'Components' },
+  { href: '/customers', label: 'Customers' },
   { href: '/finances', label: 'Finances' },
   { href: '/inbox', label: 'Inbox' },
   { href: '/manual', label: 'Mouse Manual' },

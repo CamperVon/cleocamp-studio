@@ -1514,3 +1514,39 @@ model LineSheetMeta {
   footnote   String
   updatedAt  DateTime @updatedAt
 }
+
+/// A Shopify customer, as the nightly pass last saw them. Brandon, 30 Sept
+/// 2026: flag celebrities, big influencers and other notable people, repeat
+/// buyers (3+ orders) and big buyers, with big news in the Daily Cheese and the
+/// rest on a Customers tab. Shopify stays the master: this is a cache of its
+/// counts plus what the notable check found. See lib/customers.ts.
+model Customer {
+  id                String    @id @default(cuid())
+  shopifyCustomerId String    @unique
+  name              String
+  email             String?
+  city              String?
+  orderCount        Int       @default(0)
+  totalSpentCents   Int       @default(0)
+  firstSeenAt       DateTime?
+  lastOrderAt       DateTime?
+  lastOrderName     String?
+  shopifyUpdatedAt  DateTime
+  /// Ours or a wholesale store: kept out of every list and of the web check.
+  excluded          Boolean   @default(false)
+  /// What the web check found: "likely" (that person), "possible" (a public
+  /// figure by that name exists, not shown to be this buyer), or null.
+  notable           String?
+  notableWho        String?
+  notableSource     String?
+  notableCheckedAt  DateTime?
+  /// A person said "not them": the match stays off every list.
+  notableDismissedAt DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([orderCount])
+  @@index([totalSpentCents])
+  @@index([notable])
+  @@index([lastOrderAt])
+}
