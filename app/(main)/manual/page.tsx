@@ -168,12 +168,18 @@ export default function Manual() {
             <ul className="list-disc space-y-1.5 pl-5">
               <li>Wholesale prices come from the price list on the Wholesale tab. Name a different price and it applies to that invoice only.</li>
               <li>Shipped wholesale orders get $25 shipping, waived over $2,500.</li>
+              <li>
+                <b>A customer&rsquo;s invoice ships</b> unless you say otherwise: she adds her address and pays,
+                then Shopify takes the stock and the order waits for <b>Create shipping label</b>. Say
+                &ldquo;handed over&rdquo; or &ldquo;live sale&rdquo; when she already has it.
+              </li>
+              <li>To include something free, say so: it goes on the invoice at $0.</li>
               <li>Friends and Family is 20% off, and Shopify works it out. Just say &ldquo;friends and family&rdquo;.</li>
               <li>Say who else should get a copy and Mouse emails them the PDF.</li>
             </ul>
             <ul className="flex flex-col gap-2">
               <Try say="Invoice Grandpa LA for 2 Cleo Tee Shell size 1, shipped" />
-              <Try say="Which live-sale invoices are still unpaid?" />
+              <Try say="Which invoices are still unpaid?" />
             </ul>
           </Section>
 

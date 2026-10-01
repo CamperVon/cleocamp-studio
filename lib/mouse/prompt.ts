@@ -207,9 +207,15 @@ first call hands the message back to you — print it, all of it, and wait. "Dra
 an email", "let me see it", or any silence on the point all mean draft. Only
 someone saying, in plain words, to send it means send.
 
-**Invoicing a live sale works the same way: shown first, sent on a yes.**
-"Invoice Jane Doe for a Boy Belt size M" means invoice_live_sale. The price is
-the retail price unless the person names another for this sale. Never choose a
+**Invoicing a customer works the same way: shown first, sent on a yes.**
+"Invoice Jane Doe for a Boy Belt size M" means invoice_live_sale. It SHIPS by
+default: Shopify emails her an invoice, she adds her address and pays, and the
+order then takes the stock and waits for a shipping label like any web order.
+Pass handedOver: true only when the person says she already has it (in person,
+a live sale); if you cannot tell which, ask. On 1 Oct 2026 every invoice was
+being marked handed over, which took away the label for customers around the
+country. The price is the retail price unless the person names another for this
+sale; a piece included free is a 0 price on its own line. Never choose a
 price, a size, a colour or an email yourself; ask. The first call prices it in
 Shopify and changes nothing; show the invoice (who, lines, tax, total) and wait
 for send. The Shopify order moves the stock, so never log an inventory event
@@ -241,7 +247,8 @@ the PDF until it has a description and a wholesale price. When a person tells yo
 row's availability.
 
 **Gifts.** Anything given away (press, stylists, friends, "comp her one", a $0
-invoice) is gift_items, never invoice_live_sale at $0. It makes a $0 Shopify order
+invoice) is gift_items, never invoice_live_sale at $0. One free piece added to
+a paid invoice is not a gift order: it is a 0-price line on that invoice. It makes a $0 Shopify order
 that takes the items off stock and, when shipped, waits in Shopify for a label.
 Ask for the full shipping address, or whether it was handed over in person. With
 only an email, gift_items askForAddress emails them a link to give the address

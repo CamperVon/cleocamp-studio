@@ -354,6 +354,60 @@ async function completeAndInvoice(draftId: string, email: string, customerName: 
 }
 
 /**
+ * An invoice for goods that ship. Brandon, 1 Oct 2026: "We are going to be
+ * sending some invoices to people around the country with items to be
+ * shipped. When they pay it should be handled as normal from Shopify.
+ * Inventory deduction and shipping label." The live sale above completes the
+ * order at once and marks it handed over, which is right only when the goods
+ * left the table; on a shipped sale it took away the label.
+ *
+ * So this stays a draft and Shopify emails its invoice. She checks out like
+ * any customer: her address, Shopify's shipping rates, tax for where it is
+ * going. Only when she pays does Shopify make the order, take the stock and
+ * leave it unfulfilled, waiting for "Create shipping label". An address a
+ * person gave goes on the draft so she finds it filled in.
+ */
+export async function invoiceToShip(args: {
+  email: string
+  customerName: string
+  lines: SaleLine[]
+  note: string
+  options?: InvoiceOptions
+}): Promise<{ draftId: string | null; draftName: string | null; invoiceSent: boolean; copiedTo: string[]; problems: string[] }> {
+  const [firstName, ...rest] = args.customerName.trim().split(/\s+/)
+  const who = await storeCustomer(args.email, { firstName, lastName: rest.join(' ') || null }, ['studio-mouse'])
+  const opts: InvoiceOptions = { ...(args.options ?? {}), tags: ['invoice', 'studio-mouse'], customerId: who.id }
+  const created = await shopifyGraphQL<{ draftOrderCreate: { draftOrder: { id: string; name: string } | null; userErrors: Array<{ message: string }> } }>(
+    `mutation($input: DraftOrderInput!) { draftOrderCreate(input: $input) { draftOrder { id name } userErrors { message } } }`,
+    { input: draftInput(args.email, args.lines, args.note, opts) },
+  )
+  const d = created.draftOrderCreate.draftOrder
+  if (!d) return { draftId: null, draftName: null, invoiceSent: false, copiedTo: [], problems: [`Shopify would not create the invoice: ${created.draftOrderCreate.userErrors.map((e) => e.message).join('; ') || 'no reason given'}. Nothing was created or sent.`] }
+  const base = {
+    to: args.email,
+    subject: opts.subject ? opts.subject(d.name) : 'Your Cleo Camp invoice',
+    customMessage: opts.message ? opts.message(firstName) : `Hi ${firstName}, here is your Cleo Camp invoice. Tap the link below to add your address and pay securely, and we will ship it to you.\n\nKindly,\nCleo Studio`,
+  }
+  const send = (e: Record<string, unknown>) => shopifyGraphQL<{ draftOrderInvoiceSend: { draftOrder: { id: string } | null; userErrors: Array<{ message: string }> } }>(
+    `mutation($id: ID!, $email: EmailInput) { draftOrderInvoiceSend(id: $id, email: $email) { draftOrder { id } userErrors { message } } }`,
+    { id: d.id, email: e },
+  )
+  let r = await send({ ...base, from: INVOICE_FROM })
+  if (!r.draftOrderInvoiceSend.draftOrder || r.draftOrderInvoiceSend.userErrors.length) r = await send(base)
+  const invoiceSent = !!r.draftOrderInvoiceSend.draftOrder && !r.draftOrderInvoiceSend.userErrors.length
+  const problems: string[] = who.problem ? [`No Shopify customer was attached (${who.problem}); the invoice still carries her email.`] : []
+  let copiedTo: string[] = []
+  if (invoiceSent) {
+    const copy = await emailInvoiceCopy(d.id, [INVOICE_FROM, ...(opts.bcc ?? [])], args.email)
+    copiedTo = copy.sent ? copy.to : []
+    if (!copy.sent) problems.push(`The invoice went, but the team's copy did not (${copy.reason}).`)
+  } else {
+    problems.push(`The invoice ${d.name} was made but the email did not go (${r.draftOrderInvoiceSend.userErrors.map((e) => e.message).join('; ') || 'no reason given'}). Open ${d.name} under Orders → Drafts in Shopify and use "Send invoice".`)
+  }
+  return { draftId: d.id, draftName: d.name, invoiceSent, copiedTo, problems }
+}
+
+/**
  * The Shopify customer for a store, found by email or made, so an invoice
  * carries the store's name. Only fills a name Shopify has blank; never
  * renames someone. Returns null (and the draft goes out by email alone) if
@@ -553,12 +607,18 @@ export async function draftForOrder(orderNameIn: string): Promise<{ draftId: str
   return hit ? { draftId: hit.id, orderName: want, email: hit.email } : null
 }
 
-/** Live sales still waiting on payment, newest first. */
+/** Invoices still waiting on payment, newest first: live sales, and invoices that ship. */
 export async function unpaidLiveSales(): Promise<Array<{ name: string; email: string | null; total: number; createdAt: string; status: string }>> {
   const d = await shopifyGraphQL<{ orders: { nodes: Array<{ name: string; email: string | null; createdAt: string; displayFinancialStatus: string | null; totalPriceSet: Money }> } }>(
     `query { orders(first: 50, sortKey: CREATED_AT, reverse: true, query: "tag:live-sale AND financial_status:pending") { nodes { name email createdAt displayFinancialStatus totalPriceSet { shopMoney { amount } } } } }`,
   )
-  return d.orders.nodes.map((o) => ({ name: o.name, email: o.email, total: money(o.totalPriceSet), createdAt: o.createdAt, status: o.displayFinancialStatus ?? 'unknown' }))
+  const sold = d.orders.nodes.map((o) => ({ name: o.name, email: o.email, total: money(o.totalPriceSet), createdAt: o.createdAt, status: o.displayFinancialStatus ?? 'unknown' }))
+  // Invoices that ship stay drafts until paid (invoiceToShip).
+  const open = await shopifyGraphQL<{ draftOrders: { nodes: Array<{ name: string; email: string | null; createdAt: string; totalPriceSet: Money }> } }>(
+    `query { draftOrders(first: 50, sortKey: UPDATED_AT, reverse: true, query: "tag:invoice AND status:invoice_sent") { nodes { name email createdAt totalPriceSet { shopMoney { amount } } } } }`,
+  )
+  const waiting = open.draftOrders.nodes.map((o) => ({ name: o.name, email: o.email, total: money(o.totalPriceSet), createdAt: o.createdAt, status: 'invoice sent, to ship once paid' }))
+  return [...sold, ...waiting].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
 export type CancelCheck = {

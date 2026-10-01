@@ -3259,19 +3259,23 @@ export const TOOLS: Record<string, Tool> = {
     def: {
       name: 'invoice_live_sale',
       description:
-        'Invoice a customer for something sold in person ("invoice Jane Doe for a Boy Belt ' +
-        'size M"). Makes a Shopify order: the item comes off stock at once, the order is marked ' +
-        'handed over so it is never packed, and Shopify emails the customer a link to pay. The ' +
-        'price is the retail price unless the person in the chat names another. Items that are ' +
-        'not in Shopify (live-sale only, like the Red Petite bean bag) CAN be invoiced: they go on ' +
-        'as a plain line at the app\'s price and their count in the app comes down when sent — ' +
-        'never tell the person to list them in Shopify to invoice them. Friends and ' +
+        'Invoice a customer through Shopify ("invoice Jane Doe for a Boy Belt size M"). Two kinds. ' +
+        'SHIPPED, the normal one (handedOver left out or false): Shopify emails her an invoice; she ' +
+        'adds her address, picks shipping and pays, and only then does Shopify make the order, take ' +
+        'the stock and leave it waiting for "Create shipping label", like any web order. HANDED OVER ' +
+        '(handedOver: true), only when the person says the customer already has it, sold in person ' +
+        'or at a live sale: the order is made at once, comes off stock, is marked handed over so it ' +
+        'is never packed, and she gets a link to pay. If it is not clear which, ask. The price is ' +
+        'the retail price unless the person in the chat names another; a piece included free is ' +
+        'price 0 on its own line. Items that are not in Shopify (like the Red Petite bean bag) can ' +
+        'only be invoiced handed over: they go on as a plain line at the app\'s price and their ' +
+        'count in the app comes down when sent. Friends and ' +
         'Family: pass friendsAndFamily: true and NO prices — Shopify takes the 20% off its own ' +
         'prices and shows it on the invoice. Never work out a discounted price yourself. Leave confirmed ' +
         'out to DRAFT: nothing is created and you get the priced invoice to show. Pass ' +
         'confirmed: true only once a person has seen that invoice and said to send it. Do NOT ' +
         'also log an inventory event — the Shopify order moves the stock, and logging it too ' +
-        'would count the sale twice. A gift, or anything at $0, is gift_items, not this.',
+        'would count the sale twice. A whole order given away (all at $0) is gift_items, not this; one free piece alongside paid ones is a 0 price here.',
       input_schema: {
         type: 'object',
         properties: {
@@ -3291,6 +3295,8 @@ export const TOOLS: Record<string, Tool> = {
             },
           },
           friendsAndFamily: { type: 'boolean' as const, description: 'true when the person says Friends and Family: 20% off, applied by Shopify. Do not also pass prices.' },
+          handedOver: { type: 'boolean' as const, description: 'true ONLY when the person says the customer already has the goods (in person, live sale). Left out: it ships.' },
+          shipTo: str('Shipped only, optional: her US address on one line if the person gave it (street, city, state ZIP). She can add it herself at checkout.'),
           alsoCopy: { type: 'array' as const, items: { type: 'string' as const }, description: 'Anyone else to get a copy of the invoice (our own email, with the PDF), only addresses a person gave. studio@ always gets one.' },
           confirmed: {
             type: 'boolean' as const,
@@ -3357,7 +3363,19 @@ export const TOOLS: Record<string, Tool> = {
       const copy = (Array.isArray(i.alsoCopy) ? i.alsoCopy : []).map((x: unknown) => String(x).trim().toLowerCase()).filter(Boolean)
       const badCopy = copy.find((x: string) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x))
       if (badCopy) return { sent: false, reason: `"${badCopy}" is not an email address. Ask again.` }
-      const options = { ...(ff ? { discount: FRIENDS_AND_FAMILY } : {}), bcc: copy }
+      const handed = i.handedOver === true
+      if (!handed && appOnly.length) {
+        return { sent: false, reason: `${appOnly.map((a) => a.label).join(', ')} is not in Shopify, so Shopify cannot ship it or take it off stock when she pays. Ask: was it handed over in person (handedOver: true), or should it be listed in Shopify first?` }
+      }
+      let shipTo: import('@/lib/live-sale').ShipAddress | undefined
+      if (!handed && typeof i.shipTo === 'string' && i.shipTo.trim()) {
+        const { parseUsAddress } = await import('@/lib/live-sale')
+        const a = parseUsAddress(i.shipTo)
+        if (!a) return { sent: false, reason: `Could not read "${i.shipTo}" as a full US address (street, city, state ZIP). Ask for it, or leave it out and she adds it at checkout.` }
+        const [firstName, ...rest] = name.split(/\s+/)
+        shipTo = { ...a, firstName, lastName: rest.join(' ') || null }
+      }
+      const options = { ...(ff ? { discount: FRIENDS_AND_FAMILY } : {}), bcc: copy, ...(shipTo ? { shipTo } : {}) }
 
       if (i.confirmed !== true) {
         let quote
@@ -3376,14 +3394,35 @@ export const TOOLS: Record<string, Tool> = {
           ...(quote.discount ? { discount: `${FRIENDS_AND_FAMILY.title} ${FRIENDS_AND_FAMILY.percent}%: −$${quote.discount.toFixed(2)}` } : {}),
           ...(aboveRetail(quote.lines).length ? { check: aboveRetail(quote.lines) } : {}),
           subtotal: `$${quote.subtotal.toFixed(2)}${quote.discount ? ' (after the discount)' : ''}`,
-          tax: `$${quote.tax.toFixed(2)}`,
-          total: `$${quote.total.toFixed(2)}`,
+          kind: handed ? 'HANDED OVER (she already has it)' : 'SHIPPED',
+          ...(shipTo ? { shipTo: (await import('@/lib/live-sale')).addressLines(shipTo) } : {}),
+          tax: handed || shipTo ? `$${quote.tax.toFixed(2)}` : `about $${quote.tax.toFixed(2)} (Shopify works it out for her address at checkout)`,
+          ...(handed ? {} : { shipping: 'she picks it at checkout, at the shop\'s rates' }),
+          total: handed ? `$${quote.total.toFixed(2)}` : `$${quote.total.toFixed(2)} before shipping`,
           stock: stockNotes,
           tellTheUser:
             (aboveRetail(quote.lines).length ? 'FIRST say plainly that a named price is above what Shopify charges, with both figures, and ask whether it is right. ' : '') +
-            'Show this invoice — who, each line and price, tax, total — and wait. Sending it makes the ' +
-            'Shopify order, takes the items off stock, marks them handed over and emails the ' +
-            'customer a link to pay. Call again with confirmed: true only once a person says send.',
+            'Show this invoice — who, which kind, each line and price, tax, total — and wait. ' +
+            (handed
+              ? 'Sending it makes the Shopify order, takes the items off stock, marks them handed over and emails the customer a link to pay. '
+              : 'Sending it emails her a Shopify invoice; when she pays, Shopify makes the order, takes the stock and it waits for a shipping label. Nothing moves until she pays. ') +
+            'Call again with confirmed: true only once a person says send.',
+        }
+      }
+
+      if (!handed) {
+        const { invoiceToShip } = await import('@/lib/live-sale')
+        let d
+        try {
+          d = await invoiceToShip({ email, customerName: name, lines, note: `Invoice to ship to ${name}, from Studio Mouse.`, options })
+        } catch (e) {
+          return { sent: false, reason: `Shopify refused: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}. Check Orders → Drafts in Shopify before trying again.` }
+        }
+        return {
+          sent: d.invoiceSent, invoice: d.draftName, copiedTo: d.copiedTo, problems: d.problems,
+          tellTheUser: d.problems.length
+            ? 'Say plainly what happened and each problem, with what to do in Shopify.'
+            : `Say invoice ${d.draftName} went to ${email}. Nothing has moved yet: when she pays, Shopify makes the order, takes the stock, and it waits under Orders for "Create shipping label".`,
         }
       }
 
