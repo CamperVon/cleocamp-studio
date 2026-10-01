@@ -69,6 +69,8 @@ export type LineSheetLine = {
   commission: string | null
   availability: string
   photo: string | null
+  /** A photo chosen and cropped for the sheet, used instead of photo when set. */
+  photoData: Buffer | null
   /** For the team only, never printed: Shopify's on-hand for what the row sells. */
   onHand: number | null
   hidden: boolean
@@ -289,7 +291,7 @@ export async function loadLineSheet(opts: { includeHidden?: boolean } = {}): Pro
     meta: meta ? { title: meta.title, tagline: meta.tagline, materials: meta.materials, press: meta.press, contact: meta.contact, footnote: meta.footnote } : null,
     lines: rows.map((r) => ({
       id: r.id, position: r.position, productId: r.productId, colorway: r.colorway, item: r.item, colorLabel: r.colorLabel,
-      ownDescription: r.description, msrp: r.msrp, sizing: r.sizing, minOrder: r.minOrder, commission: r.commission,
+      ownDescription: r.description, msrp: r.msrp, photoData: r.photoData ? Buffer.from(r.photoData) : null, sizing: r.sizing, minOrder: r.minOrder, commission: r.commission,
       availability: r.availability, hidden: r.hidden,
       ...resolveRow(r, r.productId ? byId.get(r.productId) ?? null : null),
     })),
@@ -356,7 +358,9 @@ export function LineSheetDoc({ meta, lines, asOf }: { meta: LineSheetMetaText; l
           <View key={l.id} style={styles.tr} wrap={false}>
             <View style={[styles.td, w('photo')]}>
               {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf's Image takes no alt */}
-              {l.photo ? <Image src={sheetPhoto(l.photo)!} style={styles.photo} /> : <View style={styles.noPhoto} />}
+              {l.photoData
+                ? <Image src={{ data: l.photoData, format: 'jpg' }} style={styles.photo} />
+                : l.photo ? <Image src={sheetPhoto(l.photo)!} style={styles.photo} /> : <View style={styles.noPhoto} />}
             </View>
             <Text style={[styles.td, w('item'), styles.bold]}>{l.item}</Text>
             <Text style={[styles.td, w('color')]}>{l.colorLabel}</Text>

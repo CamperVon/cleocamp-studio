@@ -1495,6 +1495,12 @@ model LineSheetRow {
   minOrder             String
   commission           String?
   availability         String
+  /// A photo chosen and cropped for the sheet (a small JPEG), used instead of
+  /// the Shopify one: Brandon, 1 Oct 2026, "crop the photo so it's more
+  /// centered on the bag". Null: the product's Shopify photo, read live.
+  photoData            Bytes?
+  /// Where photoData was cut from, so it can be redone.
+  photoSource          String?
   hidden               Boolean  @default(false)
   updatedAt            DateTime @updatedAt
   createdAt            DateTime @default(now())
