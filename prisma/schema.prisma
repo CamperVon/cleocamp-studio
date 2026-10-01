@@ -1475,35 +1475,35 @@ model StylistRequest {
 /// product: it is read from the price list (variant, then product) every time
 /// the sheet is drawn, so the sheet can't drift from what we invoice.
 model LineSheetRow {
-  id                   String   @id @default(cuid())
-  position             Int
+  id             String   @id @default(cuid())
+  position       Int
   /// The product this row sells, for its price and photo. Null for a row we
   /// don't stock as a product (custom pouches).
-  productId            String?
+  productId      String?
   /// Which colourway's photo and price, matched on the colourway's customer
   /// name ("Sunshine"). Null: the product's own.
-  colorway             String?
-  item                 String
-  colorLabel           String
-  description          String
+  colorway       String?
+  item           String
+  colorLabel     String
+  description    String
   /// Only for a row with no product: the wholesale price as the team set it.
-  wholesaleCents       Int?
+  wholesaleCents Int?
   /// Only for a row with no product: suggested retail as printed. A linked
   /// row always prints Shopify's price (Brandon, 30 Sept 2026).
-  msrp                 String?
-  sizing               String
-  minOrder             String
-  commission           String?
-  availability         String
+  msrp           String?
+  sizing         String
+  minOrder       String
+  commission     String?
+  availability   String
   /// A photo chosen and cropped for the sheet (a small JPEG), used instead of
   /// the Shopify one: Brandon, 1 Oct 2026, "crop the photo so it's more
   /// centered on the bag". Null: the product's Shopify photo, read live.
-  photoData            Bytes?
+  photoData      Bytes?
   /// Where photoData was cut from, so it can be redone.
-  photoSource          String?
-  hidden               Boolean  @default(false)
-  updatedAt            DateTime @updatedAt
-  createdAt            DateTime @default(now())
+  photoSource    String?
+  hidden         Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
 
   @@index([position])
 }
@@ -1511,14 +1511,14 @@ model LineSheetRow {
 /// The line sheet's words around the table: title, tagline, materials, the
 /// press paragraph, contact line and footnote. One row, id "main".
 model LineSheetMeta {
-  id         String   @id @default("main")
-  title      String
-  tagline    String
-  materials  String
-  press      String
-  contact    String
-  footnote   String
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default("main")
+  title     String
+  tagline   String
+  materials String
+  press     String
+  contact   String
+  footnote  String
+  updatedAt DateTime @updatedAt
 }
 
 /// A Shopify customer, as the nightly pass last saw them. Brandon, 30 Sept
@@ -1527,32 +1527,68 @@ model LineSheetMeta {
 /// rest on a Customers tab. Shopify stays the master: this is a cache of its
 /// counts plus what the notable check found. See lib/customers.ts.
 model Customer {
-  id                String    @id @default(cuid())
-  shopifyCustomerId String    @unique
-  name              String
-  email             String?
-  city              String?
-  orderCount        Int       @default(0)
-  totalSpentCents   Int       @default(0)
-  firstSeenAt       DateTime?
-  lastOrderAt       DateTime?
-  lastOrderName     String?
-  shopifyUpdatedAt  DateTime
+  id                 String    @id @default(cuid())
+  shopifyCustomerId  String    @unique
+  name               String
+  email              String?
+  city               String?
+  orderCount         Int       @default(0)
+  totalSpentCents    Int       @default(0)
+  firstSeenAt        DateTime?
+  lastOrderAt        DateTime?
+  lastOrderName      String?
+  shopifyUpdatedAt   DateTime
   /// Ours or a wholesale store: kept out of every list and of the web check.
-  excluded          Boolean   @default(false)
+  excluded           Boolean   @default(false)
   /// What the web check found: "likely" (that person), "possible" (a public
   /// figure by that name exists, not shown to be this buyer), or null.
-  notable           String?
-  notableWho        String?
-  notableSource     String?
-  notableCheckedAt  DateTime?
+  notable            String?
+  notableWho         String?
+  notableSource      String?
+  notableCheckedAt   DateTime?
   /// A person said "not them": the match stays off every list.
   notableDismissedAt DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   @@index([orderCount])
   @@index([totalSpentCents])
   @@index([notable])
   @@index([lastOrderAt])
+}
+
+/// Friends of the brand: press, editors, artists and others Cleo Camp keeps
+/// close, for press lists, gifting and launches. Brandon, 1 Oct 2026: "Create
+/// a friends of the brand page in mouse. Add manual entry (and of course we
+/// can tell mouse.)" Kept as given; removing one hides it (removedAt).
+/// Which list a Contact is on.
+enum ContactCircle {
+  /// Friends of the Brand: press, editors, artists (Brandon, 1 Oct 2026).
+  FRIEND_OF_BRAND
+  /// Cleo Crew, internal: the people working for Cleo.
+  CREW
+  /// Cleo Crew, Friends We Like to Work With: photographers, sample makers.
+  WORKS_WITH
+}
+
+/// People Cleo Camp keeps close but who are not app users, customers,
+/// stylists or vendors: the Friends of the Brand page and the Cleo Crew page.
+/// Kept as given; removing hides rather than deletes.
+model Contact {
+  id        String        @id @default(cuid())
+  circle    ContactCircle @default(FRIEND_OF_BRAND)
+  name      String
+  role      String?
+  company   String?
+  email     String?
+  phone     String?
+  instagram String?
+  /// As given, one line: who to ship to and where.
+  address   String?
+  notes     String?
+  removedAt DateTime?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([circle, removedAt])
 }

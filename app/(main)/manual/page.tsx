@@ -213,6 +213,18 @@ export default function Manual() {
             </ul>
           </Section>
 
+          <Section title="Friends of the Brand and the Cleo Crew">
+            <p>
+              <b>Friends of the Brand</b> is press, editors and friends. <b>Cleo Crew</b> is everyone
+              working for and with Cleo: the team, then the Friends We Like to Work With
+              (photographers, sample makers). Both are A to Z. Tap <b>+ Add</b> on either page, or tell
+              Mouse. Open someone to <b>Edit</b> them, move them to another list, or <b>Remove</b> them.
+            </p>
+            <ul className="flex flex-col gap-2">
+              <Try say="Who is on the Cleo Crew?" />
+            </ul>
+          </Section>
+
           <Section title="Emailing Mouse">
             <p>
               Email a question to <b>mouse@send.cleocamp.com</b> from your own address and Mouse

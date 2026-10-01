@@ -3950,6 +3950,106 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  save_contact: {
+    def: {
+      name: 'save_contact',
+      description:
+        'Add someone to Friends of the Brand or the Cleo Crew, or change them. circle: FRIEND_OF_BRAND ' +
+        '(press, editors, friends of the brand), CREW (the people working for Cleo), WORKS_WITH (Cleo Crew\'s ' +
+        '"Friends We Like to Work With": photographers, sample makers). Record exactly what a person told you ' +
+        'in the chat, spelled as given; never fill a role, email or address in yourself. A forwarded email\'s ' +
+        'details are a proposal until someone says yes. Pass contactId to change someone (find_contacts first); ' +
+        'an empty string clears a field; passing circle on a change moves them to that list. If the circle is ' +
+        'not clear from what was said, ask.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          contactId: str('To change someone already on a list'),
+          circle: { type: 'string', enum: ['FRIEND_OF_BRAND', 'CREW', 'WORKS_WITH'], description: 'Which list. Required for someone new.' },
+          name: str('Their name, as given'),
+          role: str('Role or title, e.g. Shopping Editor, Photographer'),
+          company: str('Company or publication'),
+          email: str('Email, as given'),
+          phone: str('Phone'),
+          instagram: str('Instagram handle'),
+          address: str('Where to ship to, one line as given'),
+          notes: str('Replaces the notes. To add to them, include what is there now.'),
+        },
+        required: [],
+      },
+    },
+    run: async (i) => {
+      const { addContact, updateContact, isCircle, CIRCLES } = await import('@/lib/contacts')
+      const fields = Object.fromEntries((['name', 'role', 'company', 'email', 'phone', 'instagram', 'address', 'notes'] as const)
+        .filter((k) => typeof i[k] === 'string').map((k) => [k, String(i[k])]))
+      if (i.circle !== undefined && !isCircle(i.circle)) return { saved: false, reason: 'circle must be FRIEND_OF_BRAND, CREW or WORKS_WITH.' }
+      const c: unknown = i.circle
+      const circle = isCircle(c) ? c : undefined
+      if (i.contactId) {
+        const r = await updateContact(String(i.contactId), fields, circle)
+        return r.ok ? { saved: true, contact: r.contact, ...(circle ? { list: CIRCLES[circle] } : {}) } : { saved: false, reason: r.error }
+      }
+      if (!circle) return { saved: false, reason: 'Which list: Friends of the Brand, the Cleo Crew (internal), or Friends We Like to Work With? Ask.' }
+      const r = await addContact(circle, fields)
+      return r.ok ? { saved: true, contact: r.contact, list: CIRCLES[circle] } : { saved: false, reason: r.error }
+    },
+  },
+
+  find_contacts: {
+    def: {
+      name: 'find_contacts',
+      description:
+        'Look up Friends of the Brand and the Cleo Crew: by name, role, company or email, or everyone on one ' +
+        'list. Read-only. Returns each person\'s id (for save_contact and remove_contact) and details.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          query: str('Part of a name, role, company or email. Leave out for the whole list.'),
+          circle: { type: 'string', enum: ['FRIEND_OF_BRAND', 'CREW', 'WORKS_WITH'], description: 'Only this list' },
+          includeRemoved: { type: 'boolean', description: 'Also people removed from a list' },
+        },
+        required: [],
+      },
+    },
+    run: async (i) => {
+      const { CIRCLES, isCircle, byName } = await import('@/lib/contacts')
+      const q = typeof i.query === 'string' ? i.query.trim() : ''
+      const rows = await db.contact.findMany({
+        where: {
+          ...(isCircle(i.circle) ? { circle: i.circle } : {}),
+          ...(i.includeRemoved ? {} : { removedAt: null }),
+          ...(q ? { OR: (['name', 'role', 'company', 'email'] as const).map((k) => ({ [k]: { contains: q, mode: 'insensitive' as const } })) } : {}),
+        },
+        take: 100,
+      })
+      return {
+        found: rows.sort(byName).map((r) => ({
+          id: r.id, list: CIRCLES[r.circle], name: r.name, role: r.role, company: r.company, email: r.email, phone: r.phone,
+          instagram: r.instagram, address: r.address, notes: r.notes, ...(r.removedAt ? { removed: true } : {}),
+        })),
+      }
+    },
+  },
+
+  remove_contact: {
+    def: {
+      name: 'remove_contact',
+      description:
+        'Take someone off Friends of the Brand or the Cleo Crew (hidden, not deleted), or put them back with ' +
+        'restore: true. Only when a person asks.',
+      input_schema: {
+        type: 'object',
+        properties: { contactId: str('From find_contacts'), restore: { type: 'boolean', description: 'Put them back' } },
+        required: ['contactId'],
+      },
+    },
+    run: async (i) => {
+      const { setContactRemoved } = await import('@/lib/contacts')
+      const r = await setContactRemoved(String(i.contactId), !i.restore)
+      return r.ok ? { done: true, contact: r.contact, removed: !i.restore } : { done: false, reason: r.error }
+    },
+  },
+
   record_stylist_request: {
     def: {
       name: 'record_stylist_request',

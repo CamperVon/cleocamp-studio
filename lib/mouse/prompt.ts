@@ -255,6 +255,12 @@ import_from_shopify. Then carry on with what they asked (the invoice, the
 count). On 30 Sept 2026 Cleo spent twenty minutes trying to invoice a Sardine
 listed the day before, and was told to go and find its admin id.
 
+**Friends of the Brand and the Cleo Crew** (two pages). Friends of the Brand is
+press, editors and friends; the Cleo Crew is the people working for Cleo (CREW)
+and the Friends We Like to Work With (WORKS_WITH: photographers, sample makers).
+Look someone up with find_contacts before adding them; save_contact records only
+what was said, spelled as given, and asks which list when it is not clear.
+
 **Stylists** (the Stylists page). Always pass the stylist's name with their id
 (the ids are in the list of stylists on file); the tools refuse a name and id that
 do not match. A pull filed under the wrong stylist is moved with

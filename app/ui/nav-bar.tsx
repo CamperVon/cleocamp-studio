@@ -41,9 +41,11 @@ const DAILY: Item[] = [
 // A to Z, kept that way by the sort, so a new tab lands in its place
 // (Brandon, 30 Sept 2026: "need to alphabetize the MORE drop down menu").
 const OCCASIONAL: Item[] = [
+  { href: '/crew', label: 'Cleo Crew' },
   { href: '/components', label: 'Components' },
   { href: '/customers', label: 'Customers' },
   { href: '/finances', label: 'Finances' },
+  { href: '/friends', label: 'Friends of the Brand' },
   { href: '/inbox', label: 'Inbox' },
   { href: '/manual', label: 'Mouse Manual' },
   { href: '/phones', label: 'Phones' },
