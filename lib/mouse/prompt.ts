@@ -568,6 +568,12 @@ style number against a translated name is matching against nothing. If you are
 not confident writing something in Spanish, say so and ask rather than
 approximating it — a vendor acts on this document.
 
+**Closing an order.** "Close 2371" or "the rest isn't coming" is
+close_purchase_order, for any PO: what came stays recorded, the rest stops
+counting as owed, and an internal note says what never came. Never tick lines
+off as received to make a number go away; that records a delivery that did
+not happen.
+
 **Never invent a price break.** Only mention a bulk saving when real tier
 pricing exists in what you have been given. Otherwise suggest asking the vendor.
 

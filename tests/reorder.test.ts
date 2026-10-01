@@ -26,3 +26,11 @@ test('what is on order counts; never below zero; unknown stock is unknown need',
   assert.equal(reorderRow({ label: 'x', onHand: 6, onOrder: 7, storeAndGift: 0, firstSaleAt: null, sales }, today, [3]).need['3 mo'], 0)
   assert.equal(reorderRow({ label: 'x', onHand: null, onOrder: 0, storeAndGift: 0, firstSaleAt: null, sales }, today, [3]).need['3 mo'], null)
 })
+
+test('closing a PO names what never came', async () => {
+  const { shortfall } = await import('../lib/po-close')
+  assert.deepEqual(shortfall([
+    { label: 'Bean Bag / Black / Petite', ordered: 10, received: 3, unit: 'pcs' },
+    { label: 'Bean Bag / Red / Petite', ordered: 10, received: 10, unit: 'pcs' },
+  ]), ['Bean Bag / Black / Petite: 3 of 10 pcs came, 7 never will'])
+})

@@ -2295,6 +2295,28 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  close_purchase_order: {
+    def: {
+      name: 'close_purchase_order',
+      description:
+        'Close a purchase order: nothing more is coming on it ("close 2371", "the rest isn\'t coming", "we\'re done ' +
+        'with that order"). Works on any sent order. What came stays recorded; what did not stops counting as owed ' +
+        'everywhere (forecast, reorder_math, what you report as on order). It becomes RECEIVED if anything came, ' +
+        'CANCELLED if nothing did, and an internal note records each line that never came. Prints nothing for the ' +
+        'vendor. Say back what was short.',
+      input_schema: {
+        type: 'object',
+        properties: { poNumber: str('The PO number'), reason: str('Why, in the person\'s words, short') },
+        required: ['poNumber'],
+      },
+    },
+    run: async (i) => {
+      const { closePurchaseOrder } = await import('@/lib/po-close')
+      const r = await closePurchaseOrder(String(i.poNumber).replace(/^#?PO\s*/i, '').trim(), String(i.reason ?? ''))
+      return r.ok ? { closed: true, ...r } : { closed: false, reason: r.error }
+    },
+  },
+
   update_purchase_order_lines: {
     def: {
       name: 'update_purchase_order_lines',
