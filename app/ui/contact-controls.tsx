@@ -7,7 +7,7 @@ const input = 'w-full min-w-0 rounded-lg border border-line bg-bg px-3 py-2 text
 const small = 'rounded-lg border border-line px-3 py-1.5 text-xs disabled:opacity-40'
 type Form = { circle?: string; name: string; role: string; company: string; email: string; phone: string; instagram: string; address: string; notes: string }
 const EMPTY: Form = { name: '', role: '', company: '', email: '', phone: '', instagram: '', address: '', notes: '' }
-export type ContactInfo = { id: string; circle: string; name: string; role: string | null; company: string | null; email: string | null; phone: string | null; instagram: string | null; address: string | null; notes: string | null }
+export type ContactInfo = { id: string; circle: string; atTop?: boolean; name: string; role: string | null; company: string | null; email: string | null; phone: string | null; instagram: string | null; address: string | null; notes: string | null }
 
 function useSave() {
   const [pending, start] = useTransition()

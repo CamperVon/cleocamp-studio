@@ -60,8 +60,10 @@ export type LineSheetLine = {
   description: string
   /** The row's own words, for the editor. Empty: it prints Shopify's. */
   ownDescription: string
-  /** What prints: the live price, or the row's own when it has no product. Null: not set anywhere. */
+  /** What prints: the live price, or the row's own when it has no product. Null: not set anywhere. The lowest when variants differ. */
   wholesaleCents: number | null
+  /** The highest, when the row's variants are priced differently (Sardine: Naked $40, Beaded $44). Else null. */
+  wholesaleMaxCents: number | null
   retail: string | null
   msrp: string | null
   sizing: string
@@ -197,12 +199,17 @@ export async function addNewToLineSheet(): Promise<NewRow[]> {
 export function resolveRow(
   row: { colorway: string | null; wholesaleCents: number | null; msrp: string | null; description?: string },
   p: Product | null,
-): Pick<LineSheetLine, 'wholesaleCents' | 'retail' | 'photo' | 'onHand' | 'description'> {
+): Pick<LineSheetLine, 'wholesaleCents' | 'wholesaleMaxCents' | 'retail' | 'photo' | 'onHand' | 'description'> {
   const own = row.description?.trim() ?? ''
-  if (!p) return { wholesaleCents: row.wholesaleCents, retail: row.msrp, photo: null, onHand: null, description: own }
+  if (!p) return { wholesaleCents: row.wholesaleCents, wholesaleMaxCents: null, retail: row.msrp, photo: null, onHand: null, description: own }
   // Suggested retail is Shopify's, whatever the row says.
   const vs = variantsFor(p, row.colorway)
-  const ws = vs.find((v) => v.wholesalePriceCents != null)?.wholesalePriceCents ?? p.wholesalePriceCents ?? row.wholesaleCents
+  // Each variant's own price, else the product's: a row covering two prices
+  // prints both ends, never just the first one found.
+  const base = p.wholesalePriceCents ?? row.wholesaleCents
+  const each = [...new Set((vs.length ? vs.map((v) => v.wholesalePriceCents ?? base) : [base]).filter((c): c is number => c != null))].sort((a, b) => a - b)
+  const ws = each[0] ?? null
+  const wsMax = each.length > 1 ? each[each.length - 1] : null
   const prices = [...new Set(vs.map((v) => v.retailPriceCents).filter((c): c is number => c != null))].sort((a, b) => a - b)
   const live = prices.length
     ? prices.length > 1 ? `${dollars(prices[0])} – ${dollars(prices[prices.length - 1])}` : dollars(prices[0])
@@ -210,6 +217,7 @@ export function resolveRow(
   const counts = vs.map((v) => (v.onHandQty == null ? null : Number(v.onHandQty)))
   return {
     wholesaleCents: ws,
+    wholesaleMaxCents: wsMax,
     retail: live,
     description: own || sheetDescription(p.shopifyDescription),
     photo: vs.find((v) => v.imageUrl)?.imageUrl ?? null,
@@ -252,6 +260,12 @@ export function chargedDifferently(
     }
   }
   return out
+}
+
+/** "$40" or, when variants differ, "$40 – $44". Pure. */
+export function wholesaleText(l: Pick<LineSheetLine, 'wholesaleCents' | 'wholesaleMaxCents'>): string | null {
+  if (l.wholesaleCents == null) return null
+  return l.wholesaleMaxCents != null ? `${dollars(l.wholesaleCents)} – ${dollars(l.wholesaleMaxCents)}` : dollars(l.wholesaleCents)
 }
 
 /** A row prints only once it has a wholesale price and a description. Pure. */
@@ -367,7 +381,7 @@ export function LineSheetDoc({ meta, lines, asOf }: { meta: LineSheetMetaText; l
             <Text style={[styles.td, w('item'), styles.bold]}>{l.item}</Text>
             <Text style={[styles.td, w('color')]}>{l.colorLabel}</Text>
             <Text style={[styles.td, w('desc')]}>{ditto(lines[i - 1]?.description, l.description)}</Text>
-            <Text style={[styles.td, w('ws'), styles.bold]}>{l.wholesaleCents != null ? dollars(l.wholesaleCents) : '—'}</Text>
+            <Text style={[styles.td, w('ws'), styles.bold]}>{wholesaleText(l) ?? '—'}</Text>
             <Text style={[styles.td, w('msrp')]}>{l.retail ?? '—'}</Text>
             <Text style={[styles.td, w('size')]}>{l.sizing || '—'}</Text>
             <Text style={[styles.td, w('moq')]}>{ditto(lines[i - 1]?.minOrder, l.minOrder) || '—'}</Text>

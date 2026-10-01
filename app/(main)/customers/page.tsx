@@ -29,6 +29,7 @@ function CustomerRow({ c }: { c: Row }) {
           <span className="min-w-0">
             <span className="font-medium">{c.name}</span>
             {c.city ? <span className="text-xs text-muted"> · {c.city}</span> : null}
+            {c.pinnedAt ? <span className="block text-xs text-accent">Added by hand</span> : null}
             {c.notes ? <span className="block truncate text-xs text-muted">{c.notes.split('\n')[0]}</span> : null}
             {c.notable && !c.notableDismissedAt ? <span className="block text-xs text-accent">{c.notable === 'likely' ? '' : 'Possibly '}{c.notableWho}</span> : null}
           </span>
@@ -43,7 +44,7 @@ function CustomerRow({ c }: { c: Row }) {
               : <span>Not on Shopify yet</span>}
           </p>
           {c.lastOrderAt ? <p>Last order {c.lastOrderName ?? ''} on {day(c.lastOrderAt)} · customer since {day(c.firstSeenAt)}</p> : null}
-          <CustomerNotes id={c.id} notes={c.notes} pinned={!!c.pinnedAt} />
+          <CustomerNotes id={c.id} notes={c.notes} pin={c.pinnedAt ? 'off' : c.notable && !c.notableDismissedAt ? null : 'on'} />
           {c.notable ? (
             <div className="flex flex-col gap-1.5 rounded-lg border border-line bg-sunk px-3 py-2">
               <p>
@@ -63,9 +64,10 @@ function CustomerRow({ c }: { c: Row }) {
 }
 
 export default async function Customers() {
-  const [mine, notable, repeat, big, totals] = await Promise.all([
-    db.customer.findMany({ where: { pinnedAt: { not: null } }, take: 500 }).then((r) => r.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }))),
-    load({ notable: { not: null }, notableDismissedAt: null }, [{ notable: 'asc' }, { totalSpentCents: 'desc' }]),
+  const [notable, repeat, big, totals] = await Promise.all([
+    // Added by hand first, A to Z; then what the web check found.
+    db.customer.findMany({ where: { OR: [{ pinnedAt: { not: null } }, { excluded: false, notable: { not: null }, notableDismissedAt: null }] }, orderBy: [{ notable: 'asc' }, { totalSpentCents: 'desc' }], take: 300 })
+      .then((r) => [...r.filter((c) => c.pinnedAt).sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })), ...r.filter((c) => !c.pinnedAt)]),
     load({ orderCount: { gte: REPEAT_ORDERS } }, [{ orderCount: 'desc' }, { totalSpentCents: 'desc' }]),
     load({ totalSpentCents: { gte: BIG_SPENDER_CENTS } }, [{ totalSpentCents: 'desc' }]),
     Promise.all([
@@ -80,26 +82,23 @@ export default async function Customers() {
     : <Empty>{empty}</Empty>
 
   return (
-    <Page title="Customers" lede="Customers you add, and notable people, repeat buyers and big buyers from Shopify. Each has notes. Yesterday's orders from any of them also go in the Daily Cheese.">
+    <Page title="Customers" lede="Notable people (yours and the web check's), repeat buyers and big buyers, from Shopify. Each has notes. Yesterday's orders from any of them also go in the Daily Cheese.">
       {all === 0 ? (
         <Card><Empty>Fills in after the nightly run (5am).</Empty></Card>
       ) : null}
-      {/* Added by hand or by Mouse (Brandon, 1 Oct 2026), A to Z. */}
-      <CollapsibleCard title={`Added by hand (${mine.length})`}>
-        {list(mine, 'Nobody added yet. Add someone below, or tell Mouse.')}
-        <div className="border-t border-line">
-          <Fold summary={<span className="text-sm font-medium text-accent">+ Add a customer</span>}>
-            <AddCustomer />
-          </Fold>
-        </div>
-      </CollapsibleCard>
       <CollapsibleCard title={<span>Notable ({notable.length}){likely ? <span className="text-xs text-muted"> · {likely} likely</span> : null}</span>}>
         <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
           A quick web search on each customer&rsquo;s name, a few a night, yesterday&rsquo;s buyers first. A name is not proof:
           &ldquo;likely&rdquo; means something ties them together, &ldquo;possibly&rdquo; means only the name matches. Tap Not them on a wrong one.
           {all ? ` ${checked.toLocaleString('en-US')} of ${all.toLocaleString('en-US')} checked so far.` : ''}
         </p>
-        {list(notable, 'Nobody notable found yet.')}
+        {list(notable, 'Nobody notable yet. Add someone below, or tell Mouse.')}
+        {/* Added by hand or by Mouse, they go on Notable (Brandon, 1 Oct 2026). */}
+        <div className="border-t border-line">
+          <Fold summary={<span className="text-sm font-medium text-accent">+ Add a customer</span>}>
+            <AddCustomer />
+          </Fold>
+        </div>
       </CollapsibleCard>
       <CollapsibleCard title={`Repeat buyers, ${REPEAT_ORDERS}+ orders (${repeat.length})`}>
         {list(repeat, 'None yet.')}

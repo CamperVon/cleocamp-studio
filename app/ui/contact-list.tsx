@@ -20,7 +20,7 @@ export function ContactList({ title, circle, people, removed }: { title: string;
               <li key={p.id}>
                 <Fold summary={
                   <span className="flex flex-wrap items-baseline gap-x-2">
-                    <span className="font-medium">{p.name}</span>
+                    <span className={`font-medium${p.atTop ? ' text-accent' : ''}`}>{p.name}</span>
                     {p.role || p.company ? <span className="text-xs text-muted">{[p.role, p.company].filter(Boolean).join(', ')}</span> : null}
                   </span>
                 }>

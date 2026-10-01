@@ -215,8 +215,8 @@ export default function Manual() {
 
           <Section title="Customers">
             <p>
-              Every customer has notes. Open one and tap <b>Add notes</b>. To keep someone on the page whatever
-              they&rsquo;ve spent, tap <b>+ Add a customer</b> at the bottom of <b>Added by hand</b>. Give their email
+              Every customer has notes. Open one and tap <b>Add notes</b>. To put someone on <b>Notable</b> yourself,
+              tap <b>+ Add a customer</b> at the bottom of it; their orders then make the Daily Cheese. Give their email
               and it finds them on Shopify. Or ask Mouse, who can read their Shopify orders and fill the notes in.
             </p>
             <ul className="flex flex-col gap-2">

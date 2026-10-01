@@ -37,8 +37,8 @@ export function AddCustomer() {
   )
 }
 
-/** A customer's notes, editable; and on or off the hand-added list. */
-export function CustomerNotes({ id, notes, pinned }: { id: string; notes: string | null; pinned: boolean }) {
+/** A customer's notes, editable; and put on or taken off Notable by hand (null: the web check put them there). */
+export function CustomerNotes({ id, notes, pin }: { id: string; notes: string | null; pin: 'on' | 'off' | null }) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(notes ?? '')
   const { pending, go, note } = useSave()
@@ -59,9 +59,11 @@ export function CustomerNotes({ id, notes, pinned }: { id: string; notes: string
       {notes ? <p className="whitespace-pre-line text-ink">{notes}</p> : null}
       <span className="flex flex-wrap gap-2">
         <button type="button" className={small} onClick={() => setEditing(true)}>{notes ? 'Edit notes' : 'Add notes'}</button>
-        <button type="button" disabled={pending} className={small} onClick={() => go(() => pinCustomer(id, !pinned))}>
-          {pending ? '…' : pinned ? 'Unpin from the top' : 'Pin to the top'}
-        </button>
+        {pin ? (
+          <button type="button" disabled={pending} className={small} onClick={() => go(() => pinCustomer(id, pin === 'on'))}>
+            {pending ? '…' : pin === 'off' ? 'Take off Notable' : 'Add to Notable'}
+          </button>
+        ) : null}
       </span>
       {note}
     </div>

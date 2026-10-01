@@ -53,12 +53,14 @@ export function searchableName(name: string | null | undefined): string | null {
  */
 export function orderNews(c: {
   name: string; city: string | null; orderCount: number; totalSpentCents: number; lastOrderName: string | null
-  notable: string | null; notableWho: string | null; notableDismissedAt: Date | null
+  notable: string | null; notableWho: string | null; notableDismissedAt: Date | null; pinnedAt?: Date | null
 }): string | null {
   const who = `${c.name}${c.city ? ` (${c.city})` : ''}`
   const order = c.lastOrderName ? ` (${c.lastOrderName})` : ''
   const total = `${dollars(c.totalSpentCents)} with us over ${c.orderCount} order${c.orderCount === 1 ? '' : 's'}`
   if (c.notable === 'likely' && !c.notableDismissedAt && c.notableWho) return `${who} ordered${order}, and looks to be ${c.notableWho}.`
+  // Added to Notable by hand: the team chose them, so their orders are news.
+  if (c.pinnedAt) return `Notable: ${who} ordered${order}, ${total}.`
   if (c.orderCount >= REPEAT_ORDERS) return `Repeat buyer: ${who} ordered again${order}, ${total}.`
   if (c.totalSpentCents >= BIG_SPENDER_CENTS) return `Big buyer: ${who} ordered${order}, ${total}.`
   return null
@@ -277,7 +279,7 @@ export async function customerNews(now = new Date()): Promise<string[]> {
   const rows = await db.customer.findMany({
     where: { excluded: false, lastOrderAt: { gte: newsSince(now) } },
     orderBy: [{ totalSpentCents: 'desc' }],
-    select: { name: true, city: true, orderCount: true, totalSpentCents: true, lastOrderName: true, notable: true, notableWho: true, notableDismissedAt: true },
+    select: { name: true, city: true, orderCount: true, totalSpentCents: true, lastOrderName: true, notable: true, notableWho: true, notableDismissedAt: true, pinnedAt: true },
   })
   return rows.map(orderNews).filter((x): x is string => !!x).slice(0, 8)
 }
@@ -289,7 +291,8 @@ export async function customerNews(now = new Date()): Promise<string[]> {
  * notes, special deets, etc.)" The page and Mouse (save_customer) both come
  * through here.
  *
- * Adding someone pins them to the page. Someone Shopify already knows (by
+ * Adding someone puts them on the Notable list (Brandon, 1 Oct 2026: "if
+ * they are added by hand it will be in notable section"). Someone Shopify already knows (by
  * email) is that same row, not a second one; a name alone that matches
  * Shopify customers is not assumed to be them: the matches come back to ask
  * about. Someone Shopify has never seen is added without a Shopify id and

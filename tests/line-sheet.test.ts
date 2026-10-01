@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { oneOffKey, sheetDescription, chargedDifferently, dollars, ditto, heldBackFor, lineSheetFileName, missingRows, onThePdf, resolveRow, variantsFor } from '../lib/line-sheet'
+import { oneOffKey, sheetDescription, chargedDifferently, dollars, ditto, heldBackFor, lineSheetFileName, missingRows, onThePdf, resolveRow, variantsFor, wholesaleText } from '../lib/line-sheet'
 
 const v = (colour: string | null, ws: number | null, retail: number | null, onHand = 1, img: string | null = null) =>
   ({ wholesalePriceCents: ws, retailPriceCents: retail, imageUrl: img, onHandQty: onHand, colorway: colour ? { customerName: colour } : null })
@@ -29,8 +29,18 @@ test('prices are read from the product, never from the row, when the row has one
   assert.equal(resolveRow({ colorway: 'Champagne', wholesaleCents: null, msrp: '$368 – $420+' }, bean).retail, '$368')
 })
 
+test('a row whose variants are priced differently prints both ends, not the first found', () => {
+  // Sardine, 1 Oct 2026: Naked $40 (the product's), Beaded $44 (its own).
+  const sardine = { id: 's', wholesalePriceCents: 4000, retailPriceCents: 6800, variants: [v('Beaded', 4400, 7400), v('Naked', null, 6800)] }
+  const row = resolveRow({ colorway: null, wholesaleCents: null, msrp: null }, sardine)
+  assert.equal(wholesaleText(row), '$40 – $44')
+  assert.equal(row.retail, '$68 – $74')
+  assert.equal(wholesaleText(resolveRow({ colorway: 'Naked', wholesaleCents: null, msrp: null }, sardine)), '$40')
+  assert.equal(wholesaleText({ wholesaleCents: null, wholesaleMaxCents: null }), null)
+})
+
 test('a row with no product carries its own price', () => {
-  assert.deepEqual(resolveRow({ colorway: null, wholesaleCents: 9400, msrp: '$148 – $158' }, null), { wholesaleCents: 9400, retail: '$148 – $158', photo: null, onHand: null, description: '' })
+  assert.deepEqual(resolveRow({ colorway: null, wholesaleCents: 9400, msrp: '$148 – $158' }, null), { wholesaleCents: 9400, wholesaleMaxCents: null, retail: '$148 – $158', photo: null, onHand: null, description: '' })
 })
 
 test('ditto repeats only an identical cell below a non-empty one', () => {

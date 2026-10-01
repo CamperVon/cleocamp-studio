@@ -1,4 +1,4 @@
-import { chargedDifferently, dollars, heldBackFor, loadLineSheet, onThePdf, variantsFor } from '@/lib/line-sheet'
+import { chargedDifferently, dollars, heldBackFor, loadLineSheet, onThePdf, variantsFor, wholesaleText } from '@/lib/line-sheet'
 import { db } from '@/lib/db'
 import { Page, Card, Chip, Empty, Money, Fold } from '@/app/ui/primitives'
 import { LineSheetRowEditor, OneOffButton, PriceEdit, RestoreRow } from './line-sheet-row'
@@ -300,7 +300,7 @@ export default async function Wholesale() {
                     {!onThePdf(l) ? <span className="block text-xs text-warn">Not on the PDF until it has {heldBackFor(l).join(' and ')}. Tap to add.</span> : null}
                   </span>
                   <span className="shrink-0 text-right text-xs">
-                    {l.wholesaleCents != null ? <span className="text-sm font-semibold">{dollars(l.wholesaleCents)}</span> : <span className="text-warn">no price</span>}
+                    {l.wholesaleCents != null ? <span className="text-sm font-semibold">{wholesaleText(l)}</span> : <span className="text-warn">no price</span>}
                     <span className="block text-faint">retail {l.retail ?? '—'}</span>
                   </span>
                 </span>

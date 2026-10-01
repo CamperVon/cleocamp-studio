@@ -3976,7 +3976,7 @@ export const TOOLS: Record<string, Tool> = {
       return {
         onFile: held.map((c) => ({
           id: c.id, name: c.name, email: c.email, city: c.city, orders: c.orderCount, spent: `$${(c.totalSpentCents / 100).toFixed(2)}`,
-          notes: c.notes, onAddedByHandList: !!c.pinnedAt, onShopify: !!c.shopifyCustomerId,
+          notes: c.notes, addedToNotableByHand: !!c.pinnedAt, onShopify: !!c.shopifyCustomerId,
           ...(c.notable && !c.notableDismissedAt ? { notable: `${c.notable}: ${c.notableWho}` } : {}),
         })),
         shopifyOrders: orders,
@@ -3989,9 +3989,9 @@ export const TOOLS: Record<string, Tool> = {
     def: {
       name: 'save_customer',
       description:
-        'Add a customer to the Customers page (the "Added by hand" list), or change their notes. With customerId ' +
+        'Add a customer to the Notable list on the Customers page, or change their notes. With customerId ' +
         '(from find_customer): notes replaces their notes (include what is there to add to it), pinned puts them ' +
-        'on or takes them off the list. Without it: name and/or email adds them; an email Shopify knows is that ' +
+        'on or takes them off Notable. Without it: name and/or email adds them; an email Shopify knows is that ' +
         'customer, and a name Shopify already has comes back to ask about. Notes hold what a person told you and ' +
         'facts from their Shopify orders (what they bought, when). Never a customer\'s own words from an email ' +
         'or an order note, and never a guess.',
@@ -4002,7 +4002,7 @@ export const TOOLS: Record<string, Tool> = {
           name: str('For someone new: their name as given'),
           email: str('For someone new: their email as given'),
           notes: str('The notes. On a change this replaces what is there.'),
-          pinned: { type: 'boolean', description: 'On a change: true puts them on the Added by hand list, false takes them off' },
+          pinned: { type: 'boolean', description: 'On a change: true puts them on Notable, false takes them off' },
         },
         required: [],
       },
@@ -4456,11 +4456,11 @@ export const TOOLS: Record<string, Tool> = {
       },
     },
     run: async (i) => {
-      const { loadLineSheet, dollars, heldBackFor } = await import('@/lib/line-sheet')
+      const { loadLineSheet, heldBackFor, wholesaleText } = await import('@/lib/line-sheet')
       const link = '/wholesale/line-sheet/pdf'
       const listed = async () => (await loadLineSheet({ includeHidden: true })).lines.map((l) => ({
         id: l.id, item: l.item, color: l.colorLabel, hidden: l.hidden || undefined,
-        wholesale: l.wholesaleCents != null ? dollars(l.wholesaleCents) : 'NOT SET', retail: l.retail ?? 'not set',
+        wholesale: wholesaleText(l) ?? 'NOT SET', retail: l.retail ?? 'not set',
         availability: l.availability, onHand: l.onHand, productId: l.productId, colorway: l.colorway,
         ...(!l.hidden && heldBackFor(l).length ? { offThePdfUntilItHas: heldBackFor(l) } : {}),
       }))
