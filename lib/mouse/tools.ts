@@ -3989,6 +3989,50 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  reorder_math: {
+    def: {
+      name: 'reorder_math',
+      description:
+        'The calculation for "how many should we order / what would you recommend": for each colour and size of ' +
+        'the named products, retail units sold over the window (or since its first sale, if later), the rate per ' +
+        'month, on hand, still owed on open POs, and the units needed to cover each number of months ' +
+        '(rate × months − on hand − on order, rounded up). Store orders and gifts in the window are shown ' +
+        'beside it, not in it. Read-only. ALWAYS use this for an order-quantity question; never estimate a ' +
+        'rate yourself. Quote its numbers as they are.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          products: { type: 'array' as const, items: { type: 'string' as const }, description: 'Product names or parts of them, e.g. ["Cleo Bag", "Bean Bag"]' },
+          months: { type: 'array' as const, items: { type: 'number' as const }, description: 'Months of cover to work out. Default [3, 4].' },
+          windowDays: num('Days of sales to rate from. Default 90.'),
+        },
+        required: ['products'],
+      },
+    },
+    run: async (i) => {
+      const names = (Array.isArray(i.products) ? i.products : []).map((x: unknown) => String(x).trim()).filter(Boolean)
+      if (!names.length) return { reason: 'Which products?' }
+      const months = (Array.isArray(i.months) && i.months.length ? i.months : [3, 4]).map(Number).filter((m: number) => m > 0 && m <= 24)
+      const windowDays = Math.min(365, Math.max(14, Number(i.windowDays) || 90))
+      const { reorderTable } = await import('@/lib/reorder')
+      const r = await reorderTable(names, months, windowDays)
+      const selling = r.rows.filter((x) => x.sold > 0 || Object.values(x.need).some((n) => n))
+      return {
+        method: `Retail sales over the last ${windowDays} days (or since first sale). Need = rate × months − on hand − on order, rounded up.`,
+        rows: selling.map((x) => ({
+          item: x.item, sold: `${x.sold} in ${x.days} days`, perMonth: x.perMonth, onHand: x.onHand ?? 'unknown', onOrder: x.onOrder,
+          need: x.need, ...(x.storeAndGift ? { storesAndGiftsInWindow: x.storeAndGift } : {}), ...(x.soldOut ? { soldOut: 'yes: the rate is likely understated' } : {}),
+        })),
+        total: r.total,
+        noSalesInWindow: r.rows.filter((x) => x.sold === 0 && !Object.values(x.need).some((n) => n)).map((x) => `${x.item} (${x.onHand ?? '?'} on hand)`),
+        ...(r.unknownStock.length ? { unknownStock: r.unknownStock } : {}),
+        tellTheUser: 'Answer with these numbers: one line per item (item: need), the total, and at most two short caveats ' +
+          '(sold out, store orders). No preamble, no restating blockers they already know. If they say a number feels ' +
+          'high or low, do not change it: show its rate and on-hand, and offer fewer months or a longer window.',
+      }
+    },
+  },
+
   find_customer: {
     def: {
       name: 'find_customer',
