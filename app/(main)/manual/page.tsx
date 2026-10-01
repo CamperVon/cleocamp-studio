@@ -152,6 +152,10 @@ export default function Manual() {
                 <b>Mouse got this wrong</b>: flags the case for Brandon and Claude when the fix belongs
                 in how Mouse works, not just in one reply.
               </li>
+              <li>
+                <b>The support@ inbox itself</b> is a Google group. To read it there, sign in at{' '}
+                <a href="https://groups.google.com/" target="_blank" rel="noreferrer" className="text-accent underline">groups.google.com</a>.
+              </li>
             </ul>
           </Section>
 
