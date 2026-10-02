@@ -9,6 +9,9 @@ const STATUS_TONE = {
   ACTIVE: 'accent', SAMPLING: 'warn', DEVELOPMENT: 'neutral', SUNSETTED: 'neutral',
 } as const
 
+/** Stock in pink; none (or oversold) in bold red. Brandon, 2 Oct 2026. */
+const stockTone = (n: number) => (n <= 0 ? 'font-bold text-urgent' : 'text-accent')
+
 export default async function Products() {
   const [products, pos, runs, sales] = await Promise.all([
     db.product.findMany({
@@ -116,7 +119,7 @@ export default async function Products() {
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-medium">{p.name}</span>
                         <span className="block text-xs text-muted">
-                          <span className="tnum">{onHand}</span> on hand · <span className="tnum">{soldTotal}</span> sold in 8 wks
+                          <span className={`tnum ${stockTone(onHand)}`}>{onHand} on hand</span> · <span className="tnum">{soldTotal}</span> sold in 8 wks
                           {relatedPos.length || relatedRuns.length ? ` · ${relatedPos.length + relatedRuns.length} on order` : ''}
                         </span>
                       </span>
@@ -165,7 +168,7 @@ export default async function Products() {
 
                       <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-b border-line px-4 py-3 text-sm sm:grid-cols-5 sm:px-5">
                         <div><dt className="text-xs text-faint">Retail</dt><dd><Money cents={p.retailPriceCents} /></dd></div>
-                        <div><dt className="text-xs text-faint">On hand</dt><dd className="tnum">{onHand}</dd></div>
+                        <div><dt className="text-xs text-faint">On hand</dt><dd className={`tnum ${stockTone(onHand)}`}>{onHand}</dd></div>
                         <div><dt className="text-xs text-faint">Sold 8wk</dt><dd className="tnum">{soldTotal}</dd></div>
                         <div>
                           <dt className="text-xs text-faint">Cover</dt>
