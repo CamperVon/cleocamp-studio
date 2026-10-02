@@ -623,7 +623,7 @@ export const TOOLS: Record<string, Tool> = {
         },
       })
       // Brandon asking in the chat is already looking at the answer; it is filed, not mailed.
-      if (actor === 'per_brandon' && !i.from?.toString().match(/email|nightly/i)) return { flagged: true, emailed: false, say: 'Filed on ToDo for Brandon.' }
+      if (actor === 'per_brandon' && !i.from?.toString().match(/email|nightly/i)) return { flagged: true, emailed: false, say: 'Brandon is the one asking, so it is filed on ToDo for him rather than emailed. Say that; it is not a failure.' }
       const b = await db.person.findUnique({ where: { id: 'per_brandon' }, select: { email: true } })
       if (!b?.email) return { flagged: true, emailed: false, say: "Filed on ToDo; Brandon's email is not on file." }
       const { sendEmail } = await import('@/lib/email')
@@ -2983,6 +2983,48 @@ export const TOOLS: Record<string, Tool> = {
         updated: r.variantsUpdated, seenInShopify: r.variantsUpdated + r.variantsUnknown.length,
         salesWritten: r.salesWritten, onHand: `${r.onHandCounted}/${r.onHandTotal}`,
         ...(fresh.length ? { newInShopify: fresh, tellTheUser: `On Shopify but not in the app yet: ${fresh.join(', ')}. Ask whether to bring them in.` } : {}),
+      }
+    },
+  },
+
+  shopify_analytics: {
+    def: {
+      name: 'shopify_analytics',
+      description:
+        'Run a ShopifyQL report against Shopify\'s own sales, orders, customers and sessions data. Read-only. Use it ' +
+        'for any question the app\'s own records cannot answer: sales by city, region or country, by channel or ' +
+        'referrer, by discount, new vs returning customers, sessions and conversion, best sellers over any period. ' +
+        'Brandon, 2 Oct 2026, after Mouse said it could not list the top cities for Cleo Tees: the data was in ' +
+        'Shopify all along. Examples: ' +
+        '"FROM sales SHOW net_items_sold, net_sales WHERE product_title CONTAINS \'Cleo Tee\' GROUP BY shipping_city, shipping_region SINCE -180d UNTIL today ORDER BY net_items_sold DESC LIMIT 10"; ' +
+        '"FROM sales SHOW orders, total_sales GROUP BY shipping_country SINCE -90d UNTIL today ORDER BY total_sales DESC"; ' +
+        '"FROM sales SHOW net_sales GROUP BY product_title SINCE -30d UNTIL today ORDER BY net_sales DESC LIMIT 10"; ' +
+        '"FROM sales SHOW orders, total_sales GROUP BY order_referrer_source SINCE -30d UNTIL today". ' +
+        'Always FROM ... SHOW. If it returns a parse error, fix the query and try again. Quote the numbers it returns; ' +
+        'do not add them up differently. City names can come in different cases (BROOKLYN and Brooklyn): combine those and say so.',
+      input_schema: {
+        type: 'object',
+        properties: { query: str('The ShopifyQL query') },
+        required: ['query'],
+      },
+    },
+    run: async (i) => {
+      const q = String(i.query ?? '').trim()
+      if (!/^FROM\s+\w+/i.test(q)) return { error: 'A ShopifyQL query starts with FROM, e.g. FROM sales SHOW net_sales GROUP BY shipping_city SINCE -90d UNTIL today.' }
+      const { shopifyGraphQL } = await import('@/lib/integrations/shopify')
+      try {
+        const d = await shopifyGraphQL<{ shopifyqlQuery: { tableData: { columns: Array<{ name: string; displayName: string }>; rows: Array<Record<string, unknown>> } | null; parseErrors: string[] } }>(
+          `query($q: String!) { shopifyqlQuery(query: $q) { tableData { columns { name displayName } rows } parseErrors } }`, { q },
+        )
+        const r = d.shopifyqlQuery
+        if (r.parseErrors?.length) return { error: `ShopifyQL could not read that: ${r.parseErrors.join('; ')}. Fix the query and run it again.` }
+        const rows = r.tableData?.rows ?? []
+        return { columns: (r.tableData?.columns ?? []).map((c) => c.displayName || c.name), rows: rows.slice(0, 100), ...(rows.length > 100 ? { note: `${rows.length} rows; first 100 shown. Add LIMIT.` } : {}) }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        return { error: /access|scope|denied|permission/i.test(msg)
+          ? `Shopify refused: the Studio Mouse app is not allowed to read reports (${msg.slice(0, 160)}). Flag it for Brandon: the app needs the read_reports permission.`
+          : `Shopify refused: ${msg.slice(0, 200)}` }
       }
     },
   },

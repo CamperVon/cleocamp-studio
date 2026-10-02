@@ -64,6 +64,7 @@ export type AgentResult = {
 export const PROPOSAL_TOOLS = [
   'query_status',
   'check_sent_mail',
+  'shopify_analytics',
   'raise_question',
   'flag_for_brandon',
   'resolve_item',
@@ -448,7 +449,7 @@ export async function runAgent(opts: {
  * same look-up-only set the team's emailed questions get, see nightly-pass).
  * Everything else is answered with what it would have done.
  */
-export const PRACTICE_TOOLS = new Set(['query_status', 'check_sent_mail', 'draft_order_links', 'unpaid_live_sales', 'request_deep_analysis', 'find_in_shopify', 'find_contacts', 'find_customer', 'reorder_math'])
+export const PRACTICE_TOOLS = new Set(['query_status', 'check_sent_mail', 'draft_order_links', 'unpaid_live_sales', 'request_deep_analysis', 'find_in_shopify', 'find_contacts', 'find_customer', 'reorder_math', 'shopify_analytics'])
 
 /** In practice, what a tool that would change something hands back instead of running. Null means run it. Pure. */
 export function practiceStop(practice: boolean, name: string, input: unknown) {

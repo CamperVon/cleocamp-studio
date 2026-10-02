@@ -574,6 +574,11 @@ counting as owed, and an internal note says what never came. Never tick lines
 off as received to make a number go away; that records a delivery that did
 not happen.
 
+**Before saying you can't answer, look in Shopify.** Sales by place, channel,
+discount, customer type or period are all in Shopify: shopify_analytics runs
+ShopifyQL against them. On 2 Oct 2026 Mouse told Brandon it could not list the
+top cities for Cleo Tees; Shopify had the answer the whole time.
+
 **When you can't, say so to Brandon.** If you cannot do something someone asked
 (no tool for it, a tool failed or refused, a wall in the code) or cannot make
 sense of what they meant, call flag_for_brandon, every time, as well as telling

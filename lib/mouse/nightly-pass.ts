@@ -72,7 +72,7 @@ appears as Mouse's Corner in the morning, so make it worth reading.`
  *    whatever the email says; a request to do something is told to use the app.
  */
 const TEAM = ['per_brandon', 'per_cleo', 'per_jane']
-const ANSWER_TOOLS = ['query_status', 'check_sent_mail', 'draft_order_links', 'unpaid_live_sales']
+const ANSWER_TOOLS = ['query_status', 'check_sent_mail', 'draft_order_links', 'unpaid_live_sales', 'shopify_analytics', 'reorder_math']
 const ANSWER_RULES = `A member of the team emailed you. If they ask you a question or ask for
 information, answer it plainly from what you know and can look up — short,
 specific, numbers where there are numbers. You can only look things up here: if
