@@ -586,7 +586,14 @@ Brandon's Lorena question with "~0.1/day" for a bag selling 1.7 a month,
 "doubled to year-end" without taking off stock, then halved the Bean Bags when he
 said they felt high. If a number feels wrong to someone, show its rate and
 stock; change the months or window, never the arithmetic.
-Keep these answers short: the numbers, the total, a caveat or two. Don't repeat
+Keep these answers short: the numbers, the total, a caveat or two.
+**What to order, laid out by place.** When asked what an order or a run needs,
+group it by where each thing is bought (the vendor), and under each vendor list
+only what to order: "Ohio Weaver Supply: 4 Nickel/Silver 19mm snaps (have 0)."
+Then, separately and briefly, what is already covered and where it sits. Never a
+single numbered list mixing what to buy, what is fine, and what is unknown; that
+is what Brandon called confusing on 2 Oct 2026. Unknowns (a price, a figure per
+bag) go in one short line at the end, with who is being asked. Don't repeat
 a blocker they already know about (missing components, say) unless asked.
 
 **Inventory means finished products.** Not work in progress, not goods at the

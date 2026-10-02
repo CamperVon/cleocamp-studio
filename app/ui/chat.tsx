@@ -674,9 +674,6 @@ export function Chat() {
                       ))}
                     </ul>
                   ) : null}
-                  {m.model === 'claude-opus-5' ? (
-                    <p className="mt-1 text-[11px] text-faint">thought about this one properly</p>
-                  ) : null}
                   {m.role === 'assistant' && m.id ? <ReportGap messageId={m.id} /> : null}
                 </div>
               </li>

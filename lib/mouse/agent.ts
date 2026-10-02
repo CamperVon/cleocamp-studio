@@ -24,8 +24,11 @@ import { withNotesOnWhatChanged } from '@/lib/mouse/stale-notes'
 // runAgent's own loop — the nightly pass, Mouse's Corner, the digests — uses
 // the same default rather than a copy of the string that can drift out of
 // sync with it.
-export const CHAT_MODEL = 'claude-sonnet-5'
-export const DEEP_MODEL = 'claude-opus-5'
+// Opus 5.5 throughout (Brandon, 2 Oct 2026: "Can Mouse be more Opus 5.5 and
+// not so idiot Claude of old"). With both the same, every chat runs at high
+// effort and request_deep_analysis has nothing further to switch to.
+export const CHAT_MODEL = 'claude-opus-5-5'
+export const DEEP_MODEL = 'claude-opus-5-5'
 
 /** A file attached to the current turn — an invoice, an old PO, a packing slip. */
 export type AgentAttachment = { mediaType: string; base64: string; filename?: string }

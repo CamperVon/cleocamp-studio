@@ -1,3 +1,4 @@
+import { DEEP_MODEL } from '@/lib/mouse/agent'
 import Anthropic from '@anthropic-ai/sdk'
 import { buildCatalog } from './context'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
@@ -63,7 +64,7 @@ export async function composeAmReport(): Promise<{ subject: string; text: string
 
   const startedAt = Date.now()
   const res = await new Anthropic().messages.create({
-    model: 'claude-opus-5',
+    model: DEEP_MODEL,
     max_tokens: 3000,
     system: AM_REPORT_VOICE,
     output_config: { effort: 'medium' },
@@ -72,7 +73,7 @@ export async function composeAmReport(): Promise<{ subject: string; text: string
       content: `Write this morning's report from everything below.\n\n${catalog}`,
     }],
   })
-  await recordUsage('am-report', [usageOf('claude-opus-5', res.usage, startedAt)])
+  await recordUsage('am-report', [usageOf(DEEP_MODEL, res.usage, startedAt)])
   const raw = res.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text).join('\n').trim()
