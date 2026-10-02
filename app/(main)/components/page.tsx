@@ -261,27 +261,20 @@ export default async function Components() {
       {atVendors.length ? (
         <CollapsibleCard title={`At vendors (${atVendors.length})`}>
           <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
-            Bought per production run and shipped straight to whoever is cutting it — but
-            unlike fabric, this is worth counting, so Studio Mouse can tell a shortage from a
-            surplus. Tell Mouse what came in, where, or what a run used to keep this current.
+            Bought per production run and shipped straight to whoever is cutting it, and
+            counted there, so Studio Mouse can tell a shortage from a surplus. Tell Mouse what came in, where, or what a run used to keep this current.
           </p>
           <Table {...tableProps} rows={atVendors} stockHeader="Where it is" stockOf={placeStock} />
         </CollapsibleCard>
       ) : null}
 
       {fabric.length ? (
-        <CollapsibleCard title={`Fabric — bought per production run (${fabric.length})`}>
+        <CollapsibleCard title={`Fabric and leather (${fabric.length})`}>
           <p className="border-b border-line bg-sunk px-4 py-2.5 text-xs text-muted sm:px-5">
-            Shipped straight from the vendor to the manufacturer. Never stocked or counted,
-            by design — what matters is what a planned run will need, and what is already on
-            order.
+            Usually bought per run and shipped straight to the maker. What is left there is
+            counted like any other component, so a surplus is used before more is bought.
           </p>
-          <Table
-            {...tableProps}
-            rows={fabric}
-            stockHeader="Incoming"
-            stockOf={(c) => ({ kind: 'count', value: String(c.incomingQty), unit: c.unitOfMeasure })}
-          />
+          <Table {...tableProps} rows={fabric} stockHeader="Where it is" stockOf={placeStock} />
         </CollapsibleCard>
       ) : null}
 

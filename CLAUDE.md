@@ -59,12 +59,15 @@ data. That must not happen again.
 - **Inventory means finished products. Nothing else.** Not fabric, not
   work in progress, not goods at the dye house. A `ProductionRun` tracks where
   things are for *lead-time* purposes only and holds no inventory.
-- **Fabric is bought per production run and shipped straight to the
-  manufacturer.** It never reaches the studio and is never stocked or counted.
-  Its Component row exists to carry the vendor, style number, price and lead
-  time a purchase order needs — not a stock level. Do not model fabric held at
-  a manufacturer, and do not forecast from a fabric stock count; forecast the
-  fabric a planned run will need.
+- **Fabric and leather are counted where they sit, like any other component
+  — reversed by Brandon on 2 Oct 2026.** This file used to say fabric is
+  "never stocked or counted" and must not be modelled at a manufacturer.
+  Brandon: "Lorena inventory is important and we will update it, even with
+  surplus. It should be treated as any other component in stock." Fabric is
+  still usually bought per run and shipped straight to whoever makes it, but
+  what is left there (Lorena's skins, a surplus at a factory) is tracked per
+  place via `ComponentLocationStock`, and the forecast counts it, exactly as
+  for trim. Count in the unit the person counts in (skins, yards).
 - **Trim and hardware usually live at a vendor, not the studio — this was
   stated wrong here until 10 Sept 2026.** This file used to say buttons,
   tags and hardware "do live in the studio and are counted there." Brandon:
@@ -79,8 +82,7 @@ data. That must not happen again.
   be precise). Everything else is tracked per-place via
   `ComponentLocationStock` (the studio, or a vendor), materialized from
   `InventoryEvent.locationId` / `.atVendorId` the same way `onHandQty`
-  itself is. Never model this for `MATERIAL` (fabric) — that stays
-  exactly as the rule above says, uncounted anywhere, by design.
+  itself is. Since 2 Oct 2026 the same goes for `MATERIAL` (fabric, leather).
 - **`InventoryEvent` is an append-only ledger.** Never edit or delete an
   event. Corrections are new `CORRECTION` events linked via `correctsEventId`.
 - **`onHandQty` is a materialized sum of events.** It must be written in the

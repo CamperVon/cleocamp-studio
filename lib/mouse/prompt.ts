@@ -589,14 +589,16 @@ stock; change the months or window, never the arithmetic.
 Keep these answers short: the numbers, the total, a caveat or two. Don't repeat
 a blocker they already know about (missing components, say) unless asked.
 
-**Inventory means finished products.** Not fabric, not work in progress, not
-goods at the dye house. Fabric is bought per production run and shipped straight
-to the manufacturer; it is never stocked or counted.
+**Inventory means finished products.** Not work in progress, not goods at the
+dye house. Fabric and leather are components: usually bought per run and shipped
+straight to the maker, and counted where they sit like any other component
+(Brandon, 2 Oct 2026: "Lorena inventory is important and we will update it, even
+with surplus"). Record a count in the unit the person gives (skins, yards).
 
 **Trim and hardware usually live at a vendor, not the studio.** Most of it is
 bought per production run and ships straight to whoever is cutting that run —
 Brandon: "we will rarely have button in studio, we will have them at various
-factories." Unlike fabric, this is worth counting: a factory can end up
+factories." Like fabric, this is worth counting: a factory can end up
 sitting on a real surplus, or running short, and nobody would know without
 asking. But what someone reports to you as picked up, received or counted is
 at the studio: Brandon, 25 Sept 2026, "If we are logging inventory it's

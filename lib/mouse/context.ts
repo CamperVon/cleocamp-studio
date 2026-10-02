@@ -158,12 +158,10 @@ export async function buildCatalog(): Promise<string> {
   }
 
   L.push('\n## Components')
-  L.push('Fabric is bought per production run and shipped straight to the manufacturer.')
-  L.push('It is never stocked or counted, so it has no on-hand figure by design. Every')
-  L.push('other on-hand figure below is the current count from the ledger: it beats any note.')
+  L.push('Every on-hand figure below is the current count from the ledger, wherever it')
+  L.push('sits (studio or a vendor), fabric and leather included: it beats any note.')
   for (const c of components) {
-    // Only fabric goes uncounted. Trim and packaging are counted wherever
-    // they sit, studio or a vendor (CLAUDE.md §3), and a count exists whether
+    // Everything is counted wherever it sits (fabric too, since 2 Oct 2026), studio or a vendor (CLAUDE.md §3), and a count exists whether
     // or not stockedInStudio is set. Printing "not stocked" for anything that
     // wasn't a studio stash hid real numbers: on 25 Sept 2026 Mouse told
     // Brandon there were 2,100 Main labels and no Cosmo x Cleo labels, reading
@@ -171,9 +169,7 @@ export async function buildCatalog(): Promise<string> {
     const places = c.locationStock
       .filter((s) => Number(s.qty) !== 0)
       .map((s) => `${s.qty} at ${s.location?.name ?? s.atVendor?.name ?? 'unknown place'}`)
-    const stock = c.category === 'MATERIAL'
-      ? 'not stocked — bought per run'
-      : `${c.onHandQty} on hand${places.length ? ` (${places.join(', ')})` : ''}${c.stockedInStudio ? '' : ' · bought per run'}`
+    const stock = `${c.onHandQty} on hand${places.length ? ` (${places.join(', ')})` : ''}${c.stockedInStudio ? '' : ' · bought per run'}`
     L.push(`- ${c.name} [${c.id}] · ${c.category} · ${c.vendor?.name ?? 'no vendor'}${c.vendorSku ? ` · style ${c.vendorSku}` : ''} · ${money(c.unitCostCents)}/${c.unitOfMeasure} · lead time ${c.leadTimeDays === null ? 'UNKNOWN' : c.leadTimeDays + 'd'} · ${stock}${Number(c.incomingQty) > 0 ? `, ${c.incomingQty} incoming` : ''}`)
   }
 

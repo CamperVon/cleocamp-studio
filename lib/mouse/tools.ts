@@ -83,25 +83,8 @@ async function writeEvent(args: {
   if (args.componentId) {
     const c = await db.component.findUniqueOrThrow({ where: { id: args.componentId } })
 
-    // Fabric is never modeled as stock anywhere, at any place — CLAUDE.md §3.
-    // Untouched by everything below; this is the old, simple behaviour,
-    // unchanged, for the one category that deliberately has no stock level.
-    if (c.category === 'MATERIAL') {
-      const previous = c.onHandQty === null ? 0 : Number(c.onHandQty)
-      const resolvedDelta = args.countedQty !== undefined ? args.countedQty - previous : args.deltaQty!
-      const next = previous + resolvedDelta
-      return db.$transaction(async (tx) => {
-        const event = await tx.inventoryEvent.create({
-          data: {
-            componentId: args.componentId, deltaQty: String(resolvedDelta),
-            countedQty: args.countedQty === undefined ? null : String(args.countedQty),
-            type: args.type as never, source: 'CHAT', note: args.note ?? null, createdById: currentActor(),
-          },
-        })
-        await tx.component.update({ where: { id: args.componentId! }, data: { onHandQty: String(next) } })
-        return { eventId: event.id, name: c.name, newQty: next }
-      })
-    }
+    // Fabric and leather used to bypass per-place stock here ("never counted").
+    // Since 2 Oct 2026 they are counted where they sit, like everything else.
 
     // Everywhere else — trim, hardware, packaging — WHERE it is is now real
     // information, not an assumption. Brandon, 10 Sept: "we will rarely have

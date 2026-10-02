@@ -269,15 +269,16 @@ export async function recomputeForecasts() {
 
     const available = Number(c.onHandQty) + Number(c.incomingQty)
     if (!c.stockedInStudio) {
-      // Bought per run, so there is no stock level to burn down. What matters is
-      // whether what is on order covers the horizon.
+      // Bought per run: what matters is whether what is already at the makers
+      // plus what is on order covers the horizon. What sits at a vendor counts
+      // (Brandon, 2 Oct 2026: "even with surplus"); until then only the order did.
       const needed = perDay * HORIZON_DAYS
       results.push({
         kind: 'component', id: c.id, name: c.name,
         note:
           `A ${HORIZON_DAYS}-day run needs about ${Math.ceil(needed)} ${c.unitOfMeasure}. ` +
-          `${Number(c.incomingQty)} on order.` +
-          (Number(c.incomingQty) < needed ? ' That is short.' : ' Covered.'),
+          `${Number(c.onHandQty)} on hand at the makers, ${Number(c.incomingQty)} on order.` +
+          (available < needed ? ' That is short.' : ' Covered.'),
       })
       continue
     }
