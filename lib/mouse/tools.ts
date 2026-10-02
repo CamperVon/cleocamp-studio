@@ -585,6 +585,57 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  flag_for_brandon: {
+    def: {
+      name: 'flag_for_brandon',
+      description:
+        'Tell Brandon you could not do something, or could not understand it. Brandon, 2 Oct 2026: "if mouse ' +
+        'can\'t understand something or do something, mouse should flag it for me or email me." Use it every time: ' +
+        'a request you have no tool for, a tool that failed or refused, a wall in the code, a message you cannot ' +
+        'make sense of, a decision only a person can make that nobody has made. Emails Brandon and files it on ' +
+        'ToDo. Still tell the person you are talking to. Not for ordinary questions you can ask them directly.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string' as const, enum: ['cant_do', 'unclear'], description: 'cant_do: no way to do it, or it failed. unclear: you do not understand what was meant.' },
+          what: str('What was asked, or what you were trying to do, in one plain sentence'),
+          why: str('What stopped you: the missing tool, the error, or what is ambiguous'),
+          from: str('Who asked, and where (chat, email, the nightly mail)'),
+        },
+        required: ['kind', 'what', 'why'],
+      },
+    },
+    run: async (i) => {
+      const what = String(i.what ?? '').trim().slice(0, 300)
+      const why = String(i.why ?? '').trim().slice(0, 2000)
+      if (!what) return { flagged: false, reason: 'Say what it was.' }
+      const kind = i.kind === 'unclear' ? 'unclear' : 'cant_do'
+      const title = `${kind === 'unclear' ? "Mouse didn't understand" : "Mouse couldn't do"}: ${what}`.slice(0, 250)
+      // Once a day per thing: a retried request must not mail Brandon twice.
+      const dupe = await db.actionItem.findFirst({ where: { title, resolved: false, createdAt: { gte: new Date(Date.now() - 864e5) } }, select: { id: true } })
+      if (dupe) return { flagged: true, already: true, say: 'Brandon already has this one from today.' }
+      const actor = currentActor()
+      await db.actionItem.create({
+        data: {
+          kind: kind === 'unclear' ? 'QUESTION' : 'GAP', title, source: 'CHAT', assignedToId: 'per_brandon',
+          detail: [why, i.from ? `From: ${String(i.from).slice(0, 200)}` : ''].filter(Boolean).join('\n\n'),
+          ...(actor ? { createdById: actor } : {}),
+        },
+      })
+      // Brandon asking in the chat is already looking at the answer; it is filed, not mailed.
+      if (actor === 'per_brandon' && !i.from?.toString().match(/email|nightly/i)) return { flagged: true, emailed: false, say: 'Filed on ToDo for Brandon.' }
+      const b = await db.person.findUnique({ where: { id: 'per_brandon' }, select: { email: true } })
+      if (!b?.email) return { flagged: true, emailed: false, say: "Filed on ToDo; Brandon's email is not on file." }
+      const { sendEmail } = await import('@/lib/email')
+      const sent = await sendEmail({
+        to: [b.email],
+        subject: title,
+        text: `${kind === 'unclear' ? "I didn't understand this" : "I couldn't do this"}.\n\n${what}\n\nWhy: ${why}${i.from ? `\n\nFrom: ${i.from}` : ''}\n\nIt's on ToDo too.\n\n— Studio Mouse`,
+      }).catch(() => ({ sent: false }))
+      return { flagged: true, emailed: sent.sent, say: sent.sent ? 'Brandon has been emailed and it is on ToDo.' : 'Filed on ToDo; the email to Brandon did not go.' }
+    },
+  },
+
   raise_question: {
     def: {
       name: 'raise_question',

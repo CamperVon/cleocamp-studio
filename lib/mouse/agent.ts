@@ -65,6 +65,7 @@ export const PROPOSAL_TOOLS = [
   'query_status',
   'check_sent_mail',
   'raise_question',
+  'flag_for_brandon',
   'resolve_item',
   'create_todo',
   'add_note',
