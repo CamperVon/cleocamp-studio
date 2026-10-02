@@ -10,6 +10,7 @@ import { ProductionRow } from '@/app/ui/production-row'
 import { buildProductionView } from '@/lib/production-view'
 import { Mouse } from '@/app/ui/mouse'
 import { MouseFace } from '@/app/ui/mouse-face'
+import { CornerItem } from '@/app/ui/corner-item'
 import { SuggestedCloses } from '@/app/ui/suggested-closes'
 import { laMidnight, laDay } from '@/lib/dates'
 import { quoteOfTheDay } from '@/lib/quotes'
@@ -284,10 +285,10 @@ export default async function Today() {
           ) : null}
           {urgent.length ? (
             <ul className="divide-y divide-line border-b border-line">
+              {/* Each item folds; opened, it can be emailed to Cleo, Jane or Brandon (2 Oct 2026). */}
               {urgent.slice(0, SHOWN).map((a) => (
-                <li key={a.id} className="flex items-baseline gap-2.5 px-4 py-2 text-sm sm:px-5">
-                  <span aria-hidden className="h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full bg-urgent" />
-                  <span>{markTheNumber(a.message)}</span>
+                <li key={a.id}>
+                  <CornerItem text={a.message} dot>{markTheNumber(a.message)}</CornerItem>
                 </li>
               ))}
               {urgent.length > SHOWN ? (
@@ -296,11 +297,11 @@ export default async function Today() {
             </ul>
           ) : null}
           {brief ? (
-            <div className="flex flex-col gap-3 px-4 py-3.5 text-sm leading-relaxed sm:px-5">
-              {brief.text.split(/\n\s*\n/).map((para, i) => (
-                <p key={i}>{para.trim()}</p>
+            <ul className="flex flex-col py-1.5 leading-relaxed">
+              {brief.text.split(/\n\s*\n/).map((para) => para.trim()).filter(Boolean).map((para, i) => (
+                <li key={i}><CornerItem text={para}>{para}</CornerItem></li>
               ))}
-            </div>
+            </ul>
           ) : null}
         </section>
       ) : null}
