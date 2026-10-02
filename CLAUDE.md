@@ -105,7 +105,15 @@ data. That must not happen again.
   them — `TEAM` in `lib/mouse/nightly-pass.ts`) gets an answer by email,
   from a run with look-up tools only, sent to that person's address on file
   and never to the From line. A forged email therefore only ever sends the
-  answer to the real person, and still cannot change anything.
+  answer to the real person, and still cannot change anything. **Widened by
+  Brandon, 2 Oct 2026:** "if cleo or brandon or jane emails info / an answer
+  / changing a number ... the info needs to change." Their email is applied
+  like a chat message when it is sent TO mouse@ (not merely cc'd, so a
+  reply-all thread with a vendor stays a proposal) AND the receiving server's
+  DMARC result is pass, so a forged From line is not enough. Nothing that
+  sends, invoices or moves money runs from email (`NOT_FROM_EMAIL` in
+  `lib/mouse/team-mail.ts`), and Mouse replies to the sender's address on
+  file with what it changed.
 - **A purchase order's `notes` field is printed on the document the vendor
   receives.** It is not a scratchpad. Only what someone deliberately wrote TO
   the supplier belongs there — a rush request, a spec, a payment confirmation.
