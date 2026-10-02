@@ -376,7 +376,8 @@ export const TOOLS: Record<string, Tool> = {
         const item = await db.actionItem.create({
           data: {
             kind: 'TODO',
-            title: `Apply once counting is done: ${i.type.toLowerCase().replace(/_/g, ' ')} ${i.deltaQty}`,
+            // A count carries countedQty, not deltaQty: the title read "counted undefined".
+            title: `Apply once counting is done: ${i.type.toLowerCase().replace(/_/g, ' ')} ${i.type === 'COUNTED' ? i.countedQty : i.deltaQty}`,
             detail:
               `Studio Mouse was told about this while inventory writing was paused, so it ` +
               `was not applied. ${JSON.stringify(i)}`,
