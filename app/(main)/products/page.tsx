@@ -62,13 +62,14 @@ export default async function Products() {
 
     // Flags are computed, not written by a model. Studio Mouse comments in
     // chat; these need to be true every time, not most of the time.
-    const flags: Array<{ tone: 'urgent' | 'warn'; text: string }> = []
+    const flags: Array<{ tone: 'urgent' | 'warn'; text: string; oversold?: boolean }> = []
     if (oversold.length) {
       flags.push({
         tone: 'urgent',
         text: `${oversold.length} variant${oversold.length > 1 ? 's' : ''} oversold: ${oversold
           .map((v) => [v.colorway?.customerName, v.size].filter(Boolean).join(' ') + ` (${v.onHandQty})`)
           .join(', ')}`,
+        oversold: true,
       })
     }
     if (weeks !== null && weeks < 4 && !oversold.length) {
@@ -122,6 +123,10 @@ export default async function Products() {
                           <span className={`tnum ${stockTone(onHand)}`}>{onHand} on hand</span> · <span className="tnum">{soldTotal}</span> sold in 8 wks
                           {relatedPos.length || relatedRuns.length ? ` · ${relatedPos.length + relatedRuns.length} on order` : ''}
                         </span>
+                        {/* Oversold shows on the closed line (Brandon, 2 Oct 2026: "visible w/o having to click"). */}
+                        {flags.filter((f) => f.oversold).map((f, i) => (
+                          <span key={i} className="block text-xs font-bold text-urgent">{f.text}</span>
+                        ))}
                       </span>
                       {urgent ? <Chip tone="urgent">{urgent > 1 ? `! ${urgent}` : "!"}</Chip> : flags.length ? <Chip tone="warn">?</Chip> : null}
                       <Chip tone={STATUS_TONE[p.status]}>{p.status.toLowerCase()}</Chip>
