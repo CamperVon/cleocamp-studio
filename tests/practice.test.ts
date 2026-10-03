@@ -17,5 +17,5 @@ test('in practice, anything that changes something is stopped and never counts a
 test('look-ups still run in practice, and nothing is stopped outside it', () => {
   assert.equal(practiceStop(true, 'query_status', { what: 'events' }), null)
   assert.equal(practiceStop(false, 'create_todo', {}), null)
-  for (const name of PRACTICE_TOOLS) assert.ok(name === 'request_deep_analysis' || name in TOOLS, `${name} is a real tool`)
+  for (const name of PRACTICE_TOOLS) assert.ok(name in TOOLS, `${name} is a real tool`)
 })

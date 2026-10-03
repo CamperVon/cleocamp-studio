@@ -8,9 +8,9 @@ const usage = { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 2
 const toolUse = (name: string, id = name): Anthropic.ToolUseBlock => ({ type: 'tool_use', caller: { type: 'direct' }, name, id, input: { poNumber: 'TEST-1' } })
 const response = (content: Anthropic.ContentBlock[], stop_reason: Anthropic.StopReason = 'tool_use') => ({ content, stop_reason, usage })
 const answer = response([{ type: 'text', text: 'Done.', citations: null }], 'end_turn')
-const defs: Anthropic.Tool[] = ['update_purchase_order', 'send_purchase_order', 'request_deep_analysis', 'query_status', 'create_purchase_order']
+const defs: Anthropic.Tool[] = ['update_purchase_order', 'send_purchase_order', 'query_status', 'create_purchase_order']
   .map(name => ({ name, input_schema: { type: 'object' } }))
-const base = { system: [], messages: [{ role: 'user' as const, content: 'Prepare my order.' }], tools: defs, model: 'normal', deepModel: 'deep' }
+const base = { system: [], messages: [{ role: 'user' as const, content: 'Prepare my order.' }], tools: defs, model: 'normal' }
 
 test('returned failures are fed back as errors and never become completed badges', async () => {
   let n = 0
@@ -28,19 +28,31 @@ test('returned failures are fed back as errors and never become completed badges
   assert.equal(r.usage.requests[0].cacheReadTokens, 20)
 })
 
-test('escalation preserves sibling calls and their results instead of restarting writes', async () => {
+test('parallel calls each run once and all their results go back in one message', async () => {
   let n = 0, writes = 0
   const r = await runLoop({ ...base,
     create: async req => {
-      if (n++ === 0) return response([toolUse('request_deep_analysis'), toolUse('update_purchase_order')])
-      assert.equal(req.model, 'deep')
+      if (n++ === 0) return response([toolUse('query_status'), toolUse('update_purchase_order')])
       assert.equal((req.messages.at(-1)!.content as unknown[]).length, 2)
       return answer
-    }, execute: async () => { writes++; return { updated: true } },
+    }, execute: async (name) => { if (name === 'update_purchase_order') writes++; return { updated: true } },
   })
   assert.equal(writes, 1)
   assert.equal(r.writes.length, 1)
-  assert.equal(r.model, 'deep')
+})
+
+test('a draft waiting for a yes is not fed back as an error', async () => {
+  let n = 0
+  const r = await runLoop({ ...base,
+    create: async req => {
+      if (n++ === 0) return response([toolUse('send_purchase_order')])
+      const last = req.messages.at(-1)!.content as Anthropic.ToolResultBlockParam[]
+      assert.equal(last[0].is_error, false)
+      return answer
+    }, execute: async () => ({ draft: true, sent: false, to: 'vendor@example.com' }),
+  })
+  assert.equal(r.toolCalls[0].status, 'no_change')
+  assert.equal(r.writes.length, 0)
 })
 
 test('round budget preserves successful writes and leaves a nonempty stopping point', async () => {
@@ -148,7 +160,7 @@ test('one-hour cache writes are counted apart from five-minute ones', async () =
   const r = await runLoop({
     create: async () => ({ content: [{ type: 'text', text: 'ok', citations: null } as Anthropic.TextBlock], stop_reason: 'end_turn', usage: u }),
     system: [], messages: [{ role: 'user', content: 'hi' }], tools: [], execute: async () => null,
-    model: 'm', deepModel: 'd',
+    model: 'm',
   })
   assert.equal(r.usage.requests[0].cacheWriteTokens, 30)
   assert.equal(r.usage.requests[0].cacheWrite1hTokens, 25)

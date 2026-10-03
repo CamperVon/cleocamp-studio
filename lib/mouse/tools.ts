@@ -5228,6 +5228,8 @@ export const TOOLS: Record<string, Tool> = {
         'over a window, recent inbound email, or a units-sold TOTAL. For "how many did we ' +
         'sell" over any real window (this year, last quarter, since a date) use "salesTotal" ' +
         '— it is a single database sum, not something to add up by hand from "sales" rows. ' +
+        'With productId it totals one product, with entityId one variant, and with neither ' +
+        'the whole store. It counts units, not orders or dollars: for those, use shopify_analytics. ' +
         '"This year" means since January 1 (Los Angeles), never the last 365 days: pass since, ' +
         'e.g. since "2026-01-01". The history counts retail orders only (not wholesale, not ' +
         'cancelled), so it can sit a little under Shopify\'s own sales report; say so if asked ' +
@@ -5235,9 +5237,7 @@ export const TOOLS: Record<string, Tool> = {
         'starts before them as complete. ' +
         '"sales" returns raw daily numbers for ONE variant and is for looking at a pattern ' +
         '(is it trending up, did a day spike), never for arithmetic across many days or ' +
-        'variants — that is exactly what burned a whole turn\'s budget on 10 Sept trying to ' +
-        'hand-sum 27 variants of daily Cleo Tee sales for a pricing question. If a product has ' +
-        'several variants, salesTotal with productId sums all of them in one call. ' +
+        'variants. ' +
         '"notes" returns the current notes on one entityId — use it for a received or ' +
         'cancelled order, whose notes are left out of your context (id or PO number). ' +
         '"retiredNotes" returns superseded notes (optionally for one entityId) — only for ' +
@@ -5302,11 +5302,12 @@ export const TOOLS: Record<string, Tool> = {
         // the fix for a real, observed failure: asked for this year's Cleo
         // Tee volume, Mouse pulled up to 90 raw days per variant across 27
         // variants and tried to sum them itself, burning the whole turn's
-        // reasoning budget (including an Opus escalation) without finishing.
+        // reasoning budget without finishing.
+        // Neither id means the whole store: on 2 Oct 2026 Mouse asked for the
+        // store's monthly totals eleven times and was refused every time.
         const where: any = { date: { gte: since } }
         if (i.productId) where.variant = { productId: i.productId }
         else if (i.entityId) where.productVariantId = i.entityId
-        else return { error: 'Give a productId (sums every variant) or entityId (one variant).' }
         const [agg, first] = await Promise.all([
           db.salesSnapshot.aggregate({ where, _sum: { unitsSold: true } }),
           db.salesSnapshot.aggregate({ _min: { date: true } }),
@@ -5326,23 +5327,6 @@ export const TOOLS: Record<string, Tool> = {
         select: { id: true, fromAddress: true, toAddress: true, subject: true, text: true, receivedAt: true },
       })
     },
-  },
-
-  request_deep_analysis: {
-    def: {
-      name: 'request_deep_analysis',
-      description:
-        'Hand this turn to a stronger model. Use for genuinely hard problems — a tangled ' +
-        'production sequence, a judgement with competing signals, reasoning across a lot of ' +
-        'history. Not for routine logging or lookups. Costs latency, so it should be worth it.',
-      input_schema: {
-        type: 'object',
-        properties: { reason: str('Why this needs more thought') },
-        required: ['reason'],
-      },
-    },
-    // Handled by the route, which re-runs the turn on Opus.
-    run: async (i) => ({ escalate: true, reason: i.reason }),
   },
 }
 

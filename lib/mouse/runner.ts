@@ -13,11 +13,10 @@ export type AgentUsage = {
   providerError: string | null
   durationMs: number
   stopReason: 'complete' | 'budget' | 'provider_error' | 'refusal'
-  escalationReason: string | null
 }
 export type LoopResult = {
   text: string; writes: Array<{ tool: string; summary: string }>; toolCalls: ToolOutcome[]
-  model: string; escalated: string | null; usage: AgentUsage
+  model: string; usage: AgentUsage
 }
 
 type Request = Anthropic.MessageCreateParamsNonStreaming
@@ -31,7 +30,6 @@ export async function runLoop(opts: {
   tools: Anthropic.Tool[]
   execute: (name: string, input: unknown) => Promise<unknown>
   model: string
-  deepModel: string
   effort?: 'low' | 'medium' | 'high'
   maxRequests?: number
   maxOutputTokens?: number
@@ -45,8 +43,7 @@ export async function runLoop(opts: {
   const allowed = new Set(opts.tools.map(t => t.name))
   const calls: ToolOutcome[] = []
   const requests: RequestUsage[] = []
-  let model = opts.model
-  let escalated: string | null = null
+  const model = opts.model
   let spent = 0
   let text = ''
   // What Mouse wrote alongside a tool call. On 25 Sept 2026 Brandon asked how
@@ -77,7 +74,7 @@ export async function runLoop(opts: {
         model, max_tokens: Math.min(16000, maxOutputTokens - spent),
         system: opts.system, tools: opts.tools, messages,
         thinking: { type: 'adaptive' },
-        output_config: { effort: effort ?? (model === opts.deepModel ? 'high' : 'medium') },
+        output_config: { effort: effort ?? 'medium' },
       })
     } catch (e) {
       // The model's servers briefly unavailable (a 503 or "overloaded"): the
@@ -132,8 +129,8 @@ export async function runLoop(opts: {
       continue
     }
 
-    // A safety classifier declined. Said as what it is (it used to read as
-    // "reasoning limit"), so callers can retry on another model.
+    // A safety classifier declined (and any server-side fallback too). Said
+    // as what it is, so callers can retry on another model.
     if (res.stop_reason === 'refusal') {
       stopReason = 'refusal'
       break
@@ -156,15 +153,7 @@ export async function runLoop(opts: {
       let error: string | undefined
       try {
         if (!allowed.has(u.name)) throw new Error('That tool is not available in this context.')
-        if (u.name === 'request_deep_analysis') {
-          if (model !== opts.deepModel && round + 1 < maxRequests && spent < maxOutputTokens) {
-            model = opts.deepModel
-            escalated = String(diagnosticValue((u.input as { reason?: string })?.reason ?? 'Further analysis requested')).slice(0, 500)
-            result = { model, reason: escalated }
-          } else result = { model, skipped: 'Already using deep analysis, or this turn has no reasoning budget remaining.' }
-        } else {
-          result = await opts.execute(u.name, u.input)
-        }
+        result = await opts.execute(u.name, u.input)
       } catch (e) { error = String(diagnosticValue((e as Error).message)) }
       const classification = error ? { status: 'failed' as const, isWrite: false } : classifyResult(u.name, result)
       calls.push({ name: u.name, input: diagnosticValue(u.input), ...classification,
@@ -185,8 +174,8 @@ export async function runLoop(opts: {
     if (!text && said.length) text = said.join('\n\n')
     text = text ? `${text}\n\n${status}` : status
   }
-  return { text, writes: completedWrites(calls), toolCalls: calls, model, escalated,
-    usage: { requests, attemptedRequests, providerError, durationMs: Date.now() - started, stopReason, escalationReason: escalated } }
+  return { text, writes: completedWrites(calls), toolCalls: calls, model,
+    usage: { requests, attemptedRequests, providerError, durationMs: Date.now() - started, stopReason } }
 }
 
 /** A failure on the model provider's side that is worth one more try. Pure. */

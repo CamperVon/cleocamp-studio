@@ -16,7 +16,7 @@ import { db } from '@/lib/db'
  * add_note and retire_note already deal with notes themselves, and a read has
  * changed nothing, so neither gets this.
  */
-const SKIP = new Set(['add_note', 'retire_note', 'query_status', 'check_sent_mail', 'request_deep_analysis'])
+const SKIP = new Set(['add_note', 'retire_note', 'query_status', 'check_sent_mail'])
 
 /** Input keys that name the thing a tool changed — what a note's entityId points at. */
 const SUBJECT_KEYS = ['id', 'productId', 'forProductId', 'componentId', 'vendorId', 'atVendorId', 'productVariantId', 'poNumber', 'runId', 'productionRunId']

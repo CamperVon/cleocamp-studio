@@ -8,11 +8,15 @@ export type ToolOutcome = {
   isWrite: boolean
 }
 
-const READ_TOOLS = new Set(['query_status', 'request_deep_analysis'])
+const READ_TOOLS = new Set(['query_status'])
 
 export function classifyResult(name: string, result: unknown): Pick<ToolOutcome, 'status' | 'isWrite'> {
   const r = result && typeof result === 'object' ? result as Record<string, unknown> : {}
-  if (r.error || r.ok === false || r.sent === false || r.applied === false) return { status: 'failed', isWrite: false }
+  if (r.error || r.ok === false || r.applied === false) return { status: 'failed', isWrite: false }
+  // A draft is the first step of every send (email, invoice, gift): shown,
+  // not sent, on purpose. It was being reported back to Mouse as an error.
+  if (r.draft === true) return { status: 'no_change', isWrite: false }
+  if (r.sent === false) return { status: 'failed', isWrite: false }
   if (r.created === false || r.skipped) return { status: 'no_change', isWrite: false }
   return { status: 'succeeded', isWrite: !READ_TOOLS.has(name) }
 }

@@ -25,8 +25,7 @@ import { withNotesOnWhatChanged } from '@/lib/mouse/stale-notes'
 // the same default rather than a copy of the string that can drift out of
 // sync with it.
 // Opus 5.5 throughout (Brandon, 2 Oct 2026: "Can Mouse be more Opus 5.5 and
-// not so idiot Claude of old"). With both the same, every chat runs at high
-// effort and request_deep_analysis has nothing further to switch to.
+// not so idiot Claude of old"). Agent runs default to high effort.
 export const CHAT_MODEL = 'claude-opus-5-5'
 export const DEEP_MODEL = 'claude-opus-5-5'
 // The jobs nobody is waiting on: support triage and drafts, the nightly mail
@@ -57,7 +56,6 @@ export type AgentResult = {
   writes: AgentWrite[]
   toolCalls: unknown[]
   model: string
-  escalated: string | null
   usage: AgentUsage
 }
 
@@ -77,7 +75,6 @@ export const PROPOSAL_TOOLS = [
   'resolve_item',
   'create_todo',
   'add_note',
-  'request_deep_analysis',
 ]
 
 /**
@@ -123,9 +120,9 @@ const FORECAST_RELEVANT_TOOLS = new Set([
  * signal lead times are supposed to be learned from. It was volunteered,
  * acknowledged, and dropped.
  */
-const FORGED_ACTIONS = /\[actions actually carried out on this turn:[^\]]*\]/i
+const FORGED_ACTIONS = /\[(?:actions actually carried out on this turn:|Record kept by the app)[^\]]*\]/i
 
-/** Remove any copy of withActions()'s line from what Mouse itself wrote. */
+/** Remove any copy of the old actions line from what Mouse itself wrote (see actionsCarriedOut). */
 export function stripForgedActions(text: string): string {
   return text.replace(new RegExp(`\\s*${FORGED_ACTIONS.source}`, 'gi'), '').trimEnd()
 }
@@ -142,7 +139,7 @@ const CLAIMS_A_RECORD: RegExp[] = [
   // the todo." No tool had run and no todo mentioned newsprint.
   /\b(?:fixed|corrected|amended)\s+(?:it|that|this|them|the\s+\w+)\b/i,
   /\bI(?:'ve| have)\s+(?:now\s+|also\s+)?(?:fixed|corrected|amended)\b/i,
-  // Same turn: it ended its reply with the line withActions() writes, having
+  // Same turn: it ended its reply with the actions line the app used to append, having
   // copied the shape from its own history. That line is code's to write; a
   // reply carrying one is claiming a record by forging the receipt.
   FORGED_ACTIONS,
@@ -252,7 +249,7 @@ const STOCK_CHECK = (lines: string[]) =>
   lines.join('\n') +
   '\n\nBefore you answer, check each line against what the person actually said: the right ' +
   'item, the right quantity, the right direction, logged once, and not something already ' +
-  'recorded on an earlier turn (read the actions lines on your earlier replies). If a line is ' +
+  'recorded on an earlier turn (read the app\'s record of actions after your earlier replies). If a line is ' +
   'wrong, fix it now with correct_inventory_event and say plainly what you corrected. If they ' +
   'are all right, give your answer, stating each change as before → after. Do not mention this check.'
 
@@ -336,12 +333,31 @@ export async function runAgent(opts: {
 
   const loop = (msgs: Anthropic.MessageParam[], rounds: number) =>
     runLoop({
-      create: request => client.messages.create(request),
+      // fallbacks "default": if a safety classifier declines, the request is
+      // re-run on the model Anthropic recommends for that case, in the same
+      // call, rather than the turn simply stopping. If the API ever refuses
+      // the option itself, the request goes again without it: a lost
+      // fallback must never cost the whole reply.
+      create: async request => {
+        try {
+          return await client.beta.messages.create({
+            ...(request as Anthropic.Beta.MessageCreateParamsNonStreaming),
+            betas: ['server-side-fallback-2026-07-01'],
+            fallbacks: 'default',
+          }) as unknown as Anthropic.Message
+        } catch (e) {
+          if (e instanceof Anthropic.BadRequestError && /fallback/i.test(e.message)) {
+            console.error('fallbacks refused; sending without', e.message)
+            return client.messages.create(request)
+          }
+          throw e
+        }
+      },
       system, messages: msgs, tools,
       execute: async (name, input) => practiceStop(opts.practice === true, name, input) ??
         withNotesOnWhatChanged(name, input, await TOOLS[name].run(input)),
-      model: opts.model ?? CHAT_MODEL, deepModel: DEEP_MODEL,
-      effort: opts.effort, maxRequests: rounds,
+      model: opts.model ?? CHAT_MODEL,
+      effort: opts.effort ?? 'high', maxRequests: rounds,
       maxOutputTokens: Number(process.env.MOUSE_MAX_OUTPUT_TOKENS) || 24000,
     })
 
@@ -456,7 +472,7 @@ export async function runAgent(opts: {
  * same look-up-only set the team's emailed questions get, see nightly-pass).
  * Everything else is answered with what it would have done.
  */
-export const PRACTICE_TOOLS = new Set(['query_status', 'check_sent_mail', 'draft_order_links', 'unpaid_live_sales', 'request_deep_analysis', 'find_in_shopify', 'find_contacts', 'find_customer', 'reorder_math', 'shopify_analytics'])
+export const PRACTICE_TOOLS = new Set(['query_status', 'check_sent_mail', 'draft_order_links', 'unpaid_live_sales', 'find_in_shopify', 'find_contacts', 'find_customer', 'reorder_math', 'shopify_analytics'])
 
 /** In practice, what a tool that would change something hands back instead of running. Null means run it. Pure. */
 export function practiceStop(practice: boolean, name: string, input: unknown) {
@@ -495,11 +511,14 @@ Boy Belts in Small*." Never say something was done, saved, sent or updated.`
  * any send behind it, the likeliest reading left to it was that it had misspoken
  * rather than acted. The tool call was on disk the whole time, in this very
  * column, and was dropped on the way back in. So the actions ride along with
- * the words now — a plain appended line rather than reconstructed tool blocks,
- * which cannot desync from the text it annotates.
+ * the words now, as a plain line rather than reconstructed tool blocks.
+ *
+ * The line goes in a user message straight after the reply, not inside it.
+ * Written into Mouse's own replies, it taught Mouse to write the line itself
+ * (see stripForgedActions): every earlier reply it read ended that way.
  */
-function withActions(content: string, toolCallsJson: unknown): string {
-  if (!Array.isArray(toolCallsJson) || !toolCallsJson.length) return content
+function actionsCarriedOut(toolCallsJson: unknown): string | null {
+  if (!Array.isArray(toolCallsJson) || !toolCallsJson.length) return null
   const done = (toolCallsJson as Array<{ name?: string; status?: string; input?: Record<string, unknown>; result?: Record<string, unknown> }>)
     // A practice turn's stopped calls did nothing; replaying them as "carried
     // out" would teach Mouse that they happened.
@@ -517,8 +536,8 @@ function withActions(content: string, toolCallsJson: unknown): string {
       const target = t.input?.to ?? t.input?.poNumber ?? t.input?.title ?? t.input?.id
       return target ? `${t.name} → ${String(target).slice(0, 60)}` : String(t.name)
     })
-  if (!done.length) return content
-  return `${content}\n\n[actions actually carried out on this turn: ${done.join('; ')}]`
+  if (!done.length) return null
+  return `[Record kept by the app, not a message from anyone: your reply above carried out ${done.join('; ')}]`
 }
 
 export async function chatTurn(threadId: string, message: string, attachments?: AgentAttachment[], source = 'chat', practice = false) {
@@ -544,16 +563,25 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
     // so it is the only one whose instruction is read for corrections.
     fromAPerson: true,
     practice,
-    history: history.map((m): Anthropic.MessageParam => ({
-      role: m.role === 'USER' ? 'user' : 'assistant',
-      content: m.role !== 'USER'
-        ? withActions(stripForgedActions(m.content), m.toolCallsJson)
-        : withFiles.has(m.id)
+    // Consecutive user messages are joined by the API, so the record of a
+    // reply's actions reads as the opening of the next person's message.
+    history: history.flatMap((m): Anthropic.MessageParam[] => {
+      if (m.role !== 'USER') {
+        const actions = actionsCarriedOut(m.toolCallsJson)
+        return [
+          { role: 'assistant', content: stripForgedActions(m.content) },
+          ...(actions ? [{ role: 'user' as const, content: actions }] : []),
+        ]
+      }
+      return [{
+        role: 'user',
+        content: withFiles.has(m.id)
           ? [
               ...m.attachments.filter((a) => a.data).map((a) => attachmentBlock({ mediaType: a.mediaType, base64: a.data! })),
               { type: 'text', text: m.content },
             ]
           : m.content,
-    })),
+      }]
+    }),
   })
 }

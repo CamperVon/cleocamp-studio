@@ -167,6 +167,5 @@ export async function POST(req: NextRequest) {
     reply: r.text,
     writes: r.writes,
     model: r.model,
-    escalated: r.escalated,
   })
 }
