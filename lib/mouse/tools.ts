@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { chooseDeliverTo } from '@/lib/po-deliver-to'
 import { DUPLICATE_WINDOW_MS, SAME_DELIVERY_WINDOW_MS, isRepeatOf, looksLikeSameDelivery } from '@/lib/inventory-duplicate'
 import { laMidnight } from '@/lib/dates'
+import { planVariantPush, isStaleCountRefusal } from '@/lib/stock-push'
 import { poLineLabel } from '@/lib/po'
 import { asDocLanguage } from '@/lib/po-strings'
 
@@ -165,78 +166,70 @@ async function writeEvent(args: {
     include: { product: true, colorway: true },
   })
 
-  // Our own cache saying "unknown" doesn't mean Shopify doesn't know — it
-  // means we haven't asked recently. Only worth asking when we're actually
-  // about to push (writes on, variant linked); a failed live check falls
-  // back to genuinely unknown rather than blocking the whole write, since
-  // the local ledger entry below is still worth having either way.
-  let liveBaseline: number | null = null
-  if (v.onHandQty === null && inventoryWritesEnabled() && v.shopifyInventoryItemId && v.shopifyVariantId) {
-    try {
-      const { fetchInventoryQuantity } = await import('@/lib/integrations/shopify')
-      liveBaseline = await fetchInventoryQuantity(v.shopifyVariantId)
-    } catch {
-      liveBaseline = null
-    }
-  }
-  const priorKnown = v.onHandQty !== null ? Number(v.onHandQty) : liveBaseline
-
-  // resolvedDelta is what the ledger stores (deltaQty is "always set" per its
-  // schema doc comment) — derived from countedQty against the best baseline
-  // we have, an unknown baseline treated as 0 for this purpose only. Kept
-  // separate from `next` below, which preserves null-means-unknown for the
-  // variant's own cached onHandQty: a delta against a genuinely unknown
-  // count must leave the cache unknown, not invent a number.
-  const resolvedDelta =
-    args.countedQty !== undefined ? args.countedQty - (priorKnown ?? 0) : args.deltaQty!
-  const next = args.countedQty ?? (priorKnown === null ? null : priorKnown + resolvedDelta)
   const name = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
+  const cached = v.onHandQty !== null ? Number(v.onHandQty) : null
 
-  let shopifyNote: string
+  // What goes to Shopify, and what the ledger records, worked out against
+  // Shopify's live count rather than our cache — see lib/stock-push.ts. When
+  // writing is off, or the variant has no Shopify link, there is nothing to
+  // read and our own cache is the only baseline there is.
+  let resolvedDelta = args.countedQty !== undefined ? args.countedQty - (cached ?? 0) : args.deltaQty!
+  let next: number | null = args.countedQty ?? (cached === null ? null : cached + resolvedDelta)
+  let drift = 0
+  let shopifyNote = ''
   // A pre-generated id, not Prisma's own @default(cuid()) — needed as the
   // idempotency key before the event row exists, so a retry of this exact
   // write (a timeout, a re-run) can never double-apply on Shopify's side.
-  const eventId = crypto.randomUUID()
-
-  // Surfaced in shopifyNote below whenever the live check actually ran and
-  // produced the baseline used — so a live-checked push reads visibly
-  // differently from an ordinary one in the chat, and a surprising number
-  // is something Cleo or Brandon can catch, rather than something that
-  // happened silently just because it *could* be resolved automatically.
-  const usedLiveCheck = v.onHandQty === null && liveBaseline !== null
+  let eventId = crypto.randomUUID()
 
   if (inventoryWritesEnabled() && v.shopifyInventoryItemId) {
-    // The baseline doubles as changeFromQuantity — Shopify's own
-    // compare-and-swap guard, so a stale number (ours or a moment-old live
-    // read) fails loudly against Shopify's real one rather than applying a
-    // delta that no longer holds.
-    const baseline = priorKnown
-    const delta = baseline === null ? null : resolvedDelta
-    if (baseline === null || delta === null) {
-      shopifyNote = 'not pushed — our own count was unknown and a live check against Shopify failed too, so there was no baseline to compute a delta from. Sync from Shopify first.'
-    } else if (delta === 0) {
-      shopifyNote = usedLiveCheck ? `no change to push — checked Shopify live (our own count was unknown), found ${baseline}, already matches` : 'no change to push'
-    } else {
-      const studio = await db.location.findFirst({ where: { isDefault: true }, select: { shopifyLocationId: true } })
-      if (!studio?.shopifyLocationId) {
-        return { eventId: null, applied: false, error: 'No Shopify location on file for the studio — cannot push. Run sync_shopify first.' }
+    const studio = await db.location.findFirst({ where: { isDefault: true }, select: { shopifyLocationId: true } })
+    if (!studio?.shopifyLocationId) {
+      return { eventId: null, applied: false, error: 'No Shopify location on file for the studio — cannot push. Run sync_shopify first.' }
+    }
+    const { adjustInventory, fetchAvailableAt } = await import('@/lib/integrations/shopify')
+    const ledgerSum = Number((await db.inventoryEvent.aggregate({ where: { productVariantId: v.id }, _sum: { deltaQty: true } }))._sum.deltaQty ?? 0)
+
+    // Twice at most: a sale can land between reading Shopify and writing to
+    // it, and Shopify then refuses the write. Read again and redo it once.
+    let pushed = false
+    for (let attempt = 0; attempt < 2 && !pushed; attempt++) {
+      let live: number | null
+      try {
+        live = await fetchAvailableAt(v.shopifyInventoryItemId, studio.shopifyLocationId)
+      } catch (e) {
+        return { eventId: null, applied: false, error: `Could not read Shopify's current count, so nothing was changed: ${(e as Error).message}. Safe to try again.` }
       }
-      const { adjustInventory } = await import('@/lib/integrations/shopify')
+      if (live === null) {
+        shopifyNote = 'not pushed — Shopify does not stock this at the studio location. Sync from Shopify first.'
+        break
+      }
+      const plan = planVariantPush({ live, ledger: ledgerSum, countedQty: args.countedQty, deltaQty: args.deltaQty })
+      resolvedDelta = plan.push
+      next = plan.next
+      drift = plan.drift
+      const moved = drift !== 0 ? `; Shopify had ${live} where our record said ${ledgerSum}, from sales since the last sync, so that was recorded first` : ''
+      if (plan.push === 0) {
+        shopifyNote = `no change to push — Shopify already has ${live}${moved}`
+        break
+      }
+      if (attempt > 0) eventId = crypto.randomUUID()
       const res = await adjustInventory({
         inventoryItemId: v.shopifyInventoryItemId, locationId: studio.shopifyLocationId,
-        delta, changeFromQuantity: baseline, idempotencyKey: eventId,
+        delta: plan.push, changeFromQuantity: live, idempotencyKey: eventId,
         reason: args.type === 'CORRECTION' ? 'correction' : undefined,
       })
-      if (!res.ok) {
+      if (res.ok) {
+        pushed = true
+        shopifyNote = `pushed ${plan.push > 0 ? '+' : ''}${plan.push} to Shopify (${live} → ${plan.next})${moved}`
+      } else if (attempt === 1 || !isStaleCountRefusal(res.error)) {
         return {
           eventId: null, applied: false,
           error: `Shopify rejected the write: ${res.error}. Nothing changed locally either — say so, rather than let the two disagree.`,
         }
       }
-      shopifyNote = usedLiveCheck
-        ? `pushed ${delta > 0 ? '+' : ''}${delta} to Shopify — our own count was unknown, so this used a live Shopify check (found ${baseline}) as the baseline instead of asking you to sync first`
-        : `pushed ${delta > 0 ? '+' : ''}${delta} to Shopify`
     }
+    if (!shopifyNote) shopifyNote = 'not pushed'
   } else if (!v.shopifyInventoryItemId) {
     shopifyNote = 'not pushed — this variant has no Shopify link on file'
   } else {
@@ -245,6 +238,17 @@ async function writeEvent(args: {
 
   try {
     return await db.$transaction(async (tx) => {
+      // Shopify's own movement since our last sync, as a sync would record it,
+      // so the ledger still adds up to the count.
+      if (drift !== 0) {
+        await tx.inventoryEvent.create({
+          data: {
+            productVariantId: v.id, type: 'COUNTED', source: 'SYSTEM',
+            countedQty: String(next! - resolvedDelta), deltaQty: String(drift),
+            note: "Shopify sync: Shopify's count, which moves with sales, fulfilments and edits made in Shopify.",
+          },
+        })
+      }
       const event = await tx.inventoryEvent.create({
         data: {
           id: eventId, productVariantId: args.productVariantId, deltaQty: String(resolvedDelta),

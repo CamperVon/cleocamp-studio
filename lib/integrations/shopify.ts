@@ -260,6 +260,19 @@ export async function fetchInventoryQuantity(shopifyVariantId: string): Promise<
   return d.node?.inventoryQuantity ?? null
 }
 
+/**
+ * The "available" count for one item at one location, live from Shopify —
+ * the exact number inventoryAdjustQuantities checks changeFromQuantity
+ * against. Null when Shopify does not stock the item there.
+ */
+export async function fetchAvailableAt(inventoryItemId: string, locationId: string): Promise<number | null> {
+  const d = await shopifyGraphQL<{ inventoryItem: { inventoryLevel: { quantities: { name: string; quantity: number }[] } | null } | null }>(
+    `query($item: ID!, $loc: ID!) { inventoryItem(id: $item) { inventoryLevel(locationId: $loc) { quantities(names: ["available"]) { name quantity } } } }`,
+    { item: inventoryItemId, loc: locationId },
+  )
+  return d.inventoryItem?.inventoryLevel?.quantities.find((q) => q.name === 'available')?.quantity ?? null
+}
+
 export async function adjustInventory(args: {
   inventoryItemId: string
   locationId: string
