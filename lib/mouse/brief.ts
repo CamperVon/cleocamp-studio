@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
 import { laMidnight } from '@/lib/dates'
-import { CHAT_MODEL } from '@/lib/mouse/agent'
+import { BACKGROUND_MODEL } from '@/lib/mouse/agent'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
 
 const VOICE = `You are Studio Mouse. You live in a Los Angeles fashion studio. You are
@@ -118,13 +118,14 @@ export async function composeDailyBrief(overnight?: string): Promise<{ text: str
   const client = new Anthropic()
   const startedAt = Date.now()
   const res = await client.messages.create({
-    model: CHAT_MODEL,
-    max_tokens: 1000,
+    model: BACKGROUND_MODEL,
+    // Thinking counts toward this; the brief's own length is set in VOICE.
+    max_tokens: 4000,
     system: VOICE,
     output_config: { effort: 'medium' },
     messages: [{ role: 'user', content: `Here is where things stand today.\n\n${facts}` }],
   })
-  await recordUsage('brief', [usageOf(CHAT_MODEL, res.usage, startedAt)])
+  await recordUsage('brief', [usageOf(BACKGROUND_MODEL, res.usage, startedAt)])
   const text = res.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text)
@@ -136,13 +137,13 @@ export async function composeDailyBrief(overnight?: string): Promise<{ text: str
   // it is asked to produce one.
   await db.dailyBrief.upsert({
     where: { forDate },
-    create: { forDate, text, model: CHAT_MODEL, overnight: notes ?? null },
+    create: { forDate, text, model: BACKGROUND_MODEL, overnight: notes ?? null },
     // Never blank stored notes on a rewrite that was not given any: a refresh
     // composed FROM them must not then delete them and leave the next refresh
     // poorer than this one.
-    update: { text, model: CHAT_MODEL, ...(notes ? { overnight: notes } : {}) },
+    update: { text, model: BACKGROUND_MODEL, ...(notes ? { overnight: notes } : {}) },
   })
-  return { text, model: CHAT_MODEL }
+  return { text, model: BACKGROUND_MODEL }
 }
 
 /**

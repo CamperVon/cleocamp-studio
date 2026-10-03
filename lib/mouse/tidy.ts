@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { buildCatalog } from '@/lib/mouse/context'
-import { CHAT_MODEL } from '@/lib/mouse/agent'
+import { BACKGROUND_MODEL } from '@/lib/mouse/agent'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
 
 /**
@@ -77,7 +77,7 @@ export async function reviewOpenItems(): Promise<{ reviewed: number; suggested: 
 
   const startedAt = Date.now()
   const res = await new Anthropic().messages.create({
-    model: CHAT_MODEL,
+    model: BACKGROUND_MODEL,
     max_tokens: 4000,
     system: [
       { type: 'text', text: REVIEW },
@@ -86,7 +86,7 @@ export async function reviewOpenItems(): Promise<{ reviewed: number; suggested: 
     output_config: { effort: 'medium' },
     messages: [{ role: 'user', content: `Today is ${today}.\n\nOpen items to review:\n${list}` }],
   })
-  await recordUsage('tidy', [usageOf(CHAT_MODEL, res.usage, startedAt)])
+  await recordUsage('tidy', [usageOf(BACKGROUND_MODEL, res.usage, startedAt)])
   const raw = res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('')
   const suggestions = parseSuggestions(raw, new Set(items.map((i) => i.id)))
 

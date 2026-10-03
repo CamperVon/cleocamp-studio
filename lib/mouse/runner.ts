@@ -12,7 +12,7 @@ export type AgentUsage = {
   attemptedRequests: number
   providerError: string | null
   durationMs: number
-  stopReason: 'complete' | 'budget' | 'provider_error'
+  stopReason: 'complete' | 'budget' | 'provider_error' | 'refusal'
   escalationReason: string | null
 }
 export type LoopResult = {
@@ -132,6 +132,13 @@ export async function runLoop(opts: {
       continue
     }
 
+    // A safety classifier declined. Said as what it is (it used to read as
+    // "reasoning limit"), so callers can retry on another model.
+    if (res.stop_reason === 'refusal') {
+      stopReason = 'refusal'
+      break
+    }
+
     if (res.stop_reason !== 'tool_use') {
       const final = res.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim()
       text = [...said, final].filter(Boolean).join('\n\n')
@@ -169,7 +176,9 @@ export async function runLoop(opts: {
   }
 
   if (stopReason !== 'complete') {
-    const reason = stopReason === 'provider_error' ? 'The model connection failed' : 'I reached this turn’s reasoning limit'
+    const reason = stopReason === 'provider_error' ? 'The model connection failed'
+      : stopReason === 'refusal' ? 'The model’s safety check declined this request'
+      : 'I reached this turn’s reasoning limit'
     const failures = calls.filter(c => c.status === 'failed').length
     const done = completedWrites(calls).length
     const status = `${reason} before finishing. ${done ? `${done} action${done === 1 ? '' : 's'} completed; the saved changes remain.` : 'No completed changes were recorded.'}${failures ? ` ${failures} action${failures === 1 ? '' : 's'} failed; I have kept the diagnostic details.` : ''} Please continue from here; completed actions should not be repeated.`

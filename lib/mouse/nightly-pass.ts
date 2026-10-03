@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { runAgent, PROPOSAL_TOOLS, CHAT_MODEL } from '@/lib/mouse/agent'
+import { runAgent, PROPOSAL_TOOLS, CHAT_MODEL, BACKGROUND_MODEL } from '@/lib/mouse/agent'
 import { htmlToText } from '@/lib/html-to-text'
 import { textFromAttachments } from '@/lib/inbound-body'
 import { personFromInboundAddress } from '@/lib/mouse/identity'
@@ -221,18 +221,22 @@ export async function nightlyPass(source = 'nightly-pass') {
       ).join('\n\n')
     : '(no unread mail)'
 
-  const r = await runAgent({
+  const pass = (model: string) => runAgent({
     source,
     instruction: `Tonight's unread mail:\n\n${mail}`,
     extraRules: RULES,
     allowedTools: PROPOSAL_TOOLS,
-    // Sonnet by default (Brandon, 22 Sept 2026) — request_deep_analysis is in
-    // PROPOSAL_TOOLS, so a genuinely hard night can still escalate itself to
-    // Opus mid-run rather than paying for it on every ordinary one.
-    model: CHAT_MODEL,
-    effort: 'high',
+    model,
+    // Medium is Sonnet 5.5's starting point for multistep tool work; its
+    // levels think more than Sonnet 5's did at the same name.
+    effort: model === BACKGROUND_MODEL ? 'medium' : 'high',
     maxRounds: 8,
   })
+  // A declined batch would otherwise stay unread and be declined again every
+  // night, holding up all the mail behind it. Only when nothing was raised
+  // yet, so a retry cannot raise the same question twice.
+  let r = await pass(BACKGROUND_MODEL)
+  if (r.usage.stopReason === 'refusal' && !r.writes.length) r = await pass(CHAT_MODEL)
 
   if (r.usage.stopReason !== 'complete') {
     return { read: 0, raised: r.writes.length, summary: null, model: r.model, incomplete: true }

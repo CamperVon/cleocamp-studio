@@ -357,8 +357,8 @@ export async function GET(req: NextRequest) {
     const sync = await syncCustomers(Math.min(began + 200_000, Date.now() + 90_000))
     if (dryRun) return { sync, notable: { skipped: 'dry run' } }
     if (Date.now() - began > 170_000) return { sync, notable: { skipped: 'out of time; tomorrow' } }
-    const { CHAT_MODEL } = await import('@/lib/mouse/agent')
-    return { sync, notable: await checkNotable(CHAT_MODEL) }
+    const { BACKGROUND_MODEL } = await import('@/lib/mouse/agent')
+    return { sync, notable: await checkNotable(BACKGROUND_MODEL) }
   })
 
   return NextResponse.json({ ok: true, ranAt: new Date().toISOString(), ...log })

@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { htmlToText } from '@/lib/html-to-text'
 import { sendEmail } from '@/lib/email'
-import { CHAT_MODEL } from '@/lib/mouse/agent'
+import { BACKGROUND_MODEL, CHAT_MODEL } from '@/lib/mouse/agent'
 import {
   CATEGORIES, CATEGORY_LABEL, customerAddress, finalUrgency, forwardedOrigin, isSupportMail, normalizeSubject, orderNumbersIn, trimQuoted, unansweredCount, isJustThanks,
   parseVerdict, stripGroupFooter, type Verdict,
@@ -53,20 +53,29 @@ async function classify(text: string, subject: string | null, order: OrderSnapsh
       order.items.map((i) => `${i.quantity} × ${i.title}${i.variant ? ` (${i.variant})` : ''}`).join(', ')
     : 'No order found.'
   try {
-    const startedAt = Date.now()
-    const res = await new Anthropic().messages.create({
-      model: CHAT_MODEL,
-      max_tokens: 400,
-      system: CLASSIFY,
-      messages: [{
-        role: 'user',
-        content:
-          `${orderLine}\n\n` +
-          (earlier.length ? `Earlier emails in this conversation (oldest first):\n<earlier>\n${earlier.join('\n---\n').slice(0, 3000)}\n</earlier>\n\n` : '') +
-          `<customer_email subject="${(subject ?? '').replace(/"/g, "'").slice(0, 200)}">\n${text.slice(0, 6000)}\n</customer_email>`,
-      }],
-    })
-    await recordUsage('support', [usageOf(CHAT_MODEL, res.usage, startedAt)])
+    const ask = async (model: string) => {
+      const startedAt = Date.now()
+      const res = await new Anthropic().messages.create({
+        model,
+        // Thinking is always on and counts toward this: at 400, one
+        // classification in thirteen on 2 Oct 2026 used every token.
+        max_tokens: 2000,
+        output_config: { effort: 'low' },
+        system: CLASSIFY,
+        messages: [{
+          role: 'user',
+          content:
+            `${orderLine}\n\n` +
+            (earlier.length ? `Earlier emails in this conversation (oldest first):\n<earlier>\n${earlier.join('\n---\n').slice(0, 3000)}\n</earlier>\n\n` : '') +
+            `<customer_email subject="${(subject ?? '').replace(/"/g, "'").slice(0, 200)}">\n${text.slice(0, 6000)}\n</customer_email>`,
+        }],
+      })
+      await recordUsage('support', [usageOf(model, res.usage, startedAt)])
+      return res
+    }
+    // Sonnet first; a customer's email its safety check declines goes to Opus.
+    let res = await ask(BACKGROUND_MODEL)
+    if (res.stop_reason === 'refusal') res = await ask(CHAT_MODEL)
     return parseVerdict(res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join(''))
   } catch {
     // No model, no verdict: a person looks at it today rather than nobody.

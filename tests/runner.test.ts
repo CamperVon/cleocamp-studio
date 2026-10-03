@@ -206,3 +206,13 @@ test('a second 503 in the same turn is reported, not retried forever', async () 
   assert.equal(r.usage.stopReason, 'provider_error')
   assert.equal(n, 2)
 })
+
+test('a safety decline is reported as one, not as running out of reasoning', async () => {
+  const r = await runLoop({ ...base,
+    create: async () => response([], 'refusal'),
+    execute: async () => ({}),
+  })
+  assert.equal(r.usage.stopReason, 'refusal')
+  assert.match(r.text, /safety check declined/)
+  assert.doesNotMatch(r.text, /reasoning limit/)
+})

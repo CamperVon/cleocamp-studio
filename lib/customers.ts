@@ -241,6 +241,8 @@ export async function checkNotable(model: string, now = new Date()): Promise<{ c
       const res = await client.messages.create({
         model,
         max_tokens: 4000,
+        // Low is the starting point for search and classification.
+        output_config: { effort: 'low' },
         system: NOTABLE_PROMPT,
         tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: batch.length * 2 }],
         messages: [{

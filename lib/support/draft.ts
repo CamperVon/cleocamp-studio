@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
-import { CHAT_MODEL } from '@/lib/mouse/agent'
+import { BACKGROUND_MODEL, CHAT_MODEL } from '@/lib/mouse/agent'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
 import { findOrder, type OrderSnapshot } from '@/lib/support/orders'
 import { isConfigured, shopifyGraphQL } from '@/lib/integrations/shopify'
@@ -46,11 +46,15 @@ export async function draftForCase(caseId: string): Promise<void> {
   let d: ReturnType<typeof parseDraft> = null
   let raw = ''
   for (let attempt = 0; attempt < 2 && !d; attempt++) {
+    // Sonnet first. The second try, after an unreadable reply or a safety
+    // decline on the customer's words, goes to Opus.
+    const model = attempt === 0 ? BACKGROUND_MODEL : CHAT_MODEL
     try {
       const startedAt = Date.now()
       const res = await new Anthropic().messages.create({
-        model: CHAT_MODEL,
-        max_tokens: 1500,
+        model,
+        // Room for thinking, which counts toward the limit.
+        max_tokens: 3000,
         system: DRAFT_INSTRUCTIONS,
         output_config: { effort: 'low' },
         messages: [{
@@ -67,7 +71,7 @@ export async function draftForCase(caseId: string): Promise<void> {
             `Draft the reply to the customer's latest email.`,
         }],
       })
-      await recordUsage('support-draft', [usageOf(CHAT_MODEL, res.usage, startedAt)])
+      await recordUsage('support-draft', [usageOf(model, res.usage, startedAt)])
       raw = res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('')
     } catch (e) {
       console.error('[support] draft failed', caseId, e)
