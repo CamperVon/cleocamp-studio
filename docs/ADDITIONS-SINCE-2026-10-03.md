@@ -115,3 +115,32 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
   - One rule: look up anything you said or sent earlier before saying you don't have it, and revise what was sent rather than starting over.
 - **Files:** `lib/mouse/tools.ts`, `lib/mouse/prompt.ts`
 - **Carries over:** General.
+
+### 4 Oct · PO 2389 put right, and why it went wrong
+- **Why:** Brandon: "all i asked of mouse was to note that one silver bean bag needed to be delivered this week."
+- **Three things went wrong:**
+  - Mouse read "add to PO 2389: we need one silver bean bag this week" as one more bag (4 to 5), and said so, instead of asking.
+  - It held back from writing the rush in the PO notes, though they were empty.
+  - The PO's "For" line said "Cleo Bag — Silver" over five Cleo Bags and two Bean Bags.
+- **Data fixed (PO 2389, still a draft):**
+  - Silver Medium Bean Bags back to 4.
+  - Printed notes: "Please deliver one of the Silver Medium Bean Bags this week. The rest of the order by October 25.", plus the Spanish.
+  - "For" removed.
+  - The silk to-do now says 4.
+- **Code fixed:**
+  - The PDF leaves "For" off any order covering more than one product (`forLine`).
+  - `create_purchase_order` no longer requires a "For" product.
+  - The PO notes field says a rush request belongs there and to write it.
+  - Mouse's list of open orders now shows each order's printed notes.
+  - Ask rule: saying which reading you took is not asking. When two readings would write different numbers, ask first.
+- **Files:** `lib/po-pdf.tsx`, `lib/mouse/tools.ts`, `lib/mouse/context.ts`, `lib/mouse/prompt.ts`
+- **Carries over:** General.
+
+### 4 Oct · Mouse can search the whole chat
+- **Why:** Brandon said yes to making Mouse smarter after it lost a list from earlier in a long conversation. Mouse only sees the last 20 messages of the current chat.
+- **What:**
+  - New `search_chat` tool: searches every chat message by its words, any day (default 14 days back), newest 10, with who said it and the text.
+  - The rule about looking things up now names it.
+  - Look-up tools (`check_sent_mail`, `search_chat`, the find tools and others) no longer count as writes.
+- **Files:** `lib/mouse/tools.ts`, `lib/mouse/outcomes.ts`, `lib/mouse/agent.ts`, `lib/mouse/nightly-pass.ts`, `lib/mouse/prompt.ts`
+- **Carries over:** General.

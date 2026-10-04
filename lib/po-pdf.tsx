@@ -95,6 +95,19 @@ export async function loadPo(poNumber: string) {
 
 export type DocContent = { billTo: string[]; confirmLine: string; contactLines: string[] }
 
+/**
+ * The product the "For" line names, or null when the order is not for one
+ * product. Brandon, 4 Oct 2026: PO 2389 read "For: Cleo Bag — Silver" over
+ * five Cleo Bags and two Bean Bags. A line for a different product's variant
+ * means the order covers more than one product, so the line is left off.
+ * Component lines (fabric, trim) never disqualify it: those are what a "For"
+ * is for. Pure.
+ */
+export function forLine(po: { forProduct: { id: string; name: string } | null; lines: Array<{ productVariant: { productId: string } | null }> }): string | null {
+  if (!po.forProduct) return null
+  return po.lines.every((l) => !l.productVariant || l.productVariant.productId === po.forProduct!.id) ? po.forProduct.name : null
+}
+
 export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocContent }) {
   const lang: DocLanguage = asDocLanguage(po.language)
   const t = (k: Parameters<typeof label>[1]) => label(lang, k)
@@ -148,7 +161,7 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
           <View style={styles.headerMeta}>
             <Text style={styles.docTitle}>{t('purchaseOrder')}</Text>
             <Text style={{ marginTop: 6 }}><Text style={styles.muted}>{t('no')} </Text>{po.poNumber}</Text>
-            {po.forProduct ? <Text><Text style={styles.muted}>{t('for')} </Text>{po.forProduct.name}</Text> : null}
+            {forLine(po) ? <Text><Text style={styles.muted}>{t('for')} </Text>{forLine(po)}</Text> : null}
             <Text><Text style={styles.muted}>{t('date')} </Text>{date}</Text>
             {po.expectedAt ? (
               <Text>

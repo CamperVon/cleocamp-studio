@@ -1940,8 +1940,10 @@ export const TOOLS: Record<string, Tool> = {
         properties: {
           vendorId: str('Who it is going to'),
           forProductId: str(
-            'Which product the order is for. Always set this — it goes on the document, ' +
-            'so the vendor can catch a wrong material before it ships.',
+            'The one product the whole order is for, printed on the document as "For", so the ' +
+            'vendor can catch a wrong material before it ships: fabric or trim for one product, or ' +
+            'units of one product. Leave it out when the order covers more than one product; a ' +
+            'single name over several would misdescribe it.',
           ),
           lines: {
             type: 'array' as const,
@@ -2017,7 +2019,7 @@ export const TOOLS: Record<string, Tool> = {
             items: { type: 'string' as const },
           },
         },
-        required: ['vendorId', 'forProductId', 'lines'],
+        required: ['vendorId', 'lines'],
       },
     },
     run: async (i) => {
@@ -2287,7 +2289,7 @@ export const TOOLS: Record<string, Tool> = {
             'line — "put Nicki on this one". Changes only this order. To change it for every ' +
             'document from now on, use update_document_defaults instead.',
           ),
-          notes: str('REPLACES the notes, which PRINT ON THE PDF THE VENDOR RECEIVES. Only what we are saying TO them — a rush request, a spec, a payment confirmation. Never what they told us ("Staples confirmed…"), never our own plans, prices or people. That is add_note against the purchase order. "" clears them.'),
+          notes: str('The notes printed on the PDF the vendor receives. Replaces what is there, so keep any existing words you still want (the order\'s current notes are in your context, usually none). Only what we are saying TO them: a rush request ("one of the Silver Bean Bags this week"), a spec, a payment confirmation. When asked to tell the vendor a timing or a rush, this is where it goes; write it. Never what they told us, our own plans, prices or people: that is add_note against the purchase order. "" clears them.'),
           language: { type: 'string' as const, enum: ['en', 'es', 'it', 'en_es', 'en_it'],
             description:
               'What language the DOCUMENT is written in — "es" or "it" throughout, or ' +
@@ -3181,6 +3183,48 @@ export const TOOLS: Record<string, Tool> = {
         tellTheUser:
           'Sent. In a Claude chat with the Resend connector, ask it to read the latest ' +
           'email with this subject.',
+      }
+    },
+  },
+
+  search_chat: {
+    def: {
+      name: 'search_chat',
+      description:
+        'Search what was said in the app\'s chat, by anyone (you included), by words, across ' +
+        'every conversation: a list you worked out earlier, a decision someone gave, a number ' +
+        'someone told you. You only see the last 20 messages of the current chat; anything ' +
+        'before that is only reachable here. Use it before saying you do not have something ' +
+        'that was said earlier. Every word must appear (any case). Returns up to 10 matching ' +
+        'messages, newest first, with who said it, when, and the text (long ones cut at ' +
+        '3,000 characters). Email is check_sent_mail; records are query_status.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          words: str('Words that must all appear, e.g. "Lorena supplies" or "silk express"'),
+          days: num('How far back to look. Default 14.'),
+        },
+        required: ['words'],
+      },
+    },
+    run: async (i) => {
+      const words = String(i.words ?? '').split(/\s+/).map((w) => w.trim()).filter((w) => w.length > 1).slice(0, 6)
+      if (!words.length) return { error: 'Give at least one word to search for.' }
+      const since = new Date(Date.now() - (Number(i.days) > 0 ? Number(i.days) : 14) * 864e5)
+      const rows = await db.chatMessage.findMany({
+        where: { createdAt: { gte: since }, AND: words.map((w) => ({ content: { contains: w, mode: 'insensitive' as const } })) },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: { role: true, content: true, createdAt: true, threadId: true },
+      })
+      return {
+        count: rows.length,
+        messages: rows.map((r) => ({
+          at: r.createdAt.toISOString(),
+          who: r.role === 'USER' ? 'a person' : 'you (Mouse)',
+          chat: r.threadId,
+          text: r.content.length > 3000 ? `${r.content.slice(0, 3000)}… [cut]` : r.content,
+        })),
       }
     },
   },

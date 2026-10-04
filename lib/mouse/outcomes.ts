@@ -8,7 +8,12 @@ export type ToolOutcome = {
   isWrite: boolean
 }
 
-const READ_TOOLS = new Set(['query_status'])
+// Look-ups: a call to one is never a write, so it cannot count as having
+// recorded something (see owedTheRecordSomething).
+const READ_TOOLS = new Set([
+  'query_status', 'check_sent_mail', 'search_chat', 'find_in_shopify', 'find_customer',
+  'find_contacts', 'reorder_math', 'shopify_analytics', 'unpaid_live_sales', 'draft_order_links',
+])
 
 export function classifyResult(name: string, result: unknown): Pick<ToolOutcome, 'status' | 'isWrite'> {
   const r = result && typeof result === 'object' ? result as Record<string, unknown> : {}
