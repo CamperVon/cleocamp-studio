@@ -14,6 +14,8 @@ const nextConfig: NextConfig = {
     "/api/chat": ["./assets/fonts/*.ttf", "./assets/brand/*.png"],
     "/drafts/[id]/pdf": ["./assets/fonts/*.ttf", "./assets/brand/*.png"],
     "/wholesale/line-sheet/pdf": ["./assets/fonts/*.ttf", "./assets/brand/*.png"],
+    // Pictures in a Special email are read from disk at send time, same reason.
+    "/special": ["./public/notice/*"],
   },
 };
 

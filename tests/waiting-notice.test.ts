@@ -36,3 +36,19 @@ test('the same notice is the same campaign however the colours are typed', () =>
   assert.equal(campaignKey({ product: 'Cleo Tee', colours: ['White', 'Black'] }, 'Ships Friday'), campaignKey({ product: ' cleo tee', colours: ['black', 'white '] }, 'Ships Friday '))
   assert.notEqual(campaignKey(m, 'Ships Friday'), campaignKey(m, 'Ships Monday'))
 })
+
+test('the HTML carries the same words, escaped, with the pictures below them', async () => {
+  const { noticeHtml } = await import('../lib/notice-pictures')
+  const p = { id: 't', label: 't', images: [{ file: 's.png', cid: 'signature', alt: 'love, Cleo', width: 170 }, { file: 'c.jpg', cid: 'collage', alt: '', width: 600 }] }
+  const html = noticeHtml('Hi Ana,\n\nShips <Friday> & soon.\nlove', p)
+  assert.match(html, /<p[^>]*>Hi Ana,<\/p><p[^>]*>Ships &lt;Friday&gt; &amp; soon\.<br>love<\/p>/)
+  const words = html.indexOf('love</p>')
+  for (const img of p.images) assert.ok(html.indexOf(`cid:${img.cid}`) > words, `${img.cid} comes after the words`)
+  assert.doesNotMatch(noticeHtml('Hi', null), /<img/)
+})
+
+test('every picture on the list has its file in public/notice', async () => {
+  const { existsSync } = await import('node:fs')
+  const { NOTICE_PICTURES } = await import('../lib/notice-pictures')
+  for (const p of NOTICE_PICTURES) for (const img of p.images) assert.ok(existsSync(`public/notice/${img.file}`), img.file)
+})

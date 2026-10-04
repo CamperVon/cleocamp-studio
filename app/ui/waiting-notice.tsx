@@ -1,6 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { previewWaiting, sendWaitingChunk, testWaiting, type NoticeInput } from '@/app/(main)/special/actions'
+import { NOTICE_PICTURES, noticeImageUrl, noticePicture } from '@/lib/notice-pictures'
 
 type Preview = { waiting: number; alreadySent: number; toSend: number; orders: string[]; sample: { to: string; order: string; text: string } | null }
 
@@ -13,11 +14,13 @@ const button = 'rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-40'
  * what was last previewed. See lib/waiting-notice.ts.
  */
 export function WaitingNotice() {
-  const [input, setInput] = useState<NoticeInput>({ product: 'Cleo Tee', colours: 'Black, White', subject: '', message: '' })
+  const [input, setInput] = useState<NoticeInput>({ product: 'Cleo Tee', colours: 'Black, White', subject: '', message: '', picture: '' })
   const [preview, setPreview] = useState<Preview | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [progress, setProgress] = useState<{ sent: number; failed: string[]; remaining: number } | null>(null)
   const [pending, start] = useTransition()
+
+  const picture = noticePicture(input.picture)
 
   const set = (k: keyof NoticeInput) => (e: { target: { value: string } }) => {
     setInput({ ...input, [k]: e.target.value })
@@ -72,6 +75,13 @@ export function WaitingNotice() {
           Message
           <textarea className={`${field} min-h-56`} value={input.message} onChange={set('message')} />
         </label>
+        <label className="text-xs text-muted">
+          Pictures below the words
+          <select className={field} value={input.picture} onChange={set('picture')}>
+            <option value="">None, words only</option>
+            {NOTICE_PICTURES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+        </label>
         <p className="text-xs text-faint">
           Sent exactly as written. Optional: {'{first_name}'}, {'{order}'} and {'{items}'} are filled in for each customer,
           e.g. &ldquo;Hi {'{first_name}'}, your {'{items}'} (order {'{order}'}) ships Friday.&rdquo; Replies go to support@.
@@ -98,6 +108,10 @@ export function WaitingNotice() {
               <p className="text-[11px] uppercase tracking-wider text-faint">What {preview.sample.order} gets ({preview.sample.to})</p>
               <p className="mt-1 text-sm font-medium">{input.subject}</p>
               <p className="mt-1 whitespace-pre-wrap text-sm">{preview.sample.text}</p>
+              {picture?.images.map((img) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={img.cid} src={noticeImageUrl(img)} alt={img.alt} style={{ maxWidth: img.width }} className="mt-3 block h-auto w-full" />
+              ))}
             </div>
           ) : null}
           {preview.orders.length ? (

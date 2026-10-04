@@ -2,6 +2,9 @@ import { db } from '@/lib/db'
 import { shopifyGraphQL } from '@/lib/integrations/shopify'
 import { sendEmail } from '@/lib/email'
 import { SUPPORT_FROM, SUPPORT_REPLY_TO } from '@/lib/support/reply'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+import { noticeHtml, type NoticePicture } from '@/lib/notice-pictures'
 
 /**
  * "Message everyone waiting": one email to each customer whose open order
@@ -127,14 +130,31 @@ export async function previewNotice(m: Match, subject: string, template: string)
   }
 }
 
+/**
+ * The words as text and HTML, with the pictures (if any) attached inline
+ * below them. Read once per send, before anyone is emailed: a missing
+ * picture stops the send rather than going out without it.
+ */
+async function bodies(picture: NoticePicture | null) {
+  const attachments = picture
+    ? await Promise.all(picture.images.map(async (img) => ({
+        filename: img.file,
+        content: await readFile(path.join(process.cwd(), 'public', 'notice', img.file)),
+        contentId: img.cid,
+      })))
+    : undefined
+  return (text: string) => ({ text, ...(picture ? { html: noticeHtml(text, picture), attachments } : {}) })
+}
+
 /** One customer's email, sent to someone else as a test. Records nothing. */
-export async function sendNoticeTest(m: Match, subject: string, template: string, testTo: string) {
+export async function sendNoticeTest(m: Match, subject: string, template: string, testTo: string, picture: NoticePicture | null = null) {
   const [sample] = await findWaiting(m)
   if (!sample) return { sent: false, reason: 'Nobody is waiting on that.' }
+  const body = await bodies(picture)
   const res = await sendEmail({
     from: SUPPORT_FROM, to: [testTo], replyTo: SUPPORT_REPLY_TO,
     subject: `[TEST, as ${sample.name} would get it] ${subject}`,
-    text: renderNotice(template, sample),
+    ...body(renderNotice(template, sample)),
   })
   return res.sent ? { sent: true } : { sent: false, reason: 'reason' in res ? res.reason : 'not sent' }
 }
@@ -158,8 +178,9 @@ async function claim(campaign: string, o: WaitingOrder, sentById: string | null)
  * allows about two sends a second. Each order is claimed before its send, so
  * two taps at once cannot both email it.
  */
-export async function sendNoticeChunk(m: Match, subject: string, template: string, sentById: string | null, max = 20) {
+export async function sendNoticeChunk(m: Match, subject: string, template: string, sentById: string | null, max = 20, picture: NoticePicture | null = null) {
   const campaign = campaignKey(m, subject)
+  const body = await bodies(picture)
   const waiting = await findWaiting(m)
   // Sent, or mid-send when a request timed out (left alone: it may have
   // gone, and never twice beats once more). A failed one is tried again.
@@ -170,12 +191,12 @@ export async function sendNoticeChunk(m: Match, subject: string, template: strin
   for (const o of next) {
     if (!(await claim(campaign, o, sentById))) continue // another tap has it
     const text = renderNotice(template, o)
-    const res = await sendEmail({ from: SUPPORT_FROM, to: [o.email], replyTo: SUPPORT_REPLY_TO, subject, text })
+    const res = await sendEmail({ from: SUPPORT_FROM, to: [o.email], replyTo: SUPPORT_REPLY_TO, subject, ...body(text) })
     if (res.sent) {
       sent++
       await db.$transaction([
         db.customerNotice.update({ where: { campaign_orderId: { campaign, orderId: o.orderId } }, data: { status: 'sent', resendId: 'id' in res ? String(res.id ?? '') : null } }),
-        db.sentEmail.create({ data: { toAddress: o.email, subject, body: text, sentBy: sentById, resendId: 'id' in res ? String(res.id ?? '') : null } }),
+        db.sentEmail.create({ data: { toAddress: o.email, subject, body: picture ? `${text}\n\n[Pictures: ${picture.label}]` : text, sentBy: sentById, resendId: 'id' in res ? String(res.id ?? '') : null } }),
       ])
     } else {
       failed.push(o.name)

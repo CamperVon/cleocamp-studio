@@ -17,8 +17,10 @@ export async function sendEmail(opts: {
    *  keep Studio Mouse copied without anyone remembering to do it. */
   replyTo?: string | string[]
   /** A vendor has no login for this app, so a linked document is a dead
-   *  end for them — the bytes have to actually go in the email. */
-  attachments?: Array<{ filename: string; content: Buffer }>
+   *  end for them — the bytes have to actually go in the email. With a
+   *  `contentId`, a picture shows inside the HTML wherever it says
+   *  `<img src="cid:…">` (lib/notice-pictures.ts). */
+  attachments?: Array<{ filename: string; content: Buffer; contentId?: string }>
   /** Overrides EMAIL_FROM. Customer replies go out as Cleo Studio from
    *  support@, never as Studio Mouse — see app/(main)/support/actions.ts. */
   from?: string
