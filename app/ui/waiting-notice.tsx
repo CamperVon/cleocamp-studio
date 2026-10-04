@@ -1,6 +1,6 @@
 'use client'
 import { useState, useTransition } from 'react'
-import { previewWaiting, sendWaitingChunk, testWaiting, type NoticeInput } from '@/app/(main)/support/waiting/actions'
+import { previewWaiting, sendWaitingChunk, testWaiting, type NoticeInput } from '@/app/(main)/special/actions'
 
 type Preview = { waiting: number; alreadySent: number; toSend: number; orders: string[]; sample: { to: string; order: string; text: string } | null }
 

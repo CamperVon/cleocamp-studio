@@ -146,6 +146,15 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Files:** `lib/mouse/tools.ts`, `lib/mouse/outcomes.ts`, `lib/mouse/agent.ts`, `lib/mouse/nightly-pass.ts`, `lib/mouse/prompt.ts`
 - **Carries over:** General.
 
+### 4 Oct · A pink "Special" tab for one-off emails
+- **Why:** Brandon: put "Message everyone waiting" in "a new tab called SPECIAL. This is where special one-off emails etc will go, so no one gets confused. Also make it pink."
+- **What:**
+  - Special sits under More, in pink. Nav items can now be marked pink.
+  - "Message everyone waiting" moved there from Support. `/support/waiting` redirects to it.
+  - Mouse's page list includes Special.
+- **Files:** `app/ui/nav-bar.tsx`, `app/(main)/special/`, `app/(main)/support/`, `app/ui/waiting-notice.tsx`, `lib/mouse/prompt.ts`
+- **Carries over:** General (a home for one-off sends).
+
 ---
 
 ## Changes to records, not code

@@ -29,7 +29,7 @@ import { MouseFace } from './mouse-face'
  * link an accidental tap is a dead end: the password screen, and no password.
  */
 
-type Item = { href: string; label: string; short?: string; icon?: ReactNode }
+type Item = { href: string; label: string; short?: string; icon?: ReactNode; pink?: boolean }
 
 const DAILY: Item[] = [
   { href: '/', label: 'Home', icon: <IconHome /> },
@@ -49,6 +49,9 @@ const OCCASIONAL: Item[] = [
   { href: '/inbox', label: 'Inbox' },
   { href: '/manual', label: 'Mouse Manual' },
   { href: '/phones', label: 'Phones' },
+  // One-off emails and the like, kept apart so nobody mistakes them for
+  // everyday Support (Brandon, 4 Oct 2026: "make it pink").
+  { href: '/special', label: 'Special', pink: true },
   { href: '/stylists', label: 'Stylists' },
   { href: '/support', label: 'Support' },
   { href: '/cookie-jar', label: 'The Cookie Jar' },
@@ -146,7 +149,7 @@ export function NavBar({ personName }: { personName: string | null }) {
                             href={l.href}
                             aria-current={here ? 'page' : undefined}
                             onClick={() => setDeskMore(false)}
-                            className={`block px-4 py-2 text-sm hover:bg-sunk ${here ? 'text-accent' : 'text-ink'}`}
+                            className={`block px-4 py-2 text-sm hover:bg-sunk ${here || l.pink ? 'text-accent' : 'text-ink'} ${l.pink ? 'font-medium' : ''}`}
                           >
                             {l.label}
                           </Link>
@@ -225,7 +228,7 @@ export function NavBar({ personName }: { personName: string | null }) {
                       href={l.href}
                       aria-current={here ? 'page' : undefined}
                       onClick={() => setMoreOpen(false)}
-                      className={`block px-5 py-3.5 text-base ${here ? 'text-accent' : 'text-ink'}`}
+                      className={`block px-5 py-3.5 text-base ${here || l.pink ? 'text-accent' : 'text-ink'} ${l.pink ? 'font-medium' : ''}`}
                     >
                       {l.label}
                     </Link>
