@@ -84,3 +84,9 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **What:** each "For Claude" card on the ToDo page has a Dismiss button. It closes the item like any other ToDo item: it leaves the list, and the record stays, marked dismissed.
 - **Files:** `app/ui/gap-card.tsx`
 - **Carries over:** General.
+
+### 4 Oct · Shopify sync ignores archived listings
+- **Why:** Brandon on Mouse's question about an old Cleo Tee listing: "i don't understand this". The sync had reported a retired, archived Shopify listing (Black and White at zero) as "not in the app", and Mouse asked whether to bring it in.
+- **What:** archived listings are now skipped the same way draft ones already were. Mouse no longer offers to import them.
+- **Files:** `lib/integrations/shopify-sync.ts`, `lib/mouse/tools.ts` (`sync_shopify`)
+- **Carries over:** Add-on (Shopify).

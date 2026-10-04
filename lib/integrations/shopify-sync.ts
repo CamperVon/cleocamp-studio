@@ -96,7 +96,11 @@ export async function syncShopify(db: PrismaClient, sinceISO: string): Promise<S
       // Shopify holds a DRAFT duplicate of the Cleo Tee carrying phantom
       // units. Confirmed with Brandon as incorrect, so it is never
       // imported — saying why here stops someone importing it in six months.
-      const why = v.product.status === 'DRAFT' ? ' [draft — ignored]' : ''
+      // An ARCHIVED listing is retired the same way: an old Black and White
+      // Cleo Tee at zero had Mouse asking whether to bring it in (Brandon,
+      // 4 Oct 2026: "i don't understand this").
+      const why = v.product.status === 'DRAFT' ? ' [draft — ignored]'
+        : v.product.status === 'ARCHIVED' ? ' [archived — ignored]' : ''
       variantsUnknown.push(`${v.product.title} / ${v.title}${why}`)
       continue
     }

@@ -2981,7 +2981,7 @@ export const TOOLS: Record<string, Tool> = {
       const r = await syncShopify(db, since)
       // Listed in Shopify, not in the app: say so, by product, so the person
       // can say whether to bring them in (import_from_shopify).
-      const fresh = [...new Set(r.variantsUnknown.filter((u) => !u.includes('[draft')).map((u) => u.split(' / ')[0]))]
+      const fresh = [...new Set(r.variantsUnknown.filter((u) => !/\[(draft|archived) — ignored\]/.test(u)).map((u) => u.split(' / ')[0]))]
       return {
         salesFrom: since, unitsSold: r.unitsSold,
         updated: r.variantsUpdated, seenInShopify: r.variantsUpdated + r.variantsUnknown.length,
