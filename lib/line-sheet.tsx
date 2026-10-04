@@ -206,7 +206,7 @@ export async function addNewToLineSheet(): Promise<NewRow[]> {
  * retail with no one rule, and a guessed price on a sheet stores order from is
  * worse than none. So the gap is asked for rather than left to be noticed.
  */
-export function lineSheetQuestion(r: { item: string; colorway: string | null; hasPrice: boolean; hasDescription: boolean }): { title: string; detail: string } | null {
+export function lineSheetQuestion(r: { item: string; colorway: string | null; hasPrice: boolean; hasDescription: boolean; suggestion?: string | null }): { title: string; detail: string } | null {
   const missing = [!r.hasPrice && 'a wholesale price', !r.hasDescription && 'a description'].filter((x): x is string => !!x)
   if (!missing.length) return null
   const name = r.colorway ? `${r.item} (${r.colorway})` : r.item
@@ -214,8 +214,59 @@ export function lineSheetQuestion(r: { item: string; colorway: string | null; ha
     title: `Line sheet: ${missing.includes('a wholesale price') ? 'wholesale price' : 'description'} for ${name}`,
     detail:
       `${name} has just joined the wholesale line sheet. It stays off the PDF stores see until it has ${missing.join(' and ')}. ` +
+      (!r.hasPrice && r.suggestion ? `${r.suggestion} ` : '') +
       'Its minimum order and availability are blank too. Tell Mouse, e.g. "' + r.item + ' wholesale $120, minimum 3, available now".',
   }
+}
+
+export type WholesaleComparable = { name: string; wholesaleCents: number; retailCents: number }
+
+/**
+ * A suggested wholesale price, for a person to accept or change: never
+ * applied by itself. Brandon, 4 Oct 2026: "mouse should ask us wholesale
+ * price (and recommend one)". Worked out here in code, not by the model
+ * (money is never Mouse's arithmetic): Shopify's retail price for the new
+ * product times the median wholesale-to-retail ratio of everything already
+ * priced, to the whole dollar, with the spread and the nearest product by
+ * retail price shown so the number can be judged. Null without a retail
+ * price or anything to compare against. Pure.
+ */
+export function suggestWholesale(retailCents: number[], comparables: WholesaleComparable[]): string | null {
+  const retail = [...new Set(retailCents.filter((c) => c > 0))].sort((a, b) => a - b)
+  const priced = comparables.filter((c) => c.wholesaleCents > 0 && c.retailCents > 0)
+  if (!retail.length || !priced.length) return null
+  const ratios = priced.map((c) => c.wholesaleCents / c.retailCents).sort((a, b) => a - b)
+  const mid = ratios.length % 2 ? ratios[(ratios.length - 1) / 2] : (ratios[ratios.length / 2 - 1] + ratios[ratios.length / 2]) / 2
+  const at = (cents: number) => Math.round((cents * mid) / 100) * 100
+  const pct = (r: number) => `${Math.round(r * 100)}%`
+  const lo = retail[0], hi = retail[retail.length - 1]
+  const price = lo === hi ? dollars(at(lo)) : `${dollars(at(lo))} – ${dollars(at(hi))}`
+  const onRetail = lo === hi ? dollars(lo) : `${dollars(lo)} – ${dollars(hi)}`
+  const near = [...priced].sort((a, b) => Math.abs(a.retailCents - lo) - Math.abs(b.retailCents - lo))[0]
+  return (
+    `Suggested wholesale: ${price}, which is ${pct(mid)} of its ${onRetail} Shopify retail, the middle of the ` +
+    `${priced.length} products already priced (they run ${pct(ratios[0])} to ${pct(ratios[ratios.length - 1])}). ` +
+    `Closest by retail: ${near.name}, ${dollars(near.wholesaleCents)} wholesale on ${dollars(near.retailCents)}.`
+  )
+}
+
+/** Shopify's variant prices for a row, or the product's own price when no variant has one. Pure. */
+export function retailFor(variants: Array<{ retailPriceCents: number | null }>, productRetail: number | null): number[] {
+  const own = variants.map((v) => v.retailPriceCents).filter((c): c is number => c != null)
+  return own.length ? own : productRetail != null ? [productRetail] : []
+}
+
+/** Every active product that already has a wholesale price, as a comparison. */
+async function wholesaleComparables(excludeIds: string[]): Promise<WholesaleComparable[]> {
+  const ps = await db.product.findMany({
+    where: { status: 'ACTIVE', id: { notIn: excludeIds } },
+    select: { name: true, wholesalePriceCents: true, retailPriceCents: true, variants: { select: { wholesalePriceCents: true, retailPriceCents: true } } },
+  })
+  return ps.flatMap((p) => {
+    const ws = p.wholesalePriceCents ?? p.variants.find((v) => v.wholesalePriceCents != null)?.wholesalePriceCents ?? null
+    const retail = p.retailPriceCents ?? p.variants.find((v) => v.retailPriceCents != null)?.retailPriceCents ?? null
+    return ws && retail ? [{ name: p.name, wholesaleCents: ws, retailCents: retail }] : []
+  })
 }
 
 /**
@@ -223,14 +274,18 @@ export function lineSheetQuestion(r: { item: string; colorway: string | null; ha
  * new row cannot print without. Run by the nightly job, after Mouse adds or
  * activates a product, and whenever the sheet is read. Asks once per row.
  */
-export async function lineSheetCatchUp(): Promise<{ added: NewRow[]; asked: string[] }> {
+export async function lineSheetCatchUp(): Promise<{ added: NewRow[]; asked: Array<{ title: string; detail: string }> }> {
   const added = await addNewToLineSheet()
-  const asked: string[] = []
+  const asked: Array<{ title: string; detail: string }> = []
   if (!added.length) return { added, asked }
-  const products = await db.product.findMany({
-    where: { id: { in: [...new Set(added.map((r) => r.productId))] } },
-    select: { id: true, wholesalePriceCents: true, shopifyDescription: true, variants: { select: { wholesalePriceCents: true, colorway: { select: { customerName: true } } } } },
-  })
+  const ids = [...new Set(added.map((r) => r.productId))]
+  const [products, comparables] = await Promise.all([
+    db.product.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, wholesalePriceCents: true, retailPriceCents: true, shopifyDescription: true, variants: { select: { wholesalePriceCents: true, retailPriceCents: true, colorway: { select: { customerName: true } } } } },
+    }),
+    wholesaleComparables(ids),
+  ])
   for (const r of added) {
     const p = products.find((x) => x.id === r.productId)
     if (!p) continue
@@ -239,12 +294,15 @@ export async function lineSheetCatchUp(): Promise<{ added: NewRow[]; asked: stri
       item: r.item, colorway: r.colorway,
       hasPrice: p.wholesalePriceCents != null || vs.some((v) => v.wholesalePriceCents != null),
       hasDescription: !!sheetDescription(p.shopifyDescription),
+      // Shopify's own variant prices (the sync and import keep them), not the
+      // product-level cache, which can be one size's price (CLAUDE.md §6).
+      suggestion: suggestWholesale(retailFor(vs, p.retailPriceCents), comparables),
     })
     if (!q) continue
     const already = await db.actionItem.findFirst({ where: { entityType: 'PRODUCT', entityId: p.id, title: q.title }, select: { id: true } })
     if (already) continue
     await db.actionItem.create({ data: { kind: 'QUESTION', entityType: 'PRODUCT', entityId: p.id, title: q.title, detail: q.detail, source: 'SYSTEM' } })
-    asked.push(q.title)
+    asked.push(q)
   }
   return { added, asked }
 }

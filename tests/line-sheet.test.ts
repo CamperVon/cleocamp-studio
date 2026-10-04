@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { oneOffKey, sheetDescription, chargedDifferently, dollars, ditto, heldBackFor, lineSheetFileName, lineSheetQuestion, missingRows, onThePdf, resolveRow, variantsFor, wholesaleText } from '../lib/line-sheet'
+import { oneOffKey, sheetDescription, chargedDifferently, dollars, ditto, heldBackFor, lineSheetFileName, lineSheetQuestion, missingRows, retailFor, suggestWholesale, onThePdf, resolveRow, variantsFor, wholesaleText } from '../lib/line-sheet'
 
 const v = (colour: string | null, ws: number | null, retail: number | null, onHand = 1, img: string | null = null) =>
   ({ wholesalePriceCents: ws, retailPriceCents: retail, imageUrl: img, onHandQty: onHand, colorway: colour ? { customerName: colour } : null })
@@ -142,4 +142,40 @@ test('a missing description is asked about too, and a new colour is named with i
 
 test('a row that can already print raises no question', () => {
   assert.equal(lineSheetQuestion({ item: 'Mini Bag', colorway: 'Olive', hasPrice: true, hasDescription: true }), null)
+})
+
+const priced = [
+  { name: 'Boy Belt', wholesaleCents: 13000, retailCents: 22800 },   // 57%
+  { name: 'Bateau Bag', wholesaleCents: 16800, retailCents: 28800 }, // 58%
+  { name: 'Story Dress', wholesaleCents: 22000, retailCents: 34800 }, // 63%
+]
+
+test('the suggested wholesale price is Shopify retail times the median ratio, to the dollar, with its basis', () => {
+  const s = suggestWholesale([20000], priced)!
+  // median ratio 168/288 = 0.5833; 200 x 0.5833 = 116.67 -> $117
+  assert.match(s, /^Suggested wholesale: \$117, which is 58% of its \$200 Shopify retail/)
+  assert.match(s, /the 3 products already priced \(they run 57% to 63%\)/)
+  assert.match(s, /Closest by retail: Boy Belt, \$130 wholesale on \$228\./)
+})
+
+test('sizes at different retail prices get a suggested range', () => {
+  assert.match(suggestWholesale([18800, 21800], priced)!, /^Suggested wholesale: \$110 – \$127, which is 58% of its \$188 – \$218 Shopify retail/)
+})
+
+test('no retail price, or nothing priced to compare with, means no suggestion rather than a guess', () => {
+  assert.equal(suggestWholesale([], priced), null)
+  assert.equal(suggestWholesale([20000], []), null)
+})
+
+test('the suggestion uses the variants\' Shopify prices before the product-level cache', () => {
+  assert.deepEqual(retailFor([{ retailPriceCents: 36800 }, { retailPriceCents: null }], 39800), [36800])
+  assert.deepEqual(retailFor([{ retailPriceCents: null }], 39800), [39800])
+  assert.deepEqual(retailFor([], null), [])
+})
+
+test('the question carries the suggestion only when the price is what is missing', () => {
+  const q = lineSheetQuestion({ item: 'Mini Bag', colorway: null, hasPrice: false, hasDescription: true, suggestion: 'Suggested wholesale: $117.' })
+  assert.match(q!.detail, /until it has a wholesale price\. Suggested wholesale: \$117\. Its minimum order/)
+  const d = lineSheetQuestion({ item: 'Mini Bag', colorway: null, hasPrice: true, hasDescription: false, suggestion: 'Suggested wholesale: $117.' })
+  assert.doesNotMatch(d!.detail, /Suggested/)
 })

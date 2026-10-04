@@ -1,4 +1,5 @@
 import { runLoop, type AgentUsage } from '@/lib/mouse/runner'
+import { classifyResult } from '@/lib/mouse/outcomes'
 import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { buildCatalog } from '@/lib/mouse/context'
@@ -92,6 +93,34 @@ export const PROPOSAL_TOOLS = [
  * anyway, because forecasts and alerts were only ever recomputed once a day,
  * by the nightly cron. See refreshForecastsAndAlerts in lib/forecast.ts.
  */
+/**
+ * A product or colour that just went on sale joins the wholesale line sheet
+ * in the same step, and what it cannot print without comes back with the
+ * tool's result, so Mouse asks for it (with the app's suggested price) in the
+ * same reply rather than leaving it in ToDo (Brandon, 4 Oct 2026: "mouse
+ * should ask us wholesale price (and recommend one) when we add a new
+ * product"). The question is in ToDo too, in case the reply is not answered.
+ */
+async function withLineSheetQuestions(name: string, result: unknown): Promise<unknown> {
+  const r = await result
+  if (!LINE_SHEET_TOOLS.has(name) || !r || typeof r !== 'object' || classifyResult(name, r).status !== 'succeeded') return r
+  try {
+    const { lineSheetCatchUp } = await import('@/lib/line-sheet')
+    const { added, asked } = await lineSheetCatchUp()
+    if (!added.length) return r
+    return {
+      ...r,
+      lineSheet: {
+        added: added.map((a) => (a.colorway ? `${a.item} (${a.colorway})` : a.item)),
+        ...(asked.length ? { askNow: asked.map((a) => a.detail), note: 'Ask for these in your reply, with the suggested price as given. Set nothing until they answer.' } : {}),
+      },
+    }
+  } catch (e) {
+    console.error('line sheet catch-up after a write failed:', e)
+    return r
+  }
+}
+
 /** Tools that can put a product or colour on sale, and so on the line sheet. */
 const LINE_SHEET_TOOLS = new Set([
   'create_product', 'update_product', 'create_product_variants', 'create_colorway',
@@ -361,7 +390,7 @@ export async function runAgent(opts: {
       },
       system, messages: msgs, tools,
       execute: async (name, input) => practiceStop(opts.practice === true, name, input) ??
-        withNotesOnWhatChanged(name, input, await TOOLS[name].run(input)),
+        withLineSheetQuestions(name, withNotesOnWhatChanged(name, input, await TOOLS[name].run(input))),
       model: opts.model ?? CHAT_MODEL,
       effort: opts.effort ?? 'high', maxRequests: rounds,
       maxOutputTokens: Number(process.env.MOUSE_MAX_OUTPUT_TOKENS) || 24000,
@@ -468,14 +497,6 @@ export async function runAgent(opts: {
     await refreshForecastsAndAlerts().catch((e) => {
       console.error('refreshForecastsAndAlerts after a write failed:', e)
     })
-  }
-
-  // A product or colour that just went on sale joins the wholesale line
-  // sheet now, not when someone next opens the Wholesale page, and whatever
-  // it cannot print without is asked for (Brandon, 4 Oct 2026).
-  if (result.toolCalls.some((c) => c.status === 'succeeded' && LINE_SHEET_TOOLS.has(c.name))) {
-    const { lineSheetCatchUp } = await import('@/lib/line-sheet')
-    await lineSheetCatchUp().catch((e) => console.error('line sheet catch-up after a write failed:', e))
   }
 
   return result
