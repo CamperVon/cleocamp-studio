@@ -3,8 +3,8 @@ import { db } from '@/lib/db'
 import { previewNotice, sendNoticeChunk, sendNoticeTest, type Match } from '@/lib/waiting-notice'
 import { noticePicture, type NoticePicture } from '@/lib/notice-pictures'
 
-/** `picture` is an id from NOTICE_PICTURES, or '' for words only. */
-export type NoticeInput = { product: string; colours: string; subject: string; message: string; picture: string }
+/** `picture` is an id from NOTICE_PICTURES, or '' for words only. `rootFrom`: send as support@cleocamp.com, this once. */
+export type NoticeInput = { product: string; colours: string; subject: string; message: string; picture: string; rootFrom: boolean }
 
 /** Only a signed-in team member may email customers (CLAUDE.md §4: a person's tap). */
 async function teamMember() {
@@ -46,7 +46,7 @@ export async function testWaiting(i: NoticeInput) {
   if (typeof r === 'string') return { error: r }
   let res
   try {
-    res = await sendNoticeTest(r.m, r.subject, r.message, me.email, r.picture)
+    res = await sendNoticeTest(r.m, r.subject, r.message, me.email, r.picture, i.rootFrom === true)
   } catch (e) {
     return { error: `The test did not send: ${(e as Error).message}` }
   }
@@ -59,7 +59,7 @@ export async function sendWaitingChunk(i: NoticeInput) {
   const r = read(i)
   if (typeof r === 'string') return { error: r }
   try {
-    return { chunk: await sendNoticeChunk(r.m, r.subject, r.message, me.id, 20, r.picture) }
+    return { chunk: await sendNoticeChunk(r.m, r.subject, r.message, me.id, 20, r.picture, i.rootFrom === true) }
   } catch (e) {
     return { error: `Sending stopped: ${(e as Error).message}. Tap send again to carry on; nobody gets it twice.` }
   }

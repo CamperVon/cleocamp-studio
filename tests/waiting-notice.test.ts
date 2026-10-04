@@ -52,3 +52,13 @@ test('every picture on the list has its file in public/notice', async () => {
   const { NOTICE_PICTURES } = await import('../lib/notice-pictures')
   for (const p of NOTICE_PICTURES) for (const img of p.images) assert.ok(existsSync(`public/notice/${img.file}`), img.file)
 })
+
+test('nothing sends from cleocamp.com itself unless a person chose it for that send', async () => {
+  process.env.EMAIL_DRY_RUN = '1'
+  const { sendEmail, ROOT_DOMAIN_FROM } = await import('../lib/email')
+  const refused = await sendEmail({ from: 'Cleo Studio <support@cleocamp.com>', to: ['x@example.com'], subject: 's', text: 't' })
+  assert.equal(refused.sent, false)
+  assert.equal((await sendEmail({ from: 'Cleo Studio <support@cleocamp.com>', personChoseRootFrom: true, to: ['x@example.com'], subject: 's', text: 't' })).sent, true)
+  assert.ok(!ROOT_DOMAIN_FROM.test('Cleo Studio <support@send.cleocamp.com>'))
+  assert.ok(!ROOT_DOMAIN_FROM.test('Studio Mouse <mouse@send.cleocamp.com>'))
+})

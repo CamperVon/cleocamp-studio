@@ -14,7 +14,7 @@ const button = 'rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-40'
  * what was last previewed. See lib/waiting-notice.ts.
  */
 export function WaitingNotice() {
-  const [input, setInput] = useState<NoticeInput>({ product: 'Cleo Tee', colours: 'Black, White', subject: '', message: '', picture: '' })
+  const [input, setInput] = useState<NoticeInput>({ product: 'Cleo Tee', colours: 'Black, White', subject: '', message: '', picture: '', rootFrom: false })
   const [preview, setPreview] = useState<Preview | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [progress, setProgress] = useState<{ sent: number; failed: string[]; remaining: number } | null>(null)
@@ -81,6 +81,15 @@ export function WaitingNotice() {
             <option value="">None, words only</option>
             {NOTICE_PICTURES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
+        </label>
+        <label className="flex items-start gap-2 text-xs text-muted">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={input.rootFrom}
+            onChange={(e) => { setInput({ ...input, rootFrom: e.target.checked }); setPreview(null); setProgress(null) }}
+          />
+          <span>Send from support@cleocamp.com, this once. Otherwise it comes from support@send.cleocamp.com. Replies go to support@ either way.</span>
         </label>
         <p className="text-xs text-faint">
           Sent exactly as written. Optional: {'{first_name}'}, {'{order}'} and {'{items}'} are filled in for each customer,

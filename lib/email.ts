@@ -1,5 +1,18 @@
 import { Resend } from 'resend'
 
+/**
+ * An address on cleocamp.com itself, as opposed to send.cleocamp.com.
+ * Brandon, 4 Oct 2026: "i don't want mouse ever using support@ unless we
+ * tell it to. this is a one time thing." Cleo's note to everyone waiting on
+ * a Cleo Tee went from support@cleocamp.com; everything else the app sends
+ * stays on send.cleocamp.com, which keeps its reputation apart from the
+ * team's Google Workspace mail. So the root domain is refused here, in the
+ * one place every send passes through, unless a person ticked it for that
+ * send (lib/waiting-notice.ts). Shopify invoices from studio@ do not come
+ * through here and are unaffected.
+ */
+export const ROOT_DOMAIN_FROM = /@cleocamp\.com>?\s*$/i
+
 /** Thin wrapper so the provider can be swapped without touching callers. */
 export async function sendEmail(opts: {
   subject: string
@@ -27,9 +40,16 @@ export async function sendEmail(opts: {
   /** Threading, for a reply: In-Reply-To / References to the customer's
    *  own message, so it lands in their conversation rather than a new one. */
   headers?: Record<string, string>
+  /** Only a person's one-off choice on Special sets this: see ROOT_DOMAIN_FROM. */
+  personChoseRootFrom?: boolean
 }) {
   const key = process.env.RESEND_API_KEY
   const from = opts.from ?? process.env.EMAIL_FROM
+
+  // Checked before the dry run, so a test sees the refusal too.
+  if (from && ROOT_DOMAIN_FROM.test(from) && !opts.personChoseRootFrom) {
+    return { sent: false, reason: 'support@cleocamp.com is only used when a person picks it for one send on Special' }
+  }
 
   /**
    * Local runs share this project's real Resend key and its real database —

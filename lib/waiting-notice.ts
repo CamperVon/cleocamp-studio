@@ -147,17 +147,25 @@ async function bodies(picture: NoticePicture | null) {
 }
 
 /** One customer's email, sent to someone else as a test. Records nothing. */
-export async function sendNoticeTest(m: Match, subject: string, template: string, testTo: string, picture: NoticePicture | null = null) {
+export async function sendNoticeTest(m: Match, subject: string, template: string, testTo: string, picture: NoticePicture | null = null, rootFrom = false) {
   const [sample] = await findWaiting(m)
   if (!sample) return { sent: false, reason: 'Nobody is waiting on that.' }
   const body = await bodies(picture)
   const res = await sendEmail({
-    from: SUPPORT_FROM, to: [testTo], replyTo: SUPPORT_REPLY_TO,
+    ...sender(rootFrom), to: [testTo], replyTo: SUPPORT_REPLY_TO,
     subject: `[TEST, as ${sample.name} would get it] ${subject}`,
     ...body(renderNotice(template, sample)),
   })
   return res.sent ? { sent: true } : { sent: false, reason: 'reason' in res ? res.reason : 'not sent' }
 }
+
+/**
+ * Cleo's own address, for one send when a person ticks it on Special
+ * (Brandon, 4 Oct 2026: "a one time thing"). Needs cleocamp.com verified in
+ * Resend; until then the test send says so. lib/email.ts refuses it anywhere else.
+ */
+export const ROOT_FROM = 'Cleo Studio <support@cleocamp.com>'
+const sender = (rootFrom: boolean) => (rootFrom ? { from: ROOT_FROM, personChoseRootFrom: true } : { from: SUPPORT_FROM })
 
 const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
@@ -178,7 +186,7 @@ async function claim(campaign: string, o: WaitingOrder, sentById: string | null)
  * allows about two sends a second. Each order is claimed before its send, so
  * two taps at once cannot both email it.
  */
-export async function sendNoticeChunk(m: Match, subject: string, template: string, sentById: string | null, max = 20, picture: NoticePicture | null = null) {
+export async function sendNoticeChunk(m: Match, subject: string, template: string, sentById: string | null, max = 20, picture: NoticePicture | null = null, rootFrom = false) {
   const campaign = campaignKey(m, subject)
   const body = await bodies(picture)
   const waiting = await findWaiting(m)
@@ -191,7 +199,7 @@ export async function sendNoticeChunk(m: Match, subject: string, template: strin
   for (const o of next) {
     if (!(await claim(campaign, o, sentById))) continue // another tap has it
     const text = renderNotice(template, o)
-    const res = await sendEmail({ from: SUPPORT_FROM, to: [o.email], replyTo: SUPPORT_REPLY_TO, subject, ...body(text) })
+    const res = await sendEmail({ ...sender(rootFrom), to: [o.email], replyTo: SUPPORT_REPLY_TO, subject, ...body(text) })
     if (res.sent) {
       sent++
       await db.$transaction([
