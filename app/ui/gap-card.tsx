@@ -1,5 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import { dismissItem } from '@/app/(main)/items/actions'
 import type { PackagedGap } from '@/lib/gap'
 
 /**
@@ -16,6 +18,12 @@ import type { PackagedGap } from '@/lib/gap'
 export function GapCard({ gap }: { gap: PackagedGap }) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Dismiss closes it like any other ToDo item: already fixed, or not worth
+  // fixing (Brandon, 4 Oct 2026: "we need to be able to dismiss For Claude
+  // entries"). It goes from the list; the record stays, marked dismissed.
+  const [pending, start] = useTransition()
+  const [dismissed, setDismissed] = useState(false)
+  const router = useRouter()
 
   async function copy() {
     try {
@@ -49,6 +57,14 @@ export function GapCard({ gap }: { gap: PackagedGap }) {
         )}
         <button type="button" className="underline" onClick={copy}>
           {copied ? 'Copied' : 'Copy for Claude'}
+        </button>
+        <button
+          type="button"
+          disabled={pending || dismissed}
+          onClick={() => start(async () => { await dismissItem(gap.id); setDismissed(true); router.refresh() })}
+          className="ml-auto rounded-lg border border-line px-3 py-1.5 text-xs text-muted hover:bg-sunk disabled:opacity-40"
+        >
+          {dismissed ? 'Dismissed' : pending ? 'Dismissing…' : 'Dismiss'}
         </button>
       </div>
 

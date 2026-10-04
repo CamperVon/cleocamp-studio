@@ -14,6 +14,12 @@ Mouse's draft as it stood (`reviewDraft`). Fix the cause, then set
 `reviewedAt` and a one-line `reviewOutcome` so the list at the top of
 Support clears.
 
+**Log every change to Mouse in `docs/ADDITIONS-SINCE-2026-10-03.md`,** in
+the same commit (Brandon, 4 Oct 2026). A copy of this code was taken on
+3 Oct 2026 for a separate, general Mouse product; that file is how anything
+added here afterwards gets carried across by hand. Say whether each change
+is general, an add-on, or Cleo only.
+
 **If `HANDOFF.md` exists in this repo, read it now, before doing anything
 else.** It is written by whoever worked here last: where things stand, what is
 in flight, what has already been settled so it is not argued again, and the
