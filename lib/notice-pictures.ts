@@ -14,10 +14,17 @@
 export type NoticeImage = { file: string; cid: string; alt: string; width: number }
 export type NoticePicture = { id: string; label: string; images: NoticeImage[] }
 
-// Cleo's signature and the packing collage for the Cleo Tee email go here
-// once the photos are in (public/notice/cleo-signature.png,
-// public/notice/cleo-tee-collage.jpg).
+// The collage's shipping labels have customers' names and addresses
+// blurred: it goes to about a hundred other customers.
 export const NOTICE_PICTURES: NoticePicture[] = [
+  {
+    id: 'cleo-tee-oct-2026',
+    label: "Cleo's signature, then the packing collage",
+    images: [
+      { file: 'cleo-signature.png', cid: 'signature', alt: 'love, Cleo', width: 170 },
+      { file: 'cleo-tee-collage.jpg', cid: 'collage', alt: 'Packing and shipping orders from the studio', width: 600 },
+    ],
+  },
 ]
 
 export function noticePicture(id: string | null | undefined): NoticePicture | null {

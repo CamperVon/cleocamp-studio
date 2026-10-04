@@ -161,7 +161,7 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
   - "Message everyone waiting" has a "Pictures below the words" choice. The email gets an HTML version: the same words, then the pictures, attached inline (`cid:`) so mail apps that block linked images still show them. The plain-text part is unchanged.
   - Pictures come from a fixed list (`NOTICE_PICTURES`), files in `public/notice/`, so the page can never name a file of its own. Read from disk at send time; a missing file stops the send before anyone is emailed.
   - The page preview and the test send both show them. `sendEmail` attachments take an optional `contentId`.
-  - The list is empty until the photos are in.
+  - First entry: Cleo's "love Cleo" signature, then a 12-photo collage (studio, packing, the Hulken runs, the post office dock). Customers' names and addresses on the shipping labels are blurred, since it goes to about a hundred other customers.
 - **Files:** `lib/notice-pictures.ts`, `lib/waiting-notice.ts`, `lib/email.ts`, `app/(main)/special/actions.ts`, `app/ui/waiting-notice.tsx`, `next.config.ts`, `tests/waiting-notice.test.ts`
 - **Carries over:** General (the mechanism); the pictures themselves are Cleo only.
 
