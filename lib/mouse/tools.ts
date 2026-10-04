@@ -3189,17 +3189,18 @@ export const TOOLS: Record<string, Tool> = {
     def: {
       name: 'check_sent_mail',
       description:
-        'Look up what has actually been emailed, from the record rather than from memory. ' +
-        'USE THIS BEFORE SAYING ANYTHING ABOUT WHETHER A MESSAGE WENT OUT — especially before ' +
-        'telling someone a mail they believe they received was never sent. On 18 Sept 2026 ' +
-        'Brandon said an email had arrived; Mouse told him twice it had never been sent and ' +
-        'then refused to act on it. The row was in this table the whole time, sent four ' +
-        'minutes earlier, to the wrong address. A person reporting what is in their own inbox ' +
-        'is evidence; your recollection of your own past turns is not.',
+        'Look up what has actually been emailed, from the record rather than from memory: who, ' +
+        'when, the subject, and the full text of the newest matches (up to 5), so you can quote, ' +
+        'resend or revise what went out. Use it before saying whether a message was sent, and ' +
+        'before saying you do not have the wording of something you sent earlier: an email from ' +
+        'earlier today may be too far back in the chat for you to see, but it is here. A person ' +
+        'reporting what is in their own inbox is evidence; your memory of your past turns is not. ' +
+        'Narrow it with to, subject or days.',
       input_schema: {
         type: 'object',
         properties: {
           to: str('Only mail to this address, if you are checking one recipient'),
+          subject: str('Only mail whose subject contains this, e.g. "Supplies to buy"'),
           days: num('How far back to look. Default 7.'),
         },
       },
@@ -3210,19 +3211,25 @@ export const TOOLS: Record<string, Tool> = {
         where: {
           createdAt: { gte: since },
           ...(i.to ? { toAddress: { contains: String(i.to), mode: 'insensitive' as const } } : {}),
+          ...(i.subject ? { subject: { contains: String(i.subject), mode: 'insensitive' as const } } : {}),
         },
         orderBy: { createdAt: 'desc' },
         take: 25,
-        select: { toAddress: true, ccAddress: true, subject: true, sentBy: true, createdAt: true },
+        select: { toAddress: true, ccAddress: true, subject: true, body: true, sentBy: true, createdAt: true },
       })
+      // The text of the newest five. Brandon, 4 Oct 2026: asked to send Jane
+      // a revised list, Mouse found the morning's email here but got its
+      // subject only, said it "didn't have the wording", and worked the list
+      // out again from scratch.
       return {
         count: rows.length,
-        sent: rows.map((r) => ({
+        sent: rows.map((r, n) => ({
           at: r.createdAt.toISOString(),
           to: r.toAddress,
           cc: r.ccAddress,
           subject: r.subject,
           by: r.sentBy ?? 'chat',
+          ...(n < 5 ? { text: r.body.length > 6000 ? `${r.body.slice(0, 6000)}… [cut]` : r.body } : {}),
         })),
       }
     },

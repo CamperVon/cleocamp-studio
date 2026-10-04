@@ -106,3 +106,12 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
   - Only a signed-in team member can send.
 - **Files:** `lib/waiting-notice.ts`, `app/(main)/support/waiting/`, `app/ui/waiting-notice.tsx`, `prisma/schema.prisma` (`CustomerNotice`, migration `20261004230000_customer_notice`)
 - **Carries over:** Add-on (Shopify plus email). Worth it: any maker with pre-orders needs this.
+
+### 4 Oct · Mouse can read the emails it sent
+- **Why:** asked to send Jane a revised supply list, Mouse said "I didn't have the wording of today's earlier list" and worked the list out again from scratch. Brandon: "how can we make mouse smarter".
+- **The cause was in the code:** `check_sent_mail` found the morning's email but returned only its subject, never its text. The chat history Mouse reads is the last 20 messages, and that conversation had 36.
+- **What changed:**
+  - `check_sent_mail` now returns the full text of the newest 5 matches and can filter by subject.
+  - One rule: look up anything you said or sent earlier before saying you don't have it, and revise what was sent rather than starting over.
+- **Files:** `lib/mouse/tools.ts`, `lib/mouse/prompt.ts`
+- **Carries over:** General.
