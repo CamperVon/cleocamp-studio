@@ -82,19 +82,12 @@ export default async function Products() {
       flags.push({ tone: 'warn', text: 'A bill-of-materials quantity is still unknown.' })
     }
 
-    const activity = Math.max(
-      ...relatedPos.map((x) => x.po.orderedAt?.getTime() ?? x.po.createdAt.getTime()),
-      ...relatedRuns.map((r) => r.startedAt?.getTime() ?? r.createdAt.getTime()),
-      soldTotal > 0 ? Date.now() - 1e10 : 0,
-      p.createdAt.getTime() - 1e12,
-    )
-
-    return { p, relatedPos, relatedRuns, soldTotal, onHand, weeks, flags, activity }
+    return { p, relatedPos, relatedRuns, soldTotal, onHand, weeks, flags }
   })
 
-  // Most recent activity first. Both fabric POs went out the same minute, so
-  // ties break on what is actually selling — the hero product leads.
-  rows.sort((a, b) => b.activity - a.activity || b.soldTotal - a.soldTotal)
+  // A to Z within each group (Brandon, 4 Oct 2026). Anything urgent still
+  // shows on its closed line, so nothing that needs attention sinks.
+  rows.sort((a, b) => a.p.name.localeCompare(b.p.name, 'en', { sensitivity: 'base', numeric: true }))
 
   // One line per product, opened on a tap. Brandon, 26 Sept 2026: "make the
   // products drop down to make it easier on the eye." Anything flagged
@@ -106,7 +99,7 @@ export default async function Products() {
   ].filter((g) => g.items.length)
 
   return (
-    <Page title="Products" lede="Most recently active first. Tap a product for what is on order, in production, and what Studio Mouse would flag.">
+    <Page title="Products" lede="A to Z. Tap a product for what is on order, in production, and what Studio Mouse would flag.">
       {groups.map((g) => (
         <Card key={g.title} title={`${g.title} (${g.items.length})`}>
           <ul className="divide-y divide-line">
