@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { db } from '@/lib/db'
 import { Card, Empty, Page } from '@/app/ui/primitives'
 import { SupportCase, type CaseView } from '@/app/ui/support-case'
@@ -77,6 +78,10 @@ export default async function Support() {
     <Page title="Support" lede="Customer email to support@cleocamp.com, sorted by Mouse, with a reply drafted. Nothing reaches a customer until someone taps Send.">
       <OrderLookup />
       <ReturnIntake />
+      <Link href="/support/waiting" className="rounded-xl border border-line px-4 py-3 text-sm hover:bg-sunk">
+        <span className="font-medium">Message everyone waiting</span>
+        <span className="block text-xs text-muted">Email every customer still waiting on a product, about their own order.</span>
+      </Link>
       {flagged.length ? (
         <Card title={`For Brandon & Claude (${flagged.length})`}>
           <ul className="divide-y divide-line">

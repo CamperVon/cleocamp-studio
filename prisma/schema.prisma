@@ -1604,3 +1604,26 @@ model Contact {
 
   @@index([circle, removedAt])
 }
+
+/// One email to one customer about their own order, sent from "Message
+/// everyone waiting" (Support). Brandon, 4 Oct 2026: Cleo emails everyone
+/// still waiting on a Black or White Cleo Tee. A row per order per notice is
+/// what stops a second tap, or a send that resumes after a timeout, from
+/// emailing anyone twice. Nothing here touches the order in Shopify.
+model CustomerNotice {
+  id        String   @id @default(cuid())
+  /// Which notice: the product, colours and subject it was sent under.
+  campaign  String
+  orderId   String
+  orderName String
+  email     String
+  /// "sent" or "failed".
+  status    String
+  error     String?
+  resendId  String?
+  sentById  String?
+  createdAt DateTime @default(now())
+
+  @@unique([campaign, orderId])
+  @@index([campaign])
+}

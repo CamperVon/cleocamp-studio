@@ -90,3 +90,19 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **What:** archived listings are now skipped the same way draft ones already were. Mouse no longer offers to import them.
 - **Files:** `lib/integrations/shopify-sync.ts`, `lib/mouse/tools.ts` (`sync_shopify`)
 - **Carries over:** Add-on (Shopify).
+
+### 4 Oct · "Message everyone waiting" (Support)
+- **Why:** Brandon: Cleo needs to email everyone who ordered a tee that hasn't shipped, "without shopify screwing something up". Shopify Email only reaches marketing subscribers, and 27 of the first 50 waiting customers weren't subscribed.
+- **What:** a page under Support where you:
+  1. Set the product and colours.
+  2. Paste a subject and message.
+  3. Check who gets it: a count, the order list, and one customer's email exactly as it will arrive.
+  4. Send yourself a test.
+  5. Send to everyone.
+- **How it behaves:**
+  - Each customer gets one email about their own order, from support@, with `{first_name}`, `{order}` and `{items}` filled in. No model writes or changes the wording.
+  - Shopify is only read: no tags, edits, fulfilments or cancellations.
+  - Sends are recorded per order (`CustomerNotice`), so nobody gets the same notice twice. A failed send is retried on the next tap.
+  - Only a signed-in team member can send.
+- **Files:** `lib/waiting-notice.ts`, `app/(main)/support/waiting/`, `app/ui/waiting-notice.tsx`, `prisma/schema.prisma` (`CustomerNotice`, migration `20261004230000_customer_notice`)
+- **Carries over:** Add-on (Shopify plus email). Worth it: any maker with pre-orders needs this.
