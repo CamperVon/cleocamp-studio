@@ -107,7 +107,9 @@ export default function Manual() {
             <p>
               <b>New product on Shopify?</b> Mouse doesn&rsquo;t know it until it&rsquo;s brought in.
               Tell Mouse its name or paste its cleocamp.com link, and say yes when it asks to bring it
-              in. Then it can be invoiced, counted and put on the line sheet.
+              in. Then it can be invoiced and counted, and it joins the wholesale line sheet by itself.
+              If it has no wholesale price yet, a question in ToDo asks for one: answer it, or tell
+              Mouse (&ldquo;Bateau Bag wholesale $168, minimum 2&rdquo;).
             </p>
             <ul className="flex flex-col gap-2">
               <Try say="Find Sardine on Shopify" />

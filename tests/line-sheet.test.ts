@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { oneOffKey, sheetDescription, chargedDifferently, dollars, ditto, heldBackFor, lineSheetFileName, missingRows, onThePdf, resolveRow, variantsFor, wholesaleText } from '../lib/line-sheet'
+import { oneOffKey, sheetDescription, chargedDifferently, dollars, ditto, heldBackFor, lineSheetFileName, lineSheetQuestion, missingRows, onThePdf, resolveRow, variantsFor, wholesaleText } from '../lib/line-sheet'
 
 const v = (colour: string | null, ws: number | null, retail: number | null, onHand = 1, img: string | null = null) =>
   ({ wholesalePriceCents: ws, retailPriceCents: retail, imageUrl: img, onHandQty: onHand, colorway: colour ? { customerName: colour } : null })
@@ -125,4 +125,21 @@ test('a row with its own words keeps them; one without prints Shopify\'s', () =>
   const p = { id: 'x', wholesalePriceCents: 4000, retailPriceCents: 6800, shopifyDescription: 'Fits both Bateau bags.', variants: [v(null, null, 6800)] }
   assert.equal(resolveRow({ colorway: null, wholesaleCents: null, msrp: null, description: '' }, p).description, 'Fits both Bateau bags.')
   assert.equal(resolveRow({ colorway: null, wholesaleCents: null, msrp: null, description: 'Our words.' }, p).description, 'Our words.')
+})
+
+test('a new line-sheet row missing its wholesale price is asked about, by name', () => {
+  const q = lineSheetQuestion({ item: 'Mini Bag', colorway: null, hasPrice: false, hasDescription: true })
+  assert.equal(q?.title, 'Line sheet: wholesale price for Mini Bag')
+  assert.match(q!.detail, /stays off the PDF stores see until it has a wholesale price\./)
+})
+
+test('a missing description is asked about too, and a new colour is named with its product', () => {
+  const both = lineSheetQuestion({ item: 'Mini Bag', colorway: 'Olive', hasPrice: false, hasDescription: false })
+  assert.equal(both?.title, 'Line sheet: wholesale price for Mini Bag (Olive)')
+  assert.match(both!.detail, /a wholesale price and a description/)
+  assert.equal(lineSheetQuestion({ item: 'Mini Bag', colorway: null, hasPrice: true, hasDescription: false })?.title, 'Line sheet: description for Mini Bag')
+})
+
+test('a row that can already print raises no question', () => {
+  assert.equal(lineSheetQuestion({ item: 'Mini Bag', colorway: 'Olive', hasPrice: true, hasDescription: true }), null)
 })

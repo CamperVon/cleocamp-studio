@@ -25,7 +25,8 @@ import { wordmark, WORDMARK_RATIO } from '@/lib/brand'
  * it, like the custom pouches.
  *
  * New things join by themselves (Brandon, same day: "It should include new
- * products as we add them"): addNewToLineSheet, run whenever the sheet is
+ * products as we add them"): addNewToLineSheet, run by lineSheetCatchUp
+ * nightly, after Mouse adds or activates a product, and whenever the sheet is
  * read, gives a row to every active product, and every active colour of one,
  * that is for sale on Shopify and not on the sheet yet. A row a person
  * removed stays removed. A row stays off the PDF until it has a wholesale
@@ -195,6 +196,59 @@ export async function addNewToLineSheet(): Promise<NewRow[]> {
   })
 }
 
+/**
+ * What a newly added row still needs before it prints, as a question for the
+ * ToDo list, or null when it can already go on the PDF. Pure.
+ *
+ * Brandon, 4 Oct 2026: "any time a new product is officially added, wholesale
+ * is automatically updated." The row arrives on its own (addNewToLineSheet);
+ * the wholesale price cannot, since the team's prices run from 54% to 63% of
+ * retail with no one rule, and a guessed price on a sheet stores order from is
+ * worse than none. So the gap is asked for rather than left to be noticed.
+ */
+export function lineSheetQuestion(r: { item: string; colorway: string | null; hasPrice: boolean; hasDescription: boolean }): { title: string; detail: string } | null {
+  const missing = [!r.hasPrice && 'a wholesale price', !r.hasDescription && 'a description'].filter((x): x is string => !!x)
+  if (!missing.length) return null
+  const name = r.colorway ? `${r.item} (${r.colorway})` : r.item
+  return {
+    title: `Line sheet: ${missing.includes('a wholesale price') ? 'wholesale price' : 'description'} for ${name}`,
+    detail:
+      `${name} has just joined the wholesale line sheet. It stays off the PDF stores see until it has ${missing.join(' and ')}. ` +
+      'Its minimum order and availability are blank too. Tell Mouse, e.g. "' + r.item + ' wholesale $120, minimum 3, available now".',
+  }
+}
+
+/**
+ * Bring the line sheet up to date with the products, and ask for whatever a
+ * new row cannot print without. Run by the nightly job, after Mouse adds or
+ * activates a product, and whenever the sheet is read. Asks once per row.
+ */
+export async function lineSheetCatchUp(): Promise<{ added: NewRow[]; asked: string[] }> {
+  const added = await addNewToLineSheet()
+  const asked: string[] = []
+  if (!added.length) return { added, asked }
+  const products = await db.product.findMany({
+    where: { id: { in: [...new Set(added.map((r) => r.productId))] } },
+    select: { id: true, wholesalePriceCents: true, shopifyDescription: true, variants: { select: { wholesalePriceCents: true, colorway: { select: { customerName: true } } } } },
+  })
+  for (const r of added) {
+    const p = products.find((x) => x.id === r.productId)
+    if (!p) continue
+    const vs = variantsFor(p, r.colorway)
+    const q = lineSheetQuestion({
+      item: r.item, colorway: r.colorway,
+      hasPrice: p.wholesalePriceCents != null || vs.some((v) => v.wholesalePriceCents != null),
+      hasDescription: !!sheetDescription(p.shopifyDescription),
+    })
+    if (!q) continue
+    const already = await db.actionItem.findFirst({ where: { entityType: 'PRODUCT', entityId: p.id, title: q.title }, select: { id: true } })
+    if (already) continue
+    await db.actionItem.create({ data: { kind: 'QUESTION', entityType: 'PRODUCT', entityId: p.id, title: q.title, detail: q.detail, source: 'SYSTEM' } })
+    asked.push(q.title)
+  }
+  return { added, asked }
+}
+
 /** Price, suggested retail, photo and stock for one row, from its product as it is now. Pure. */
 export function resolveRow(
   row: { colorway: string | null; wholesaleCents: number | null; msrp: string | null; description?: string },
@@ -287,7 +341,7 @@ export function sheetPhoto(url: string | null): string | null {
 
 export async function loadLineSheet(opts: { includeHidden?: boolean } = {}): Promise<{ meta: LineSheetMetaText | null; lines: LineSheetLine[] }> {
   // A failure here leaves the sheet as it was rather than blanking it.
-  await addNewToLineSheet().catch((e) => console.error('line sheet: adding new products failed', e))
+  await lineSheetCatchUp().catch((e) => console.error('line sheet: adding new products failed', e))
   const [meta, rows] = await Promise.all([
     db.lineSheetMeta.findUnique({ where: { id: 'main' } }),
     db.lineSheetRow.findMany({ where: opts.includeHidden ? {} : { hidden: false }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),

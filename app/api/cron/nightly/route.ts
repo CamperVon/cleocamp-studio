@@ -98,6 +98,14 @@ export async function GET(req: NextRequest) {
     }
   })
 
+  // Anything that went on sale in Shopify joins the wholesale line sheet,
+  // with a question for whatever it cannot print without.
+  await step('lineSheet', async () => {
+    const { lineSheetCatchUp } = await import('@/lib/line-sheet')
+    const r = await lineSheetCatchUp()
+    return { added: r.added.length, asked: r.asked.length }
+  })
+
   // First the structured intake — the routine's balances email is data, not
   // correspondence, and should not be reasoned about.
   await step('balances', () => processInbox())

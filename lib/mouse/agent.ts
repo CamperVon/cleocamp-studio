@@ -92,6 +92,12 @@ export const PROPOSAL_TOOLS = [
  * anyway, because forecasts and alerts were only ever recomputed once a day,
  * by the nightly cron. See refreshForecastsAndAlerts in lib/forecast.ts.
  */
+/** Tools that can put a product or colour on sale, and so on the line sheet. */
+const LINE_SHEET_TOOLS = new Set([
+  'create_product', 'update_product', 'create_product_variants', 'create_colorway',
+  'update_colorway', 'import_from_shopify', 'sync_shopify',
+])
+
 const FORECAST_RELEVANT_TOOLS = new Set([
   'log_inventory_event',
   'correct_inventory_event',
@@ -462,6 +468,14 @@ export async function runAgent(opts: {
     await refreshForecastsAndAlerts().catch((e) => {
       console.error('refreshForecastsAndAlerts after a write failed:', e)
     })
+  }
+
+  // A product or colour that just went on sale joins the wholesale line
+  // sheet now, not when someone next opens the Wholesale page, and whatever
+  // it cannot print without is asked for (Brandon, 4 Oct 2026).
+  if (result.toolCalls.some((c) => c.status === 'succeeded' && LINE_SHEET_TOOLS.has(c.name))) {
+    const { lineSheetCatchUp } = await import('@/lib/line-sheet')
+    await lineSheetCatchUp().catch((e) => console.error('line sheet catch-up after a write failed:', e))
   }
 
   return result

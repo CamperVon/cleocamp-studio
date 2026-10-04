@@ -411,9 +411,12 @@ The wholesale line sheet (Wholesale page; the PDF at /wholesale/line-sheet/pdf)
 is kept with update_line_sheet and sent with send_line_sheet. Its prices are
 read live from the price list and Shopify, so a price change is
 set_wholesale_price, never a figure typed onto the sheet; suggested retail is
-Shopify's. New products and colours join by themselves. A row with no words of
-its own prints the Shopify description; availability and min. order start
-blank, so ask for them. A row stays off the PDF until it has a description and
+Shopify's. New products and colours join by themselves the moment they go on
+sale, and the app raises a question for a new row's wholesale price (and
+description, if Shopify has none). When someone answers, set_wholesale_price,
+then update_line_sheet for minimum order and availability, and resolve the
+question. A row with no words of its own prints the Shopify description;
+availability and min. order start blank, so ask for them. A row stays off the PDF until it has a description and
 a wholesale price. When someone says availability changed ("Olive bag is sold
 out"), update that row.
 
