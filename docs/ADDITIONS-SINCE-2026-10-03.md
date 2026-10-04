@@ -79,19 +79,20 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Files:** `lib/line-sheet.tsx` (`suggestWholesale`, `retailFor`), `lib/mouse/agent.ts` (`withLineSheetQuestions`), `lib/mouse/prompt.ts`
 - **Carries over:** Cleo only for now. The price-suggestion idea is general.
 
-### 4 Oct · Dismiss on "For Claude" items
+### 4 Oct · `54fb760` · Dismiss on "For Claude" items, and this log
 - **Why:** Brandon: "we need to be able to dismiss For Claude entries."
 - **What:** each "For Claude" card on the ToDo page has a Dismiss button. It closes the item like any other ToDo item: it leaves the list, and the record stays, marked dismissed.
-- **Files:** `app/ui/gap-card.tsx`
-- **Carries over:** General.
+- **Also in this commit:** this log, and the rule in `CLAUDE.md` that every change to Mouse is added here in the same commit.
+- **Files:** `app/ui/gap-card.tsx`, `docs/ADDITIONS-SINCE-2026-10-03.md`, `CLAUDE.md`
+- **Carries over:** General (the Dismiss button).
 
-### 4 Oct · Shopify sync ignores archived listings
+### 4 Oct · `46f5772` · Shopify sync ignores archived listings
 - **Why:** Brandon on Mouse's question about an old Cleo Tee listing: "i don't understand this". The sync had reported a retired, archived Shopify listing (Black and White at zero) as "not in the app", and Mouse asked whether to bring it in.
 - **What:** archived listings are now skipped the same way draft ones already were. Mouse no longer offers to import them.
 - **Files:** `lib/integrations/shopify-sync.ts`, `lib/mouse/tools.ts` (`sync_shopify`)
 - **Carries over:** Add-on (Shopify).
 
-### 4 Oct · "Message everyone waiting" (Support)
+### 4 Oct · `0cbc580` · "Message everyone waiting" (Support)
 - **Why:** Brandon: Cleo needs to email everyone who ordered a tee that hasn't shipped, "without shopify screwing something up". Shopify Email only reaches marketing subscribers, and 27 of the first 50 waiting customers weren't subscribed.
 - **What:** a page under Support where you:
   1. Set the product and colours.
@@ -107,7 +108,7 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Files:** `lib/waiting-notice.ts`, `app/(main)/support/waiting/`, `app/ui/waiting-notice.tsx`, `prisma/schema.prisma` (`CustomerNotice`, migration `20261004230000_customer_notice`)
 - **Carries over:** Add-on (Shopify plus email). Worth it: any maker with pre-orders needs this.
 
-### 4 Oct · Mouse can read the emails it sent
+### 4 Oct · `68bfe2b` · Mouse can read the emails it sent
 - **Why:** asked to send Jane a revised supply list, Mouse said "I didn't have the wording of today's earlier list" and worked the list out again from scratch. Brandon: "how can we make mouse smarter".
 - **The cause was in the code:** `check_sent_mail` found the morning's email but returned only its subject, never its text. The chat history Mouse reads is the last 20 messages, and that conversation had 36.
 - **What changed:**
@@ -116,7 +117,7 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Files:** `lib/mouse/tools.ts`, `lib/mouse/prompt.ts`
 - **Carries over:** General.
 
-### 4 Oct · PO 2389 put right, and why it went wrong
+### 4 Oct · `fa647db` · PO 2389 put right, and why it went wrong
 - **Why:** Brandon: "all i asked of mouse was to note that one silver bean bag needed to be delivered this week."
 - **Three things went wrong:**
   - Mouse read "add to PO 2389: we need one silver bean bag this week" as one more bag (4 to 5), and said so, instead of asking.
@@ -136,7 +137,7 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Files:** `lib/po-pdf.tsx`, `lib/mouse/tools.ts`, `lib/mouse/context.ts`, `lib/mouse/prompt.ts`
 - **Carries over:** General.
 
-### 4 Oct · Mouse can search the whole chat
+### 4 Oct · `fa647db` · Mouse can search the whole chat
 - **Why:** Brandon said yes to making Mouse smarter after it lost a list from earlier in a long conversation. Mouse only sees the last 20 messages of the current chat.
 - **What:**
   - New `search_chat` tool: searches every chat message by its words, any day (default 14 days back), newest 10, with who said it and the text.
@@ -144,3 +145,49 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
   - Look-up tools (`check_sent_mail`, `search_chat`, the find tools and others) no longer count as writes.
 - **Files:** `lib/mouse/tools.ts`, `lib/mouse/outcomes.ts`, `lib/mouse/agent.ts`, `lib/mouse/nightly-pass.ts`, `lib/mouse/prompt.ts`
 - **Carries over:** General.
+
+---
+
+## Changes to records, not code
+
+These were made directly in Cleo Camp's database or Shopify, not in the code. They don't carry over to the new product: they're Cleo Camp's own data. They're listed so the history is complete.
+
+### 3 Oct · QuickBooks figures recorded
+- The nightly routine recorded the 2 Oct figures on 3 Oct and the 3 Oct figures on 4 Oct. Every cross-check passed.
+- Nothing about the routine changed.
+
+### 4 Oct · Note: Black and White Cleo Tees below zero are pre-orders
+- **Why:** Brandon: "don't worry about pre-orders. no tees have come in yet."
+- **What:** a note on the Cleo Tee. The Black and White tees below zero in Shopify are pre-orders against the run at Antonio's (PO 2360), so Mouse shouldn't flag them or ask about them. When the tees arrive, Mouse logs them as RECEIVED against PO 2360, never as a count, which would wipe out the pre-orders still waiting to ship.
+
+### 4 Oct · Story Dress and You Dress: "continue selling" notes replaced
+- **Why:** Mouse's email to Cleo said "continue selling when out of stock" was still on for the Story Dress. That was wrong: it was switched off on 2 Oct. Mouse was going by a note written before the switch. Brandon: "tell mouse that re: story dress, it doesn't know".
+- **What:** Shopify was checked on 4 Oct. All 8 Story Dress and all 6 You Dress sizes are set to stop selling at zero. The two old notes were retired and replaced with that fact.
+- **Not yet done:** the email Mouse sent Cleo still carries the wrong line. A correction was offered but not sent.
+
+### 4 Oct · PO 2389 and the silk to-do
+- **PO 2389 (draft):**
+  - Silver Medium Bean Bags back from 5 to 4.
+  - The rush written into the printed notes, in English and Spanish.
+  - The wrong "For: Cleo Bag — Silver" removed.
+- **Silk to-do for Cleo:** now says 4 Silver bags.
+- **Not yet done:** that day's silk email to Cleo and revised supply list to Jane both say 5 Silver bags. A correction was offered but not sent.
+
+### 4 Oct · New database table `CustomerNotice`
+- Added for "Message everyone waiting", by migration `20261004230000_customer_notice`. It's a new, empty table, and nothing else changed.
+
+### Checked, not changed
+- **Shopify, 4 Oct:**
+  - Iceland isn't a shipping country. It was never set up, and no orders have come from there.
+  - The Cleo Tee has an old archived listing in Black and White at zero.
+  - 273 orders are open and not fully shipped, mostly Black and White tee pre-orders.
+- **Domains, 4 Oct:** studiomouse.ai, mymouse.ai and shopmouse.ai showed as available.
+
+---
+
+## Outside this repo
+
+- **3 Oct · Handoff document and code snapshot for the new product:**
+  - `MOUSE-HANDOFF.md` describes what Mouse is, how it's built and what it can do, plus the setup steps for Jonathan. Say Cheese was added as a feature to build out.
+  - A zip of the code at `aa300cc`: no git history, no secrets or data, real customer emails, names and a phone number replaced with made-up ones, and test files built on customer mail left out.
+  - Neither was committed here. Both were handed to Brandon as files.
