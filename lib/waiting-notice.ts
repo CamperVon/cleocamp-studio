@@ -164,7 +164,7 @@ export async function sendNoticeTest(m: Match, subject: string, template: string
  * (Brandon, 4 Oct 2026: "a one time thing"). Needs cleocamp.com verified in
  * Resend; until then the test send says so. lib/email.ts refuses it anywhere else.
  */
-export const ROOT_FROM = 'Cleo Studio <support@cleocamp.com>'
+export const ROOT_FROM = 'Cleo <support@cleocamp.com>'
 const sender = (rootFrom: boolean) => (rootFrom ? { from: ROOT_FROM, personChoseRootFrom: true } : { from: SUPPORT_FROM })
 
 const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))

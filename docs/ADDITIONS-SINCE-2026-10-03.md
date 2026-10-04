@@ -169,6 +169,7 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Why:** Brandon wanted Cleo's tee note to come from support@cleocamp.com: "i don't want mouse ever using support@ unless we tell it to. this is a one time thing."
 - **What:**
   - Special has a tick box: "Send from support@cleocamp.com, this once." It's off by default; otherwise the notice comes from support@send.cleocamp.com as before.
+  - Ticked, the sender reads just "Cleo" (Brandon: the note is from her and signed "love Cleo"). Everyday support replies stay "Cleo Studio".
   - `sendEmail` refuses any From on cleocamp.com itself (not send.cleocamp.com) unless that box was ticked for the send. The check sits in the one place every send passes through, so Mouse, the nightly pass, support replies and a mis-set `SUPPORT_FROM` can't use it. Shopify invoices from studio@ don't go through `sendEmail` and are unaffected.
   - Needs cleocamp.com added and verified in Resend (by Brandon) with the return path on `bounces`, so `send.cleocamp.com`'s inbox and the Google MX/SPF are untouched.
 - **Files:** `lib/email.ts`, `lib/waiting-notice.ts`, `app/(main)/special/actions.ts`, `app/ui/waiting-notice.tsx`, `tests/waiting-notice.test.ts`
