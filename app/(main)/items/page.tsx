@@ -4,6 +4,7 @@ import { ItemRow } from '@/app/ui/item-row'
 import { SuggestedCloses } from '@/app/ui/suggested-closes'
 import { packageGap } from '@/lib/gap'
 import { GapCard } from '@/app/ui/gap-card'
+import { PageChat } from '@/app/ui/page-chat'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,6 +35,7 @@ export default async function Items() {
       title="ToDo"
       lede="Everything Studio Mouse is waiting on — questions it needs answered and todos people have set."
     >
+      <PageChat page="ToDo" placeholder="Something to do…" />
       <SuggestedCloses
         showReview
         items={open.filter((i) => i.closeSuggestion).map((i) => ({ id: i.id, title: i.title, why: i.closeSuggestion! }))}

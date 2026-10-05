@@ -4117,7 +4117,8 @@ export const TOOLS: Record<string, Tool> = {
           phone: str('Phone'),
           company: str('Agency, publication or talent they style for'),
           instagram: str('Instagram handle'),
-          notes: str('Replaces the notes'),
+          notes: str('Replaces the notes. Only when someone asks to rewrite them; to add a thought use addToNotes'),
+          addToNotes: str('A thought or fact to add under the notes already there, dated. Nothing already written is lost'),
         },
         required: [],
       },
@@ -4129,6 +4130,11 @@ export const TOOLS: Record<string, Tool> = {
         if (typeof v === 'string' && v.trim()) data[k] = k === 'email' ? v.trim().toLowerCase() : v.trim()
       }
       if (data.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email)) return { saved: false, reason: 'That is not an email address. Ask again.' }
+      if (typeof i.addToNotes === 'string' && i.addToNotes.trim()) {
+        const { appendNote } = await import('@/lib/append-note')
+        const before = data.notes ?? (i.stylistId ? (await db.stylist.findUnique({ where: { id: String(i.stylistId) }, select: { notes: true } }))?.notes : null)
+        data.notes = appendNote(before, i.addToNotes)
+      }
       if (i.stylistId) {
         const s = await db.stylist.update({ where: { id: String(i.stylistId) }, data, select: { id: true, name: true, email: true } }).catch(() => null)
         return s ? { saved: true, stylist: s } : { saved: false, reason: 'No such stylist.' }
@@ -5146,7 +5152,7 @@ export const TOOLS: Record<string, Tool> = {
     def: {
       name: 'update_wholesale_account',
       description:
-        'Save a store\'s email, contact, shipping address or notes — only what a person just told ' +
+        'Save a store\'s email, contact, shipping address or notes (addToNotes adds a line; notes replaces them all) — only what a person just told ' +
         'you, never guessed. The address should be one line: street, city, state ZIP.',
       input_schema: {
         type: 'object',
@@ -5155,7 +5161,8 @@ export const TOOLS: Record<string, Tool> = {
           contactName: str('Who you deal with'),
           email: str('A real email, as given'),
           address: str('Street, city, state ZIP — e.g. "2030 Hillhurst Ave, Los Angeles, CA 90027"'),
-          notes: str('Replaces the account notes'),
+          notes: str('Replaces the account notes. Only when someone asks to rewrite them; to add a thought use addToNotes'),
+          addToNotes: str('A thought or fact to add under the notes already there, dated. Nothing already written is lost'),
         },
         required: ['wholesaleAccountId'],
       },
@@ -5167,6 +5174,11 @@ export const TOOLS: Record<string, Tool> = {
         if (typeof val === 'string' && val.trim()) data[k] = k === 'email' ? val.trim().toLowerCase() : val.trim()
       }
       if (data.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email)) return { saved: false, reason: 'That is not an email address. Ask again.' }
+      if (typeof i.addToNotes === 'string' && i.addToNotes.trim()) {
+        const { appendNote } = await import('@/lib/append-note')
+        const before = data.notes ?? (await db.wholesaleAccount.findUnique({ where: { id: String(i.wholesaleAccountId) }, select: { notes: true } }))?.notes
+        data.notes = appendNote(before, i.addToNotes)
+      }
       if (!Object.keys(data).length) return { saved: false, reason: 'Nothing to save.' }
       const a = await db.wholesaleAccount.update({ where: { id: String(i.wholesaleAccountId) }, data, select: { id: true, name: true, contactName: true, email: true, address: true } }).catch(() => null)
       return a ? { saved: true, account: a } : { saved: false, reason: 'No such wholesale account.' }

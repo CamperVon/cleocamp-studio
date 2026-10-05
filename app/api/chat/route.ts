@@ -17,6 +17,7 @@ type InAttachment = { filename: string; mediaType: string; base64: string }
 const ALLOWED_TYPES = /^(application\/pdf|image\/(jpeg|png|webp))$/
 const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024
 const MAX_ATTACHMENTS = 3
+const PAGES = new Set(['Products', 'ToDo', 'Stylists', 'Wholesale'])
 
 // Lets the client pick a conversation back up after navigating away or
 // refreshing — every turn is already persisted, the UI just never reloaded
@@ -62,6 +63,8 @@ export async function POST(req: NextRequest) {
     attachments?: InAttachment[]
     /** Start the conversation as practice. Only read when it is new; after that the thread decides. */
     practice?: boolean
+    /** Sent from the "Tell Mouse" box on one of these pages (app/ui/page-chat.tsx). */
+    page?: string
   }
   const message = body.message ?? ''
   const attachments = body.attachments ?? []
@@ -138,9 +141,13 @@ export async function POST(req: NextRequest) {
   const person = personId
     ? await db.person.findUnique({ where: { id: personId }, select: { name: true, role: true } })
     : null
+  // Which page's box it came from, for Mouse only: the chat shows people their
+  // own words back. A note typed on Products is usually about a product.
+  const page = PAGES.has(body.page ?? '') ? body.page : null
+  const said = page ? `(Typed in the box on the ${page} page.) ${instruction}` : instruction
   const authored = person
-    ? `[${person.name}${person.role ? `, ${person.role}` : ''}] ${instruction}`
-    : instruction
+    ? `[${person.name}${person.role ? `, ${person.role}` : ''}] ${said}`
+    : said
 
   const r = await asPerson(personId, () => chatTurn(
     thread.id,

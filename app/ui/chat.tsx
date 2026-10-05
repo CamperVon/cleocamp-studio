@@ -31,7 +31,7 @@ const INLINE = /(\*\*[^*]+\*\*)|(https?:\/\/[^\s)]+)|(\/(?:po|products|component
 // "see /po/2359." would point at "/po/2359." and 404.
 const TRAILING_PUNCT = /[.,;:!?)\]]+$/
 
-function renderMouseText(text: string) {
+export function renderMouseText(text: string) {
   const nodes: ReactNode[] = []
   let last = 0
   let key = 0

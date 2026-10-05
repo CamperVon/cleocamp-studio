@@ -3,6 +3,7 @@ import { ItemRow } from '@/app/ui/item-row'
 import { db } from '@/lib/db'
 import { loadStylists, pullOut, stillOut } from '@/lib/stylists'
 import { AddByHand, NoteBox, PullCloseButtons, RequestButtons, ReturnButton, StylistDetails } from './stylist-controls'
+import { PageChat } from '@/app/ui/page-chat'
 
 /**
  * A stylist email is a proposal (CLAUDE.md §4: email never writes), so Mouse
@@ -53,7 +54,7 @@ export default async function Stylists() {
   const notesFor = (id: string) => notes.filter((n) => n.entityId === `stylist:${id}` || n.entityId === id)
   const now = new Date()
   const withPulls = all.filter((s) => s.out > 0).sort((a, b) => (a.due?.getTime() ?? Infinity) - (b.due?.getTime() ?? Infinity))
-  const rest = all.filter((s) => s.out === 0)
+  const asked = all.flatMap((s) => s.openRequests.map((r) => ({ s, r }))).sort((a, b) => a.r.createdAt.getTime() - b.r.createdAt.getTime())
   const piecesOut = withPulls.reduce((n, s) => n + s.out, 0)
 
   const row = (s: (typeof all)[number]) => {
@@ -154,29 +155,52 @@ export default async function Stylists() {
 
   return (
     <Page title="Stylists" lede="Who has pieces out on a pull, and what stylists have asked for. Tell Mouse and it keeps this up to date.">
-      {waiting.length ? (
-        <Card title={`From email, waiting for your yes (${waiting.length})`}>
-          <p className="px-4 pb-2 text-xs text-muted sm:px-5">
-            Mouse read these from forwarded emails. Email can&apos;t add anything by itself, so tap Yes to add it, or answer with what&apos;s missing.
-          </p>
-          <ul className="divide-y divide-line">
-            {waiting.map((i) => <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} yes={YES} plain />)}
+      <PageChat page="Stylists" placeholder="A note for Mouse…" />
+      {/* Requests first (Brandon, 5 Oct 2026: "We should have a REQUESTS section
+          at the top"): what came in by email and waits for a yes, then what any
+          stylist has asked for that is still open. */}
+      <Card title={`Requests${waiting.length + asked.length ? ` (${waiting.length + asked.length})` : ''}`}>
+        {waiting.length ? (
+          <>
+            <p className="px-4 pb-2 text-xs text-muted sm:px-5">
+              From email, waiting for your yes. Email can&apos;t add anything by itself, so tap Yes to add it, or answer with what&apos;s missing.
+            </p>
+            <ul className="divide-y divide-line">
+              {waiting.map((i) => <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} yes={YES} plain />)}
+            </ul>
+          </>
+        ) : null}
+        {asked.length ? (
+          <ul className={`divide-y divide-line ${waiting.length ? 'border-t border-line' : ''}`}>
+            {asked.map(({ s, r }) => (
+              <li key={r.id} className="flex items-baseline justify-between gap-3 px-4 py-2.5 text-sm sm:px-5">
+                <span className="min-w-0">
+                  <span className="font-medium">{s.name}</span>
+                  <span> asked for {r.what}{r.qty ? ` × ${r.qty}` : ''}</span>
+                  <span className="text-xs text-muted"> · {day(r.createdAt)}{r.neededBy ? `, needed ${day(r.neededBy)}` : ''}</span>
+                </span>
+                <RequestButtons requestId={r.id} status={r.status} />
+              </li>
+            ))}
           </ul>
-        </Card>
-      ) : null}
+        ) : null}
+        {!waiting.length && !asked.length ? <Empty>No requests open. Forward a stylist&apos;s email to mouse@send.cleocamp.com, or tell Mouse above.</Empty> : null}
+      </Card>
       <Card title={`Out on pulls${withPulls.length ? ` (${piecesOut} piece${piecesOut === 1 ? '' : 's'})` : ''}`}>
         {withPulls.length ? <ul className="divide-y divide-line">{withPulls.map(row)}</ul> : <Empty>Nothing out with a stylist.</Empty>}
       </Card>
       {/* Folded by default, like every list here (Brandon, 30 Sept 2026). */}
       <Card>
-        <Fold summary={<span className="flex items-center justify-between gap-3"><span className="font-serif text-[17px] italic text-accent">Stylists</span><span className="text-xs text-muted">{all.length} stylist{all.length === 1 ? '' : 's'}{withPulls.length ? ` · ${withPulls.length} with pieces out, above` : ''}</span></span>}>
+        <Fold summary={<span className="flex items-center justify-between gap-3"><span className="font-serif text-[17px] italic text-accent">Stylists</span><span className="text-xs text-muted">{all.length} stylist{all.length === 1 ? '' : 's'}{withPulls.length ? ` · ${withPulls.length} with pieces out` : ''}</span></span>}>
           {/* One "+ Add" for a stylist, a pull or a request (Brandon, 1 Oct 2026). */}
           <div className="border-t border-line">
             <Fold summary={<span className="text-sm font-medium">+ Add</span>}>
               <AddByHand stylists={all.map((s) => ({ id: s.id, name: s.name }))} variants={pieces} />
             </Fold>
           </div>
-          {rest.length ? <ul className="divide-y divide-line border-t border-line">{rest.map(row)}</ul> : null}
+          {/* Everyone, A to Z, including those with pieces out (Brandon, 5 Oct 2026:
+              anyone a pull is made for belongs on the list). */}
+          {all.length ? <ul className="divide-y divide-line border-t border-line">{all.map(row)}</ul> : null}
         </Fold>
       </Card>
       <Card title="Notes">

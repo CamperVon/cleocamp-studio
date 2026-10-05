@@ -197,9 +197,28 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Files:** `lib/mouse/daily-cheese.ts`
 - **Carries over:** Add-on (the Daily Cheese is Cleo's morning report).
 
+### 5 Oct · "Tell Mouse" box on Products, ToDo, Stylists and Wholesale
+- **Why:** Brandon: "a chat box at the top of Products, ToDo, Stylists, Wholesale so that we can give thoughts, notes, etc."
+- **What:**
+  - A one-line box at the top of each page. It talks to the same Mouse as Home's chat, and Mouse is told which page it came from. Mouse's reply shows under the box. Each page keeps its own short conversation in that browser, so a note typed here can't land in a practice chat left open on Home. `search_chat` still finds all of it.
+  - New prompt section: a note typed on a page goes on the thing it's about (`add_note` on a product, a stylist's or store's own notes, or a todo), and Mouse says in one line what it did.
+  - `save_stylist` and `update_wholesale_account` take `addToNotes`, which adds a dated line under the notes already there. Their `notes` field replaces everything, and Mouse is never shown what's there, so a new thought would have wiped the old ones (`lib/append-note.ts`).
+- **Files:** `app/ui/page-chat.tsx`, `app/ui/chat.tsx` (exports `renderMouseText`), `app/api/chat/route.ts` (`page`), `lib/append-note.ts`, `lib/mouse/tools.ts`, `lib/mouse/prompt.ts`, the four pages, `tests/append-note.test.ts`
+- **Carries over:** General.
+
+### 5 Oct · Stylists: Requests at the top, everyone on the list
+- **Why:** Brandon: the stylist list looked empty although a pull had been made for Natasha, and "if we email a pull request, it should obv go to stylists page. We should have a REQUESTS section at the top."
+- **What:**
+  - A Requests card opens the page. It holds what came in by email and is waiting for a yes (shown before), then every stylist's open requests, with their Sent/Close buttons.
+  - The Stylists list shows every stylist A to Z, including anyone with pieces out. Before, someone with a pull appeared only under "Out on pulls", so the list read as empty.
+- **Files:** `app/(main)/stylists/page.tsx`
+- **Carries over:** Add-on (stylist pulls).
+
 ---
 
 ## Changes to records, not code
+
+- **5 Oct:** todo "Populate the stylist inventory" added for Brandon. It's a stylist inventory kept separate from Shopify's.
 
 These were made directly in Cleo Camp's database or Shopify, not in the code. They don't carry over to the new product: they're Cleo Camp's own data. They're listed so the history is complete.
 

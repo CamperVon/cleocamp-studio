@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { Page, Card, Chip, Empty, Money, Fold } from '@/app/ui/primitives'
 import { LineSheetRowEditor, OneOffButton, PriceEdit, RestoreRow } from './line-sheet-row'
 import { AccountEditor, NewAccount, RestoreAccount } from './account-controls'
+import { PageChat } from '@/app/ui/page-chat'
 
 export const dynamic = 'force-dynamic'
 
@@ -165,6 +166,7 @@ export default async function Wholesale() {
       title="Wholesale"
       lede="What stores pay, what has shipped to them, and what's been paid — not inventory, that stays in Shopify."
     >
+      <PageChat page="Wholesale" placeholder="A note for Mouse…" />
       <div className="flex flex-wrap gap-3">
         <div className="flex-1 rounded-xl border border-line bg-surface px-4 py-3">
           <p className="text-xs text-faint">Outstanding (confirmed unpaid + consignment sold)</p>

@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
 import { Page, Card, Chip, Value, Money } from '@/app/ui/primitives'
 import { laDay, laMidnight } from '@/lib/dates'
+import { PageChat } from '@/app/ui/page-chat'
 
 export const dynamic = 'force-dynamic'
 
@@ -100,6 +101,7 @@ export default async function Products() {
 
   return (
     <Page title="Products" lede="A to Z. Tap a product for what is on order, in production, and what Studio Mouse would flag.">
+      <PageChat page="Products" placeholder="A note for Mouse…" />
       {groups.map((g) => (
         <Card key={g.title} title={`${g.title} (${g.items.length})`}>
           <ul className="divide-y divide-line">
