@@ -4440,12 +4440,90 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  stylist_inventory: {
+    def: {
+      name: 'stylist_inventory',
+      description:
+        'The stylist inventory: pieces kept for stylists, apart from sales stock and not in Shopify. ' +
+        '"list" shows what is in it. "add" puts pieces in, "remove" takes them out (not for a pull: ' +
+        'record_stylist_pull does that), "count" sets the number a person counted. Only what a person ' +
+        'said. Adding here does not take anything off sales stock.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string' as const, enum: ['list', 'add', 'remove', 'count'] },
+          productVariantId: str('Our variant. Ask about size or colour rather than picking.'),
+          qty: num('How many to add or remove, or the number counted'),
+          note: str('Why, in a few words'),
+        },
+        required: ['action'],
+      },
+    },
+    run: async (i) => {
+      const { stylistStock, variantLabels } = await import('@/lib/stylist-stock')
+      if (i.action === 'list') {
+        const now = await stylistStock()
+        const labels = await variantLabels([...now.keys()])
+        return { inventory: [...now.entries()].map(([id, qty]) => ({ productVariantId: id, piece: labels.get(id)?.label ?? id, qty })), ...(now.size ? {} : { note: 'The stylist inventory is empty.' }) }
+      }
+      const vid = String(i.productVariantId ?? '')
+      const v = vid ? (await variantLabels([vid])).get(vid) : null
+      if (!v) return { saved: false, reason: 'Which piece? Give its variant; look it up rather than guessing.' }
+      const qty = Math.round(Number(i.qty))
+      if (!(qty >= 0) || (i.action !== 'count' && qty === 0)) return { saved: false, reason: `"${i.qty}" is not a quantity.` }
+      const have = (await stylistStock([vid])).get(vid) ?? 0
+      const delta = i.action === 'add' ? qty : i.action === 'remove' ? -qty : qty - have
+      if (have + delta < 0) return { saved: false, reason: `The stylist inventory has ${have} × ${v.label}, so ${qty} cannot come out.` }
+      if (delta === 0) return { saved: true, piece: v.label, inStylistInventory: have, note: 'Already that number; nothing changed.' }
+      await db.stylistStockEvent.create({ data: { productVariantId: vid, delta, reason: i.action === 'add' ? 'ADD' : i.action === 'remove' ? 'REMOVE' : 'COUNT', note: i.note ? String(i.note) : null } })
+      return { saved: true, piece: v.label, inStylistInventory: have + delta }
+    },
+  },
+
+  set_request_pieces: {
+    def: {
+      name: 'set_request_pieces',
+      description:
+        'The exact pieces a stylist request is for, once known: each variant and how many, and fromSales ' +
+        'when a person agreed that some may come from sales stock because the stylist inventory is short. ' +
+        'Replaces the list. The result says, piece by piece, what the stylist inventory and sales stock ' +
+        'hold: tell the person, and ask about anything short. Sent on the Stylists page then makes the ' +
+        'pull from exactly this list.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          requestId: str('The request'),
+          pieces: {
+            type: 'array' as const,
+            items: { type: 'object' as const, properties: { productVariantId: str('Our variant'), qty: num('How many'), fromSales: num('How many a person agreed may come from sales stock. Default 0') }, required: ['productVariantId', 'qty'] },
+          },
+        },
+        required: ['requestId', 'pieces'],
+      },
+    },
+    run: async (i) => {
+      const { piecesOf, pieceStatus, pieceLine, stylistStock, variantLabels } = await import('@/lib/stylist-stock')
+      const pieces = piecesOf(i.pieces)
+      if (!pieces.length) return { saved: false, reason: 'No pieces. Say which pieces and how many.' }
+      const ids = pieces.map((p) => p.productVariantId)
+      const labels = await variantLabels(ids)
+      const missing = ids.find((id) => !labels.has(id))
+      if (missing) return { saved: false, reason: `No variant ${missing}. Look it up again; do not guess.` }
+      const r = await db.stylistRequest.update({ where: { id: String(i.requestId) }, data: { pieces: pieces as never }, select: { id: true } }).catch(() => null)
+      if (!r) return { saved: false, reason: 'No such request.' }
+      const status = pieceStatus(pieces, await stylistStock(ids), labels)
+      return { saved: true, requestId: r.id, pieces: status.map(pieceLine), ...(status.some((s) => s.short) ? { ask: 'Some pieces are short in the stylist inventory. Ask whether to take them from sales stock; if yes, set fromSales on them.' } : {}) }
+    },
+  },
+
   record_stylist_pull: {
     def: {
       name: 'record_stylist_pull',
       description:
-        'Pieces lent to a stylist for a shoot. Takes them off stock as STYLIST_PULL_OUT (a loan, never ' +
-        'demand) and records who has them and when they are due back. Only what a person in the chat ' +
+        'Pieces lent to a stylist for a shoot. Takes them from the stylist inventory first; any piece it ' +
+        'is short of comes from sales stock (STYLIST_PULL_OUT, a loan, never demand) ONLY up to the ' +
+        'fromSales a person agreed for that piece. If anything is short, nothing is saved and the result ' +
+        'says what: ask whether to take it from sales stock. Records who has them and when they are due back. Only what a person in the chat ' +
         'says went out. dueBackAt is ONLY the date the pieces come back: a fitting, a shoot or "check in ' +
         'the day after" is not it. Put a fitting or shoot date in notes, and anything to do on a date ' +
         '(check in, follow up, chase) in create_todo as well. Ask for the return date if none was given.',
@@ -4456,12 +4534,14 @@ export const TOOLS: Record<string, Tool> = {
           stylistName: str('The stylist\'s name as the person said it. Always pass it: the tool checks it matches the id.'),
           items: {
             type: 'array' as const,
-            items: { type: 'object' as const, properties: { productVariantId: str('Our variant. Ask about size or colour rather than picking.'), qty: num('How many') }, required: ['productVariantId', 'qty'] },
+            items: { type: 'object' as const, properties: { productVariantId: str('Our variant. Ask about size or colour rather than picking.'), qty: num('How many'), fromSales: num('How many of these a person agreed may come from sales stock if the stylist inventory is short. Default 0') }, required: ['productVariantId', 'qty'] },
           },
           sentAt: str('YYYY-MM-DD it went out. Default today.'),
           dueBackAt: str('YYYY-MM-DD it is due back, if agreed'),
           project: str('The shoot, talent or publication'),
           notes: str('Anything else'),
+          requestId: str('The open request this pull answers, if any (from the stylists on file)'),
+          requestFullyMet: { type: 'boolean', description: 'true when this pull sends everything that request asked for; false when part is still owed' },
         },
         required: ['stylistName', 'items'],
       },
@@ -4471,39 +4551,76 @@ export const TOOLS: Record<string, Tool> = {
       const picked = pickStylist(await db.stylist.findMany({ select: { id: true, name: true } }), i.stylistId ? String(i.stylistId) : null, i.stylistName ? String(i.stylistName) : null)
       if ('reason' in picked) return { saved: false, reason: picked.reason }
       const s = picked.stylist
-      const items = (Array.isArray(i.items) ? i.items : []) as Array<{ productVariantId: string; qty: number }>
+      const items = (Array.isArray(i.items) ? i.items : []) as Array<{ productVariantId: string; qty: number; fromSales?: number }>
       if (!items.length) return { saved: false, reason: 'Nothing listed. Ask what went out.' }
       const vs = await db.productVariant.findMany({ where: { id: { in: items.map((x) => String(x.productVariantId)) } }, include: { product: { select: { name: true } }, colorway: { select: { customerName: true } } } })
-      const lines: Array<{ productVariantId: string; item: string; qty: number }> = []
+      const { stylistStock, splitPull } = await import('@/lib/stylist-stock')
+      const have = await stylistStock(items.map((x) => String(x.productVariantId)))
+      const lines: Array<{ productVariantId: string; item: string; qty: number; fromStylistQty: number; fromSales: number }> = []
+      const short: string[] = []
       for (const it of items) {
         const v = vs.find((x) => x.id === String(it.productVariantId))
         if (!v) return { saved: false, reason: `No variant ${it.productVariantId}. Look it up again; do not guess. If the person says it is on Shopify, search there with find_in_shopify.` }
         const qty = Math.round(Number(it.qty))
         if (!(qty > 0)) return { saved: false, reason: `"${it.qty}" is not a quantity.` }
-        lines.push({ productVariantId: v.id, item: [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / '), qty })
+        const item = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
+        // The same piece listed twice draws on one count, not two.
+        const split = splitPull(qty, have.get(v.id) ?? 0, Number(it.fromSales ?? 0))
+        have.set(v.id, (have.get(v.id) ?? 0) - split.fromStylist)
+        if (split.short) short.push(`${item}: ${split.short} short (stylist inventory has ${split.fromStylist}${split.fromSales ? `, ${split.fromSales} agreed from sales` : ''}; sales stock has ${v.onHandQty == null ? 'an unknown number' : Number(v.onHandQty)})`)
+        lines.push({ productVariantId: v.id, item, qty, fromStylistQty: split.fromStylist, fromSales: split.fromSales })
+      }
+      // Short anywhere: nothing taken from either stock (Brandon, 5 Oct 2026:
+      // "mouse can alert us and ask us if we want to pull from sales inventory").
+      if (short.length) {
+        return {
+          saved: false, short,
+          reason: 'The stylist inventory does not cover this pull, so nothing was taken. Ask whether to take the short pieces from sales stock; if yes, call again with fromSales on those pieces.',
+        }
       }
       const laDay = (d: unknown) => (d ? new Date(`${String(d)}T12:00:00-07:00`) : null)
       const pull = await db.stylistPull.create({
         data: {
           stylistId: s.id, sentAt: laDay(i.sentAt) ?? new Date(), dueBackAt: laDay(i.dueBackAt),
           project: i.project ? String(i.project) : null, notes: i.notes ? String(i.notes) : null,
-          lines: { create: lines },
+          lines: { create: lines.map((l) => ({ productVariantId: l.productVariantId, item: l.item, qty: l.qty, fromStylistQty: l.fromStylistQty })) },
         },
         select: { id: true },
       })
       const stock: string[] = []
       for (const l of lines) {
         const why = `Pulled by ${s.name}${i.project ? ` for ${String(i.project)}` : ''} [pull ${pull.id}]`
+        if (l.fromStylistQty) {
+          await db.stylistStockEvent.create({ data: { productVariantId: l.productVariantId, delta: -l.fromStylistQty, reason: 'PULL_OUT', pullId: pull.id, note: why } })
+          stock.push(`${l.item}: ${l.fromStylistQty} from stylist inventory.`)
+        }
+        if (!l.fromSales) continue
         if (!inventoryWritesEnabled()) {
-          await db.actionItem.create({ data: { kind: 'TODO', title: `Take ${l.qty} × ${l.item} off stock: stylist pull (${s.name})`, detail: `${why}. Stock writing was paused, so it was not applied.`, source: 'CHAT' } })
+          await db.actionItem.create({ data: { kind: 'TODO', title: `Take ${l.fromSales} × ${l.item} off stock: stylist pull (${s.name})`, detail: `${why}. Stock writing was paused, so it was not applied.`, source: 'CHAT' } })
           stock.push(`${l.item}: stock writing is paused, so a todo was made instead.`)
           continue
         }
-        const w = await writeEvent({ productVariantId: l.productVariantId, deltaQty: -l.qty, type: 'STYLIST_PULL_OUT', note: why })
-        stock.push(w.eventId ? `${l.item}: ${l.qty} out.` : `${l.item}: NOT taken off stock (${'error' in w ? w.error : 'unknown'}).`)
+        const w = await writeEvent({ productVariantId: l.productVariantId, deltaQty: -l.fromSales, type: 'STYLIST_PULL_OUT', note: why })
+        stock.push(w.eventId ? `${l.item}: ${l.fromSales} from sales stock.` : `${l.item}: ${l.fromSales} NOT taken off sales stock (${'error' in w ? w.error : 'unknown'}).`)
       }
+      // The request this answers closes, or says what went (Brandon, 5 Oct 2026:
+      // "How do you have a request and an out on pulls at the same time??" —
+      // Natasha's Kendall pull went out and her request for it stayed open).
+      let request: string | undefined
+      if (i.requestId) {
+        const r = await db.stylistRequest.findFirst({ where: { id: String(i.requestId), stylistId: s.id }, select: { id: true, notes: true } })
+        if (r) {
+          const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date())
+          const went = `${day}: sent on pull ${pull.id}: ${lines.map((l) => `${l.qty} × ${l.item}`).join(', ')}.`
+          await db.stylistRequest.update({ where: { id: r.id }, data: { status: i.requestFullyMet === true ? 'FULFILLED' : 'OPEN', notes: `${r.notes ?? ''}\n${went}`.trim() } })
+          request = i.requestFullyMet === true ? 'The request is marked fulfilled.' : 'The request stays open, with what went noted on it. Say what is still owed.'
+        } else request = 'That request is not one of this stylist\'s, so it was left alone.'
+      }
+      const open = i.requestId ? 0 : await db.stylistRequest.count({ where: { stylistId: s.id, status: { in: ['OPEN', 'TOLD'] } } })
       return {
         saved: true, pullId: pull.id, stylist: s.name, stock,
+        ...(request ? { request } : {}),
+        ...(open ? { checkRequests: `${s.name} has ${open} open request${open === 1 ? '' : 's'}. If this pull answers one, say which and close it with update_stylist_request (FULFILLED), or note what is still owed.` } : {}),
         ...(i.dueBackAt ? {} : { ask: 'No return date was given. Ask when it is due back, then set it with record_pull_return (dueBackAt).' }),
       }
     },
@@ -4554,7 +4671,7 @@ export const TOOLS: Record<string, Tool> = {
     def: {
       name: 'record_pull_return',
       description:
-        'Pieces back from a stylist pull. Puts them back on stock as STYLIST_PULL_RETURN. Leave items ' +
+        'Pieces back from a stylist pull. What came from sales stock goes back there first (STYLIST_PULL_RETURN), the rest to the stylist inventory. Leave items ' +
         'out when everything still out came back; list them when only some did. Also sets a pull\'s ' +
         'return date when one is agreed (dueBackAt, nothing returned).',
       input_schema: {
@@ -4586,18 +4703,26 @@ export const TOOLS: Record<string, Tool> = {
         if (!b.line) return { saved: false, reason: 'A line is not on this pull. Look again.' }
         if (!(b.qty > 0) || b.qty > stillOut(b.line)) return { saved: false, reason: `${b.line.item}: ${stillOut(b.line)} still out, so ${b.qty} cannot come back.` }
       }
+      const { returnSplit } = await import('@/lib/stylist-stock')
       for (const b of back) {
         const l = b.line!
+        // Sales stock first, so what the shop lent goes back to the shop.
+        const { toSales, toStylist } = returnSplit(l, b.qty)
         await db.stylistPullLine.update({ where: { id: l.id }, data: { returnedQty: l.returnedQty + b.qty, returnedAt: new Date() } })
         if (!l.productVariantId) { done.push(`${l.item}: ${b.qty} back.`); continue }
         const why = `Returned by ${pull.stylist.name} [pull ${pull.id}]`
+        if (toStylist) {
+          await db.stylistStockEvent.create({ data: { productVariantId: l.productVariantId, delta: toStylist, reason: 'PULL_RETURN', pullId: pull.id, note: why } })
+          done.push(`${l.item}: ${toStylist} back in the stylist inventory.`)
+        }
+        if (!toSales) continue
         if (!inventoryWritesEnabled()) {
-          await db.actionItem.create({ data: { kind: 'TODO', title: `Put ${b.qty} × ${l.item} back on stock: stylist return (${pull.stylist.name})`, detail: `${why}. Stock writing was paused, so it was not applied.`, source: 'CHAT' } })
-          done.push(`${l.item}: ${b.qty} back; stock writing is paused, so a todo was made.`)
+          await db.actionItem.create({ data: { kind: 'TODO', title: `Put ${toSales} × ${l.item} back on stock: stylist return (${pull.stylist.name})`, detail: `${why}. Stock writing was paused, so it was not applied.`, source: 'CHAT' } })
+          done.push(`${l.item}: ${toSales} back; stock writing is paused, so a todo was made.`)
           continue
         }
-        const w = await writeEvent({ productVariantId: l.productVariantId, deltaQty: b.qty, type: 'STYLIST_PULL_RETURN', note: why })
-        done.push(w.eventId ? `${l.item}: ${b.qty} back on stock.` : `${l.item}: ${b.qty} back, but NOT put on stock (${'error' in w ? w.error : 'unknown'}).`)
+        const w = await writeEvent({ productVariantId: l.productVariantId, deltaQty: toSales, type: 'STYLIST_PULL_RETURN', note: why })
+        done.push(w.eventId ? `${l.item}: ${toSales} back on sales stock.` : `${l.item}: ${toSales} back, but NOT put on sales stock (${'error' in w ? w.error : 'unknown'}).`)
       }
       return { saved: true, pullId: pull.id, returned: done }
     },
@@ -4652,6 +4777,14 @@ export const TOOLS: Record<string, Tool> = {
       }
       if (failed.length) {
         return { saved: false, putBack: back, notPutBack: failed, reason: 'Some pieces could not go back on stock, so the pull is still open. Say what failed; removing it again later only puts back what is still missing.' }
+      }
+      // What it took from the stylist inventory and has not had back goes back too.
+      const fromStylist = await db.stylistStockEvent.groupBy({ by: ['productVariantId'], where: { pullId: pull.id }, _sum: { delta: true } })
+      for (const r of fromStylist) {
+        const owed = -(r._sum.delta ?? 0)
+        if (owed <= 0) continue
+        await db.stylistStockEvent.create({ data: { productVariantId: r.productVariantId, delta: owed, reason: 'CORRECTION', pullId: pull.id, note: `Stylist pull logged by mistake, removed ${marker}` } })
+        back.push(`${label(r.productVariantId)}: ${owed} back in the stylist inventory.`)
       }
       await db.stylistPull.update({ where: { id: pull.id }, data: { closedAs: 'REMOVED', closedAt: new Date() } })
       return { saved: true, removed: pull.id, putBack: back, ...(back.length ? {} : { note: 'It had taken nothing off stock, so nothing went back.' }) }

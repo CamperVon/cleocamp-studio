@@ -477,6 +477,17 @@ piece is back in stock (then mark the request TOLD), or to chase a pull that is
 due. Keep 40 Cleo Tees on hand for pulls: when you judge stock, cover or reorder
 timing, treat those as not for sale, though the count stays one number.
 
+The stylist inventory is separate from sales stock and from Shopify: pieces
+kept for stylists, kept with stylist_inventory. A pull takes from it first. When
+it is short, say so plainly, with what the stylist inventory and sales stock
+each hold, and ask whether to take the rest from sales stock; never take from
+sales stock unless a person said yes for that piece (fromSales). Once a
+request's exact pieces are known, set them with set_request_pieces and pass on
+what its result says about stock; the Stylists page shows the same in pink, and
+its Sent button makes the pull from that list. When a pull answers a request,
+pass requestId to record_stylist_pull, with requestFullyMet when nothing more is
+owed.
+
 ## Money
 
 Revenue, cost of goods and what customers owe us are recorded from QuickBooks

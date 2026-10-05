@@ -250,6 +250,7 @@ model ProductVariant {
   runLines  ProductionRunLine[]
   snapshots SalesSnapshot[]
   poLines   PurchaseOrderLine[]
+  stylistStock StylistStockEvent[]
 
   @@index([productId])
 }
@@ -1436,6 +1437,10 @@ model StylistPullLine {
   qty              Int
   returnedQty      Int       @default(0)
   returnedAt       DateTime?
+  /// How many of qty came out of the stylist inventory; the rest came from
+  /// sales stock (Shopify). Returns refill sales stock first. 0 for every pull
+  /// made before the stylist inventory existed (5 Oct 2026): those came from sales.
+  fromStylistQty   Int       @default(0)
 
   pull StylistPull @relation(fields: [pullId], references: [id], onDelete: Cascade)
 
@@ -1461,11 +1466,38 @@ model StylistRequest {
   neededBy         DateTime?
   status           StylistRequestStatus @default(OPEN)
   notes            String?
+  /// The pieces this request is for, as a person or Mouse set them:
+  /// [{ productVariantId, qty, fromSales }]. fromSales is how many a person
+  /// agreed may come out of sales stock when the stylist inventory is short.
+  /// Sent on the Stylists page makes the pull from exactly this.
+  pieces           Json?
   createdAt        DateTime             @default(now())
 
   stylist Stylist @relation(fields: [stylistId], references: [id])
 
   @@index([status])
+}
+
+/// The stylist inventory: pieces kept for stylists, apart from what is for
+/// sale. Brandon, 5 Oct 2026: "stylists pulls will be separate from shopify.
+/// if however we don't have enough, mouse can alert us and ask us if we want
+/// to pull from sales inventory." Not in Shopify and not counted as stock for
+/// sale. An append-only ledger like InventoryEvent: the count is the sum.
+model StylistStockEvent {
+  id               String   @id @default(cuid())
+  productVariantId String
+  /// + into the stylist inventory, - out of it.
+  delta            Int
+  /// ADD, REMOVE, COUNT (a recount's difference), PULL_OUT, PULL_RETURN, CORRECTION
+  reason           String
+  pullId           String?
+  note             String?
+  createdAt        DateTime @default(now())
+
+  productVariant ProductVariant @relation(fields: [productVariantId], references: [id])
+
+  @@index([productVariantId])
+  @@index([pullId])
 }
 
 /// One row of the wholesale line sheet (Wholesale page, and the PDF sent to

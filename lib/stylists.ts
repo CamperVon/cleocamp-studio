@@ -48,7 +48,11 @@ export async function stylistContext(now = new Date()): Promise<string> {
   const withPulls = all.filter((s) => s.out > 0)
   const reqs = all.flatMap((s) => s.openRequests.map((r) => ({ s, r })))
   const reserve = await db.product.findMany({ where: { stylistReserveQty: { gt: 0 } }, select: { name: true, stylistReserveQty: true } })
-  if (!all.length && !reserve.length) return ''
+  const { stylistStock, variantLabels, piecesOf, pieceStatus, pieceLine } = await import('@/lib/stylist-stock')
+  const inv = await stylistStock()
+  if (!all.length && !reserve.length && !inv.size) return ''
+  const planned = reqs.flatMap(({ r }) => piecesOf(r.pieces).map((p) => p.productVariantId))
+  const labels = await variantLabels([...new Set([...inv.keys(), ...planned])])
   const variantIds = reqs.map(({ r }) => r.productVariantId).filter((x): x is string => !!x)
   const counts = new Map((await db.productVariant.findMany({ where: { id: { in: variantIds } }, select: { id: true, onHandQty: true } })).map((v) => [v.id, v.onHandQty]))
   const lines: string[] = ['STYLISTS (the Stylists page)']
@@ -56,6 +60,9 @@ export async function stylistContext(now = new Date()): Promise<string> {
   // Adriana Lima pull under Maya, reusing an id it had seen earlier
   // (30 Sept 2026). Use these ids, and pass the name too: the tools check.
   if (all.length) lines.push(`On file: ${all.map((s) => `${s.name} [stylist ${s.id}]`).join('; ')}.`)
+  lines.push(inv.size
+    ? `Stylist inventory (separate from sales stock): ${[...inv.entries()].map(([id, n]) => `${n} × ${labels.get(id)?.label ?? id} [${id}]`).join('; ')}.`
+    : 'Stylist inventory (separate from sales stock): empty so far. A pull from it is short until it is filled in.')
   for (const r of reserve) lines.push(`- Keep ${r.stylistReserveQty} ${r.name}s on hand for stylist pulls; they are not for sale when judging stock or cover.`)
   for (const s of withPulls) {
     const overdue = s.due && s.due < now
@@ -64,6 +71,9 @@ export async function stylistContext(now = new Date()): Promise<string> {
   for (const { s, r } of reqs) {
     const c = r.productVariantId ? counts.get(r.productVariantId) : undefined
     lines.push(`- ${s.name} asked for ${r.what}${r.qty ? ` × ${r.qty}` : ''} on ${day(r.createdAt)}${r.status === 'TOLD' ? ' (told it is in stock)' : ''}${c != null ? `; ${String(c)} on hand now` : ''} [request ${r.id}].`)
+    const pieces = piecesOf(r.pieces)
+    if (pieces.length) for (const st of pieceStatus(pieces, inv, labels)) lines.push(`    · ${pieceLine(st)}`)
+    else lines.push('    · Exact pieces not set yet (set_request_pieces once known).')
   }
   return lines.join('\n')
 }

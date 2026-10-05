@@ -49,16 +49,21 @@ export async function addRequest(input: { stylistId: string; what: string; neede
   return failed(r) ? { ok: false, error: failed(r)! } : { ok: true }
 }
 
-export async function addPull(input: { stylistId: string; project?: string; dueBackAt?: string; items: Array<{ productVariantId: string; qty: number }> }): Promise<Result> {
+export async function addPull(input: { stylistId: string; project?: string; dueBackAt?: string; items: Array<{ productVariantId: string; qty: number }>; takeShortFromSales?: boolean }): Promise<Result> {
   const who = await person()
   if (!who) return NO_NAME
-  const items = input.items.filter((i) => i.productVariantId && i.qty > 0)
+  const { takeShortFromSales, ...rest } = input
+  // Ticked: whatever the stylist inventory can't cover may come from sales stock.
+  const items = rest.items.filter((i) => i.productVariantId && i.qty > 0).map((i) => ({ ...i, fromSales: takeShortFromSales ? i.qty : 0 }))
   if (!items.length) return { ok: false, error: 'Add at least one piece.' }
-  const r = await run('record_stylist_pull', { ...input, items, project: input.project || undefined, dueBackAt: input.dueBackAt || undefined }, who)
+  const r = await run('record_stylist_pull', { ...rest, items, project: rest.project || undefined, dueBackAt: rest.dueBackAt || undefined }, who)
+  if (r.saved === false && Array.isArray(r.short)) {
+    return { ok: false, error: `Not logged: the stylist inventory is short. ${(r.short as string[]).join('; ')}. Tick "take the rest from sales stock" to use sales stock.` }
+  }
   if (failed(r)) return { ok: false, error: failed(r)! }
   const stock = Array.isArray(r.stock) ? (r.stock as string[]) : []
   const problem = stock.find((s) => /NOT|paused/.test(s))
-  return { ok: true, message: problem ? `Saved, but check stock: ${problem}` : 'Saved, and taken off stock.' }
+  return { ok: true, message: problem ? `Saved, but check stock: ${problem}` : `Saved. ${stock.join(' ')}` }
 }
 
 /** Pieces back: one line (lineId + qty) or everything still out on the pull. */
@@ -72,6 +77,57 @@ export async function returnPieces(input: { pullId: string; lineId?: string; qty
   const back = Array.isArray(r.returned) ? (r.returned as string[]) : []
   const problem = back.find((s) => /NOT|paused/.test(s))
   return { ok: true, message: problem ? `Marked back, but check stock: ${problem}` : 'Back on stock.' }
+}
+
+/**
+ * Sent on a request: the pull is made from the pieces the request lists, from
+ * the stylist inventory first and from sales stock only as agreed (Brandon,
+ * 5 Oct 2026: "if we hit sent then it should pull from the inventories as
+ * indicated"). Short anywhere: nothing is taken and the page says what. No
+ * pieces listed: it is only marked sent, and says nothing came off stock.
+ */
+export async function sendRequest(requestId: string): Promise<Result> {
+  const who = await person()
+  if (!who) return NO_NAME
+  const r = await db.stylistRequest.findUnique({ where: { id: requestId }, select: { id: true, what: true, pieces: true, stylist: { select: { id: true, name: true } } } })
+  if (!r) return { ok: false, error: 'No such request.' }
+  const { piecesOf } = await import('@/lib/stylist-stock')
+  const pieces = piecesOf(r.pieces)
+  if (!pieces.length) {
+    const u = await run('update_stylist_request', { requestId, status: 'FULFILLED' }, who)
+    if (failed(u)) return { ok: false, error: failed(u)! }
+    return { ok: true, message: 'Marked sent. No pieces were listed, so nothing came off any stock. Tell Mouse what went.' }
+  }
+  const project = r.what.split(/[:(—]/)[0].trim().slice(0, 80) || undefined
+  const p = await run('record_stylist_pull', {
+    stylistId: r.stylist.id, stylistName: r.stylist.name, project, requestId, requestFullyMet: true,
+    items: pieces.map((x) => ({ productVariantId: x.productVariantId, qty: x.qty, fromSales: x.fromSales ?? 0 })),
+  }, who)
+  if (p.saved === false) {
+    const short = Array.isArray(p.short) ? ` ${(p.short as string[]).join('; ')}.` : ''
+    return { ok: false, error: `Not sent: the stylist inventory is short.${short} Tap "Use sales stock" to take the rest from sales, or tell Mouse.` }
+  }
+  const stock = Array.isArray(p.stock) ? (p.stock as string[]) : []
+  const problem = stock.find((x) => /NOT|paused/.test(x))
+  return { ok: true, message: problem ? `Sent, but check stock: ${problem}` : 'Sent: the pull is made and the pieces are off stock.' }
+}
+
+/** "Use sales stock": whatever the stylist inventory can't cover may come from sales, for this request. */
+export async function takeShortFromSales(requestId: string): Promise<Result> {
+  const who = await person()
+  if (!who) return NO_NAME
+  const r = await db.stylistRequest.findUnique({ where: { id: requestId }, select: { pieces: true } })
+  if (!r) return { ok: false, error: 'No such request.' }
+  const { piecesOf, stylistStock, splitPull } = await import('@/lib/stylist-stock')
+  const pieces = piecesOf(r.pieces)
+  const have = await stylistStock(pieces.map((p) => p.productVariantId))
+  const next = pieces.map((p) => {
+    const fromStylist = splitPull(p.qty, have.get(p.productVariantId) ?? 0).fromStylist
+    have.set(p.productVariantId, (have.get(p.productVariantId) ?? 0) - fromStylist)
+    return { ...p, fromSales: p.qty - fromStylist }
+  })
+  const res = await run('set_request_pieces', { requestId, pieces: next }, who)
+  return failed(res) ? { ok: false, error: failed(res)! } : { ok: true, message: 'The short pieces will come from sales stock when you tap Sent.' }
 }
 
 export async function setRequestStatus(requestId: string, status: 'OPEN' | 'FULFILLED' | 'CLOSED'): Promise<Result> {

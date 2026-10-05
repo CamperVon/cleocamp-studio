@@ -214,9 +214,23 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Files:** `app/(main)/stylists/page.tsx`
 - **Carries over:** Add-on (stylist pulls).
 
+### 5 Oct · Stylist inventory, separate from sales stock; requests show their pieces
+- **Why:** Brandon: "ideally, stylists pulls will be separate from shopify. if however we don't have enough, mouse can alert us and ask us if we want to pull from sales inventory." "When filling in notes for requests mouse should discuss inventory in pink. if we hit sent then it should pull from the inventories as indicated." Also: "How do you have a request and an out on pulls at the same time??" (Natasha's Kendall pull went out and her request for it stayed open, logged three times), and the requests "should be clearer … 1 Cleo Tee, Black, Size 1 (out of stock)".
+- **What:**
+  - New `StylistStockEvent` ledger is the stylist inventory: pieces kept for stylists, not in Shopify. The count is the sum (`lib/stylist-stock.ts`). Mouse keeps it with `stylist_inventory` (list/add/remove/count).
+  - `record_stylist_pull` takes from the stylist inventory first. If anything is short, nothing is taken and the result lists what's short and what sales stock holds, so Mouse asks. Sales stock is used only up to the `fromSales` a person agreed for each piece. `StylistPullLine.fromStylistQty` records the split. Returns refill sales stock first, then the stylist inventory. Removing a pull as a mistake gives back both.
+  - Requests carry their exact pieces (`StylistRequest.pieces`, set by `set_request_pieces`). On the Stylists page each piece reads in ink ("1 Cleo Tee, Black, Size 1"), with its stock in pink, worked out live from both counts, never typed by Mouse. Sent makes the pull from that list and closes the request. Use sales stock lets the short pieces come from sales. With no pieces listed, Sent only marks the request sent and says nothing came off stock.
+  - `record_stylist_pull` takes `requestId` and `requestFullyMet`, so a pull closes the request it answers or notes what went. Without one, it reminds Mouse of the stylist's open requests.
+  - A folded "Stylist inventory" card on the page. The by-hand pull form has a box to take any shortfall from sales stock. Mouse's context lists the stylist inventory and each open request's pieces.
+  - Pulls made before this all came from sales stock (`fromStylistQty` 0) and return there.
+- **Files:** `prisma/schema.prisma` (migration `20261005200000_stylist_stock`), `lib/stylist-stock.ts`, `lib/stylists.ts`, `lib/mouse/tools.ts`, `lib/mouse/prompt.ts`, `app/(main)/stylists/`, `tests/stylist-stock.test.ts`
+- **Carries over:** Add-on (stylist pulls).
+
 ---
 
 ## Changes to records, not code
+
+- **5 Oct:** Natasha Colvin's Kendall at Home request was logged three times on 29 Sept. Two duplicates are closed. The one kept notes what went on the 30 Sept pull (Cleo Tee Shell, White, Sunshine, Splish in size 1; You Dress White 1 and 2; Boy Belt Small) and what is still owed (Story Dress, bags, black Cleo Tees, her gift tee).
 
 - **5 Oct:** todo "Populate the stylist inventory" added for Brandon. It's a stylist inventory kept separate from Shopify's.
 

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { addPull, addRequest, addStylist, addStylistNote, closePull, editStylistNote, removeStylist, removeStylistNote, returnPieces, setRequestStatus, updateStylist } from './actions'
+import { addPull, addRequest, addStylist, addStylistNote, closePull, editStylistNote, removeStylist, removeStylistNote, returnPieces, sendRequest, setRequestStatus, updateStylist, takeShortFromSales } from './actions'
 
 type Res = { ok: true; message?: string } | { ok: false; error: string }
 const input = 'min-w-0 rounded-lg border border-line bg-bg px-3 py-2 text-sm'
@@ -35,8 +35,12 @@ export function ReturnButton({ pullId, lineId, qty, label }: { pullId: string; l
   )
 }
 
-/** A request: Sent once it went out, Close if it no longer matters. Reopen undoes either. */
-export function RequestButtons({ requestId, status }: { requestId: string; status: string }) {
+/**
+ * A request: Sent makes the pull from its pieces (sendRequest), Close if it no
+ * longer matters, Use sales stock when the stylist inventory is short. Reopen
+ * undoes Close; a Sent pull is undone on the pull itself.
+ */
+export function RequestButtons({ requestId, status, short = false }: { requestId: string; status: string; short?: boolean }) {
   const { pending, go, note } = useAction()
   if (status === 'FULFILLED' || status === 'CLOSED') {
     return (
@@ -50,7 +54,8 @@ export function RequestButtons({ requestId, status }: { requestId: string; statu
   return (
     <span className="inline-flex shrink-0 flex-col items-end gap-0.5">
       <span className="flex gap-1.5">
-        <button type="button" disabled={pending} className={small} onClick={() => go(() => setRequestStatus(requestId, 'FULFILLED'))}>Sent</button>
+        {short ? <button type="button" disabled={pending} className={small} onClick={() => go(() => takeShortFromSales(requestId))}>Use sales stock</button> : null}
+        <button type="button" disabled={pending} className={small} onClick={() => go(() => sendRequest(requestId))}>Sent</button>
         <button type="button" disabled={pending} className={small} onClick={() => go(() => setRequestStatus(requestId, 'CLOSED'))}>Close</button>
       </span>
       {note}
@@ -248,6 +253,7 @@ function NewPull({ stylists, variants }: { stylists: Array<{ id: string; name: s
   const [project, setProject] = useState('')
   const [dueBackAt, setDue] = useState('')
   const [lines, setLines] = useState<Array<{ productVariantId: string; qty: number }>>([{ productVariantId: '', qty: 1 }])
+  const [salesOk, setSalesOk] = useState(false)
   const { pending, go, note } = useAction()
   const products = [...new Set(variants.map((v) => v.product))]
   const setLine = (i: number, patch: Partial<{ productVariantId: string; qty: number }>) =>
@@ -256,7 +262,7 @@ function NewPull({ stylists, variants }: { stylists: Array<{ id: string; name: s
   return (
     <form className="flex flex-col gap-2" onSubmit={(e) => {
       e.preventDefault()
-      go(() => addPull({ stylistId, project, dueBackAt, items: lines }), () => { setProject(''); setDue(''); setLines([{ productVariantId: '', qty: 1 }]) })
+      go(() => addPull({ stylistId, project, dueBackAt, items: lines, takeShortFromSales: salesOk }), () => { setProject(''); setDue(''); setLines([{ productVariantId: '', qty: 1 }]); setSalesOk(false) })
     }}>
       <StylistPicker stylists={stylists} value={stylistId} onChange={setStylist} />
       <input value={project} onChange={(e) => setProject(e.target.value)} placeholder="Shoot, talent or publication" className={input} />
@@ -275,7 +281,11 @@ function NewPull({ stylists, variants }: { stylists: Array<{ id: string; name: s
       ))}
       <button type="button" className="self-start text-xs text-accent underline" onClick={() => setLines([...lines, { productVariantId: '', qty: 1 }])}>+ another piece</button>
       <label className="flex items-center gap-2 text-xs text-muted">Due back <input type="date" value={dueBackAt} onChange={(e) => setDue(e.target.value)} className={input} /></label>
-      <p className="text-[11px] text-faint">Saving takes these pieces off stock, in Shopify too. Tap Back when they return.</p>
+      <label className="flex items-start gap-2 text-xs text-muted">
+        <input type="checkbox" checked={salesOk} onChange={(e) => setSalesOk(e.target.checked)} className="mt-0.5" />
+        <span>If the stylist inventory is short, take the rest from sales stock</span>
+      </label>
+      <p className="text-[11px] text-faint">Saving takes these pieces from the stylist inventory first. Anything taken from sales stock comes off Shopify too. Tap Back when they return.</p>
       <button type="submit" disabled={pending || !ready} className={`${button} self-start`}>{pending ? 'Saving…' : 'Log pull'}</button>
       {note}
     </form>

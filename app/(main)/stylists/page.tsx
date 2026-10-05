@@ -2,6 +2,7 @@ import { Page, Card, Empty, Fold } from '@/app/ui/primitives'
 import { ItemRow } from '@/app/ui/item-row'
 import { db } from '@/lib/db'
 import { loadStylists, pullOut, stillOut } from '@/lib/stylists'
+import { pieceStatus, piecesOf, stockNote, stylistStock, variantLabels } from '@/lib/stylist-stock'
 import { AddByHand, NoteBox, PullCloseButtons, RequestButtons, ReturnButton, StylistDetails } from './stylist-controls'
 import { PageChat } from '@/app/ui/page-chat'
 
@@ -55,6 +56,11 @@ export default async function Stylists() {
   const now = new Date()
   const withPulls = all.filter((s) => s.out > 0).sort((a, b) => (a.due?.getTime() ?? Infinity) - (b.due?.getTime() ?? Infinity))
   const asked = all.flatMap((s) => s.openRequests.map((r) => ({ s, r }))).sort((a, b) => a.r.createdAt.getTime() - b.r.createdAt.getTime())
+  // Each request's pieces against the stylist inventory and sales stock, live.
+  const inv = await stylistStock()
+  const labels = await variantLabels([...new Set([...inv.keys(), ...asked.flatMap(({ r }) => piecesOf(r.pieces).map((p) => p.productVariantId))])])
+  const statusOf = (r: { pieces: unknown }) => pieceStatus(piecesOf(r.pieces), inv, labels)
+  const invRows = [...inv.entries()].map(([id, n]) => ({ id, n, label: labels.get(id)?.label ?? id })).sort((a, b) => a.label.localeCompare(b.label))
   const piecesOut = withPulls.reduce((n, s) => n + s.out, 0)
 
   const row = (s: (typeof all)[number]) => {
@@ -141,7 +147,7 @@ export default async function Stylists() {
                   {s.requests.map((r) => (
                     <li key={r.id} className="flex items-baseline justify-between gap-3 text-xs">
                       <span>{r.what}{r.qty ? ` × ${r.qty}` : ''}<span className="text-muted"> · {day(r.createdAt)}{r.neededBy ? `, needed ${day(r.neededBy)}` : ''}</span></span>
-                      <RequestButtons requestId={r.id} status={r.status} />
+                      <RequestButtons requestId={r.id} status={r.status} short={statusOf(r).some((x) => x.short > 0)} />
                     </li>
                   ))}
                 </ul>
@@ -172,22 +178,47 @@ export default async function Stylists() {
         ) : null}
         {asked.length ? (
           <ul className={`divide-y divide-line ${waiting.length ? 'border-t border-line' : ''}`}>
-            {asked.map(({ s, r }) => (
-              <li key={r.id} className="flex items-baseline justify-between gap-3 px-4 py-2.5 text-sm sm:px-5">
-                <span className="min-w-0">
-                  <span className="font-medium">{s.name}</span>
-                  <span> asked for {r.what}{r.qty ? ` × ${r.qty}` : ''}</span>
-                  <span className="text-xs text-muted"> · {day(r.createdAt)}{r.neededBy ? `, needed ${day(r.neededBy)}` : ''}</span>
-                </span>
-                <RequestButtons requestId={r.id} status={r.status} />
-              </li>
-            ))}
+            {asked.map(({ s, r }) => {
+              const st = statusOf(r)
+              return (
+                <li key={r.id} className="flex items-start justify-between gap-3 px-4 py-3 text-sm sm:px-5">
+                  <div className="min-w-0">
+                    <p>
+                      <span className="font-medium">{s.name}</span>
+                      <span className="text-xs text-muted"> · asked {day(r.createdAt)}{r.neededBy ? `, needed ${day(r.neededBy)}` : ''}</span>
+                    </p>
+                    {/* The pieces, one per line in ink, stock in pink (Brandon, 5 Oct 2026). */}
+                    {st.length ? (
+                      <ul className="mt-1 flex flex-col gap-0.5">
+                        {st.map((x, k) => (
+                          <li key={k}>{x.qty} {x.label} <span className="text-xs text-accent">({stockNote(x)})</span></li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-1 text-xs text-accent">Pieces not listed yet. Tell Mouse which pieces and sizes, and it checks the stock.</p>
+                    )}
+                    <p className="mt-1 text-xs text-muted">{r.what}</p>
+                  </div>
+                  <RequestButtons requestId={r.id} status={r.status} short={st.some((x) => x.short > 0)} />
+                </li>
+              )
+            })}
           </ul>
         ) : null}
         {!waiting.length && !asked.length ? <Empty>No requests open. Forward a stylist&apos;s email to mouse@send.cleocamp.com, or tell Mouse above.</Empty> : null}
       </Card>
       <Card title={`Out on pulls${withPulls.length ? ` (${piecesOut} piece${piecesOut === 1 ? '' : 's'})` : ''}`}>
         {withPulls.length ? <ul className="divide-y divide-line">{withPulls.map(row)}</ul> : <Empty>Nothing out with a stylist.</Empty>}
+      </Card>
+      {/* The stylist inventory, apart from sales stock (Brandon, 5 Oct 2026). Folded, like every list. */}
+      <Card>
+        <Fold summary={<span className="flex items-center justify-between gap-3"><span className="font-serif text-[17px] italic text-accent">Stylist inventory</span><span className="text-xs text-muted">{invRows.length ? `${invRows.reduce((n, x) => n + x.n, 0)} pieces` : 'empty: tell Mouse what is in it'}</span></span>}>
+          {invRows.length ? (
+            <ul className="divide-y divide-line border-t border-line">
+              {invRows.map((x) => <li key={x.id} className="flex justify-between gap-3 px-4 py-2 text-sm sm:px-5"><span>{x.label}</span><span className="text-muted">{x.n}</span></li>)}
+            </ul>
+          ) : <p className="border-t border-line px-4 py-3 text-xs text-muted sm:px-5">Pieces kept for stylists, apart from sales stock and not in Shopify. Tell Mouse in the box above, e.g. &ldquo;the stylist inventory has 2 Cleo Tee, Black, Size 1&rdquo;. A pull takes from here first, and Mouse asks before taking anything from sales stock.</p>}
+        </Fold>
       </Card>
       {/* Folded by default, like every list here (Brandon, 30 Sept 2026). */}
       <Card>
