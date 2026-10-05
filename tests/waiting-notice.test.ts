@@ -77,9 +77,13 @@ test('a customer is greeted by the name that is theirs, or by none', async () =>
   // Card and parcel agree over a stale account name.
   assert.equal(g('Katherine', 'Katy', 'Katy', 'ktbrim@gmail.com'), 'Katy')
   assert.equal(g('Rebecca', 'Becca', 'Becca', 'rebecca.s.cohen2013@gmail.com'), 'Becca') // the address holds both; card and parcel settle it
+  // Account and card agree, and the address starts with that letter.
+  assert.equal(g('Suzanne', 'Suzanne', 'Master', 'suzyz@msn.com'), 'Suzanne')
+  assert.equal(g('Emma', 'Emma', 'Emmy', 'e.wohl13@gmail.com'), 'Emma')
+  assert.equal(g('Linda', 'Linda', 'LC', 'lcbutton17@gmail.com'), 'Linda') // LC is initials
+  assert.equal(g('Madelin Rose', 'Madelin Rose', 'Madeline', 'madcremin@gmail.com'), 'Madelin Rose')
   // Nothing settles it: no name rather than a wrong one.
   assert.equal(g('Joshua', 'Joshua', 'Ali', 'stephmbank@gmail.com'), null)
-  assert.equal(g('Madelin Rose', 'Madelin Rose', 'Madeline', 'madcremin@gmail.com'), null)
   // Initials are not names.
   assert.equal(g('George', 'George', 'G', 'gchurchill62@gmail.com'), 'George')
   assert.equal(g('Laura H', 'Laura H', 'Laura H.', 'lhm@laurahmiller.com'), 'Laura')

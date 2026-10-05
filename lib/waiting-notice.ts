@@ -58,13 +58,16 @@ export function waitingItems(lines: WaitingLine[], m: Match): string[] {
  *   2. the name, if every one given agrees;
  *   3. the name on the card, if the parcel says the same (the account is
  *      the stalest of the three);
- *   4. none, since "Hi there" is never wrong and the wrong name always is.
- * Initials are dropped ("Laura H." is Laura, "G" is nobody). A name typed
- * all in lower case gets its capital. Pure.
+ *   4. the name on the account and the card, if the email address starts
+ *      with its letter (#2425: Suzanne twice, "Master" on the parcel,
+ *      suzyz@…), but not #2297: Joshua twice, inbox stephmbank@…;
+ *   5. none, since "Hi there" is never wrong and the wrong name always is.
+ * Initials are dropped ("Laura H." is Laura, "G" and "LC" are nobody). A
+ * name typed all in lower case gets its capital. Pure.
  */
 export function greetingName(n: { account?: string | null; billing?: string | null; shipping?: string | null }, email: string): string | null {
   const clean = (x?: string | null) => {
-    const words = (x ?? '').trim().split(/\s+/).filter((w) => !/^\p{L}\.?$/u.test(w))
+    const words = (x ?? '').trim().split(/\s+/).filter((w) => !/^\p{L}\.?$/u.test(w) && !/^\p{Lu}{2}\.?$/u.test(w))
     const name = words.join(' ')
     return /^\p{L}{2}[\p{L}'’ -]*$/u.test(name) ? name : ''
   }
@@ -79,6 +82,7 @@ export function greetingName(n: { account?: string | null; billing?: string | nu
     inEmail.length === 1 ? inEmail[0]
     : distinct.size === 1 ? [...distinct][0]
     : billing && shipping && key(billing) === key(shipping) ? key(billing)
+    : account && billing && key(account) === key(billing) && local.startsWith(key(billing).charAt(0)) ? key(billing)
     : null
   if (!pickKey) return null
   const same = given.filter((g) => key(g) === pickKey || key(g.split(' ')[0]) === pickKey)
