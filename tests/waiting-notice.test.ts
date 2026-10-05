@@ -65,16 +65,27 @@ test('nothing sends from cleocamp.com itself unless a person chose it for that s
 
 test('a customer is greeted by the name that is theirs, or by none', async () => {
   const { greetingName } = await import('../lib/waiting-notice')
-  assert.equal(greetingName(['Danielle', 'Danielle', 'Danielle'], 'daniellemoreno322@gmail.com'), 'Danielle')
-  // Account and parcel disagree: the email says whose inbox it is.
-  assert.equal(greetingName(['Charles', 'Charles', 'Vanessa'], 'vanessatraina@gmail.com'), 'Vanessa')
-  assert.equal(greetingName(['Theodore', 'Theodore', 'Olivia'], 'oliviabaumann20@gmail.com'), 'Olivia')
-  assert.equal(greetingName(['Tania', 'Tania', 'Sophie'], 'sophiedodd123@icloud.com'), 'Sophie')
-  // Neither name is in the address: no name rather than a wrong one.
-  assert.equal(greetingName(['Joshua', 'Joshua', 'Ali'], 'stephmbank@gmail.com'), null)
-  // Same name, different case: the capitalised spelling.
-  assert.equal(greetingName(['sarah', 'sarah', 'Sarah'], 'sphelantiedman@gmail.com'), 'Sarah')
-  assert.equal(greetingName(['maryn', 'maryn', 'maryn'], 'maryn.schutz@gmail.com'), 'Maryn')
-  assert.equal(greetingName([null, '', undefined], 'x@y.com'), null)
-  assert.equal(greetingName(['Mary-Kate', null, 'Mary-Kate'], 'mk@y.com'), 'Mary-Kate')
+  const g = (account: string | null, billing: string | null, shipping: string | null, email: string) => greetingName({ account, billing, shipping }, email)
+  assert.equal(g('Danielle', 'Danielle', 'Danielle', 'daniellemoreno322@gmail.com'), 'Danielle')
+  // The email says whose inbox it is.
+  assert.equal(g('Charles', 'Charles', 'Vanessa', 'vanessatraina@gmail.com'), 'Vanessa')
+  assert.equal(g('Theodore', 'Theodore', 'Olivia', 'oliviabaumann20@gmail.com'), 'Olivia')
+  assert.equal(g('Tania', 'Tania', 'Sophie', 'sophiedodd123@icloud.com'), 'Sophie')
+  assert.equal(g('Jiaying', 'Arielle', 'Arielle', 'ariel065le@gmail.com'), 'Arielle')
+  assert.equal(g('Maya', 'Maya', 'Farhan', 'mayalynnstewart@gmail.com'), 'Maya') // a gift: the parcel is someone else's
+  assert.equal(g('Xela Ann Marie', 'Xela Ann Marie', 'Xela', 'xelapaysforthings@gmail.com'), 'Xela')
+  // Card and parcel agree over a stale account name.
+  assert.equal(g('Katherine', 'Katy', 'Katy', 'ktbrim@gmail.com'), 'Katy')
+  assert.equal(g('Rebecca', 'Becca', 'Becca', 'rebecca.s.cohen2013@gmail.com'), 'Becca') // the address holds both; card and parcel settle it
+  // Nothing settles it: no name rather than a wrong one.
+  assert.equal(g('Joshua', 'Joshua', 'Ali', 'stephmbank@gmail.com'), null)
+  assert.equal(g('Madelin Rose', 'Madelin Rose', 'Madeline', 'madcremin@gmail.com'), null)
+  // Initials are not names.
+  assert.equal(g('George', 'George', 'G', 'gchurchill62@gmail.com'), 'George')
+  assert.equal(g('Laura H', 'Laura H', 'Laura H.', 'lhm@laurahmiller.com'), 'Laura')
+  // All agree: the whole name as written, capitalised if typed in lower case.
+  assert.equal(g('Catherine Adair', 'Catherine Adair', 'Catherine Adair', 'adair.ilyinsky@gmail.com'), 'Catherine Adair')
+  assert.equal(g('sarah', 'sarah', 'Sarah', 'sphelantiedman@gmail.com'), 'Sarah')
+  assert.equal(g('maryn', 'maryn', 'maryn', 'maryn.schutz@gmail.com'), 'Maryn')
+  assert.equal(g(null, '', null, 'x@y.com'), null)
 })

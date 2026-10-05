@@ -50,24 +50,42 @@ export function waitingItems(lines: WaitingLine[], m: Match): string[] {
 /**
  * The name to greet a customer by, or null for "there". Shopify keeps a
  * first name on the customer account, the billing address and the shipping
- * address, and they are not always the person reading: on 5 Oct 2026 #2289
- * (vanessatraina@…) had Charles on the account and Vanessa on the parcel,
- * #2309 (oliviabaumann20@…) Theodore and Olivia. So: if every name given
- * agrees, that one; if they disagree, the one the email address itself
- * contains; otherwise none, since "Hi there" is never wrong and the wrong
- * name always is. A name typed all lower case ("sarah") gets its capital. Pure.
+ * address, and they are not always the person reading. On 5 Oct 2026, #2289
+ * (vanessatraina@…) had Charles on the account and card and Vanessa on the
+ * parcel; #2347 had Katherine on the account and Katy on card and parcel;
+ * #2332's parcel just said "G". So, in order:
+ *   1. the name the email address itself contains (whose inbox it is);
+ *   2. the name, if every one given agrees;
+ *   3. the name on the card, if the parcel says the same (the account is
+ *      the stalest of the three);
+ *   4. none, since "Hi there" is never wrong and the wrong name always is.
+ * Initials are dropped ("Laura H." is Laura, "G" is nobody). A name typed
+ * all in lower case gets its capital. Pure.
  */
-export function greetingName(names: Array<string | null | undefined>, email: string): string | null {
-  const given = names.map((n) => (n ?? '').trim()).filter((n) => /^\p{L}[\p{L}'’ -]*$/u.test(n))
-  const distinct = [...new Map(given.map((n) => [n.toLowerCase(), n])).values()]
-  const local = email.split('@')[0].toLowerCase().replace(/[^\p{L}]/gu, '')
-  const pick = distinct.length === 1 ? distinct[0] : distinct.filter((n) => local.includes(n.toLowerCase().replace(/[^\p{L}]/gu, ''))).length === 1
-    ? distinct.find((n) => local.includes(n.toLowerCase().replace(/[^\p{L}]/gu, '')))!
+export function greetingName(n: { account?: string | null; billing?: string | null; shipping?: string | null }, email: string): string | null {
+  const clean = (x?: string | null) => {
+    const words = (x ?? '').trim().split(/\s+/).filter((w) => !/^\p{L}\.?$/u.test(w))
+    const name = words.join(' ')
+    return /^\p{L}{2}[\p{L}'’ -]*$/u.test(name) ? name : ''
+  }
+  const key = (x: string) => x.toLowerCase().replace(/[^\p{L}]/gu, '')
+  const account = clean(n.account), billing = clean(n.billing), shipping = clean(n.shipping)
+  const given = [account, billing, shipping].filter(Boolean)
+  if (!given.length) return null
+  const local = key(email.split('@')[0])
+  const inEmail = [...new Set(given.map((g) => key(g.split(' ')[0])))].filter((k) => k.length >= 3 && local.includes(k))
+  const distinct = new Set(given.map(key))
+  const pickKey =
+    inEmail.length === 1 ? inEmail[0]
+    : distinct.size === 1 ? [...distinct][0]
+    : billing && shipping && key(billing) === key(shipping) ? key(billing)
     : null
-  if (!pick) return null
-  // Prefer a capitalised spelling of the same name if one was given.
-  const cased = given.find((n) => n.toLowerCase() === pick.toLowerCase() && n !== n.toLowerCase()) ?? pick
-  return cased === cased.toLowerCase() ? cased.charAt(0).toUpperCase() + cased.slice(1) : cased
+  if (!pickKey) return null
+  const same = given.filter((g) => key(g) === pickKey || key(g.split(' ')[0]) === pickKey)
+  // Prefer a spelling with capitals; the whole name when all agree, else its first word.
+  const chosen = same.find((g) => g !== g.toLowerCase()) ?? same[0]
+  const out = distinct.size === 1 || key(chosen) === pickKey ? chosen : chosen.split(' ')[0]
+  return out === out.toLowerCase() ? out.charAt(0).toUpperCase() + out.slice(1) : out
 }
 
 /** "A", "A and B", "A, B and C". Pure. */
@@ -131,7 +149,7 @@ export async function findWaiting(m: Match): Promise<WaitingOrder[]> {
       if (o.displayFinancialStatus === 'REFUNDED' || o.displayFinancialStatus === 'VOIDED') continue
       const items = waitingItems(o.lineItems.nodes, m)
       const email = o.email.trim()
-      const firstName = greetingName([o.customer?.firstName, o.billingAddress?.firstName, o.shippingAddress?.firstName], email)
+      const firstName = greetingName({ account: o.customer?.firstName, billing: o.billingAddress?.firstName, shipping: o.shippingAddress?.firstName }, email)
       if (items.length) out.push({ orderId: o.id, name: o.name, email, firstName, items })
     }
     if (!d.orders.pageInfo.hasNextPage) break

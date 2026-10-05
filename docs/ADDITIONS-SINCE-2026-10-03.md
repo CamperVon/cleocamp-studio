@@ -187,7 +187,7 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 
 ### 5 Oct · "Message everyone waiting" greets each customer by their own name
 - **Why:** Before Cleo's tee note went out, Brandon checked that everyone gets their own name. Shopify's account name wasn't always the reader's: #2289 (vanessatraina@…) had Charles on the account and Vanessa on the parcel, #2309 Theodore and Olivia, #2291 Tania and Sophie. #2297 (stephmbank@…) had Joshua and Ali. Some names were typed all in lower case.
-- **What:** `greetingName` reads the first name on the account, billing address and shipping address. If they all agree, it uses that name. If they disagree, it uses the one the email address contains. Otherwise it uses no name ("Hi there!"), because the wrong name is worse than none. A name typed all in lower case gets its capital.
+- **What:** `greetingName` picks the greeting from the first names on the account, card and parcel. It uses, in order: the name the email address contains; the name if all three agree; the card's name if the parcel matches it (#2347: Katherine on the account, Katy on both); otherwise none ("Hi there!"), because the wrong name is worse than none. Initials are dropped (#2332's parcel said "G"; "Laura H." becomes Laura). A name typed all in lower case gets its capital.
 - **Files:** `lib/waiting-notice.ts`, `tests/waiting-notice.test.ts`
 - **Carries over:** General.
 
