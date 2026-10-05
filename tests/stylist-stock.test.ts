@@ -37,3 +37,11 @@ test('a request\'s pieces are read back safely', () => {
     [{ productVariantId: 'a', qty: 2 }, { productVariantId: 'c', qty: 1, fromSales: 1 }])
   assert.deepEqual(piecesOf(null), [])
 })
+
+test('a request folds to a short name: the shoot in quotes, else its first phrase', async () => {
+  const { requestTitle } = await import('../lib/stylists')
+  assert.equal(requestTitle('Pull for "Kendall at Home" (Kendall Jenner, shot by Paige Powell): tees'), 'Kendall at Home')
+  assert.equal(requestTitle('Pull of the pieces in her list, for the film "Love of Your Life" (7 and 8 Oct)'), 'Love of Your Life')
+  assert.equal(requestTitle('Story Dress, You Dress (black/white), and Cleo bags'), 'Story Dress, You Dress')
+  assert.ok(requestTitle('A very long request with no quotes and no break in it anywhere at all for a while').length <= 49)
+})

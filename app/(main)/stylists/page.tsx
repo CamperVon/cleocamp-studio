@@ -1,7 +1,7 @@
 import { Page, Card, Empty, Fold } from '@/app/ui/primitives'
 import { ItemRow } from '@/app/ui/item-row'
 import { db } from '@/lib/db'
-import { loadStylists, pullOut, stillOut } from '@/lib/stylists'
+import { loadStylists, pullOut, requestTitle, stillOut } from '@/lib/stylists'
 import { pieceStatus, piecesOf, stockNote, stylistStock, variantLabels } from '@/lib/stylist-stock'
 import { AddByHand, NoteBox, PullCloseButtons, RequestButtons, ReturnButton, StylistDetails } from './stylist-controls'
 import { PageChat } from '@/app/ui/page-chat'
@@ -180,26 +180,45 @@ export default async function Stylists() {
           <ul className={`divide-y divide-line ${waiting.length ? 'border-t border-line' : ''}`}>
             {asked.map(({ s, r }) => {
               const st = statusOf(r)
+              const short = st.filter((x) => x.short > 0).length
+              const late = !!r.neededBy && r.neededBy < now
               return (
-                <li key={r.id} className="flex items-start justify-between gap-3 px-4 py-3 text-sm sm:px-5">
-                  <div className="min-w-0">
-                    <p>
-                      <span className="font-medium">{s.name}</span>
-                      <span className="text-xs text-muted"> · asked {day(r.createdAt)}{r.neededBy ? `, needed ${day(r.neededBy)}` : ''}</span>
-                    </p>
-                    {/* The pieces, one per line in ink, stock in pink (Brandon, 5 Oct 2026). */}
-                    {st.length ? (
-                      <ul className="mt-1 flex flex-col gap-0.5">
-                        {st.map((x, k) => (
-                          <li key={k}>{x.qty} {x.label} <span className="text-xs text-accent">({stockNote(x)})</span></li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-1 text-xs text-accent">Pieces not listed yet. Tell Mouse which pieces and sizes, and it checks the stock.</p>
-                    )}
-                    <p className="mt-1 text-xs text-muted">{r.what}</p>
-                  </div>
-                  <RequestButtons requestId={r.id} status={r.status} short={st.some((x) => x.short > 0)} />
+                <li key={r.id}>
+                  {/* Folded like a pull (Brandon, 5 Oct 2026): who and what on the
+                      closed line, with what needs doing; the rest inside. */}
+                  <Fold
+                    summary={
+                      <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                        <span className="min-w-0">
+                          <span className="font-medium">{s.name}</span>
+                          <span className="text-muted"> · {requestTitle(r.what)}</span>
+                        </span>
+                        <span className="shrink-0 text-xs">
+                          <span className={late ? 'font-semibold text-urgent' : 'text-muted'}>{r.neededBy ? `${late ? 'was needed' : 'needed'} ${day(r.neededBy)}` : `asked ${day(r.createdAt)}`}</span>
+                          <span className="text-accent"> · {st.length ? `${st.reduce((n, x) => n + x.qty, 0)} piece${st.reduce((n, x) => n + x.qty, 0) === 1 ? '' : 's'}${short ? `, ${short} short` : ''}` : 'pieces not listed'}</span>
+                        </span>
+                      </span>
+                    }
+                  >
+                    <div className="px-4 pb-3 text-sm sm:px-5">
+                      <div className="flex justify-end border-b border-line pb-2">
+                        <RequestButtons requestId={r.id} status={r.status} short={short > 0} />
+                      </div>
+                      {/* The pieces, one per line in ink, stock in pink. */}
+                      {st.length ? (
+                        <ul className="mt-2 flex flex-col gap-0.5">
+                          {st.map((x, k) => (
+                            <li key={k}>{x.qty} {x.label} <span className="text-xs text-accent">({stockNote(x)})</span></li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-2 text-xs text-accent">Pieces not listed yet. Tell Mouse which pieces and sizes, and it checks the stock.</p>
+                      )}
+                      <p className="mt-2 text-xs text-muted">{r.what}</p>
+                      {r.notes ? <p className="mt-1 whitespace-pre-line text-xs text-muted">{r.notes}</p> : null}
+                      <p className="mt-1 text-[11px] text-faint">Asked {day(r.createdAt)}</p>
+                    </div>
+                  </Fold>
                 </li>
               )
             })}

@@ -226,6 +226,12 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Files:** `prisma/schema.prisma` (migration `20261005200000_stylist_stock`), `lib/stylist-stock.ts`, `lib/stylists.ts`, `lib/mouse/tools.ts`, `lib/mouse/prompt.ts`, `app/(main)/stylists/`, `tests/stylist-stock.test.ts`
 - **Carries over:** Add-on (stylist pulls).
 
+### 5 Oct · Stylist requests fold like the pulls
+- **Why:** Brandon: "the requests notes need to be cleaned up like the out on pulls as well."
+- **What:** each open request is one folded line: the stylist, a short name for the request (the shoot or film in quotes when Mouse wrote one, else its first phrase, from `requestTitle`), when it's needed (red once that has passed), and the piece count with anything short, or "pieces not listed", in pink. Inside are the buttons first, then the pieces with their stock, then Mouse's full wording and notes.
+- **Files:** `app/(main)/stylists/page.tsx`, `lib/stylists.ts`, `tests/stylist-stock.test.ts`
+- **Carries over:** Add-on (stylist pulls).
+
 ---
 
 ## Changes to records, not code

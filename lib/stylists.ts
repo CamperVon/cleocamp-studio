@@ -79,6 +79,21 @@ export async function stylistContext(now = new Date()): Promise<string> {
 }
 
 /**
+ * A request's name for its folded line, from what Mouse wrote about it: the
+ * shoot or film in quotes when there is one ("Kendall at Home"), else the
+ * first phrase, cut short. Brandon, 5 Oct 2026: the requests need cleaning up
+ * "like the out on pulls". Pure.
+ */
+export function requestTitle(what: string): string {
+  const quoted = what.match(/["“]([^"”]{3,60})["”]/)?.[1]
+  if (quoted) return quoted.trim()
+  const head = what.split(/[:(—;\n]/)[0].trim()
+  if (head.length <= 48) return head
+  const cut = head.slice(0, 48)
+  return `${cut.slice(0, cut.lastIndexOf(' ') > 20 ? cut.lastIndexOf(' ') : 48).replace(/[,.\s]+$/, '')}…`
+}
+
+/**
  * Which stylist a tool means. By id, by name, or both; when both are given
  * they must agree, which is what would have caught the Natasha pull filed
  * under Maya. A name matches whole or as the start of a word ("Natasha",
