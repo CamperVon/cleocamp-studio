@@ -35,7 +35,7 @@ export default async function Stylists() {
     loadStylists(),
     db.actionItem.findMany({
       where: { resolved: false, entityId: 'stylists', kind: 'QUESTION' },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
       select: { id: true, kind: true, title: true, detail: true },
     }),
     db.note.findMany({
@@ -55,7 +55,8 @@ export default async function Stylists() {
   const notesFor = (id: string) => notes.filter((n) => n.entityId === `stylist:${id}` || n.entityId === id)
   const now = new Date()
   const withPulls = all.filter((s) => s.out > 0).sort((a, b) => (a.due?.getTime() ?? Infinity) - (b.due?.getTime() ?? Infinity))
-  const asked = all.flatMap((s) => s.openRequests.map((r) => ({ s, r }))).sort((a, b) => a.r.createdAt.getTime() - b.r.createdAt.getTime())
+  // Newest first (Brandon, 5 Oct 2026).
+  const asked = all.flatMap((s) => s.openRequests.map((r) => ({ s, r }))).sort((a, b) => b.r.createdAt.getTime() - a.r.createdAt.getTime())
   // Each request's pieces against the stylist inventory and sales stock, live.
   const inv = await stylistStock()
   const labels = await variantLabels([...new Set([...inv.keys(), ...asked.flatMap(({ r }) => piecesOf(r.pieces).map((p) => p.productVariantId))])])
