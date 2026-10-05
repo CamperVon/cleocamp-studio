@@ -175,6 +175,16 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Files:** `lib/email.ts`, `lib/waiting-notice.ts`, `app/(main)/special/actions.ts`, `app/ui/waiting-notice.tsx`, `tests/waiting-notice.test.ts`
 - **Carries over:** General (a guard on sending as the main domain); the address is Cleo only.
 
+### 5 Oct · The line sheet as Excel, beside the PDF
+- **Why:** Brandon: "I need our wholesale line sheet to be in excel format as well as our pdf."
+- **What:**
+  - `/wholesale/line-sheet/xlsx` downloads the line sheet as an Excel file: the same rows as the PDF, in the same order, held back for the same reasons. The heading, the date the prices are as of, and the press and contact lines are on it too.
+  - Prices are numbers in dollars, so a store can sort and work with them. A price range fills a second "up to" column. A typed MSRP that isn't a price stays as written. There are no photos, and stock counts never go on it.
+  - The Wholesale page has an "Excel" link next to Download. When Mouse emails the line sheet to a store (`send_line_sheet`), it attaches both files, and the email says so.
+  - New dependency: `exceljs`. npm audit flags its uuid (v3/v5/v6 only) and a glob helper; this code uses neither.
+- **Files:** `lib/line-sheet-xlsx.ts`, `app/wholesale/line-sheet/xlsx/route.ts`, `lib/line-sheet.tsx` (`lineSheetFileName` takes an extension), `app/(main)/wholesale/page.tsx`, `lib/mouse/tools.ts`, `lib/mouse/prompt.ts`, `tests/line-sheet-xlsx.test.ts`, `package.json`
+- **Carries over:** General (any brand with a line sheet).
+
 ---
 
 ## Changes to records, not code

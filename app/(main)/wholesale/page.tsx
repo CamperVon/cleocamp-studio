@@ -255,6 +255,7 @@ export default async function Wholesale() {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-2.5 text-xs text-muted sm:px-5">
             <a href="/wholesale/line-sheet/pdf" target="_blank" rel="noreferrer" className="font-medium text-accent underline">Open the PDF</a>
             <a href="/wholesale/line-sheet/pdf?download=1" className="text-accent underline">Download</a>
+            <a href="/wholesale/line-sheet/xlsx" className="text-accent underline">Excel</a>
             <span>Wholesale from the price list, suggested retail from Shopify, both read live. New products and colours on Shopify join by themselves. Tap a piece to change its words or remove it; tell Mouse to change a price or send the sheet to a store.</span>
           </div>
           {alerts ? (

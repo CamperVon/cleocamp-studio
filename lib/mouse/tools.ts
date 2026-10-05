@@ -4787,7 +4787,7 @@ export const TOOLS: Record<string, Tool> = {
     def: {
       name: 'send_line_sheet',
       description:
-        'Email the wholesale line sheet as a PDF, drawn now with today\'s prices, to a store or buyer. ' +
+        'Email the wholesale line sheet as a PDF and an Excel file, drawn now with today\'s prices, to a store or buyer. ' +
         'ONLY when a person in the chat asked. It comes from Cleo Camp and replies go to studio@. ' +
         'Leave confirmed out first: that sends nothing and hands back exactly what would go, to show ' +
         'the person. Pass confirmed: true only once they have said to send it.',
@@ -4810,22 +4810,23 @@ export const TOOLS: Record<string, Tool> = {
       const text =
         `Hi${i.name ? ` ${String(i.name).trim()}` : ''},\n\n` +
         (i.note ? `${String(i.note).trim()}\n\n` : '') +
-        `Our current wholesale line sheet is attached, with this season's pieces, wholesale and suggested retail prices, minimums and availability.\n\n` +
+        `Our current wholesale line sheet is attached as a PDF and as an Excel file, with this season's pieces, wholesale and suggested retail prices, minimums and availability.\n\n` +
         `To place an order or ask about anything on it, just reply to this email.\n\nBest,\nCleo Camp\nstudio@cleocamp.com`
       if (i.confirmed !== true) {
         return {
-          sent: false, draft: { to, subject, text, attachment: 'the line sheet PDF, drawn at send time', preview: '/wholesale/line-sheet/pdf' },
+          sent: false, draft: { to, subject, text, attachment: 'the line sheet as a PDF and an Excel file, drawn at send time', preview: '/wholesale/line-sheet/pdf' },
           ...(known ? {} : { check: `${to} is not the email on any wholesale account. Confirm it is right before sending.` }),
           tellTheUser: 'Show this draft and ask whether to send it.',
         }
       }
       const { renderLineSheetPdf, lineSheetFileName } = await import('@/lib/line-sheet')
-      const pdf = await renderLineSheetPdf()
-      if (!pdf) return { sent: false, reason: 'The line sheet has no rows, so there is nothing to send.' }
+      const { renderLineSheetXlsx } = await import('@/lib/line-sheet-xlsx')
+      const [pdf, xlsx] = await Promise.all([renderLineSheetPdf(), renderLineSheetXlsx()])
+      if (!pdf || !xlsx) return { sent: false, reason: 'The line sheet has no rows, so there is nothing to send.' }
       const { sendEmail } = await import('@/lib/email')
       const r = await sendEmail({
         from: 'Cleo Camp <studio@send.cleocamp.com>', to: [to], replyTo: 'studio@cleocamp.com', subject, text,
-        attachments: [{ filename: lineSheetFileName(), content: pdf }],
+        attachments: [{ filename: lineSheetFileName(), content: pdf }, { filename: lineSheetFileName(new Date(), 'xlsx'), content: xlsx }],
       })
       return r.sent ? { sent: true, to, tellTheUser: `Say the line sheet went to ${to}.` } : { sent: false, reason: `It did not send (${'reason' in r ? r.reason : 'unknown'}).` }
     },

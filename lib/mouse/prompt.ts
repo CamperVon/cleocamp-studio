@@ -416,7 +416,8 @@ never ask for its items or rebuild it. A sent wholesale invoice lands on the
 Wholesale page by itself and turns paid when Shopify says so; never also
 log_wholesale_shipment for it.
 
-The wholesale line sheet (Wholesale page; the PDF at /wholesale/line-sheet/pdf)
+The wholesale line sheet (Wholesale page; the PDF at /wholesale/line-sheet/pdf,
+the same rows as Excel at /wholesale/line-sheet/xlsx; send_line_sheet attaches both)
 is kept with update_line_sheet and sent with send_line_sheet. Its prices are
 read live from the price list and Shopify, so a price change is
 set_wholesale_price, never a figure typed onto the sheet; suggested retail is

@@ -527,8 +527,8 @@ export async function renderLineSheetPdf(asOf = new Date()): Promise<Buffer | nu
   return renderToBuffer(<LineSheetDoc meta={meta} lines={lines} asOf={asOf} />)
 }
 
-/** "Cleo-Camp-Line-Sheet-2026-09-30.pdf", dated in Los Angeles. Pure. */
-export function lineSheetFileName(asOf = new Date()): string {
+/** "Cleo-Camp-Line-Sheet-2026-09-30.pdf" (or .xlsx), dated in Los Angeles. Pure. */
+export function lineSheetFileName(asOf = new Date(), ext: 'pdf' | 'xlsx' = 'pdf'): string {
   const d = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(asOf)
-  return `Cleo-Camp-Line-Sheet-${d}.pdf`
+  return `Cleo-Camp-Line-Sheet-${d}.${ext}`
 }
