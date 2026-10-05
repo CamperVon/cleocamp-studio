@@ -254,6 +254,16 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Files:** `lib/mouse/tools.ts`, `lib/mouse/prompt.ts`, `lib/live-sale.ts`
 - **Carries over:** General.
 
+### 5 Oct · Mouse finds stores by name, and remembers what it makes
+- **Why:** Mouse made the Waymo Commercial store, then refused to invoice it one message later: "the invoice tool needs that account's internal reference, which I can no longer see." Brandon: "This is getting tiring", "it needs to have better memory."
+- **What:**
+  - Mouse's context listed only stores that already had a shipment, so a new store was invisible, reference and all. It now lists every active store with its reference, contact, email and address (or NO EMAIL / NO ADDRESS).
+  - `invoice_wholesale`, `update_wholesale_account` and `log_wholesale_shipment` take the store's name (`storeName`) and find it, using the stylist tools' matching, now `pickNamed` in `lib/stylists.ts`. An id that's given must match the name. Several matches is a question.
+  - Memory: the line that tells Mouse what it did in each earlier reply now carries the names and references of what it made or found (a store, a draft and its Shopify id, a pull, a request), from `madeRefs` in `lib/mouse/agent.ts`. Before, the next turn knew a store had been created but not which one.
+  - A charge a person names on a handed-over wholesale invoice goes on as "Delivery". Before, the tool refused any charge on an order that wasn't shipping. "With sales tax" and no address on file is caught up front, with Mouse asked to get the address.
+- **Files:** `lib/mouse/tools.ts`, `lib/mouse/context.ts`, `lib/mouse/agent.ts`, `lib/stylists.ts`, `tests/memory-refs.test.ts`
+- **Carries over:** General.
+
 ---
 
 ## Changes to records, not code

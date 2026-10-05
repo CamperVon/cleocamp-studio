@@ -274,6 +274,11 @@ export async function buildCatalog(): Promise<string> {
     // What has shipped and what's owed — never a count. See CLAUDE.md and
     // WholesaleShipment's own comment: this tracks money and shipping
     // dates only, deliberately disconnected from inventory everywhere.
+    // Every store, with its id, even one with nothing shipped yet: a store
+    // Mouse had just made was invisible here, so it could not invoice it
+    // (Waymo Commercial, 5 Oct 2026).
+    L.push('\n## Wholesale stores on file')
+    for (const a of wholesale) L.push(`- ${a.name} [${a.id}] · ${a.type}${a.contactName ? ` · contact ${a.contactName}` : ''} · ${a.email ? `email ${a.email}` : 'NO EMAIL'} · ${a.address ? `address ${a.address}` : 'NO ADDRESS'}`)
     L.push('\n## Wholesale — shipped, paid or not')
     for (const a of wholesale) {
       if (!a.shipments.length) continue

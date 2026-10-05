@@ -100,18 +100,30 @@ export function requestTitle(what: string): string {
  * "Colvin"); more than one match is a question, never a pick. Pure.
  */
 export function pickStylist<S extends { id: string; name: string }>(all: S[], id?: string | null, name?: string | null): { stylist: S } | { reason: string } {
+  const r = pickNamed('stylist', 'Add them with save_stylist, or check the name.', all, id, name)
+  return 'reason' in r ? r : { stylist: r.picked }
+}
+
+/**
+ * The same match for any named record: by id, by name, or both, where both
+ * must agree. A name matches whole or as the start of each word; more than
+ * one match is a question, never a pick. Brandon, 5 Oct 2026: Mouse made the
+ * Waymo Commercial store, then could not invoice it a message later because
+ * the tool took only its id. Pure.
+ */
+export function pickNamed<S extends { id: string; name: string }>(kind: string, none: string, all: S[], id?: string | null, name?: string | null): { picked: S } | { reason: string } {
   const byId = id ? all.find((s) => s.id === id.trim()) : undefined
   const words = (t: string) => t.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
   const want = words(name ?? '')
   const n = want.length ? want.join(' ') : null
   const byName = n ? all.filter((s) => { const w = words(s.name); return want.every((t) => w.some((x) => x.startsWith(t))) }) : []
-  if (id && !byId) return { reason: `No stylist ${id}. Use an id from the list of stylists on file.` }
-  if (byId && n && !byName.some((s) => s.id === byId.id)) return { reason: `Stylist ${id} is ${byId.name}, not ${name}. Check which one is meant.` }
-  if (byId) return { stylist: byId }
-  if (!n) return { reason: 'Say which stylist.' }
-  if (byName.length === 1) return { stylist: byName[0] }
-  if (!byName.length) return { reason: `No stylist called ${name}. Add them with save_stylist, or check the name.` }
-  return { reason: `More than one stylist matches ${name}: ${byName.map((s) => s.name).join(', ')}. Ask which.` }
+  if (id && !byId && !n) return { reason: `No ${kind} ${id}. Use an id from the list on file, or give the name.` }
+  if (byId && n && !byName.some((s) => s.id === byId.id)) return { reason: `${kind[0].toUpperCase()}${kind.slice(1)} ${id} is ${byId.name}, not ${name}. Check which one is meant.` }
+  if (byId) return { picked: byId }
+  if (!n) return { reason: `Say which ${kind}.` }
+  if (byName.length === 1) return { picked: byName[0] }
+  if (!byName.length) return { reason: `No ${kind} called ${name}. ${none}` }
+  return { reason: `More than one ${kind} matches ${name}: ${byName.map((s) => s.name).join(', ')}. Ask which.` }
 }
 
 /**

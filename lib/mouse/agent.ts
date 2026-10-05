@@ -552,6 +552,26 @@ Boy Belts in Small*." Never say something was done, saved, sent or updated.`
  * Written into Mouse's own replies, it taught Mouse to write the line itself
  * (see stripForgedActions): every earlier reply it read ended that way.
  */
+/**
+ * The ids a tool result handed back (a store, a draft, a pull, a request, a
+ * PO), as "Waymo Commercial [cmuv…]; draft D41 [gid://…]". Pure.
+ */
+export function madeRefs(r: Record<string, unknown> | undefined): string {
+  if (!r || typeof r !== 'object') return ''
+  const out: string[] = []
+  const nameOf = (o: Record<string, unknown>) => (typeof o.name === 'string' ? o.name : typeof o.title === 'string' ? o.title : '')
+  if (typeof r.id === 'string') out.push(`${nameOf(r) || 'id'} [${r.id}]`)
+  for (const [k, v] of Object.entries(r)) {
+    if (k === 'id') continue
+    if (/^(draftOrderId|pullId|requestId|stylistId|wholesaleAccountId|accountId|poNumber|productId|draft)$/.test(k) && (typeof v === 'string' || typeof v === 'number')) out.push(`${k} ${v}`)
+    else if (v && typeof v === 'object' && !Array.isArray(v) && typeof (v as Record<string, unknown>).id === 'string') {
+      const o = v as Record<string, unknown>
+      out.push(`${nameOf(o) || k} [${o.id}]`)
+    }
+  }
+  return out.slice(0, 6).join('; ')
+}
+
 function actionsCarriedOut(toolCallsJson: unknown): string | null {
   if (!Array.isArray(toolCallsJson) || !toolCallsJson.length) return null
   const done = (toolCallsJson as Array<{ name?: string; status?: string; input?: Record<string, unknown>; result?: Record<string, unknown> }>)
@@ -569,7 +589,13 @@ function actionsCarriedOut(toolCallsJson: unknown): string | null {
         return `${t.name} → ${r.name}: ${delta.trim()}, now ${r.newQty}${r.shopify ? `, ${String(r.shopify).slice(0, 60)}` : ''}`
       }
       const target = t.input?.to ?? t.input?.poNumber ?? t.input?.title ?? t.input?.id
-      return target ? `${t.name} → ${String(target).slice(0, 60)}` : String(t.name)
+      // What the call made or found, by name AND reference, so the next turn can
+      // act on it. Brandon, 5 Oct 2026, "it needs to have better memory":
+      // Mouse made the Waymo Commercial store, then could not invoice it one
+      // message later because the store's id was gone from what it was shown.
+      const refs = madeRefs(r)
+      const head = target ? `${t.name} → ${String(target).slice(0, 60)}` : String(t.name)
+      return refs ? `${head} (${refs})` : head
     })
   if (!done.length) return null
   return `[Record kept by the app, not a message from anyone: your reply above carried out ${done.join('; ')}]`

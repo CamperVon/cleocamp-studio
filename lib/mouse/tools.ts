@@ -295,6 +295,18 @@ function isListedOnShopify(product: { variants: { shopifyVariantId: string | nul
   return product.variants.some((v) => v.shopifyVariantId !== null)
 }
 
+/**
+ * A wholesale store by id or by name (both checked when both are given).
+ * Brandon, 5 Oct 2026: Mouse made Waymo Commercial and could not invoice it
+ * a message later, because the tools took only an id it could no longer see.
+ */
+async function findStore(id: unknown, name: unknown) {
+  const { pickNamed } = await import('@/lib/stylists')
+  const all = await db.wholesaleAccount.findMany({ where: { active: true } })
+  const r = pickNamed('store', 'Add it with create_wholesale_account, or check the name.', all, id ? String(id) : null, name ? String(name) : null)
+  return 'reason' in r ? r : r.picked
+}
+
 export const TOOLS: Record<string, Tool> = {
   log_inventory_event: {
     def: {
@@ -3824,7 +3836,8 @@ export const TOOLS: Record<string, Tool> = {
       input_schema: {
         type: 'object',
         properties: {
-          wholesaleAccountId: str('The store\'s wholesale account. Its email is where the invoice goes; if it has none, ask for it and save it on the account first.'),
+          wholesaleAccountId: str('The store\'s wholesale account id, if you have it. Its email is where the invoice goes; if it has none, ask for it and save it on the account first.'),
+          storeName: str('The store\'s name as the person said it. Always pass it: the tool finds the store by it when there is no id, and checks a given id matches.'),
           items: {
             type: 'array' as const,
             items: {
@@ -3839,20 +3852,20 @@ export const TOOLS: Record<string, Tool> = {
           },
           reduceStock: { type: 'boolean' as const, description: 'true: take these off Shopify stock. false: leave stock alone. Only what the person said.' },
           ship: { type: 'boolean' as const, description: 'true: shipped to the store (label from Shopify). false: handed over or delivered by us. Only what the person said.' },
-          shippingCharge: num('Only if the person named a shipping charge for this invoice, replacing the standard $25 (waived over $2,500).'),
+          shippingCharge: num('Only if the person named a charge for this invoice. Shipped: replaces the standard $25 (waived over $2,500). Handed over: added as a delivery charge.'),
           chargeSalesTax: { type: 'boolean' as const, description: 'true ONLY when the person said to charge sales tax on this invoice ("with sales tax"). Default: no sales tax. Shopify works out the tax for the address. Pass it again on every revision of the same draft, or the revision drops it.' },
           draftOrderId: str('The Shopify draft from an earlier call (gid://shopify/DraftOrder/…). Pass it to revise that draft, and to send it.'),
           alsoCopy: { type: 'array' as const, items: { type: 'string' as const }, description: 'Other people to get a copy of the invoice (our own email, with the PDF), e.g. Jane or a second contact at the store. Only addresses a person gave. studio@ always gets one.' },
           confirmed: { type: 'boolean' as const, description: 'Leave out to draft. true only after a person has seen the draft and said send; needs draftOrderId.' },
         },
-        required: ['wholesaleAccountId', 'items', 'reduceStock', 'ship'],
+        required: ['storeName', 'items', 'reduceStock', 'ship'],
       },
     },
     run: async (i) => {
       if (typeof i.reduceStock !== 'boolean') return { sent: false, reason: 'Ask whether this should come off stock before drafting.' }
       if (typeof i.ship !== 'boolean') return { sent: false, reason: 'Ask whether this ships to the store or is handed over, before drafting.' }
-      const acct = await db.wholesaleAccount.findUnique({ where: { id: String(i.wholesaleAccountId) } })
-      if (!acct) return { sent: false, reason: 'No such wholesale account. Look it up again.' }
+      const acct = await findStore(i.wholesaleAccountId, i.storeName)
+      if ('reason' in acct) return { sent: false, reason: acct.reason }
       const email = (acct.email ?? '').trim().toLowerCase()
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
         return { sent: false, reason: `${acct.name} has no email on file. Ask for it, save it with update_wholesale_account, then draft again.` }
@@ -3871,7 +3884,6 @@ export const TOOLS: Record<string, Tool> = {
       if (badCopy) return { sent: false, reason: `"${badCopy}" is not an email address. Ask again.` }
       const namedShipping = i.shippingCharge == null ? null : Number(i.shippingCharge)
       if (namedShipping != null && !(namedShipping >= 0)) return { sent: false, reason: 'That shipping charge is not a number. Ask again.' }
-      if (namedShipping != null && !i.ship) return { sent: false, reason: 'A shipping charge on an order that is not shipping. Ask which it is.' }
       const items = Array.isArray(i.items) ? i.items as Array<{ productVariantId: string; quantity: number; price?: number | null }> : []
       if (!items.length) return { sent: false, reason: 'Nothing to invoice. Ask what the store is taking.' }
       const variants = await db.productVariant.findMany({
@@ -3900,6 +3912,7 @@ export const TOOLS: Record<string, Tool> = {
       // No sales tax unless a person said so for this invoice (Brandon, 5 Oct
       // 2026: "if we say with sales tax only, yes, but default is no sales tax").
       const withTax = i.chargeSalesTax === true
+      if (withTax && !storeAddress) return { sent: false, reason: `Shopify works out sales tax from the store's address, and ${acct.name} has no full address on file (street, city, state, ZIP). Ask for it, save it with update_wholesale_account, then draft.` }
       const options = {
         taxExempt: !withTax,
         // Whether it ships is kept on the draft, so it can be sent later by
@@ -3912,6 +3925,9 @@ export const TOOLS: Record<string, Tool> = {
       const { wholesaleShipping } = await import('@/lib/live-sale')
       const sh = shipTo ? wholesaleShipping(goods, namedShipping) : null
       Object.assign(options, sh ? { shipTo, shippingCharge: sh.charge, shippingTitle: sh.title } : {})
+      // Handed over or delivered by us, with a charge a person named: a
+      // delivery charge on the invoice (Waymo Commercial, 5 Oct 2026).
+      if (!i.ship && namedShipping != null && namedShipping > 0) Object.assign(options, { shippingCharge: namedShipping, shippingTitle: 'Delivery' })
       // The store's name and address on the draft, shipped or not. The
       // customer's name is the contact's if we have one, else the store's.
       const { storeCustomer } = await import('@/lib/live-sale')
@@ -3933,7 +3949,7 @@ export const TOOLS: Record<string, Tool> = {
           copied: ['studio@cleocamp.com (always; replies come back to the studio)', ...copy],
           lines: d.lines.map((l, n) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}${priced[n] ? ` (${priced[n]})` : ''}`),
           subtotal: `$${d.subtotal.toFixed(2)}`,
-          shipping: shipTo && sh ? `to ${addressLines(shipTo)}; shipping & handling $${d.shipping.toFixed(2)} (${sh.why}); label made in Shopify after sending` : 'none — marked handed over when sent',
+          shipping: shipTo && sh ? `to ${addressLines(shipTo)}; shipping & handling $${d.shipping.toFixed(2)} (${sh.why}); label made in Shopify after sending` : d.shipping ? `delivery $${d.shipping.toFixed(2)}, as named; marked handed over when sent` : 'none — marked handed over when sent',
           tax: withTax ? `$${d.tax.toFixed(2)} (sales tax, as asked; Shopify works it out for the address)` : `$${d.tax.toFixed(2)} (wholesale, none)`, total: `$${d.total.toFixed(2)}`,
           stock: i.reduceStock ? ['Comes off Shopify stock when sent.', ...stockNotes] : ['Stock is left alone.'],
           ...(customerNote ? { customer: customerNote } : {}),
@@ -5294,17 +5310,21 @@ export const TOOLS: Record<string, Tool> = {
       input_schema: {
         type: 'object',
         properties: {
-          wholesaleAccountId: str('The account'),
+          wholesaleAccountId: str('The account id, if you have it'),
+          storeName: str('The store\'s name as the person said it. Always pass it: the tool finds the store by it when there is no id.'),
           contactName: str('Who you deal with'),
           email: str('A real email, as given'),
           address: str('Street, city, state ZIP — e.g. "2030 Hillhurst Ave, Los Angeles, CA 90027"'),
           notes: str('Replaces the account notes. Only when someone asks to rewrite them; to add a thought use addToNotes'),
           addToNotes: str('A thought or fact to add under the notes already there, dated. Nothing already written is lost'),
         },
-        required: ['wholesaleAccountId'],
+        required: ['storeName'],
       },
     },
     run: async (i) => {
+      const store = await findStore(i.wholesaleAccountId, i.storeName)
+      if ('reason' in store) return { saved: false, reason: store.reason }
+      i = { ...i, wholesaleAccountId: store.id }
       const data: Record<string, string> = {}
       for (const k of ['contactName', 'email', 'address', 'notes'] as const) {
         const val = i[k]
@@ -5332,7 +5352,8 @@ export const TOOLS: Record<string, Tool> = {
       input_schema: {
         type: 'object',
         properties: {
-          accountId: str('Wholesale account id'),
+          accountId: str('Wholesale account id, if you have it'),
+          storeName: str('The store\'s name as the person said it; the tool finds the store by it when there is no id'),
           sentAt: str('ISO date it went out'),
           lines: {
             type: 'array' as const,
@@ -5350,12 +5371,13 @@ export const TOOLS: Record<string, Tool> = {
           paid: { type: 'boolean' as const, description: 'Only set this if actually told — omit rather than assume unpaid' },
           notes: str('Anything else'),
         },
-        required: ['accountId', 'sentAt', 'lines'],
+        required: ['storeName', 'sentAt', 'lines'],
       },
     },
     run: async (i) => {
-      const account = await db.wholesaleAccount.findUnique({ where: { id: i.accountId as string } })
-      if (!account) return { error: `No wholesale account ${i.accountId}` }
+      const account = await findStore(i.accountId, i.storeName)
+      if ('reason' in account) return { error: account.reason }
+      i = { ...i, accountId: account.id }
       const shipment = await db.wholesaleShipment.create({
         data: {
           accountId: i.accountId as string,
