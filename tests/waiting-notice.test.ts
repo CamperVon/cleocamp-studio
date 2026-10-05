@@ -62,3 +62,19 @@ test('nothing sends from cleocamp.com itself unless a person chose it for that s
   assert.ok(!ROOT_DOMAIN_FROM.test('Cleo Studio <support@send.cleocamp.com>'))
   assert.ok(!ROOT_DOMAIN_FROM.test('Studio Mouse <mouse@send.cleocamp.com>'))
 })
+
+test('a customer is greeted by the name that is theirs, or by none', async () => {
+  const { greetingName } = await import('../lib/waiting-notice')
+  assert.equal(greetingName(['Danielle', 'Danielle', 'Danielle'], 'daniellemoreno322@gmail.com'), 'Danielle')
+  // Account and parcel disagree: the email says whose inbox it is.
+  assert.equal(greetingName(['Charles', 'Charles', 'Vanessa'], 'vanessatraina@gmail.com'), 'Vanessa')
+  assert.equal(greetingName(['Theodore', 'Theodore', 'Olivia'], 'oliviabaumann20@gmail.com'), 'Olivia')
+  assert.equal(greetingName(['Tania', 'Tania', 'Sophie'], 'sophiedodd123@icloud.com'), 'Sophie')
+  // Neither name is in the address: no name rather than a wrong one.
+  assert.equal(greetingName(['Joshua', 'Joshua', 'Ali'], 'stephmbank@gmail.com'), null)
+  // Same name, different case: the capitalised spelling.
+  assert.equal(greetingName(['sarah', 'sarah', 'Sarah'], 'sphelantiedman@gmail.com'), 'Sarah')
+  assert.equal(greetingName(['maryn', 'maryn', 'maryn'], 'maryn.schutz@gmail.com'), 'Maryn')
+  assert.equal(greetingName([null, '', undefined], 'x@y.com'), null)
+  assert.equal(greetingName(['Mary-Kate', null, 'Mary-Kate'], 'mk@y.com'), 'Mary-Kate')
+})

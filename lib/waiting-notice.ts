@@ -47,6 +47,29 @@ export function waitingItems(lines: WaitingLine[], m: Match): string[] {
   return out
 }
 
+/**
+ * The name to greet a customer by, or null for "there". Shopify keeps a
+ * first name on the customer account, the billing address and the shipping
+ * address, and they are not always the person reading: on 5 Oct 2026 #2289
+ * (vanessatraina@…) had Charles on the account and Vanessa on the parcel,
+ * #2309 (oliviabaumann20@…) Theodore and Olivia. So: if every name given
+ * agrees, that one; if they disagree, the one the email address itself
+ * contains; otherwise none, since "Hi there" is never wrong and the wrong
+ * name always is. A name typed all lower case ("sarah") gets its capital. Pure.
+ */
+export function greetingName(names: Array<string | null | undefined>, email: string): string | null {
+  const given = names.map((n) => (n ?? '').trim()).filter((n) => /^\p{L}[\p{L}'’ -]*$/u.test(n))
+  const distinct = [...new Map(given.map((n) => [n.toLowerCase(), n])).values()]
+  const local = email.split('@')[0].toLowerCase().replace(/[^\p{L}]/gu, '')
+  const pick = distinct.length === 1 ? distinct[0] : distinct.filter((n) => local.includes(n.toLowerCase().replace(/[^\p{L}]/gu, ''))).length === 1
+    ? distinct.find((n) => local.includes(n.toLowerCase().replace(/[^\p{L}]/gu, '')))!
+    : null
+  if (!pick) return null
+  // Prefer a capitalised spelling of the same name if one was given.
+  const cased = given.find((n) => n.toLowerCase() === pick.toLowerCase() && n !== n.toLowerCase()) ?? pick
+  return cased === cased.toLowerCase() ? cased.charAt(0).toUpperCase() + cased.slice(1) : cased
+}
+
 /** "A", "A and B", "A, B and C". Pure. */
 function listOf(items: string[]): string {
   return items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
@@ -75,6 +98,8 @@ type OrdersPage = {
     nodes: Array<{
       id: string; name: string; email: string | null; cancelledAt: string | null; displayFinancialStatus: string | null
       customer: { firstName: string | null } | null
+      billingAddress: { firstName: string | null } | null
+      shippingAddress: { firstName: string | null } | null
       lineItems: { nodes: WaitingLine[] }
     }>
   }
@@ -93,6 +118,8 @@ export async function findWaiting(m: Match): Promise<WaitingOrder[]> {
           nodes {
             id name email cancelledAt displayFinancialStatus
             customer { firstName }
+            billingAddress { firstName }
+            shippingAddress { firstName }
             lineItems(first: 50) { nodes { title variantTitle unfulfilledQuantity } }
           }
         }
@@ -103,7 +130,9 @@ export async function findWaiting(m: Match): Promise<WaitingOrder[]> {
       if (o.cancelledAt || !o.email) continue
       if (o.displayFinancialStatus === 'REFUNDED' || o.displayFinancialStatus === 'VOIDED') continue
       const items = waitingItems(o.lineItems.nodes, m)
-      if (items.length) out.push({ orderId: o.id, name: o.name, email: o.email.trim(), firstName: o.customer?.firstName ?? null, items })
+      const email = o.email.trim()
+      const firstName = greetingName([o.customer?.firstName, o.billingAddress?.firstName, o.shippingAddress?.firstName], email)
+      if (items.length) out.push({ orderId: o.id, name: o.name, email, firstName, items })
     }
     if (!d.orders.pageInfo.hasNextPage) break
     after = d.orders.pageInfo.endCursor
