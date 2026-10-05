@@ -143,7 +143,9 @@ function draftInput(email: string, lines: SaleLine[], note: string, opts: Invoic
     ...(email ? { email } : {}),
     note,
     tags: opts.tags ?? ['live-sale', 'studio-mouse'],
-    ...(opts.taxExempt ? { taxExempt: true } : {}),
+    // Always said, never left out: a revised draft keeps its old setting otherwise,
+    // so a wholesale draft redone "with sales tax" would stay tax exempt.
+    taxExempt: !!opts.taxExempt,
     ...(opts.shipTo ?? opts.billTo ? { shippingAddress: opts.shipTo ?? opts.billTo, billingAddress: opts.billTo ?? opts.shipTo } : {}),
     ...(opts.customerId ? { purchasingEntity: { customerId: opts.customerId } } : {}),
     ...(opts.discount ? { appliedDiscount: { value: opts.discount.percent, valueType: 'PERCENTAGE', title: opts.discount.title } } : {}),

@@ -3805,7 +3805,7 @@ export const TOOLS: Record<string, Tool> = {
       name: 'invoice_wholesale',
       description:
         'Invoice a wholesale account (a store) through Shopify: the store\'s prices, no sales ' +
-        'tax, tagged wholesale so it is not counted as retail demand, marked handed over so it ' +
+        'tax unless the person says "with sales tax" (chargeSalesTax), tagged wholesale so it is not counted as retail demand, marked handed over so it ' +
         'is never packed as a web order, and Shopify emails the store a link to pay. Each line is ' +
         'priced from the wholesale line sheet stored on the product; a price the person names ' +
         'replaces it for this invoice only (never saved). A product with neither: ask, never guess. ' +
@@ -3840,6 +3840,7 @@ export const TOOLS: Record<string, Tool> = {
           reduceStock: { type: 'boolean' as const, description: 'true: take these off Shopify stock. false: leave stock alone. Only what the person said.' },
           ship: { type: 'boolean' as const, description: 'true: shipped to the store (label from Shopify). false: handed over or delivered by us. Only what the person said.' },
           shippingCharge: num('Only if the person named a shipping charge for this invoice, replacing the standard $25 (waived over $2,500).'),
+          chargeSalesTax: { type: 'boolean' as const, description: 'true ONLY when the person said to charge sales tax on this invoice ("with sales tax"). Default: no sales tax. Shopify works out the tax for the address. Pass it again on every revision of the same draft, or the revision drops it.' },
           draftOrderId: str('The Shopify draft from an earlier call (gid://shopify/DraftOrder/…). Pass it to revise that draft, and to send it.'),
           alsoCopy: { type: 'array' as const, items: { type: 'string' as const }, description: 'Other people to get a copy of the invoice (our own email, with the PDF), e.g. Jane or a second contact at the store. Only addresses a person gave. studio@ always gets one.' },
           confirmed: { type: 'boolean' as const, description: 'Leave out to draft. true only after a person has seen the draft and said send; needs draftOrderId.' },
@@ -3896,11 +3897,14 @@ export const TOOLS: Record<string, Tool> = {
         const onHand = v.onHandQty === null ? null : Number(v.onHandQty)
         if (i.reduceStock && onHand !== null && onHand < qty) stockNotes.push(`${label}: Shopify last showed ${onHand} in stock, fewer than ${qty} — say so before sending.`)
       }
+      // No sales tax unless a person said so for this invoice (Brandon, 5 Oct
+      // 2026: "if we say with sales tax only, yes, but default is no sales tax").
+      const withTax = i.chargeSalesTax === true
       const options = {
-        taxExempt: true,
+        taxExempt: !withTax,
         // Whether it ships is kept on the draft, so it can be sent later by
         // its number without anyone having to say it again.
-        tags: ['wholesale', 'studio-mouse', i.ship ? 'ships' : 'handed-over'],
+        tags: ['wholesale', 'studio-mouse', i.ship ? 'ships' : 'handed-over', ...(withTax ? ['sales-tax'] : [])],
         subject: (n: string) => `Cleo Camp wholesale invoice ${n}`,
         message: () => `Hello ${acct.contactName?.trim().split(/\s+/)[0] ?? acct.name}, thank you for your order. Your invoice is below, with a link to pay.\n\nKindly,\nCleo Studio`,
       } as import('@/lib/live-sale').InvoiceOptions
@@ -3930,7 +3934,7 @@ export const TOOLS: Record<string, Tool> = {
           lines: d.lines.map((l, n) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}${priced[n] ? ` (${priced[n]})` : ''}`),
           subtotal: `$${d.subtotal.toFixed(2)}`,
           shipping: shipTo && sh ? `to ${addressLines(shipTo)}; shipping & handling $${d.shipping.toFixed(2)} (${sh.why}); label made in Shopify after sending` : 'none — marked handed over when sent',
-          tax: `$${d.tax.toFixed(2)} (wholesale, none)`, total: `$${d.total.toFixed(2)}`,
+          tax: withTax ? `$${d.tax.toFixed(2)} (sales tax, as asked; Shopify works it out for the address)` : `$${d.tax.toFixed(2)} (wholesale, none)`, total: `$${d.total.toFixed(2)}`,
           stock: i.reduceStock ? ['Comes off Shopify stock when sent.', ...stockNotes] : ['Stock is left alone.'],
           ...(customerNote ? { customer: customerNote } : {}),
           ...(!storeAddress ? { address: `No full address on file for ${acct.name}, so the draft has none. Ask for it if they want it on the invoice.` } : {}),

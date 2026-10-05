@@ -246,6 +246,14 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Files:** `lib/support/draft.ts`, `lib/support/reply.ts`, `tests/support-reply.test.ts`
 - **Carries over:** General (any one-per-customer code).
 
+### 5 Oct · Wholesale invoice "with sales tax", only when asked
+- **Why:** Brandon: "if we say with sales tax only, yes, but default is no sales tax."
+- **What:**
+  - `invoice_wholesale` takes `chargeSalesTax`. It is true only when a person says to charge sales tax on that invoice, and Shopify then works out the tax for the store's address. The default is still no sales tax. A taxed draft is tagged `sales-tax`, and Mouse shows the tax amount when it presents the draft. Mouse has to pass the flag again on each revision, because a revision rebuilds the draft.
+  - Every draft now states its tax setting outright (`taxExempt: true/false` in `lib/live-sale.ts`). Shopify keeps a revised draft's old setting when the field is left out, so a draft redone "with sales tax" would have stayed tax-exempt. Live sales were already taxed by default and are unchanged.
+- **Files:** `lib/mouse/tools.ts`, `lib/mouse/prompt.ts`, `lib/live-sale.ts`
+- **Carries over:** General.
+
 ---
 
 ## Changes to records, not code

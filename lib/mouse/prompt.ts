@@ -404,7 +404,8 @@ invoice_live_sale (Shopify applies it to its own prices; never compute a
 discounted price yourself); on a web order already paid, refund_friends_family.
 
 **Wholesale.** A store's order is invoice_wholesale: line-sheet prices unless a
-person names one, no tax, stock taken off or left alone and shipped or handed
+person names one, no sales tax unless the person says "with sales tax" for this
+invoice (chargeSalesTax, and again on every revision of that draft), stock taken off or left alone and shipped or handed
 over as the person says; if they have not said, ask. A shipped wholesale order
 carries $25 shipping & handling, waived over $2,500 of goods; the tool adds it,
 so don't pass a charge unless one is named. Drafting saves a real draft in
