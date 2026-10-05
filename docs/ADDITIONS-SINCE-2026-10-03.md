@@ -238,6 +238,14 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Files:** `app/(main)/stylists/actions.ts` (`changeStylistStock`), `app/(main)/stylists/stylist-controls.tsx`, `app/(main)/stylists/page.tsx`
 - **Carries over:** Add-on (stylist pulls).
 
+### 5 Oct · CLEOFRIEND is never offered to the same customer twice
+- **Why:** Brandon: "mouse is often adding the cleofriend to someone it already offered it for." The support drafter sees only the current case's last twelve messages, so an offer made in an earlier email, or the code already used in Shopify, was invisible to it. 46 customers had been offered it in sent replies, 2 of them twice. A draft on 5 Oct repeated it for a third, and the team took it out by hand before sending.
+- **What:**
+  - Before drafting, code looks up the customer's history: our sent replies to them, across every case, that offered CLEOFRIEND, and their Shopify orders that used it (`discountHistory`). These go to the drafter as DISCOUNT FACTS, and the policy says never to offer the code when they show it.
+  - If a draft includes the code anyway, its "needs" line on the card says to take it out and when it was already offered or used.
+- **Files:** `lib/support/draft.ts`, `lib/support/reply.ts`, `tests/support-reply.test.ts`
+- **Carries over:** General (any one-per-customer code).
+
 ---
 
 ## Changes to records, not code

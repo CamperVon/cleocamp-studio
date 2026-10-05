@@ -210,3 +210,11 @@ test('other colours in stock in her size are worked out, not left to be spotted 
   assert.deepEqual(inStockInSize(shop, ['1']), ['- Cleo Tee in stock now in size 1, ships right away: Shell, Hot Pink.'])
   assert.deepEqual(inStockInSize(shop, ['3']), ['- Cleo Tee: nothing in stock in size 3 right now.'])
 })
+
+test('CLEOFRIEND is never offered twice: code tells the drafter when it was offered or used', async () => {
+  const { discountFacts } = await import('../lib/support/reply')
+  assert.equal(discountFacts([], []), '')
+  const f = discountFacts([new Date('2026-10-02T18:00:00Z')], [])
+  assert.match(f, /already offered to this customer in our reply of Oct 2\. Do not offer it again\./)
+  assert.match(discountFacts([], ['#2501']), /already used by this customer, on order #2501.*do not offer it/)
+})

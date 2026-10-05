@@ -63,6 +63,8 @@ LATE ORDERS AND UNHAPPY CUSTOMERS
 - You MAY offer the code CLEOFRIEND for 10% off a future order, to a customer
   whose order was late or who is unhappy. Never any other code, never a refund,
   free item or free shipping — those are a person's decision.
+- Never offer CLEOFRIEND when DISCOUNT FACTS say it was already offered to this
+  customer or already used (it works once per customer). Apologise without it.
 
 NO ORDER FOUND
 - If the facts say no order is matched and the email is about an order, still
@@ -200,6 +202,21 @@ export function parseDraft(raw: string): Draft | null {
  */
 export function unfilled(text: string): string[] {
   return [...text.matchAll(/\[([A-Z][A-Z0-9 /'-]{1,40})\]/g)].map((m) => m[1])
+}
+
+/**
+ * What code knows about this customer and CLEOFRIEND, for the drafter and for
+ * the check after it. Brandon, 5 Oct 2026: "mouse is often adding the
+ * cleofriend to someone it already offered it for." The drafter sees only
+ * this case's last twelve messages, so an offer in an earlier email, or the
+ * code already used in Shopify, was invisible to it. Pure.
+ */
+export function discountFacts(offered: Date[], usedOn: string[]): string {
+  const day = (d: Date) => d.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' })
+  const parts: string[] = []
+  if (usedOn.length) parts.push(`CLEOFRIEND was already used by this customer, on order ${usedOn.join(', ')}. It works once per customer, so do not offer it.`)
+  if (offered.length) parts.push(`CLEOFRIEND was already offered to this customer in our reply of ${offered.map(day).join(', ')}. Do not offer it again.`)
+  return parts.join('\n')
 }
 
 /** The discount code in a reply, for the "this gives money away" flag. */

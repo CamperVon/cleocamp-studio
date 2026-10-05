@@ -5,7 +5,7 @@ import { BACKGROUND_MODEL, CHAT_MODEL } from '@/lib/mouse/agent'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
 import { findOrder, type OrderSnapshot } from '@/lib/support/orders'
 import { isConfigured, shopifyGraphQL } from '@/lib/integrations/shopify'
-import { addressChangeProblems, DRAFT_INSTRUCTIONS, orderFacts, parseDraft, teamInstructions } from '@/lib/support/reply'
+import { addressChangeProblems, discountFacts, DRAFT_INSTRUCTIONS, mentionsDiscount, orderFacts, parseDraft, teamInstructions } from '@/lib/support/reply'
 import { orderNumbersIn, trimQuoted } from '@/lib/support/core'
 
 /**
@@ -36,10 +36,11 @@ export async function draftForCase(caseId: string): Promise<void> {
     .join('\n---\n')
 
   const latest = c.messages.filter((m) => m.direction === 'INBOUND').slice(-3).map((m) => trimQuoted(m.body).text).join('\n')
-  const [stock, catalog, examples] = await Promise.all([
+  const [stock, catalog, examples, discount] = await Promise.all([
     stockFacts(order).catch(() => ''),
     catalogFacts(`${c.subject ?? ''}\n${latest}`).catch((e) => { console.error('[support] catalog facts', e); return '' }),
     recentReplies(caseId).catch(() => ''),
+    discountHistory(c.customerEmail).catch((e) => { console.error('[support] discount facts', e); return '' }),
   ])
   // Asked up to twice: a reply that cannot be read as a draft is asked for
   // again once, then left as a note on the case, never silently dropped.
@@ -65,6 +66,7 @@ export async function draftForCase(caseId: string): Promise<void> {
             `ORDER FACTS (from Shopify, checked by code):\n${orderFacts(order)}\n\n` +
             (stock ? `STOCK FACTS for items not yet shipped (from our records):\n${stock}\n\n` : '') +
             (catalog ? `CATALOG FACTS for products the customer names (from the shop, just now):\n${catalog}\n\n` : '') +
+            (discount ? `DISCOUNT FACTS (checked by code):\n${discount}\n\n` : '') +
             (examples ? `${examples}\n\n` : '') +
             `<conversation>\n${thread.slice(-9000)}\n</conversation>\n\n` +
             (told.length ? `TEAM INSTRUCTIONS (typed into the app by the team, newest last; follow them):\n${told.map((t) => `- ${t.slice(0, 600)}`).join('\n')}\n\n` : '') +
@@ -86,6 +88,11 @@ export async function draftForCase(caseId: string): Promise<void> {
     console.error('[support] draft unreadable', caseId, raw.slice(0, 300))
     return
   }
+  // Offered anyway despite the facts: say so on the card, where the person
+  // tapping Send reads it, rather than trusting the policy alone.
+  if (discount && d.reply && mentionsDiscount(d.reply)) {
+    d.needs = `Take CLEOFRIEND out: ${discount.split('\n')[0].replace(/ (It works once per customer, so do not offer it|Do not offer it again)\.$/, '')}`.slice(0, 200)
+  }
   // The checks are run and stored now so the card can show them, and run
   // again against a fresh read of the order at the moment someone taps.
   const address = d.newAddress
@@ -100,6 +107,26 @@ export async function draftForCase(caseId: string): Promise<void> {
       draftedAt: new Date(),
     },
   })
+}
+
+/**
+ * CLEOFRIEND and this customer: our sent replies to them that offered it (any
+ * case), and their Shopify orders that used it. Empty when neither.
+ */
+export async function discountHistory(email: string): Promise<string> {
+  const offered = await db.supportMessage.findMany({
+    where: { direction: 'OUTBOUND', body: { contains: 'CLEOFRIEND', mode: 'insensitive' }, case: { customerEmail: { equals: email, mode: 'insensitive' } } },
+    orderBy: { createdAt: 'asc' }, select: { createdAt: true },
+  })
+  let used: string[] = []
+  if (isConfigured()) {
+    const q = `email:${JSON.stringify(email)} AND discount_code:CLEOFRIEND`
+    const d = await shopifyGraphQL<{ orders: { nodes: Array<{ name: string }> } }>(
+      `query($q: String!) { orders(first: 5, query: $q) { nodes { name } } }`, { q },
+    ).catch(() => null)
+    used = d?.orders.nodes.map((o) => o.name) ?? []
+  }
+  return discountFacts(offered.map((m) => m.createdAt), used)
 }
 
 /**
