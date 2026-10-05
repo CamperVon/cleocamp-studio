@@ -3,7 +3,7 @@ import { ItemRow } from '@/app/ui/item-row'
 import { db } from '@/lib/db'
 import { loadStylists, pullOut, requestTitle, stillOut } from '@/lib/stylists'
 import { pieceStatus, piecesOf, stockNote, stylistStock, variantLabels } from '@/lib/stylist-stock'
-import { AddByHand, NoteBox, PullCloseButtons, RequestButtons, ReturnButton, StylistDetails } from './stylist-controls'
+import { AddByHand, AddStylistStock, NoteBox, PullCloseButtons, RequestButtons, ReturnButton, StylistDetails, StylistStockRow } from './stylist-controls'
 import { PageChat } from '@/app/ui/page-chat'
 
 /**
@@ -232,12 +232,18 @@ export default async function Stylists() {
       </Card>
       {/* The stylist inventory, apart from sales stock (Brandon, 5 Oct 2026). Folded, like every list. */}
       <Card>
-        <Fold summary={<span className="flex items-center justify-between gap-3"><span className="font-serif text-[17px] italic text-accent">Stylist inventory</span><span className="text-xs text-muted">{invRows.length ? `${invRows.reduce((n, x) => n + x.n, 0)} pieces` : 'empty: tell Mouse what is in it'}</span></span>}>
+        <Fold summary={<span className="flex items-center justify-between gap-3"><span className="font-serif text-[17px] italic text-accent">Stylist inventory</span><span className="text-xs text-muted">{invRows.length ? `${invRows.reduce((n, x) => n + x.n, 0)} pieces` : 'empty: add pieces, or tell Mouse'}</span></span>}>
+          {/* By hand as well as through Mouse (Brandon, 5 Oct 2026). */}
+          <div className="border-t border-line">
+            <Fold summary={<span className="text-sm font-medium">+ Add pieces</span>}>
+              <AddStylistStock variants={pieces} />
+            </Fold>
+          </div>
           {invRows.length ? (
             <ul className="divide-y divide-line border-t border-line">
-              {invRows.map((x) => <li key={x.id} className="flex justify-between gap-3 px-4 py-2 text-sm sm:px-5"><span>{x.label}</span><span className="text-muted">{x.n}</span></li>)}
+              {invRows.map((x) => <StylistStockRow key={x.id} id={x.id} label={x.label} n={x.n} />)}
             </ul>
-          ) : <p className="border-t border-line px-4 py-3 text-xs text-muted sm:px-5">Pieces kept for stylists, apart from sales stock and not in Shopify. Tell Mouse in the box above, e.g. &ldquo;the stylist inventory has 2 Cleo Tee, Black, Size 1&rdquo;. A pull takes from here first, and Mouse asks before taking anything from sales stock.</p>}
+          ) : <p className="border-t border-line px-4 py-3 text-xs text-muted sm:px-5">Pieces kept for stylists, apart from sales stock and not in Shopify. Add pieces above, or tell Mouse in the box at the top, e.g. &ldquo;the stylist inventory has 2 Cleo Tee, Black, Size 1&rdquo;. A pull takes from here first, and Mouse asks before taking anything from sales stock.</p>}
         </Fold>
       </Card>
       {/* Folded by default, like every list here (Brandon, 30 Sept 2026). */}

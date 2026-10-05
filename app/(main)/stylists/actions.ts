@@ -130,6 +130,23 @@ export async function takeShortFromSales(requestId: string): Promise<Result> {
   return failed(res) ? { ok: false, error: failed(res)! } : { ok: true, message: 'The short pieces will come from sales stock when you tap Sent.' }
 }
 
+/**
+ * The stylist inventory by hand (Brandon, 5 Oct 2026: "add manual entry or
+ * editing for quantities as well"). Through Mouse's own stylist_inventory
+ * tool, so a change here is the same ledger row one told to Mouse would be.
+ * add puts pieces in; count sets the number (0 takes a piece out entirely).
+ */
+export async function changeStylistStock(input: { productVariantId: string; qty: number; action: 'add' | 'count' }): Promise<Result> {
+  const who = await person()
+  if (!who) return NO_NAME
+  if (!input.productVariantId) return { ok: false, error: 'Pick a piece.' }
+  const qty = Math.round(Number(input.qty))
+  if (!(qty >= 0) || (input.action === 'add' && qty === 0)) return { ok: false, error: 'Give a number.' }
+  const r = await run('stylist_inventory', { action: input.action, productVariantId: input.productVariantId, qty, note: `By hand, ${who.name}` }, who)
+  if (failed(r)) return { ok: false, error: failed(r)! }
+  return { ok: true, message: r.note ? String(r.note) : `${r.piece}: ${r.inStylistInventory} in the stylist inventory.` }
+}
+
 export async function setRequestStatus(requestId: string, status: 'OPEN' | 'FULFILLED' | 'CLOSED'): Promise<Result> {
   const who = await person()
   if (!who) return NO_NAME

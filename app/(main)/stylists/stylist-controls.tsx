@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { addPull, addRequest, addStylist, addStylistNote, closePull, editStylistNote, removeStylist, removeStylistNote, returnPieces, sendRequest, setRequestStatus, updateStylist, takeShortFromSales } from './actions'
+import { addPull, addRequest, addStylist, addStylistNote, changeStylistStock, closePull, editStylistNote, removeStylist, removeStylistNote, returnPieces, sendRequest, setRequestStatus, updateStylist, takeShortFromSales } from './actions'
 
 type Res = { ok: true; message?: string } | { ok: false; error: string }
 const input = 'min-w-0 rounded-lg border border-line bg-bg px-3 py-2 text-sm'
@@ -324,5 +324,51 @@ export function PullCloseButtons({ pullId, closedAs }: { pullId: string; closedA
       </span>
       {note}
     </span>
+  )
+}
+
+/** One piece in the stylist inventory: its number, editable, with Remove for none left. */
+export function StylistStockRow({ id, label, n }: { id: string; label: string; n: number }) {
+  const [qty, setQty] = useState(String(n))
+  const { pending, go, note } = useAction()
+  const changed = qty.trim() !== '' && Number(qty) !== n
+  return (
+    <li className="flex flex-col gap-1 px-4 py-2 text-sm sm:px-5">
+      <span className="flex items-center justify-between gap-3">
+        <span className="min-w-0">{label}</span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <input type="number" min={0} value={qty} onChange={(e) => setQty(e.target.value)} className={`${input} w-16 py-1`} aria-label={`How many ${label}`} />
+          {changed ? <button type="button" disabled={pending} className={small} onClick={() => go(() => changeStylistStock({ productVariantId: id, qty: Number(qty), action: 'count' }))}>{pending ? '…' : 'Save'}</button> : null}
+          <button type="button" disabled={pending} className={small} onClick={() => go(() => changeStylistStock({ productVariantId: id, qty: 0, action: 'count' }), () => setQty('0'))}>Remove</button>
+        </span>
+      </span>
+      {note}
+    </li>
+  )
+}
+
+/** Pieces into the stylist inventory by hand: which piece and how many. */
+export function AddStylistStock({ variants }: { variants: Variant[] }) {
+  const [vid, setVid] = useState('')
+  const [qty, setQty] = useState(1)
+  const { pending, go, note } = useAction()
+  const products = [...new Set(variants.map((v) => v.product))]
+  return (
+    <form className="flex flex-col gap-2 px-4 py-3 sm:px-5" onSubmit={(e) => { e.preventDefault(); go(() => changeStylistStock({ productVariantId: vid, qty, action: 'add' }), () => { setVid(''); setQty(1) }) }}>
+      <div className="flex gap-2">
+        <select value={vid} onChange={(e) => setVid(e.target.value)} className={`${input} flex-1`}>
+          <option value="">Piece…</option>
+          {products.map((p) => (
+            <optgroup key={p} label={p}>
+              {variants.filter((v) => v.product === p).map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+            </optgroup>
+          ))}
+        </select>
+        <input type="number" min={1} value={qty} onChange={(e) => setQty(Number(e.target.value))} className={`${input} w-16`} aria-label="How many" />
+      </div>
+      <p className="text-[11px] text-faint">Adds to the stylist inventory only. Nothing comes off sales stock or Shopify.</p>
+      <button type="submit" disabled={pending || !vid || !(qty > 0)} className={`${button} self-start`}>{pending ? 'Adding…' : 'Add'}</button>
+      {note}
+    </form>
   )
 }

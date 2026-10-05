@@ -232,6 +232,12 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Files:** `app/(main)/stylists/page.tsx`, `lib/stylists.ts`, `tests/stylist-stock.test.ts`
 - **Carries over:** Add-on (stylist pulls).
 
+### 5 Oct · Stylist inventory by hand
+- **Why:** Brandon: "add manual entry or editing for quantities as well."
+- **What:** the Stylist inventory card has "+ Add pieces" (pick a piece and how many) and an editable number on each row, with Save and Remove. Both go through Mouse's `stylist_inventory` tool (add, or count to set the number), so a change by hand is the same ledger row one told to Mouse would be, signed with the person's name. Nothing touches sales stock or Shopify.
+- **Files:** `app/(main)/stylists/actions.ts` (`changeStylistStock`), `app/(main)/stylists/stylist-controls.tsx`, `app/(main)/stylists/page.tsx`
+- **Carries over:** Add-on (stylist pulls).
+
 ---
 
 ## Changes to records, not code
