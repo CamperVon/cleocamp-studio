@@ -264,6 +264,14 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Files:** `lib/mouse/tools.ts`, `lib/mouse/context.ts`, `lib/mouse/agent.ts`, `lib/stylists.ts`, `tests/memory-refs.test.ts`
 - **Carries over:** General.
 
+### 5 Oct · No tables in Mouse's chat; counts as plain lines
+- **Why:** Brandon, of a reply with a markdown table of Story Dress counts: "i find this to be ugly and confusing, can it be cleaned up?" The chat draws only bold and links, so the table arrived as pipes and dashes.
+- **What:**
+  - The prompt says the chat shows plain text and bold only: no tables, headings or asterisk bullets. Counts by colour and size go one colour to a line, total first: "Red (Wiltshire), 30: XS 13, S 7, M 8, L 2."
+  - Any table that still appears, including in old replies, is drawn as a real small table that scrolls sideways on a phone, not raw pipes. Reply bubbles are now `div`s, which can hold a table, in both the chat and the page boxes.
+- **Files:** `lib/mouse/prompt.ts`, `app/ui/chat.tsx`, `app/ui/page-chat.tsx`, `tests/render-mouse.test.ts`
+- **Carries over:** General.
+
 ---
 
 ## Changes to records, not code

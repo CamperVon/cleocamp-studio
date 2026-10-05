@@ -31,7 +31,47 @@ const INLINE = /(\*\*[^*]+\*\*)|(https?:\/\/[^\s)]+)|(\/(?:po|products|component
 // "see /po/2359." would point at "/po/2359." and 404.
 const TRAILING_PUNCT = /[.,;:!?)\]]+$/
 
-export function renderMouseText(text: string) {
+/**
+ * A reply as the person reads it. Mouse is told to write plain lines, but a
+ * table that slips through (or sits in an old reply) is drawn as a table, not
+ * shown as pipes and dashes. Brandon, 5 Oct 2026, of a table of Story Dress
+ * counts: "I find this to be ugly and confusing."
+ */
+export function renderMouseText(text: string): ReactNode[] {
+  const out: ReactNode[] = []
+  const lines = text.split('\n')
+  let buf: string[] = []
+  let key = 0
+  const flush = () => {
+    if (!buf.length) return
+    out.push(<span key={`t${key++}`}>{renderInline(buf.join('\n'))}</span>)
+    buf = []
+  }
+  for (let i = 0; i < lines.length; i++) {
+    if (!isTableRow(lines[i])) { buf.push(lines[i]); continue }
+    const rows: string[][] = []
+    while (i < lines.length && isTableRow(lines[i])) {
+      if (!/^\s*\|?\s*:?-{2,}/.test(lines[i])) rows.push(cells(lines[i]))
+      i++
+    }
+    i--
+    flush()
+    const [head, ...body] = rows
+    out.push(
+      <div key={`g${key++}`} className="my-1.5 max-w-full overflow-x-auto"><table className="border-collapse text-sm whitespace-nowrap">
+        <thead><tr>{head.map((c, k) => <th key={k} className="border-b border-line px-2 py-1 text-left text-xs font-medium text-muted">{renderInline(c)}</th>)}</tr></thead>
+        <tbody>{body.map((r, n) => <tr key={n}>{r.map((c, k) => <td key={k} className={`border-b border-line px-2 py-1 ${k ? 'text-right tabular-nums' : ''}`}>{renderInline(c)}</td>)}</tr>)}</tbody>
+      </table></div>,
+    )
+  }
+  flush()
+  return out
+}
+
+const isTableRow = (l: string) => /^\s*\|.*\|\s*$/.test(l)
+const cells = (l: string) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim())
+
+function renderInline(text: string) {
   const nodes: ReactNode[] = []
   let last = 0
   let key = 0
@@ -644,7 +684,7 @@ export function Chat() {
             {messages.map((m, i) => (
               <li key={i} className={m.role === 'user' ? 'flex justify-end' : ''}>
                 <div className={m.role === 'user' ? 'max-w-[85%]' : 'w-full'}>
-                  <p
+                  <div
                     className={
                       m.role === 'user'
                         ? 'rounded-2xl rounded-br-sm bg-ink px-3.5 py-2 text-sm text-bg'
@@ -652,7 +692,7 @@ export function Chat() {
                     }
                   >
                     {m.role === 'assistant' ? renderMouseText(m.text) : m.text}
-                  </p>
+                  </div>
                   {m.attachments?.length ? (
                     <ul className="mt-1.5 flex flex-wrap justify-end gap-1.5">
                       {m.attachments.map((a, j) => (

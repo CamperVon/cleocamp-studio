@@ -101,7 +101,7 @@ export function PageChat({ page, placeholder }: { page: ChatPage; placeholder: s
       {error ? <p className="mt-2 text-sm text-warn">{error}</p> : null}
       {reply ? (
         <div className="mt-2 rounded-lg bg-sunk px-3 py-2 text-sm">
-          <p className="whitespace-pre-wrap">{renderMouseText(reply.text)}</p>
+          <div className="whitespace-pre-wrap">{renderMouseText(reply.text)}</div>
           {reply.writes?.length ? (
             <p className="mt-1 text-xs text-muted">{reply.writes.map((w) => w.summary).join(' · ')}</p>
           ) : null}
