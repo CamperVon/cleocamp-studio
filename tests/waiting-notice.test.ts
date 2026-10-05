@@ -91,5 +91,8 @@ test('a customer is greeted by the name that is theirs, or by none', async () =>
   assert.equal(g('Catherine Adair', 'Catherine Adair', 'Catherine Adair', 'adair.ilyinsky@gmail.com'), 'Catherine Adair')
   assert.equal(g('sarah', 'sarah', 'Sarah', 'sphelantiedman@gmail.com'), 'Sarah')
   assert.equal(g('maryn', 'maryn', 'maryn', 'maryn.schutz@gmail.com'), 'Maryn')
+  assert.equal(g('MYA', 'MYA', 'MYA', 'myadg03@gmail.com'), 'Mya')
+  assert.equal(g('martha', 'martha', 'martha', 'x@y.com'), 'Martha')
+  assert.equal(g('Julie', 'Julie', 'Allie', 'kahan6@comcast.net'), null)
   assert.equal(g(null, '', null, 'x@y.com'), null)
 })

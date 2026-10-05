@@ -63,7 +63,7 @@ export function waitingItems(lines: WaitingLine[], m: Match): string[] {
  *      suzyz@…), but not #2297: Joshua twice, inbox stephmbank@…;
  *   5. none, since "Hi there" is never wrong and the wrong name always is.
  * Initials are dropped ("Laura H." is Laura, "G" and "LC" are nobody). A
- * name typed all in lower case gets its capital. Pure.
+ * name typed all in lower or upper case reads as a name. Pure.
  */
 export function greetingName(n: { account?: string | null; billing?: string | null; shipping?: string | null }, email: string): string | null {
   const clean = (x?: string | null) => {
@@ -89,7 +89,10 @@ export function greetingName(n: { account?: string | null; billing?: string | nu
   // Prefer a spelling with capitals; the whole name when all agree, else its first word.
   const chosen = same.find((g) => g !== g.toLowerCase()) ?? same[0]
   const out = distinct.size === 1 || key(chosen) === pickKey ? chosen : chosen.split(' ')[0]
-  return out === out.toLowerCase() ? out.charAt(0).toUpperCase() + out.slice(1) : out
+  // "sarah" and "MYA" read as Sarah and Mya.
+  return out === out.toLowerCase() || out === out.toUpperCase()
+    ? out.toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (_, sep: string, c: string) => sep + c.toUpperCase())
+    : out
 }
 
 /** "A", "A and B", "A, B and C". Pure. */
