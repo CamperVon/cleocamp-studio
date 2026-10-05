@@ -220,11 +220,13 @@ export async function composeDailyCheese(): Promise<{ subject: string; text: str
     '',
     `"${quote.text}" — ${quote.who}`,
     '',
+    // Customers first, above everything else. Brandon, 5 Oct 2026: "put the
+    // customers alert at top of daily cheese from now on."
+    ...(customers.length ? ['Customers:', ...customers.map((c) => `- ${c}`), ''] : []),
     items.length ? 'Needs attention today:' : '',
     ...items.map((i) => `- ${i.sentence} [${i.tag}]`),
     items.length ? '' : 'Nothing needs attention today.',
     '',
-    ...(customers.length ? ['Customers:', ...customers.map((c) => `- ${c}`), ''] : []),
     'That is everything that needs attention today.',
     '— Studio Mouse',
   ].filter((l, idx, arr) => !(l === '' && arr[idx - 1] === '')).join('\n')
@@ -273,10 +275,10 @@ export async function composeDailyCheese(): Promise<{ subject: string; text: str
       <div class="name">The Daily Cheese</div>
       <div class="quote">&ldquo;${escapeHtml(quote.text)}&rdquo;<cite>${escapeHtml(quote.who)}</cite></div>
     </div>
-    <div class="eyebrow">${items.length ? 'Needs attention today' : 'All clear'}</div>
-    ${rows}
-    ${customers.length ? `<div class="eyebrow" style="margin-top:22px;">Customers</div>${customers.map((c) => `
+    ${customers.length ? `<div class="eyebrow">Customers</div>${customers.map((c) => `
         <div style="border-radius:10px;background:#F4F1EA;border:1px solid #E2DCCC;margin-top:8px;padding:12px 14px;color:#3A342A;font-size:13.5px;line-height:1.5;">${escapeHtml(c)}</div>`).join('')}` : ''}
+    <div class="eyebrow"${customers.length ? ' style="margin-top:22px;"' : ''}>${items.length ? 'Needs attention today' : 'All clear'}</div>
+    ${rows}
     <div class="signoff">
       That is everything that needs attention today.
       <span class="sig">— Studio Mouse</span>

@@ -191,6 +191,12 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 - **Files:** `lib/waiting-notice.ts`, `tests/waiting-notice.test.ts`
 - **Carries over:** General.
 
+### 5 Oct · Daily Cheese: Customers at the top
+- **Why:** Brandon: "put the customers alert at top of daily cheese from now on."
+- **What:** the Customers section (notable, repeat and big buyers since the last Cheese) now comes straight after the quote, above "Needs attention today", in both the plain-text and HTML versions.
+- **Files:** `lib/mouse/daily-cheese.ts`
+- **Carries over:** Add-on (the Daily Cheese is Cleo's morning report).
+
 ---
 
 ## Changes to records, not code
