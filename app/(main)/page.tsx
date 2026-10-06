@@ -46,7 +46,7 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
 }
 
 export default async function Today() {
-  const [items, alerts, links, components, variants, sales24, sales7, pos, runs, notes, events, shopifySync, support, replies, draftPos, suggestedCloses] =
+  const [items, alerts, links, components, variants, sales24, sales7, pos, runs, notes, events, shopifySync, support, draftPos, suggestedCloses] =
     await Promise.all([
       db.actionItem.findMany({
         where: { resolved: false },
@@ -89,12 +89,6 @@ export default async function Today() {
       db.shopifySyncStatus.findUnique({ where: { id: 'singleton' } }),
       // Customer support cases still with us, by how soon they need a person.
       db.supportCase.groupBy({ by: ['urgency'], where: { status: 'OPEN', category: { not: 'SPAM' } }, _count: true }),
-      // Replies drafted and waiting on someone's tap to go out.
-      db.supportCase.findMany({
-        where: { status: 'OPEN', category: { not: 'SPAM' }, draftReply: { not: null } },
-        select: { id: true, customerName: true, customerEmail: true, shopifyOrderName: true, summary: true, urgency: true },
-        orderBy: [{ urgency: 'asc' }, { lastMessageAt: 'asc' }],
-      }),
       // Purchase orders written and not yet sent to the vendor.
       db.purchaseOrder.findMany({
         where: { status: 'DRAFT' },
@@ -145,12 +139,11 @@ export default async function Today() {
   const gaps = items.filter((i) => i.kind === 'GAP')
   const urgent = alerts.filter((a) => a.severity === 'URGENT')
   const supportFires = support.find((g) => g.urgency === 'NOW')?._count ?? 0
-  const supportToday = support.filter((g) => g.urgency !== 'NOW').reduce((n, g) => n + g._count, 0)
   const rest = alerts.filter((a) => a.severity !== 'URGENT')
   // A long list is skimmed, not read. Show the oldest few — they have waited
   // longest — and send the tail to /items rather than printing all of it.
   const SHOWN = 5
-  const yesCount = replies.length + draftPos.length
+  const yesCount = draftPos.length
 
   const hour = Number(
     new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', hour12: false })
@@ -204,8 +197,8 @@ export default async function Today() {
 
       {/* Waiting for your yes (6 Oct 2026, from the general Mouse's phone
           app): things that are written and ready and only need a person to
-          look and say go. A reply to a customer, a PO to a vendor. One row
-          each, one tap to the place where it is sent. First on the page
+          look and say go. A PO to a vendor. Customer replies stay on Support
+          (Brandon, 6 Oct 2026: only pressing support belongs on Home). First on the page
           after the chat, because nothing else here is this close to done. */}
       {yesCount ? (
         <Card
@@ -213,23 +206,6 @@ export default async function Today() {
           action={<span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent">{yesCount}</span>}
         >
           <ul className="divide-y divide-line">
-            {replies.slice(0, SHOWN).map((r) => (
-              <li key={r.id}>
-                <a href={`/support#${r.id}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-sunk sm:px-5">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm">
-                      Reply to {r.customerName?.trim() || r.customerEmail}
-                      {r.shopifyOrderName ? <span className="text-faint"> · {r.shopifyOrderName}</span> : null}
-                    </p>
-                    {r.summary ? <p className="truncate text-xs text-muted">{r.summary}</p> : null}
-                  </div>
-                  <span className={`shrink-0 text-xs font-medium ${r.urgency === 'NOW' ? 'text-urgent' : 'text-accent'}`}>Read &amp; send &rarr;</span>
-                </a>
-              </li>
-            ))}
-            {replies.length > SHOWN ? (
-              <li><a href="/support" className="block px-4 py-2 text-xs text-muted hover:bg-sunk sm:px-5">{replies.length - SHOWN} more replies waiting</a></li>
-            ) : null}
             {draftPos.map((p) => {
               const total = p.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
               return (
@@ -264,23 +240,19 @@ export default async function Today() {
           fold six oversold SKUs into one sentence, losing the exact
           number someone needs to act on. Kept as a list for that reason,
           not folded into the paragraphs below it. */}
-      {urgent.length || brief || supportFires + supportToday > 0 ? (
+      {urgent.length || brief || supportFires ? (
         <section className="overflow-hidden rounded-xl border border-line bg-surface">
           <div className="flex items-center gap-2 border-b border-line px-4 py-3 sm:px-5">
             <MouseFace size={28} />
             <h2 className="font-serif text-[17px] italic text-accent">Mouse&rsquo;s Corner</h2>
           </div>
-          {supportFires + supportToday > 0 ? (
-            <a href="/support" className="flex items-baseline gap-2.5 border-b border-line px-4 py-2 text-sm hover:bg-sunk sm:px-5">
-              <span aria-hidden className={`h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full ${supportFires ? 'bg-urgent' : 'bg-transparent'}`} />
-              <span>
-                Customer support:{' '}
-                {supportFires ? <span className="font-semibold text-urgent">{supportFires} pressing</span> : null}
-                {supportFires && supportToday ? ', ' : ''}
-                {supportToday ? `${supportToday} to answer` : ''}
-{' '}
-                &rarr;
-              </span>
+          {/* Only pressing support shows on Home, in pink (Brandon, 6 Oct
+              2026: "only pressing should go there"). The rest waits on the
+              Support page. */}
+          {supportFires ? (
+            <a href="/support" className="flex items-baseline gap-2.5 border-b border-line px-4 py-2 text-sm font-medium text-accent hover:bg-sunk sm:px-5">
+              <span aria-hidden className="h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full bg-accent" />
+              <span>Customer support: {supportFires} pressing &rarr;</span>
             </a>
           ) : null}
           {urgent.length ? (
