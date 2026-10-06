@@ -52,7 +52,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - Each run records, alongside its token usage, the size and a short hash of each block and each section: sizes only, no text.
 - **Files:** `lib/mouse/context.ts` (`splitCatalog`, `buildCatalogParts`, `catalogStats`), `lib/mouse/cache-blocks.ts`, `lib/mouse/agent.ts`, `lib/mouse/runner.ts`, `tests/catalog-split.test.ts`
 
-### Search box that opens the page at the closest hit · `HASH`
+### Search box that opens the page at the closest hit · `8891d13`
 - **Problem:** finding one vendor, component, PO or person meant knowing which page it lived on and unfolding lists by hand.
 - **Change:** a search button in the top bar (beside More on desktop, top right on a phone). As you type it lists the closest records across products, components, vendors, POs, wholesale accounts, stylists, contacts, customers, open support cases and open to-dos, ranked exact name, then starts-with, then a word, then anywhere, then a near miss of a letter or two (never for numbers, so 2390 is not offered for PO 2391). Enter goes to the first. No model involved. The page opens at that row: rows carry `data-rec`, and a small client helper unfolds the `<details>` and button-toggled sections around it, scrolls to it and highlights it. Folded cards now keep their rows in the page, hidden, so they can be found.
 - **Files:** `lib/search.ts`, `app/(main)/search-actions.ts`, `app/ui/search.tsx`, `app/ui/jump.tsx`, `app/ui/nav-bar.tsx`, `app/(main)/layout.tsx`, `app/ui/collapsible-card.tsx`, `app/ui/product-section.tsx`, the list pages and row components (`data-rec`), `app/globals.css`, `tests/search.test.ts`
