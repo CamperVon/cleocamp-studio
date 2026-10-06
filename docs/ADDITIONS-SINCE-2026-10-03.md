@@ -52,6 +52,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - Each run records, alongside its token usage, the size and a short hash of each block and each section: sizes only, no text.
 - **Files:** `lib/mouse/context.ts` (`splitCatalog`, `buildCatalogParts`, `catalogStats`), `lib/mouse/cache-blocks.ts`, `lib/mouse/agent.ts`, `lib/mouse/runner.ts`, `tests/catalog-split.test.ts`
 
+### Recipe lines for one colour of a product · `HASH`
+- **Problem:** a bill-of-materials line could be limited to one size but not one colour, so a lining used only in the black version either charged every colour for it or had its quantity left blank.
+- **Change:** `BomLine.colorway` (nullable; with `size` it means that colour in that size). The forecast counts the line against only the matching variants' sales, the component kickoff after a PO goes out counts only the matching variants ordered, and the recipe tool refuses a colour the product does not have and stores the product's own spelling. Shown as "(Black only)" on the Products page and in the assistant's context.
+- **Files:** `lib/bom.ts` (`lineFits`, `lineScopeLabel`, `matchColorway`), `lib/forecast.ts`, `lib/mouse/component-kickoff.ts`, `lib/mouse/tools.ts` (`update_product_bom`, PO kickoff caller), `lib/mouse/context.ts`, `app/(main)/products/page.tsx`, `prisma/schema.prisma`, migration `20261006230000_bom_line_colorway`, `tests/bom-scope.test.ts`
+- **Needs:** a database migration (additive column).
+
 ### Search box that opens the page at the closest hit · `8891d13`
 - **Problem:** finding one vendor, component, PO or person meant knowing which page it lived on and unfolding lists by hand.
 - **Change:** a search button in the top bar (beside More on desktop, top right on a phone). As you type it lists the closest records across products, components, vendors, POs, wholesale accounts, stylists, contacts, customers, open support cases and open to-dos, ranked exact name, then starts-with, then a word, then anywhere, then a near miss of a letter or two (never for numbers, so 2390 is not offered for PO 2391). Enter goes to the first. No model involved. The page opens at that row: rows carry `data-rec`, and a small client helper unfolds the `<details>` and button-toggled sections around it, scrolls to it and highlights it. Folded cards now keep their rows in the page, hidden, so they can be found.

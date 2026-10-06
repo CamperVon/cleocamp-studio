@@ -1,3 +1,4 @@
+import { lineScopeLabel } from '@/lib/bom'
 import { createHash } from 'node:crypto'
 import { renderNotesFull, renderNotesIndex } from '@/lib/mouse/notes'
 import { db } from '@/lib/db'
@@ -134,7 +135,7 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index' } = {}): Pro
       L.push('per unit:')
       for (const b of p.bomLines) {
         const q = Number(b.qtyPerUnit)
-        L.push(`  - ${b.component.name}: ${q === 0 ? 'UNKNOWN' : q} ${b.component.unitOfMeasure}${b.size ? ` (size ${b.size} only)` : ''}`)
+        L.push(`  - ${b.component.name}: ${q === 0 ? 'UNKNOWN' : q} ${b.component.unitOfMeasure}${lineScopeLabel(b)}`)
       }
     }
     if (p.variants.length) {

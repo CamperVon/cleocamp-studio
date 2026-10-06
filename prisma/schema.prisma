@@ -369,6 +369,11 @@ model BomLine {
   /// number sticker goes on size 2 garments only (6 Oct 2026). Null: every
   /// variant. Matched against ProductVariant.size.
   size              String?
+  /// Only the product's variants in this colour use it, e.g. the black silk
+  /// lining goes in the Black Bean Bag only (6 Oct 2026). Null: every colour.
+  /// Matched against the variant's Colorway.customerName, any case. With
+  /// size as well, only that colour in that size.
+  colorway          String?
 
   parentProduct   Product?   @relation("ProductBom", fields: [parentProductId], references: [id], onDelete: Cascade)
   parentComponent Component? @relation("ComponentBom", fields: [parentComponentId], references: [id], onDelete: Cascade)

@@ -1,3 +1,4 @@
+import { matchColorway } from '@/lib/bom'
 import { currentActor } from '@/lib/mouse/actor'
 import type Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
@@ -1181,6 +1182,7 @@ export const TOOLS: Record<string, Tool> = {
                 ),
                 notes: str('Where the figure came from'),
                 size: str('Only when just one size of the product uses it (the size 2 number sticker on size 2 garments): that size, as the variants spell it. "" for every size.'),
+                colorway: str('Only when just one colour of the product uses it (the black silk lining in the Black Bean Bag only): that colour, as the product\'s colourways spell it. "" for every colour. With size too: that colour in that size only.'),
               },
               required: ['componentId'],
             },
@@ -1196,12 +1198,21 @@ export const TOOLS: Record<string, Tool> = {
     },
     run: async (i) => {
       const productId = i.productId as string
-      const set = (i.set ?? []) as { componentId: string; qtyPerUnit?: number; notes?: string; size?: string }[]
+      const set = (i.set ?? []) as { componentId: string; qtyPerUnit?: number; notes?: string; size?: string; colorway?: string }[]
       const remove = (i.remove ?? []) as string[]
 
-      const product = await db.product.findUnique({ where: { id: productId }, select: { name: true } })
+      const product = await db.product.findUnique({ where: { id: productId }, select: { name: true, colorways: { select: { customerName: true } } } })
       if (!product) return { error: `No product ${productId}` }
       if (!set.length && !remove.length) return { error: 'Nothing to do — give set, remove, or both.' }
+      // A colour the product does not have would quietly match no variant and
+      // count for nothing. Refuse it and say which colours there are.
+      const colourOf = new Map<string, string | null>()
+      for (const l of set) {
+        if (typeof l.colorway !== 'string' || !l.colorway.trim()) continue
+        const own = matchColorway(l.colorway, product.colorways)
+        if (!own) return { error: `${product.name} has no colour "${l.colorway}". Its colours: ${product.colorways.map((c) => c.customerName).join(', ') || 'none recorded'}. Nothing changed.` }
+        colourOf.set(l.componentId, own)
+      }
 
       // Naming both sides of the same component is a contradiction, not an
       // ordering question. Refuse rather than pick one.
@@ -1236,6 +1247,7 @@ export const TOOLS: Record<string, Tool> = {
             parentProductId: productId, componentId: line.componentId,
             qtyPerUnit: String(qty), notes: line.notes ?? null,
             ...(typeof line.size === 'string' ? { size: line.size.trim() || null } : {}),
+            ...(typeof line.colorway === 'string' ? { colorway: colourOf.get(line.componentId) ?? null } : {}),
           }
           const name = byId.get(line.componentId)!.name
           if (existing) {
@@ -2777,18 +2789,21 @@ export const TOOLS: Record<string, Tool> = {
       // file a dated todo for anything still short.
       const poWithLines = await db.purchaseOrder.findUnique({
         where: { id: po.id },
-        include: { lines: { include: { productVariant: { select: { productId: true } } } } },
+        include: { lines: { include: { productVariant: { select: { id: true, productId: true } } } } },
       })
       const qtyByProduct = new Map<string, number>()
+      // Per variant too, so a line for one size or colour counts only those.
+      const qtyByVariant = new Map<string, number>()
       for (const l of poWithLines?.lines ?? []) {
         const pid = l.productVariant?.productId
         if (!pid) continue
         qtyByProduct.set(pid, (qtyByProduct.get(pid) ?? 0) + Number(l.qtyOrdered))
+        qtyByVariant.set(l.productVariant!.id, (qtyByVariant.get(l.productVariant!.id) ?? 0) + Number(l.qtyOrdered))
       }
       const kickoffs = []
       for (const [pid, qty] of qtyByProduct) {
         const { planComponentKickoff } = await import('@/lib/mouse/component-kickoff')
-        const r = await planComponentKickoff(pid, qty, { poNumber: po.poNumber, expectedAt: po.expectedAt })
+        const r = await planComponentKickoff(pid, qty, { poNumber: po.poNumber, expectedAt: po.expectedAt }, qtyByVariant)
         if (r) kickoffs.push(r)
       }
       const newTodos = kickoffs.flatMap((k) => k.lines.filter((l) => l.created))

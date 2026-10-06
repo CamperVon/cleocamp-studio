@@ -1,3 +1,4 @@
+import { lineFits } from '@/lib/bom'
 import { db } from '@/lib/db'
 
 /**
@@ -67,11 +68,14 @@ export async function planComponentKickoff(
   productId: string,
   qtyOrdered: number,
   po: { poNumber: string; expectedAt: Date | null },
+  /** What the PO orders of each variant, when known: a line for one size or colour counts only those. */
+  qtyByVariant?: Map<string, number>,
 ): Promise<KickoffResult | null> {
   const product = await db.product.findUnique({
     where: { id: productId },
     include: {
       bomLines: { include: { component: { include: { vendor: true } } } },
+      variants: { select: { id: true, size: true, colorway: { select: { customerName: true } } } },
     },
   })
   if (!product || qtyOrdered <= 0) return null
@@ -109,7 +113,10 @@ export async function planComponentKickoff(
   const out: KickoffLine[] = []
   for (const bom of lines) {
     const c = bom.component
-    const qtyNeeded = Number(bom.qtyPerUnit) * qtyOrdered
+    const units = (bom.size || bom.colorway) && qtyByVariant
+      ? product.variants.filter((v) => lineFits(bom, v)).reduce((n, v) => n + (qtyByVariant.get(v.id) ?? 0), 0)
+      : qtyOrdered
+    const qtyNeeded = Number(bom.qtyPerUnit) * units
     const covered = Number(c.onHandQty) + Number(c.incomingQty)
     const shortfall = Math.max(0, qtyNeeded - covered)
     const sharedWith = [...new Set(sharedWithByComponent.get(c.id) ?? [])]

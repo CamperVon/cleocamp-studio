@@ -1,3 +1,4 @@
+import { lineFits } from '@/lib/bom'
 import { unitsPerLineUnit } from '@/lib/po-units'
 import { db } from '@/lib/db'
 import { laMidnight } from '@/lib/dates'
@@ -101,7 +102,7 @@ export async function recomputeForecasts() {
     db.product.findMany({
       where: { status: { in: ['ACTIVE', 'SAMPLING'] } },
       include: {
-        variants: true,
+        variants: { include: { colorway: true } },
         colorways: true,
         bomLines: { include: { component: { include: { vendor: true } } } },
       },
@@ -179,14 +180,12 @@ export async function recomputeForecasts() {
 
   // ── Products ──────────────────────────────────────────────
   const productDemand = new Map<string, number>() // units/day needing production
-  // The same, per size, for recipe lines that only one size uses (the size 2
-  // number sticker goes on size 2 garments only).
-  const sizeDemand = new Map<string, Map<string, number>>()
+  // The same per variant, for recipe lines that only one size or colour uses
+  // (the size 2 number sticker; the black silk in the Black Bean Bag only).
+  const variantRate = new Map<string, number>()
   for (const p of products) {
-    const rate = p.variants.reduce((n, v) => n + ratePerDay(salesByVariant.get(v.id) ?? []), 0)
-    const bySize = new Map<string, number>()
-    for (const v of p.variants) if (v.size) bySize.set(v.size, (bySize.get(v.size) ?? 0) + ratePerDay(salesByVariant.get(v.id) ?? []))
-    sizeDemand.set(p.id, bySize)
+    for (const v of p.variants) variantRate.set(v.id, ratePerDay(salesByVariant.get(v.id) ?? []))
+    const rate = p.variants.reduce((n, v) => n + (variantRate.get(v.id) ?? 0), 0)
     const onHand = p.variants.reduce(
       (n, v) => (v.onHandQty === null ? n : n + Number(v.onHandQty)), 0)
     const anyUnknown = p.variants.some((v) => v.onHandQty === null)
@@ -263,7 +262,9 @@ export async function recomputeForecasts() {
         if ((productDemand.get(p.id) ?? 0) > 0) unknownQty.push(p.name)
         continue
       }
-      perDay += (line.size ? (sizeDemand.get(p.id)?.get(line.size) ?? 0) : (productDemand.get(p.id) ?? 0)) * qty
+      perDay += (line.size || line.colorway
+        ? p.variants.filter((v) => lineFits(line, v)).reduce((n, v) => n + (variantRate.get(v.id) ?? 0), 0)
+        : (productDemand.get(p.id) ?? 0)) * qty
     }
     // Nothing known at all: no rate, no date, nothing misleading — as before.
     if (perDay <= 0) continue

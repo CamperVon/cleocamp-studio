@@ -1,3 +1,4 @@
+import { lineScopeLabel } from '@/lib/bom'
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
 import { Page, Card, Chip, Value, Money, Thumb } from '@/app/ui/primitives'
@@ -202,7 +203,7 @@ export default async function Products() {
                           <ul className="flex flex-col gap-1">
                             {p.bomLines.map((b) => (
                               <li key={b.id} className="flex justify-between gap-3 text-sm">
-                                <span>{b.component.name}{b.component.vendor ? <span className="text-faint"> · {b.component.vendor.name}</span> : null}</span>
+                                <span>{b.component.name}{lineScopeLabel(b) ? <span className="text-muted">{lineScopeLabel(b)}</span> : null}{b.component.vendor ? <span className="text-faint"> · {b.component.vendor.name}</span> : null}</span>
                                 <span className="tnum text-muted">
                                   {Number(b.qtyPerUnit) === 0 ? <span className="italic text-faint">unknown</span> : `${b.qtyPerUnit} ${b.component.unitOfMeasure}`}
                                 </span>
