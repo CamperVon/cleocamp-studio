@@ -122,3 +122,44 @@ test('a note line that exactly matches a stable heading puts everything live (fa
   assert.equal(p.stable, '')
   assert.equal(p.live, t)
 })
+
+// Every heading buildCatalog can emit, read from its source so a section
+// added later is covered without editing this test. Section names only.
+import { readFileSync } from 'node:fs'
+function emittedHeadings(): string[] {
+  const src = readFileSync(new URL('../lib/mouse/context.ts', import.meta.url), 'utf8')
+  const fromPushes = src.split('\n')
+    .filter((l) => l.includes('L.push('))
+    .flatMap((l) => [...l.matchAll(/(?<!#)## ([^`'\\\n]+?)(?:\\n|['`])/g)].map((m) => m[1].trim()))
+    .filter((h) => !h.includes('${'))
+  // The stylists section is pushed as '\n## ' + stylistContext(), whose first line is fixed.
+  const st = readFileSync(new URL('../lib/stylists.ts', import.meta.url), 'utf8').match(/'(STYLISTS[^']*)'/)?.[1]
+  return [...new Set([...fromPushes, ...(st ? [st] : [])])]
+}
+
+test('every section the catalogue can emit still appears, and notes are live', () => {
+  const heads = emittedHeadings()
+  assert.ok(heads.length >= 20, `found ${heads.length} headings`)
+  assert.ok(heads.includes('Notes you have written'))
+  const t = heads.map((h, k) => `${k ? '\n' : ''}## ${h}\n- body of ${h}`).join('\n')
+  const p = splitCatalog(t)
+  const blocks = systemBlocks({ rules: 'R', catalog: p })
+  const all = blocks.map((x) => x.text).join('')
+  for (const h of heads) {
+    assert.ok(all.includes(`## ${h}\n- body of ${h}`), `missing: ${h}`)
+    assert.equal(p.sections.find((s) => s.heading === h)?.stable, STABLE_SECTIONS.includes(h), h)
+  }
+  assert.equal(p.sections.find((s) => s.heading === 'Notes you have written')?.stable, false)
+  assert.ok(p.live.includes('- body of Notes you have written'))
+  assert.ok(!p.stable.includes('Notes you have written'))
+  // Every stable heading is one the catalogue really emits.
+  for (const h of STABLE_SECTIONS) assert.ok(heads.includes(h), `stable heading not emitted: ${h}`)
+})
+
+test('### sub-headings (each product, each note subject) never split a section', () => {
+  const t = '## Products\n### Test Tee [prd_t]\n- 12 on hand\n\n## Notes you have written\n### Test Mill [vnd_m]\n- a note\n\n## Vendors\n- Test Mill\n'
+  const p = splitCatalog(t)
+  assert.deepEqual(p.sections.map((x) => x.heading), ['Products', 'Notes you have written', 'Vendors'])
+  assert.ok(p.live.includes('### Test Mill [vnd_m]\n- a note'))
+  assert.equal(p.stable, '## Vendors\n- Test Mill\n')
+})
