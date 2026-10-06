@@ -194,6 +194,21 @@ test('a product question gets the catalog, not a request for an order (JJ, red C
   assert.equal(saleState(true, { availableForSale: true, inventoryPolicy: 'DENY', inventoryQuantity: 17 }), 'in stock')
 })
 
+test('an exchange looks up the product on the order even when the email never names it (#2614, Boy Belt)', async () => {
+  const { catalogText, namedProducts } = await import('../lib/support/draft')
+  const shop = [{ title: 'Boy Belt' }, { title: 'Cleo Tee' }, { title: 'Cleo Bag' }]
+  const said = "I shipped it back out to you all today. Do you think I'll get the new size before the 15th?"
+  const mine: OrderSnapshot = { ...order, name: '#2614', items: [{ title: 'Boy Belt', variant: 'Small', quantity: 1, unfulfilled: 0 }] }
+  assert.deepEqual(namedProducts(shop, `Re: A shipment from order #2614 has been delivered\n${said}`), []) // what it saw before
+  assert.deepEqual(namedProducts(shop, catalogText('Re: A shipment from order #2614 has been delivered', said, mine)).map((p) => p.title), ['Boy Belt'])
+  // Someone else's order (another address, a different name) adds nothing.
+  const notTheirs = { ...mine, emailMismatch: 'other@example.com', sameName: false }
+  assert.deepEqual(namedProducts(shop, catalogText(null, said, notTheirs)), [])
+  // Another address but the same name: theirs.
+  assert.deepEqual(namedProducts(shop, catalogText(null, said, { ...notTheirs, sameName: true })).map((p) => p.title), ['Boy Belt'])
+  assert.deepEqual(namedProducts(shop, catalogText(null, said, null)), [])
+})
+
 test('other colours in stock in her size are worked out, not left to be spotted (Gasira, size 1)', async () => {
   const { sizesIn, inStockInSize } = await import('../lib/support/draft')
   assert.deepEqual(sizesIn('It is unclear if there are any currently in stock (in a size 1) or if they are pre-order'), ['1'])

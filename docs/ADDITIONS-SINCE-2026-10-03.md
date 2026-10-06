@@ -52,6 +52,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - Each run records, alongside its token usage, the size and a short hash of each block and each section: sizes only, no text.
 - **Files:** `lib/mouse/context.ts` (`splitCatalog`, `buildCatalogParts`, `catalogStats`), `lib/mouse/cache-blocks.ts`, `lib/mouse/agent.ts`, `lib/mouse/runner.ts`, `tests/catalog-split.test.ts`
 
+### Support drafts know the stock of what the customer ordered · `HASH`
+- **Problem:** an exchange for another size of something already delivered got no stock facts. Stock facts only covered unshipped items, and catalogue facts only covered products the customer named, so "can I get the new size?" left the drafter asking the team to confirm stock.
+- **Change:** catalogue facts are now looked up from the subject, the customer's latest words and the products on their order (shipped or not), unless the order is not theirs. The drafting policy says to answer stock for an exchange from those facts (never a count) and leaves only the ship-before-return decision to a person.
+- **Files:** `lib/support/draft.ts` (`catalogText`), `lib/support/reply.ts`, `tests/support-reply.test.ts`
+- **Needs:** Shopify (live variant stock) and the support inbox.
+
 ### Notes as an index in chat, full notes on demand · `41322f6`
 - **Problem:** every chat turn carried every current note in full (about 14,500 tokens), mostly about records the turn had nothing to do with.
 - **Change:**

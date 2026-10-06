@@ -38,7 +38,7 @@ export async function draftForCase(caseId: string): Promise<void> {
   const latest = c.messages.filter((m) => m.direction === 'INBOUND').slice(-3).map((m) => trimQuoted(m.body).text).join('\n')
   const [stock, catalog, examples, discount] = await Promise.all([
     stockFacts(order).catch(() => ''),
-    catalogFacts(`${c.subject ?? ''}\n${latest}`).catch((e) => { console.error('[support] catalog facts', e); return '' }),
+    catalogFacts(catalogText(c.subject, latest, order)).catch((e) => { console.error('[support] catalog facts', e); return '' }),
     recentReplies(caseId).catch(() => ''),
     discountHistory(c.customerEmail).catch((e) => { console.error('[support] discount facts', e); return '' }),
   ])
@@ -66,7 +66,7 @@ export async function draftForCase(caseId: string): Promise<void> {
             `Customer: ${c.customerName ?? 'name unknown'} <${c.customerEmail}>. Sorted as: ${c.category}.\n\n` +
             `ORDER FACTS (from Shopify, checked by code):\n${orderFacts(order)}\n\n` +
             (stock ? `STOCK FACTS for items not yet shipped (from our records):\n${stock}\n\n` : '') +
-            (catalog ? `CATALOG FACTS for products the customer names (from the shop, just now):\n${catalog}\n\n` : '') +
+            (catalog ? `CATALOG FACTS for products the customer names or has on their order (from the shop, just now):\n${catalog}\n\n` : '') +
             (discount ? `DISCOUNT FACTS (checked by code):\n${discount}\n\n` : '') +
             (examples ? `${examples}\n\n` : '') +
             `<conversation>\n${thread.slice(-9000)}\n</conversation>\n\n` +
@@ -248,6 +248,23 @@ type CatalogProduct = {
  * A product counts as named when its name (before any " - Colour") is in the
  * email: "red Cleo tee" names Cleo Tee and every Cleo Tee colour product.
  */
+/**
+ * The text catalog facts are looked up from: the subject, the customer's
+ * latest words, and the products on their order, shipped or not. Brandon,
+ * 6 Oct 2026, on #2614: a Small Boy Belt, delivered, being exchanged for a
+ * Medium. Her email said "the belt" and "the new size", never "Boy Belt", and
+ * stock facts only cover unshipped items, so the Medium was never looked up
+ * and the draft asked the team to confirm it was in stock: "Mouse should
+ * confirm if this is in stock, not us." An order that is not the sender's
+ * (another address, a different name) adds nothing, the same rule
+ * stockFacts follows. Pure.
+ */
+export function catalogText(subject: string | null | undefined, latest: string, order: OrderSnapshot | null): string {
+  const theirs = order && !(order.emailMismatch && !order.sameName)
+  const ordered = theirs ? [...new Set(order.items.map((i) => i.title).filter(Boolean))] : []
+  return [subject ?? '', latest, ...ordered].join('\n')
+}
+
 /** Products whose name, before any " - Colour", appears in the text. Pure. */
 export function namedProducts<P extends { title: string }>(products: P[], text: string): P[] {
   const t = text.toLowerCase().replace(/\s+/g, ' ')
