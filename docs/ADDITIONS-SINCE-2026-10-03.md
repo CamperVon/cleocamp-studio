@@ -276,6 +276,8 @@ Every change made to Studio Mouse from 3 October 2026 on, newest at the bottom. 
 
 ## Changes to records, not code
 
+- **6 Oct:** Lurex worked out from Brandon's "18 rolls": 1,000 yd delivered on PO 2356 in 18 rolls = 55.6 yd per roll. So the 2½ leftover rolls at Antonio's are about 139 yd, counted at Empire Sewing as an estimate. The Cosmo Stripe Tee BOM went from 0.70 to 0.76 yd/tee (about 861 yd used over 1,133 tees). The "70-80 yd per roll" note for D1463 was replaced, and Mouse's question on the leftover yardage closed. A first attempt from a local session, where stock writing is off, filed a todo instead; it was applied and closed the same minute.
+
 - **5 Oct:** Natasha Colvin's Kendall at Home request was logged three times on 29 Sept. Two duplicates are closed. The one kept notes what went on the 30 Sept pull (Cleo Tee Shell, White, Sunshine, Splish in size 1; You Dress White 1 and 2; Boy Belt Small) and what is still owed (Story Dress, bags, black Cleo Tees, her gift tee).
 
 - **5 Oct:** todo "Populate the stylist inventory" added for Brandon. It's a stylist inventory kept separate from Shopify's.
