@@ -131,21 +131,21 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 
 ## Layout
 
-### Home in the order a person acts · `HASH`
+### Home in the order a person acts · `43c5d29`
 - **Problem:** things that were written and ready (a customer reply, a PO not yet sent) were mixed in with everything else on the home page, below production lists and stats.
 - **Change:** a "Waiting for your yes" card comes first after the chat: each drafted customer reply and each unsent PO, one row each, one tap to where it is sent. Then needs-you alerts, then Mouse's questions, then production and stats.
 - **Files:** `app/(main)/page.tsx`
 
-### One main button per card · `HASH`
+### One main button per card · `43c5d29`
 - **Problem:** two equally loud buttons on a support card, and the one tapped did less than the reply promised.
 - **Change:** when a reply is drafted, Close and any second order action drop to an outline. Only the action that does what the reply says stays filled.
 - **Files:** `app/ui/support-case.tsx`
 
-### Counts on the tabs · `HASH`
+### Counts on the tabs · `43c5d29`
 - **Change:** the tab bar shows a small count: to-dos and questions due today or overdue, and open support cases (on More on a phone). Nothing at zero. Counting everything open made a badge of 50 that nobody reads.
 - **Files:** `app/ui/nav.tsx`, `app/ui/nav-bar.tsx`
 
-### Product photos from Shopify · `HASH`
+### Product photos from Shopify · `43c5d29`
 - **Change:** a small photo beside each product on Products and each piece on a stylist request, from the image already synced on each variant. Shopify's image CDN is asked for a small copy.
 - **Needs:** Shopify (product sync).
 - **Files:** `app/ui/primitives.tsx` (`Thumb`), `app/(main)/products/page.tsx`, `app/(main)/stylists/page.tsx`, `lib/stylist-stock.ts`
