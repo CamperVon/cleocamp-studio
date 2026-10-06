@@ -39,3 +39,14 @@ test('the workbook opens in Excel with the rows under the header, prices as numb
   assert.ok(all.includes('The Cut'))
   assert.ok(!/commission/i.test(all)) // never on a sheet stores see (6 Oct 2026)
 })
+
+test('the terms (MOQ note, shipping fees) sit under the table, before press', async () => {
+  const meta = { title: 'T', tagline: 't', materials: 'm', press: 'Vogue', contact: 'studio@cleocamp.com', footnote: '* Variants count toward MOQs.\nShipping: $25 flat per order.' }
+  const buf = await lineSheetWorkbook(meta, [line({})], new Date('2026-10-06T18:00:00Z'))
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.load(new Uint8Array(buf).buffer)
+  const first = (s: string) => { let at = -1; wb.getWorksheet('Line Sheet')!.eachRow((r, n) => { if (at < 0 && String(r.getCell(1).value ?? '').startsWith(s)) at = n }); return at }
+  assert.ok(first('Shipping: $25') > first('Sardine'))
+  assert.ok(first('Shipping: $25') < first('Press & Collaborations'))
+  assert.ok(first('* Variants') < first('Press & Collaborations'))
+})

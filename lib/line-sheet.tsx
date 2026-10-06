@@ -501,11 +501,14 @@ export function LineSheetDoc({ meta, lines, asOf }: { meta: LineSheetMetaText; l
           </View>
         ))}
 
+        {/* Terms first, right under the table: the MOQ asterisk and the
+            shipping fees, before press (Brandon, 6 Oct 2026). */}
+        <Text style={[styles.footText, { color: MUTED, marginTop: 8 }]} wrap={false}>{meta.footnote}</Text>
+
         <View style={styles.foot} wrap={false}>
           <Text style={styles.footHead}>Press &amp; Collaborations</Text>
           {meta.press.split(/\n\s*\n/).map((para, i) => <Text key={i} style={styles.footText}>{para.trim()}</Text>)}
           <Text style={[styles.footText, { marginTop: 4 }]}>{meta.contact}</Text>
-          <Text style={[styles.footText, { color: MUTED }]}>{meta.footnote}</Text>
         </View>
 
         <View style={styles.pageNo} fixed>

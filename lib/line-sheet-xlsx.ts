@@ -81,11 +81,14 @@ export async function lineSheetWorkbook(meta: LineSheetMetaText, lines: LineShee
   }
   ws.autoFilter = { from: { row: 6, column: 1 }, to: { row: 6, column: COLUMNS.length } }
 
+  // Terms first, right under the table: the MOQ asterisk and the shipping
+  // fees, before press (Brandon, 6 Oct 2026).
+  ws.addRow([])
+  for (const line of meta.footnote.split('\n').map((x) => x.trim()).filter(Boolean)) ws.addRow([line]).font = { color: { argb: 'FF6A736F' } }
   ws.addRow([])
   ws.addRow(['Press & Collaborations']).font = { bold: true, italic: true }
   for (const para of meta.press.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean)) ws.addRow([para])
   ws.addRow([meta.contact])
-  for (const line of meta.footnote.split('\n').map((x) => x.trim()).filter(Boolean)) ws.addRow([line]).font = { color: { argb: 'FF6A736F' } }
 
   return Buffer.from(await wb.xlsx.writeBuffer())
 }
