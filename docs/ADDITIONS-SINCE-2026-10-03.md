@@ -38,7 +38,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - `scripts/troubleshooting.ts` prints the open log, the open "couldn't do" flags and support cases flagged as wrong, and marks entries fixed. The project instructions say to read it at the start of every session.
 - **Files:** `lib/mouse/issues.ts`, `lib/mouse/agent.ts`, `lib/mouse/tools.ts`, `lib/mouse/outcomes.ts`, `lib/mouse/prompt.ts`, `scripts/troubleshooting.ts`, `prisma/schema.prisma` (`MouseIssue`), `tests/mouse-issues.test.ts`
 
-### Says plainly when the AI account is out of credit · `HASH`
+### Says plainly when the AI account is out of credit · `5628346`
 - **Problem:** when the Anthropic account ran out of credit, every chat answered only "The model connection failed", which reads as a glitch to retry, not a bill to pay. Support drafts said only that Mouse couldn't write one.
 - **Change:** a credit refusal is recognised. The chat says Mouse is out of credit and where to top it up. Support drafts leave a note that says the same. The troubleshooting log gets one plain line, and the owner gets one email per outage (none if the log saw it in the last 12 hours).
 - **Needs:** email, for the warning.
