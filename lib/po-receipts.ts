@@ -10,6 +10,12 @@
  * as coming as well.
  */
 import { db } from '@/lib/db'
+import { unitsPerLineUnit } from '@/lib/po-units'
+
+// Lines carry their component so a line ordered by the roll can be read in
+// the single stickers the stock counts (lib/po-units.ts). Quantities passed
+// in and reported out are always in the item's own counting unit.
+const WITH_UNIT = { orderBy: { id: 'asc' as const }, include: { component: { select: { unitOfMeasure: true, purchaseUnit: true, unitsPerPurchaseUnit: true } } } }
 
 /** "PO 2362", "PO #2362", "po2362" in a note → "2362". Pure. */
 export function poNumberIn(text: string | null | undefined): string | null {
@@ -29,7 +35,7 @@ export async function receiveOnPo(
   item: { productVariantId?: string | null; componentId?: string | null },
   qty: number,
 ): Promise<{ ok: boolean; message: string }> {
-  const po = await db.purchaseOrder.findFirst({ where: { poNumber }, include: { lines: { orderBy: { id: 'asc' } } } })
+  const po = await db.purchaseOrder.findFirst({ where: { poNumber }, include: { lines: WITH_UNIT } })
   if (!po) return { ok: false, message: `PO ${poNumber} is not on file, so nothing was ticked off on a PO.` }
   if (po.status === 'DRAFT' || po.status === 'CANCELLED') return { ok: false, message: `PO ${poNumber} is ${po.status.toLowerCase()}, so nothing was ticked off on it.` }
   const lines = po.lines.filter((l) =>
@@ -39,21 +45,22 @@ export async function receiveOnPo(
   let left = qty
   const updates: Array<{ id: string; received: number }> = []
   for (const [k, l] of lines.entries()) {
-    const room = Math.max(0, Number(l.qtyOrdered) - Number(l.qtyReceived))
+    const f = unitsPerLineUnit(l.unit, l.component)
+    const room = Math.max(0, Number(l.qtyOrdered) - Number(l.qtyReceived)) * f
     const take = k === lines.length - 1 ? left : Math.min(left, room)
-    if (take > 0) updates.push({ id: l.id, received: Number(l.qtyReceived) + take })
+    if (take > 0) updates.push({ id: l.id, received: Number(l.qtyReceived) + take / f })
     left -= take
     if (left <= 0) break
   }
-  const after = po.lines.map((l) => ({ ordered: Number(l.qtyOrdered), received: updates.find((u) => u.id === l.id)?.received ?? Number(l.qtyReceived) }))
+  const after = po.lines.map((l) => ({ ordered: Number(l.qtyOrdered), received: updates.find((u) => u.id === l.id)?.received ?? Number(l.qtyReceived), f: unitsPerLineUnit(l.unit, l.component) }))
   const all = after.every((l) => l.received >= l.ordered)
   const status = all ? 'RECEIVED' : after.some((l) => l.received > 0) ? 'PARTIALLY_RECEIVED' : po.status
   await db.$transaction([
     ...updates.map((u) => db.purchaseOrderLine.update({ where: { id: u.id }, data: { qtyReceived: String(u.received) } })),
     ...(status !== po.status ? [db.purchaseOrder.update({ where: { id: po.id }, data: { status } })] : []),
   ])
-  const owed = after.reduce((n, l) => n + Math.max(0, l.ordered - l.received), 0)
-  return { ok: true, message: `Ticked off ${qty} on PO ${poNumber}; ${owed ? `${owed} still owed on the PO` : 'the PO is now fully received'}.` }
+  const owed = owedOf(after.filter((_, k) => lines.some((l) => l.id === po.lines[k].id)))
+  return { ok: true, message: `Ticked off ${qty} on PO ${poNumber}; ${owed ? `${owed} of this still owed on the PO` : all ? 'the PO is now fully received' : 'nothing more of this is owed on the PO'}.` }
 }
 
 /**
@@ -69,7 +76,7 @@ export async function unreceiveOnPo(
   item: { productVariantId?: string | null; componentId?: string | null },
   qty: number,
 ): Promise<{ ok: boolean; message: string }> {
-  const po = await db.purchaseOrder.findFirst({ where: { poNumber }, include: { lines: { orderBy: { id: 'asc' } } } })
+  const po = await db.purchaseOrder.findFirst({ where: { poNumber }, include: { lines: WITH_UNIT } })
   if (!po) return { ok: false, message: `PO ${poNumber} is not on file, so nothing was taken off a PO.` }
   if (po.status === 'DRAFT' || po.status === 'CANCELLED') return { ok: false, message: `PO ${poNumber} is ${po.status.toLowerCase()}, so nothing was taken off it.` }
   const lines = po.lines.filter((l) =>
@@ -79,20 +86,21 @@ export async function unreceiveOnPo(
   let left = qty
   const updates: Array<{ id: string; received: number }> = []
   for (const l of [...lines].reverse()) {
-    const take = Math.min(left, Number(l.qtyReceived))
-    if (take > 0) updates.push({ id: l.id, received: Number(l.qtyReceived) - take })
+    const f = unitsPerLineUnit(l.unit, l.component)
+    const take = Math.min(left, Number(l.qtyReceived) * f)
+    if (take > 0) updates.push({ id: l.id, received: Number(l.qtyReceived) - take / f })
     left -= take
     if (left <= 0) break
   }
   if (!updates.length) return { ok: false, message: `PO ${poNumber} had nothing received on this item, so nothing was taken off it.` }
-  const after = po.lines.map((l) => ({ ordered: Number(l.qtyOrdered), received: updates.find((u) => u.id === l.id)?.received ?? Number(l.qtyReceived) }))
+  const after = po.lines.map((l) => ({ ordered: Number(l.qtyOrdered), received: updates.find((u) => u.id === l.id)?.received ?? Number(l.qtyReceived), f: unitsPerLineUnit(l.unit, l.component) }))
   const status = after.every((l) => l.received >= l.ordered) ? 'RECEIVED' : after.some((l) => l.received > 0) ? 'PARTIALLY_RECEIVED' : 'SENT'
   await db.$transaction([
     ...updates.map((u) => db.purchaseOrderLine.update({ where: { id: u.id }, data: { qtyReceived: String(u.received) } })),
     ...(status !== po.status ? [db.purchaseOrder.update({ where: { id: po.id }, data: { status } })] : []),
   ])
-  const owed = after.reduce((n, l) => n + Math.max(0, l.ordered - l.received), 0)
-  return { ok: true, message: `Took ${qty - Math.max(0, left)} back off PO ${poNumber}; ${owed} now owed on it.` }
+  const owed = owedOf(after.filter((_, k) => lines.some((l) => l.id === po.lines[k].id)))
+  return { ok: true, message: `Took ${qty - Math.max(0, left)} back off PO ${poNumber}; ${owed} of this now owed on it.` }
 }
 
 /**
@@ -103,10 +111,15 @@ export async function owedOnPo(
   poNumber: string,
   item: { productVariantId?: string | null; componentId?: string | null },
 ): Promise<number | null> {
-  const po = await db.purchaseOrder.findFirst({ where: { poNumber }, include: { lines: true } })
+  const po = await db.purchaseOrder.findFirst({ where: { poNumber }, include: { lines: WITH_UNIT } })
   if (!po || po.status === 'DRAFT' || po.status === 'CANCELLED') return null
   const lines = po.lines.filter((l) =>
     (item.productVariantId && l.productVariantId === item.productVariantId) || (item.componentId && l.componentId === item.componentId))
   if (!lines.length) return null
-  return lines.reduce((n, l) => n + Math.max(0, Number(l.qtyOrdered) - Number(l.qtyReceived)), 0)
+  return owedOf(lines.map((l) => ({ ordered: Number(l.qtyOrdered), received: Number(l.qtyReceived), f: unitsPerLineUnit(l.unit, l.component) })))
+}
+
+/** What is still owed, in the item's own unit. Pure. */
+function owedOf(lines: Array<{ ordered: number; received: number; f: number }>): number {
+  return Math.round(lines.reduce((n, l) => n + Math.max(0, l.ordered - l.received) * l.f, 0) * 1000) / 1000
 }

@@ -365,6 +365,10 @@ model BomLine {
   componentId       String
   qtyPerUnit        Decimal @db.Decimal(12, 4)
   notes             String?
+  /// Only the product's variants in this size use it, e.g. the size 2
+  /// number sticker goes on size 2 garments only (6 Oct 2026). Null: every
+  /// variant. Matched against ProductVariant.size.
+  size              String?
 
   parentProduct   Product?   @relation("ProductBom", fields: [parentProductId], references: [id], onDelete: Cascade)
   parentComponent Component? @relation("ComponentBom", fields: [parentComponentId], references: [id], onDelete: Cascade)

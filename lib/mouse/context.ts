@@ -131,7 +131,7 @@ export async function buildCatalog(): Promise<string> {
       L.push('per unit:')
       for (const b of p.bomLines) {
         const q = Number(b.qtyPerUnit)
-        L.push(`  - ${b.component.name}: ${q === 0 ? 'UNKNOWN' : q} ${b.component.unitOfMeasure}`)
+        L.push(`  - ${b.component.name}: ${q === 0 ? 'UNKNOWN' : q} ${b.component.unitOfMeasure}${b.size ? ` (size ${b.size} only)` : ''}`)
       }
     }
     if (p.variants.length) {

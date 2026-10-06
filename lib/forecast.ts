@@ -1,3 +1,4 @@
+import { unitsPerLineUnit } from '@/lib/po-units'
 import { db } from '@/lib/db'
 import { laMidnight } from '@/lib/dates'
 import { planOrderByCalendar } from '@/lib/order-by-calendar'
@@ -66,7 +67,7 @@ export async function deriveIncomingQty(): Promise<number> {
         componentId: { not: null },
         purchaseOrder: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } },
       },
-      select: { componentId: true, qtyOrdered: true, qtyReceived: true },
+      select: { componentId: true, qtyOrdered: true, qtyReceived: true, unit: true, component: { select: { unitOfMeasure: true, purchaseUnit: true, unitsPerPurchaseUnit: true } } },
     }),
   ])
 
@@ -75,7 +76,9 @@ export async function deriveIncomingQty(): Promise<number> {
     // What is still to come, not what was ordered — a partially received line
     // has already put some of its quantity on the shelf, where onHandQty counts
     // it. Counting the whole line again here would double it.
-    const left = Math.max(0, Number(l.qtyOrdered) - Number(l.qtyReceived))
+    // In the component's own unit: six rolls of 500 are 3,000 stickers
+    // coming, not six (lib/po-units.ts).
+    const left = Math.max(0, Number(l.qtyOrdered) - Number(l.qtyReceived)) * unitsPerLineUnit(l.unit, l.component)
     if (left > 0) outstanding.set(l.componentId!, (outstanding.get(l.componentId!) ?? 0) + left)
   }
 
@@ -176,8 +179,14 @@ export async function recomputeForecasts() {
 
   // ── Products ──────────────────────────────────────────────
   const productDemand = new Map<string, number>() // units/day needing production
+  // The same, per size, for recipe lines that only one size uses (the size 2
+  // number sticker goes on size 2 garments only).
+  const sizeDemand = new Map<string, Map<string, number>>()
   for (const p of products) {
     const rate = p.variants.reduce((n, v) => n + ratePerDay(salesByVariant.get(v.id) ?? []), 0)
+    const bySize = new Map<string, number>()
+    for (const v of p.variants) if (v.size) bySize.set(v.size, (bySize.get(v.size) ?? 0) + ratePerDay(salesByVariant.get(v.id) ?? []))
+    sizeDemand.set(p.id, bySize)
     const onHand = p.variants.reduce(
       (n, v) => (v.onHandQty === null ? n : n + Number(v.onHandQty)), 0)
     const anyUnknown = p.variants.some((v) => v.onHandQty === null)
@@ -254,7 +263,7 @@ export async function recomputeForecasts() {
         if ((productDemand.get(p.id) ?? 0) > 0) unknownQty.push(p.name)
         continue
       }
-      perDay += (productDemand.get(p.id) ?? 0) * qty
+      perDay += (line.size ? (sizeDemand.get(p.id)?.get(line.size) ?? 0) : (productDemand.get(p.id) ?? 0)) * qty
     }
     // Nothing known at all: no rate, no date, nothing misleading — as before.
     if (perDay <= 0) continue

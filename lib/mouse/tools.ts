@@ -1180,6 +1180,7 @@ export const TOOLS: Record<string, Tool> = {
                   'quantity reads as unknown until someone knows it. Never guess it.',
                 ),
                 notes: str('Where the figure came from'),
+                size: str('Only when just one size of the product uses it (the size 2 number sticker on size 2 garments): that size, as the variants spell it. "" for every size.'),
               },
               required: ['componentId'],
             },
@@ -1195,7 +1196,7 @@ export const TOOLS: Record<string, Tool> = {
     },
     run: async (i) => {
       const productId = i.productId as string
-      const set = (i.set ?? []) as { componentId: string; qtyPerUnit?: number; notes?: string }[]
+      const set = (i.set ?? []) as { componentId: string; qtyPerUnit?: number; notes?: string; size?: string }[]
       const remove = (i.remove ?? []) as string[]
 
       const product = await db.product.findUnique({ where: { id: productId }, select: { name: true } })
@@ -1234,6 +1235,7 @@ export const TOOLS: Record<string, Tool> = {
           const data = {
             parentProductId: productId, componentId: line.componentId,
             qtyPerUnit: String(qty), notes: line.notes ?? null,
+            ...(typeof line.size === 'string' ? { size: line.size.trim() || null } : {}),
           }
           const name = byId.get(line.componentId)!.name
           if (existing) {
