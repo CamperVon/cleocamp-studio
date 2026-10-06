@@ -601,6 +601,33 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  note_problem: {
+    def: {
+      name: 'note_problem',
+      description:
+        'Write a line in your troubleshooting log, which whoever maintains your code reads (Brandon, 6 Oct 2026). ' +
+        'For a problem in how you work, not in the business: a tool that did something other than you expected, a ' +
+        'result you are not sure took, data that looks wrong or contradicts itself, a rule that pulled you two ways, ' +
+        'or something you had to work around. Failed tool calls are logged for you already. It emails nobody and ' +
+        'files nothing on ToDo; when a person needs to know or decide, use flag_for_brandon as well.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          what: str('What happened, in one or two plain sentences, with the record or tool involved'),
+          tool: str('The tool involved, if one was'),
+        },
+        required: ['what'],
+      },
+    },
+    run: async (i) => {
+      const what = String(i.what ?? '').trim()
+      if (!what) return { noted: false, reason: 'Say what happened.' }
+      const { logIssues } = await import('@/lib/mouse/issues')
+      await logIssues('mouse', null, [{ kind: 'NOTED', tool: typeof i.tool === 'string' && i.tool.trim() ? i.tool.trim() : null, detail: what.slice(0, 1500) }])
+      return { noted: true }
+    },
+  },
+
   flag_for_brandon: {
     def: {
       name: 'flag_for_brandon',
@@ -4819,6 +4846,9 @@ export const TOOLS: Record<string, Tool> = {
         'row with its id, live prices and on-hand. "add" / "edit" change a row; "remove" hides one ' +
         '(restore brings it back); "move" puts a row after another (after: rowId, or "top"); "meta" ' +
         'changes the words around the table (title, tagline, materials, press, contact, footnote). ' +
+        'A meta field you pass REPLACES what is there; "list" shows the current words. To add a ' +
+        'line (a new shipping term under the footnote) pass add: true, which keeps what is there ' +
+        'and puts yours on a new line. ' +
         'Prices are NOT typed onto rows: wholesale comes from the price list (change it with ' +
         'set_wholesale_price) and suggested retail from Shopify, both read live, so link a row to ' +
         'its product (productId, and colorway for one colour). Only a row with no product carries ' +
@@ -4847,6 +4877,7 @@ export const TOOLS: Record<string, Tool> = {
           title: str('meta: title'), tagline: str('meta: tagline'), materials: str('meta: materials line'),
           press: str('meta: press & collaborations text (blank line between paragraphs)'),
           contact: str('meta: contact line'), footnote: str('meta: footnote'),
+          add: { type: 'boolean' as const, description: 'meta: true adds your words as a new line under what is there, instead of replacing it' },
         },
         required: ['action'],
       },
@@ -4860,14 +4891,32 @@ export const TOOLS: Record<string, Tool> = {
         availability: l.availability, onHand: l.onHand, productId: l.productId, colorway: l.colorway,
         ...(!l.hidden && heldBackFor(l).length ? { offThePdfUntilItHas: heldBackFor(l) } : {}),
       }))
-      if (i.action === 'list') return { rows: await listed(), pdf: link }
+      const META = ['title', 'tagline', 'materials', 'press', 'contact', 'footnote'] as const
+      const words = async () => {
+        const m = await db.lineSheetMeta.findUnique({ where: { id: 'main' } })
+        return m ? Object.fromEntries(META.map((k) => [k, m[k]])) : null
+      }
+      if (i.action === 'list') return { rows: await listed(), words: await words(), pdf: link }
 
+      // 6 Oct 2026: told to add the wholesale shipping terms "to the line
+      // sheet", Mouse set the footnote to them, and the footnote that was
+      // there ("Color and size variants can vary and are included in MOQs")
+      // was gone from both files. It had never been shown the old words.
+      // Now it is, replacing says what it replaced, and add keeps them.
       if (i.action === 'meta') {
+        const before = await words()
         const data: Record<string, string> = {}
-        for (const k of ['title', 'tagline', 'materials', 'press', 'contact', 'footnote'] as const) if (typeof i[k] === 'string' && i[k].trim()) data[k] = i[k].trim()
+        for (const k of META) {
+          if (typeof i[k] !== 'string' || !i[k].trim()) continue
+          const was = before?.[k]?.trim() ?? ''
+          data[k] = i.add === true && was && !was.includes(i[k].trim()) ? `${was}\n${i[k].trim()}` : i[k].trim()
+        }
         if (!Object.keys(data).length) return { saved: false, reason: 'Nothing to change. Say which words.' }
         await db.lineSheetMeta.update({ where: { id: 'main' }, data })
-        return { saved: true, changed: Object.keys(data), pdf: link }
+        return {
+          saved: true, pdf: link,
+          changed: Object.fromEntries(Object.keys(data).map((k) => [k, { was: before?.[k] ?? null, now: data[k] }])),
+        }
       }
 
       const fields: Record<string, unknown> = {}

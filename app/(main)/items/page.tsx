@@ -5,6 +5,7 @@ import { SuggestedCloses } from '@/app/ui/suggested-closes'
 import { packageGap } from '@/lib/gap'
 import { GapCard } from '@/app/ui/gap-card'
 import { PageChat } from '@/app/ui/page-chat'
+import { isPressing, pressingFirst } from '@/lib/pressing'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,8 +26,9 @@ export default async function Items() {
   // nobody here can action in the list of things they must. They sit below,
   // waiting on a code change.
   const open = items.filter((i) => !i.resolved && i.kind !== 'GAP')
-  const asks = open.filter((i) => i.kind === 'QUESTION')
-  const todos = open.filter((i) => i.kind !== 'QUESTION')
+  // Urgent, due and overdue first, in pink (Brandon, 6 Oct 2026).
+  const asks = pressingFirst(open.filter((i) => i.kind === 'QUESTION'))
+  const todos = pressingFirst(open.filter((i) => i.kind !== 'QUESTION'))
   const done = items.filter((i) => i.resolved && i.kind !== 'GAP')
   const gaps = await Promise.all(items.filter((i) => !i.resolved && i.kind === 'GAP').map(packageGap))
 
@@ -50,7 +52,7 @@ export default async function Items() {
           <Empty>Nothing to answer. Mouse knows what it needs.</Empty>
         ) : (
           <ul className="divide-y divide-line">
-            {asks.map((i) => <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} due={dueLabel(i.dueDate)} />)}
+            {asks.map((i) => <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} due={dueLabel(i.dueDate)} hot={isPressing(i)} />)}
           </ul>
         )}
       </Card>
@@ -60,7 +62,7 @@ export default async function Items() {
           <Empty>Nothing on the list.</Empty>
         ) : (
           <ul className="divide-y divide-line">
-            {todos.map((i) => <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} due={dueLabel(i.dueDate)} />)}
+            {todos.map((i) => <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} due={dueLabel(i.dueDate)} hot={isPressing(i)} />)}
           </ul>
         )}
       </Card>

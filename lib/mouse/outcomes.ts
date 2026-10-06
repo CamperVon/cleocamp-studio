@@ -13,6 +13,9 @@ export type ToolOutcome = {
 const READ_TOOLS = new Set([
   'query_status', 'check_sent_mail', 'search_chat', 'find_in_shopify', 'find_customer',
   'find_contacts', 'reorder_math', 'shopify_analytics', 'unpaid_live_sales', 'draft_order_links',
+  // A line in the troubleshooting log is not a record of the business: it
+  // must not satisfy "you said it was noted, so write something down".
+  'note_problem',
 ])
 
 export function classifyResult(name: string, result: unknown): Pick<ToolOutcome, 'status' | 'isWrite'> {

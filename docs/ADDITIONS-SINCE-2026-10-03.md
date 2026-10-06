@@ -30,6 +30,14 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - The account tools take a name, matched the same way everywhere (`pickNamed` in `lib/stylists.ts`). A given id must match the name, and more than one match makes Mouse ask instead of picking.
 - **Files:** `lib/mouse/tools.ts`, `lib/mouse/context.ts`, `lib/stylists.ts`
 
+### A troubleshooting log · `HASH`
+- **Problem:** when a tool failed or refused, or a turn stopped short, the only trace was whatever Mouse chose to say in its reply. Problems it glossed over were invisible to whoever maintains the code.
+- **Change:**
+  - After every run, code writes each failed or refused tool call and each unfinished turn to a `MouseIssue` table, with the tool, the error and the input. Repeats of the same failure count up on one row.
+  - Mouse can add its own entry with `note_problem` (a tool that did something unexpected, data that contradicts itself). It emails nobody, and it doesn't count as having recorded something.
+  - `scripts/troubleshooting.ts` prints the open log, the open "couldn't do" flags and support cases flagged as wrong, and marks entries fixed. The project instructions say to read it at the start of every session.
+- **Files:** `lib/mouse/issues.ts`, `lib/mouse/agent.ts`, `lib/mouse/tools.ts`, `lib/mouse/outcomes.ts`, `lib/mouse/prompt.ts`, `scripts/troubleshooting.ts`, `prisma/schema.prisma` (`MouseIssue`), `tests/mouse-issues.test.ts`
+
 ### Mouse asks instead of guessing quantities · `fa647db`
 - **Problem:** asked to add one item to an order, Mouse misread the request and changed quantities nobody had mentioned.
 - **Change:** the prompt rule on asking versus acting was tightened. A quantity nobody stated is a question, never a guess. A purchase order prints its "For" line only when the order is for a single product.
@@ -118,6 +126,11 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** Shopify (draft orders).
 - **Files:** `lib/mouse/tools.ts`, `lib/mouse/prompt.ts`, `lib/live-sale.ts`
 
+### Line sheet words: add, don't overwrite · `HASH`
+- **Problem:** told to add shipping terms to the line sheet, Mouse set the footnote to them, and the footnote that was there disappeared. It had never been shown the existing words.
+- **Change:** listing the line sheet shows the words around the table; changing one reports what it was and what it is now; `add: true` puts a new line under what is there. In Excel each footnote line is its own row.
+- **Files:** `lib/mouse/tools.ts` (`update_line_sheet`), `lib/line-sheet-xlsx.ts`
+
 ### Line sheet as Excel, beside the PDF · `2e219fb`
 - **Change:** the wholesale line sheet downloads as an Excel file with the same rows as the PDF. Prices are numbers, not text, with an "up to" column for price ranges, and stock counts never appear. Emailing the sheet to a store attaches both files.
 - **Files:** `lib/line-sheet-xlsx.ts`, `app/wholesale/line-sheet/xlsx/route.ts`, `lib/line-sheet.tsx`, `tests/line-sheet-xlsx.test.ts`. New dependency: `exceljs`.
@@ -139,6 +152,10 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Problem:** two equally loud buttons on a support card, and the one tapped did less than the reply promised.
 - **Change:** when a reply is drafted, Close and any second order action drop to an outline. Only the action that does what the reply says stays filled.
 - **Files:** `app/ui/support-case.tsx`
+
+### Urgent to-dos first, in pink · `HASH`
+- **Change:** questions and to-dos that are marked urgent, due today, overdue or inside their reminder window sort to the top of every list and show in pink. The ToDo tab badge counts the same set.
+- **Files:** `lib/pressing.ts`, `app/ui/item-row.tsx`, `app/(main)/items/page.tsx`, `app/(main)/page.tsx`, `app/ui/nav.tsx`, `tests/pressing.test.ts`
 
 ### Counts on the tabs · `43c5d29`
 - **Change:** the tab bar shows a small count: to-dos and questions due today or overdue, and pressing support cases (on More on a phone). Nothing at zero. Counting everything open made a badge of 50 that nobody reads.

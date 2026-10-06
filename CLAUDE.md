@@ -14,6 +14,16 @@ Mouse's draft as it stood (`reviewDraft`). Fix the cause, then set
 `reviewedAt` and a one-line `reviewOutcome` so the list at the top of
 Support clears.
 
+**Then read Mouse's troubleshooting log:** `npx tsx scripts/troubleshooting.ts`
+(Brandon, 6 Oct 2026: "if mouse can't do something and/or has an issue, she
+should keep a troubleshooting log that you can access regularly"). Code logs
+every tool call that failed or was refused and every turn that stopped short
+(`MouseIssue`, `lib/mouse/issues.ts`); Mouse adds its own with `note_problem`.
+The script also lists the open "Mouse couldn't do" flags and the support
+cases above. Find the cause of each, fix it in code or say why it is not a
+bug, then `--fixed <id> "what changed"`. A refusal that is a guardrail
+working as meant is fixed with that said, not by loosening the guardrail.
+
 **Log code changes that would help any business in
 `docs/ADDITIONS-SINCE-2026-10-03.md`,** in the same commit (Brandon, 4 Oct
 2026). A copy of this code was taken on 3 Oct 2026 for a separate, general

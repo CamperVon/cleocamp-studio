@@ -1663,3 +1663,33 @@ model CustomerNotice {
   @@unique([campaign, orderId])
   @@index([campaign])
 }
+
+/// Mouse's troubleshooting log (Brandon, 6 Oct 2026: "if mouse can't do
+/// something and/or has an issue, she should keep a troubleshooting log
+/// that you can access regularly"). Written by code after every run: each
+/// tool call that failed or was refused, and each turn that stopped before
+/// finishing. Mouse can add one itself with note_problem. Read by whoever
+/// maintains the code (scripts/troubleshooting.ts, CLAUDE.md), who fixes
+/// the cause and sets fixedAt and fixNote. Never shown to customers.
+model MouseIssue {
+  id         String    @id @default(cuid())
+  /// TOOL_FAILED, TURN_UNFINISHED or NOTED (Mouse's own note).
+  kind       String
+  /// Which door the run came through: chat, nightly-pass, team-mail, …
+  source     String
+  tool       String?
+  /// The error or refusal, or Mouse's note, cut short.
+  detail     String
+  /// The tool's input, for reproducing it.
+  input      Json?
+  /// What the run was asked, cut short.
+  asked      String?
+  /// The same tool and error again: counted, not a new row.
+  times      Int       @default(1)
+  lastSeenAt DateTime  @default(now())
+  fixedAt    DateTime?
+  fixNote    String?
+  createdAt  DateTime  @default(now())
+
+  @@index([fixedAt, lastSeenAt])
+}

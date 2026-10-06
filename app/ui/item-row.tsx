@@ -9,9 +9,11 @@ import { Chip } from './primitives'
  * takes one tap, because a list you cannot clear stops being read.
  */
 export function ItemRow({
-  id, kind, title, detail, due, yes, plain,
+  id, kind, title, detail, due, yes, plain, hot,
 }: {
   id: string; kind: string; title: string; detail: string | null; due?: string | null
+  /** Urgent, due or overdue: the title and date in pink (lib/pressing.ts). */
+  hot?: boolean
   /** No ask/do chip: on a page where every row is the same kind (the Stylists page). */
   plain?: boolean
   /** A one-tap answer, e.g. "Yes, add it" on the Stylists page: the label, and the answer it sends. */
@@ -45,8 +47,8 @@ export function ItemRow({
       <details className="group">
         <summary className="flex cursor-pointer items-center gap-2.5 px-4 py-2 hover:bg-sunk sm:px-5">
           {plain ? null : <Chip tone={kind === 'TODO' ? 'accent' : 'neutral'}>{kind === 'TODO' ? 'do' : 'ask'}</Chip>}
-          <p className="min-w-0 flex-1 truncate text-sm">{title}</p>
-          {due ? <span className="shrink-0 text-xs text-warn">{due}</span> : null}
+          <p className={`min-w-0 flex-1 truncate text-sm ${hot ? 'font-medium text-accent' : ''}`}>{title}</p>
+          {due ? <span className={`shrink-0 text-xs ${hot ? 'font-medium text-accent' : 'text-warn'}`}>{due}</span> : null}
         </summary>
 
         <div className="flex flex-col gap-2.5 px-4 pb-3.5 pl-[3.6rem] sm:px-5 sm:pl-[4.1rem]">

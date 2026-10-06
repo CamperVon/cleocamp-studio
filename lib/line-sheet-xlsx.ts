@@ -87,7 +87,7 @@ export async function lineSheetWorkbook(meta: LineSheetMetaText, lines: LineShee
   ws.addRow(['Press & Collaborations']).font = { bold: true, italic: true }
   for (const para of meta.press.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean)) ws.addRow([para])
   ws.addRow([meta.contact])
-  ws.addRow([meta.footnote]).font = { color: { argb: 'FF6A736F' } }
+  for (const line of meta.footnote.split('\n').map((x) => x.trim()).filter(Boolean)) ws.addRow([line]).font = { color: { argb: 'FF6A736F' } }
 
   return Buffer.from(await wb.xlsx.writeBuffer())
 }

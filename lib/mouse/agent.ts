@@ -484,6 +484,14 @@ export async function runAgent(opts: {
 
   await recordUsage(opts.source, result.usage.requests)
 
+  // The troubleshooting log: every failed or refused tool call and every
+  // unfinished turn, written by code whatever the reply says (Brandon,
+  // 6 Oct 2026). Practice runs change nothing and are not logged.
+  if (!opts.practice) {
+    const { issuesFrom, logIssues } = await import('@/lib/mouse/issues')
+    await logIssues(opts.source, opts.fromAPerson ? opts.instruction : null, issuesFrom({ toolCalls: result.toolCalls, stopReason: result.usage.stopReason }))
+  }
+
   // Bring the forecast and its alerts into line with whatever just changed,
   // in this same request, rather than leaving them for the next nightly run.
   // Every caller funnels through here — chat, an in-flight update typed

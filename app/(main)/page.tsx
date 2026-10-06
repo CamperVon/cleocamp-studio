@@ -17,6 +17,7 @@ import { quoteOfTheDay } from '@/lib/quotes'
 import { MonthGrid } from '@/app/ui/month'
 import { getDailyBrief } from '@/lib/mouse/brief'
 import { fetchToShipCount, isConfigured } from '@/lib/integrations/shopify'
+import { isPressing, pressingFirst } from '@/lib/pressing'
 
 export const dynamic = 'force-dynamic'
 
@@ -127,8 +128,9 @@ export default async function Today() {
   // with a single count on top. At 58 rows it had stopped being a list anyone
   // read. They are three different kinds of thing and only one of them is
   // answerable by Cleo, so they are three sections now.
-  const asks = items.filter((i) => i.kind === 'QUESTION')
-  const todos = items.filter((i) => i.kind === 'TODO')
+  // Urgent, due and overdue first, in pink (Brandon, 6 Oct 2026).
+  const asks = pressingFirst(items.filter((i) => i.kind === 'QUESTION'))
+  const todos = pressingFirst(items.filter((i) => i.kind === 'TODO'))
   // GAPs are for whoever changes the code, not for Cleo. They live on /items.
   const gaps = items.filter((i) => i.kind === 'GAP')
   const urgent = alerts.filter((a) => a.severity === 'URGENT')
@@ -401,7 +403,7 @@ export default async function Today() {
           <>
             <ul className="divide-y divide-line">
               {asks.slice(0, SHOWN).map((i) => (
-                <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} />
+                <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} hot={isPressing(i)} />
               ))}
             </ul>
             {asks.length > SHOWN ? (
@@ -425,7 +427,7 @@ export default async function Today() {
           <>
             <ul className="divide-y divide-line">
               {todos.slice(0, SHOWN).map((i) => (
-                <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} />
+                <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} hot={isPressing(i)} />
               ))}
             </ul>
             {todos.length > SHOWN ? (
