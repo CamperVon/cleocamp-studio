@@ -291,7 +291,7 @@ export default async function Wholesale() {
                 <LineSheetRowEditor key={l.id} row={{
                   id: l.id, linked: !!l.productId, item: l.item, colorLabel: l.colorLabel, description: l.ownDescription,
                   fromShopify: !l.ownDescription.trim() ? l.description : '',
-                  sizing: l.sizing, minOrder: l.minOrder, commission: l.commission, availability: l.availability,
+                  sizing: l.sizing, minOrder: l.minOrder, availability: l.availability,
                   wholesale: l.wholesaleCents != null ? String(l.wholesaleCents / 100) : '', msrp: l.msrp, price: priceFor(l),
                 }}>
                 <span className="flex items-baseline justify-between gap-3 text-sm">

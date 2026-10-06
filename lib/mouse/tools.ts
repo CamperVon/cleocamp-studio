@@ -4874,7 +4874,6 @@ export const TOOLS: Record<string, Tool> = {
           msrp: str('Only for a row with no product: suggested retail as printed'),
           sizing: str('Sizing column'),
           minOrder: str('Min. order column'),
-          commission: str('Commission column, e.g. "70/30"; "" for none'),
           availability: str('Availability column, e.g. "In Stock", "3 week lead time"'),
           title: str('meta: title'), tagline: str('meta: tagline'), materials: str('meta: materials line'),
           press: str('meta: press & collaborations text (blank line between paragraphs)'),
@@ -4923,7 +4922,6 @@ export const TOOLS: Record<string, Tool> = {
 
       const fields: Record<string, unknown> = {}
       for (const k of ['item', 'colorLabel', 'description', 'sizing', 'minOrder', 'availability'] as const) if (typeof i[k] === 'string') fields[k] = i[k].trim()
-      if (typeof i.commission === 'string') fields.commission = i.commission.trim() || null
       if (typeof i.msrp === 'string') fields.msrp = i.msrp.trim() || null
       if (typeof i.colorway === 'string') fields.colorway = i.colorway.trim() || null
       if (typeof i.wholesaleCents === 'number') fields.wholesaleCents = Math.round(i.wholesaleCents)
@@ -4967,7 +4965,7 @@ export const TOOLS: Record<string, Tool> = {
             position, item: String(fields.item), colorLabel: String(fields.colorLabel), description: String(fields.description),
             productId: (fields.productId as string) ?? null, colorway: (fields.colorway as string) ?? null,
             wholesaleCents: (fields.wholesaleCents as number) ?? null, msrp: (fields.msrp as string) ?? null,
-            sizing: (fields.sizing as string) ?? '', minOrder: (fields.minOrder as string) ?? '', commission: (fields.commission as string) ?? null,
+            sizing: (fields.sizing as string) ?? '', minOrder: (fields.minOrder as string) ?? '',
             availability: (fields.availability as string) ?? '',
           },
           select: { id: true },

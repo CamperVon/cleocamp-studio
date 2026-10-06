@@ -28,7 +28,6 @@ const COLUMNS: Array<{ header: string; width: number; money?: boolean }> = [
   { header: 'Suggested Retail (up to)', width: 20, money: true },
   { header: 'Sizing', width: 22 },
   { header: 'Min. Order', width: 22 },
-  { header: 'Commission', width: 14 },
   { header: 'Availability', width: 22 },
 ]
 
@@ -46,7 +45,6 @@ export function sheetRow(l: LineSheetLine): Array<string | number | null> {
     retail ? usd(retail[1]) : null,
     l.sizing || null,
     l.minOrder || null,
-    l.commission || null,
     l.availability || null,
   ]
 }

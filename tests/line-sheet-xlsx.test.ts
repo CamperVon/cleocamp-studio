@@ -7,7 +7,7 @@ import type { LineSheetLine } from '../lib/line-sheet'
 const line = (o: Partial<LineSheetLine>): LineSheetLine => ({
   id: 'r1', position: 0, productId: 'p1', colorway: null, item: 'Sardine', colorLabel: 'Naked', description: 'A small bag.',
   ownDescription: '', wholesaleCents: 4000, wholesaleMaxCents: null, retail: '$98', msrp: null, sizing: 'One size',
-  minOrder: '6 units', commission: null, availability: 'Ships now', photo: null, photoData: null, onHand: 3, hidden: false, ...o,
+  minOrder: '6 units', availability: 'Ships now', photo: null, photoData: null, onHand: 3, hidden: false, ...o,
 })
 
 test('prices are read back to cents, a range to both ends, typed text to nothing', () => {
@@ -37,4 +37,5 @@ test('the workbook opens in Excel with the rows under the header, prices as numb
   const all = JSON.stringify(ws.getSheetValues())
   assert.ok(!all.includes('"onHand"') && !/\b3 on hand\b/.test(all)) // stock never goes to a store
   assert.ok(all.includes('The Cut'))
+  assert.ok(!/commission/i.test(all)) // never on a sheet stores see (6 Oct 2026)
 })

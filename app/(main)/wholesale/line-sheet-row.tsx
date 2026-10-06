@@ -16,7 +16,6 @@ export type SheetRow = {
   fromShopify: string
   sizing: string
   minOrder: string
-  commission: string | null
   availability: string
   /** Dollars: the row's own for a row with no product, else the price list's. */
   wholesale: string
@@ -62,7 +61,7 @@ export function LineSheetRowEditor({ row, children }: { row: SheetRow; children:
   const save = () => {
     const edit: RowEdit = {
       item: f.item, colorLabel: f.colorLabel, description: f.description, sizing: f.sizing,
-      minOrder: f.minOrder, commission: f.commission ?? '', availability: f.availability,
+      minOrder: f.minOrder, availability: f.availability,
       ...(row.linked ? {} : { wholesale: f.wholesale, msrp: f.msrp ?? '' }),
     }
     const newPrice = row.linked && row.price && f.wholesale.trim() !== row.wholesale.trim() ? row.price : null
@@ -94,7 +93,6 @@ export function LineSheetRowEditor({ row, children }: { row: SheetRow; children:
           <div className="grid grid-cols-2 gap-2">
             <Field label="Sizing"><input value={f.sizing} onChange={set('sizing')} className={input} /></Field>
             <Field label="Min. order"><input value={f.minOrder} onChange={set('minOrder')} className={input} /></Field>
-            <Field label="Commission"><input value={f.commission ?? ''} onChange={set('commission')} placeholder="70/30" className={input} /></Field>
             <Field label="Availability"><input value={f.availability} onChange={set('availability')} placeholder="In Stock" className={input} /></Field>
           </div>
           {row.linked ? (

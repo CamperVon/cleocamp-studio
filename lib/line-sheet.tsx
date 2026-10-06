@@ -8,8 +8,10 @@ import { wordmark, WORDMARK_RATIO } from '@/lib/brand'
  * 30 Sept 2026: "In the wholesale section I want to build a line sheet that
  * mouse can update and send as a pdf as we go", laid out like
  * Cleo_Line_Sheet_2026 (January 2026): photo, item, colour, description,
- * wholesale, suggested retail, sizing, minimum order, commission,
- * availability, then press, contact and a footnote.
+ * wholesale, suggested retail, sizing, minimum order, availability, then
+ * press, contact and a footnote. The January sheet also had a commission
+ * column; it never belonged on a sheet stores see and came off on 6 Oct 2026
+ * (Brandon: "never should've been there").
  *
  * Prices are never copied onto the sheet. Wholesale comes from the price
  * list (the variant's, then the product's), and suggested retail from the
@@ -69,7 +71,6 @@ export type LineSheetLine = {
   msrp: string | null
   sizing: string
   minOrder: string
-  commission: string | null
   availability: string
   photo: string | null
   /** A photo chosen and cropped for the sheet, used instead of photo when set. */
@@ -417,7 +418,7 @@ export async function loadLineSheet(opts: { includeHidden?: boolean } = {}): Pro
     meta: meta ? { title: meta.title, tagline: meta.tagline, materials: meta.materials, press: meta.press, contact: meta.contact, footnote: meta.footnote } : null,
     lines: rows.map((r) => ({
       id: r.id, position: r.position, productId: r.productId, colorway: r.colorway, item: r.item, colorLabel: r.colorLabel,
-      ownDescription: r.description, msrp: r.msrp, photoData: r.photoData ? Buffer.from(r.photoData) : null, sizing: r.sizing, minOrder: r.minOrder, commission: r.commission,
+      ownDescription: r.description, msrp: r.msrp, photoData: r.photoData ? Buffer.from(r.photoData) : null, sizing: r.sizing, minOrder: r.minOrder,
       availability: r.availability, hidden: r.hidden,
       ...resolveRow(r, r.productId ? byId.get(r.productId) ?? null : null),
     })),
@@ -451,12 +452,11 @@ const COLS: Array<{ key: string; label: string; w: number }> = [
   { key: 'photo', label: 'IMAGE', w: 56 },
   { key: 'item', label: 'ITEM', w: 72 },
   { key: 'color', label: 'COLOR / VARIANT', w: 64 },
-  { key: 'desc', label: 'DESCRIPTION', w: 182 },
+  { key: 'desc', label: 'DESCRIPTION', w: 236 },
   { key: 'ws', label: 'WHOLESALE', w: 50 },
   { key: 'msrp', label: 'SUGGESTED RETAIL', w: 62 },
   { key: 'size', label: 'SIZING', w: 60 },
   { key: 'moq', label: 'MIN. ORDER', w: 64 },
-  { key: 'comm', label: 'COMMISSION', w: 54 },
   { key: 'avail', label: 'AVAILABILITY', w: 68 },
 ]
 const w = (key: string) => ({ width: COLS.find((c) => c.key === key)!.w })
@@ -497,7 +497,6 @@ export function LineSheetDoc({ meta, lines, asOf }: { meta: LineSheetMetaText; l
             <Text style={[styles.td, w('msrp')]}>{l.retail ?? '—'}</Text>
             <Text style={[styles.td, w('size')]}>{l.sizing || '—'}</Text>
             <Text style={[styles.td, w('moq')]}>{ditto(lines[i - 1]?.minOrder, l.minOrder) || '—'}</Text>
-            <Text style={[styles.td, w('comm')]}>{l.commission || '—'}</Text>
             <Text style={[styles.td, w('avail')]}>{l.availability || '—'}</Text>
           </View>
         ))}

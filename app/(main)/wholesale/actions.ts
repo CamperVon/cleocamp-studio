@@ -30,7 +30,7 @@ async function run(input: Record<string, unknown>): Promise<Result> {
 
 export type RowEdit = {
   item: string; colorLabel: string; description: string; sizing: string; minOrder: string
-  commission: string; availability: string
+  availability: string
   /** Only for a row with no product. Dollars as typed, "94" or "$94.50". */
   wholesale?: string
   msrp?: string
@@ -41,7 +41,7 @@ export async function editLineSheetRow(rowId: string, e: RowEdit): Promise<Resul
   const input: Record<string, unknown> = {
     action: 'edit', rowId,
     item: e.item, colorLabel: e.colorLabel, description: e.description, sizing: e.sizing,
-    minOrder: e.minOrder, commission: e.commission, availability: e.availability,
+    minOrder: e.minOrder, availability: e.availability,
   }
   if (e.wholesale !== undefined) {
     const d = Number(e.wholesale.replace(/[$,\s]/g, ''))
