@@ -52,6 +52,15 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - Each run records, alongside its token usage, the size and a short hash of each block and each section: sizes only, no text.
 - **Files:** `lib/mouse/context.ts` (`splitCatalog`, `buildCatalogParts`, `catalogStats`), `lib/mouse/cache-blocks.ts`, `lib/mouse/agent.ts`, `lib/mouse/runner.ts`, `tests/catalog-split.test.ts`
 
+### Notes as an index in chat, full notes on demand · `HASH`
+- **Problem:** every chat turn carried every current note in full (about 14,500 tokens), mostly about records the turn had nothing to do with.
+- **Change:**
+  - Chat's catalogue lists notes by subject: how many are current, when the newest was written, and how many were written before the latest count. Notes with no subject stay in full. Background runs keep the full notes, unchanged.
+  - A read-only `open_record` tool returns one record (product, component, vendor, PO, production run, wholesale account, or a note subject) with every current note in full, the stale-count warning included. It finds a record only by exact id, PO number or exact full name; a name more than one record shares comes back as the candidates.
+  - When a chat message names a record exactly (a PO number, an id, or a full name of four characters or more, longest name winning), code looks up its notes first and sends them as a separate block after the person's words, whole records only, within a size limit. Shared names are reported, not chosen between. Everyday words that are also free-text note subjects preload nothing.
+  - The notes returned after a write were cut to 200 characters each; they now come whole within a size limit, with any more listed by id.
+- **Files:** `lib/mouse/notes.ts`, `lib/mouse/records.ts`, `lib/mouse/context.ts`, `lib/mouse/agent.ts` (`turnContent`, `chatTurn`), `lib/mouse/tools.ts` (`open_record`), `lib/mouse/outcomes.ts`, `lib/mouse/stale-notes.ts`, `lib/mouse/prompt.ts`, `tests/notes-index.test.ts`
+
 ### Mouse asks instead of guessing quantities · `fa647db`
 - **Problem:** asked to add one item to an order, Mouse misread the request and changed quantities nobody had mentioned.
 - **Change:** the prompt rule on asking versus acting was tightened. A quantity nobody stated is a question, never a guess. A purchase order prints its "For" line only when the order is for a single product.

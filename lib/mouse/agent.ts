@@ -308,6 +308,18 @@ export async function runAgent(opts: {
   /** Skip the catalogue for runs that do not need it. */
   withCatalog?: boolean
   /**
+   * How the catalogue shows notes: 'full' (default) every note, 'index' one
+   * line per subject with full notes via open_record (chat, phase 2A).
+   */
+  notes?: 'full' | 'index'
+  /**
+   * Records the message names exactly, looked up by code, with their notes in
+   * full (lib/mouse/records.ts prefetchForMessage). Sent as its own block
+   * after the person's words; never part of `instruction`, so the correction
+   * check and the log read only what the person said.
+   */
+  prefetch?: string | null
+  /**
    * True when `instruction` is something a person typed, rather than mail or a
    * scheduled job. Only then is the instruction itself read for corrections.
    */
@@ -348,7 +360,7 @@ export async function runAgent(opts: {
   // defaults) sit under a one-hour mark; everything else, notes included,
   // under the five-minute one. Same sections, same text, stable ones first.
   // Layout and the API rules it depends on: lib/mouse/cache-blocks.ts.
-  const parts = opts.withCatalog !== false ? await buildCatalogParts() : null
+  const parts = opts.withCatalog !== false ? await buildCatalogParts({ notes: opts.notes ?? 'full' }) : null
   const contextStats: CatalogStats | null = parts ? catalogStats(parts) : null
   const system: Anthropic.TextBlockParam[] = systemBlocks({
     rules: SYSTEM_RULES,
@@ -360,9 +372,7 @@ export async function runAgent(opts: {
   // Attachments ride along on the turn they were sent. Chat also replays the
   // files from its last two file-bearing messages (see chatTurn), so a
   // follow-up about the same document can still read it.
-  const instructionContent: Anthropic.MessageParam['content'] = opts.attachments?.length
-    ? [...opts.attachments.map(attachmentBlock), { type: 'text', text: opts.instruction }]
-    : opts.instruction
+  const instructionContent = turnContent(opts.instruction, (opts.attachments ?? []).map(attachmentBlock), opts.prefetch)
 
   const messages: Anthropic.MessageParam[] = [
     ...(opts.history ?? []),
@@ -523,7 +533,7 @@ export async function runAgent(opts: {
  * same look-up-only set the team's emailed questions get, see nightly-pass).
  * Everything else is answered with what it would have done.
  */
-export const PRACTICE_TOOLS = new Set(['query_status', 'check_sent_mail', 'search_chat', 'draft_order_links', 'unpaid_live_sales', 'find_in_shopify', 'find_contacts', 'find_customer', 'reorder_math', 'shopify_analytics'])
+export const PRACTICE_TOOLS = new Set(['open_record', 'query_status', 'check_sent_mail', 'search_chat', 'draft_order_links', 'unpaid_live_sales', 'find_in_shopify', 'find_contacts', 'find_customer', 'reorder_math', 'shopify_analytics'])
 
 /** In practice, what a tool that would change something hands back instead of running. Null means run it. Pure. */
 export function practiceStop(practice: boolean, name: string, input: unknown) {
@@ -617,6 +627,20 @@ function actionsCarriedOut(toolCallsJson: unknown): string | null {
   return `[Record kept by the app, not a message from anyone: your reply above carried out ${done.join('; ')}]`
 }
 
+/**
+ * The person's turn as sent: any files, their words, then (separately) what
+ * code looked up for it. A plain string when there is nothing else, as
+ * before. Pure.
+ */
+export function turnContent(
+  instruction: string,
+  files: Array<Anthropic.ImageBlockParam | Anthropic.DocumentBlockParam>,
+  prefetch?: string | null,
+): Anthropic.MessageParam['content'] {
+  if (!files.length && !prefetch) return instruction
+  return [...files, { type: 'text', text: instruction }, ...(prefetch ? [{ type: 'text' as const, text: prefetch }] : [])]
+}
+
 export async function chatTurn(threadId: string, message: string, attachments?: AgentAttachment[], source = 'chat', practice = false) {
   const rows = await db.chatMessage.findMany({
     where: { threadId },
@@ -632,10 +656,16 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
   // actually have the sheet's numbers in front of me — can you read those off
   // for me?" Older files are left out to keep each turn a sensible size.
   const withFiles = new Set(history.filter((m) => m.role === 'USER' && m.attachments.length).slice(-2).map((m) => m.id))
+  // Phase 2A (6 Oct 2026): chat reads notes as an index, and the records
+  // this message names exactly come with their notes already looked up.
+  const { prefetchForMessage } = await import('@/lib/mouse/records')
+  const prefetch = await prefetchForMessage(message)
   return runAgent({
     instruction: message,
     source,
     attachments,
+    notes: 'index',
+    prefetch,
     // Chat is the only caller whose instruction is something a person typed,
     // so it is the only one whose instruction is read for corrections.
     fromAPerson: true,

@@ -5498,6 +5498,28 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  open_record: {
+    def: {
+      name: 'open_record',
+      description:
+        'Read one record and EVERY current note on it, in full: a product, component, vendor, purchase ' +
+        'order, production run, wholesale account, or a note subject from your notes index. Give its ' +
+        'id from your context, a PO number ("PO 2391"), or its exact full name; "general" returns the ' +
+        'notes with no subject. Read-only. Use it before answering about, or changing, a record whose ' +
+        'notes your context lists by subject rather than in full. A name that more than one record ' +
+        'has comes back as the candidates, and nothing is chosen for you.',
+      input_schema: {
+        type: 'object',
+        properties: { ref: str('The record: an id, a PO number, or its exact name') },
+        required: ['ref'],
+      },
+    },
+    run: async (i) => {
+      const { openRecord } = await import('@/lib/mouse/records')
+      return openRecord(String(i.ref ?? ''))
+    },
+  },
+
   query_status: {
     def: {
       name: 'query_status',

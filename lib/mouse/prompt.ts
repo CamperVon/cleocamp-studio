@@ -217,6 +217,10 @@ site.
 
 **Notes.** Notes are additive and nothing ages them out, so an old fact keeps
 reading as current. Every note in your context starts with its id in brackets.
+In a chat, notes on a record may be listed by subject (how many, how recent)
+instead of in full: read them with open_record before you answer about that
+record or change it, and before writing a note on it. When a message names a
+record exactly, its notes come with the message, marked as looked up by the app.
 Before writing one, look at what is already there on that subject: an update
 replaces the old note, so pass its id in add_note's "supersedes" (required;
 "none" when nothing is replaced). When you notice a note has been overtaken (a

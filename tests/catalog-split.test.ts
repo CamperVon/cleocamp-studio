@@ -127,9 +127,10 @@ test('a note line that exactly matches a stable heading puts everything live (fa
 // added later is covered without editing this test. Section names only.
 import { readFileSync } from 'node:fs'
 function emittedHeadings(): string[] {
-  const src = readFileSync(new URL('../lib/mouse/context.ts', import.meta.url), 'utf8')
+  // The notes section's heading lives in lib/mouse/notes.ts since phase 2A.
+  const src = ['../lib/mouse/context.ts', '../lib/mouse/notes.ts'].map((f) => readFileSync(new URL(f, import.meta.url), 'utf8')).join('\n')
   const fromPushes = src.split('\n')
-    .filter((l) => l.includes('L.push('))
+    .filter((l) => l.includes('L.push(') || /^\s*'\\n## /.test(l))
     .flatMap((l) => [...l.matchAll(/(?<!#)## ([^`'\\\n]+?)(?:\\n|['`])/g)].map((m) => m[1].trim()))
     .filter((h) => !h.includes('${'))
   // The stylists section is pushed as '\n## ' + stylistContext(), whose first line is fixed.

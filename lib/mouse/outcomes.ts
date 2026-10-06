@@ -16,6 +16,7 @@ const READ_TOOLS = new Set([
   // A line in the troubleshooting log is not a record of the business: it
   // must not satisfy "you said it was noted, so write something down".
   'note_problem',
+  'open_record',
 ])
 
 export function classifyResult(name: string, result: unknown): Pick<ToolOutcome, 'status' | 'isWrite'> {

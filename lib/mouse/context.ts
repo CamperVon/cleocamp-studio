@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { renderNotesFull, renderNotesIndex } from '@/lib/mouse/notes'
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
 import { inventoryWritesEnabled } from './tools'
@@ -15,7 +16,8 @@ import { inventoryWritesEnabled } from './tools'
  * This block is cached, so it costs a tenth of the input rate after the first
  * turn. Keep it deterministic: no timestamps, stable ordering.
  */
-export async function buildCatalog(): Promise<string> {
+/** notes: 'full' (default) prints every current note; 'index' prints one line per subject (chat). */
+export async function buildCatalog(opts: { notes?: 'full' | 'index' } = {}): Promise<string> {
   const [products, components, vendors, locations, items, pos, runs, lastSale, notes, events, forecasts, alerts, people, finances, sales, wholesale, shopifySync, docDefaults, notify] = await Promise.all([
     db.product.findMany({
       orderBy: { name: 'asc' },
@@ -338,44 +340,11 @@ export async function buildCatalog(): Promise<string> {
   }
 
   if (notes.length) {
-    // This was the 40 most recent notes, each cut to 260 characters, with no
-    // indication of what the note was about. Against 78 notes that meant 38
-    // never loaded, 31 more arrived half-finished mid-sentence, and the rest
-    // read as context-free sentences with the subject stripped off — all of it
-    // silent. Grouped by subject and shown in full instead, so a note about
-    // Boy Belt stays findable under Boy Belt however old it gets, and anything
-    // actually dropped is stated rather than quietly vanishing.
-    // Budget by CHARACTERS, not rows. A row cap does not bound the thing that
-    // actually costs anything: 200 one-line notes is 10k characters, 200 long
-    // ones is 180k. Today's 104 notes are 30k, and the longest single note is
-    // 931 characters — worth three short ones and no more expensive to carry.
-    // Newest first, so what drops is always the oldest, and the count of what
-    // dropped is printed below rather than left to be inferred.
-    const BUDGET = 60_000
-    // Notes on an order that is finished — received, cancelled or gone — are
-    // its history, not something to act on. 13 of them were still read on
-    // every request on 24 Sept 2026. They stay current and one lookup away.
+    // Grouped by subject; see lib/mouse/notes.ts for the history. Chat gets
+    // the index (phase 2A, 6 Oct 2026): one line per subject, full notes via
+    // open_record or prefetch, notes with no subject in full. Everything
+    // else that reads the catalogue gets every note in full, as before.
     const openPo = new Set(pos.flatMap((p) => [p.id, String(p.poNumber), `PO ${p.poNumber}`]))
-    const onClosedPo = notes.filter((n) => n.entityType === 'PURCHASE_ORDER' && n.entityId && !openPo.has(n.entityId))
-    const live = notes.filter((n) => !onClosedPo.includes(n))
-    const shown: typeof notes = []
-    let used = 0
-    for (const n of live) {
-      used += n.content.length
-      if (used > BUDGET && shown.length) break
-      shown.push(n)
-    }
-    const dropped = live.length - shown.length
-
-    // A note that states a count goes stale the moment a newer count or
-    // delivery is logged for the same thing, and it reads just as confidently.
-    // On 25 Sept 2026 Mouse quoted a 16 Sept note (2,100 Main labels) over the
-    // 4,010 in the ledger. Such notes are marked here, in front of Mouse, with
-    // the date of the count that overtook them. Marked, not retired: telling
-    // a count note from a standing rule by its wording is guesswork ("always
-    // use the TOTAL number of handles … in counts" is a rule), and guessing
-    // wrong would throw away something a person said.
-    const COUNT_WORDS = /\b(count|counted|counts|on hand|in (the )?studio|physical(ly)?|in stock)\b/i
     const countKinds = { type: { in: ['COUNTED', 'RECEIVED', 'CORRECTION'] as ('COUNTED' | 'RECEIVED' | 'CORRECTION')[] }, source: { not: 'SYSTEM' as const } }
     const [byComponent, byVariant] = await Promise.all([
       db.inventoryEvent.groupBy({ by: ['componentId'], where: { ...countKinds, componentId: { not: null } }, _max: { createdAt: true } }),
@@ -386,50 +355,13 @@ export async function buildCatalog(): Promise<string> {
     for (const g of byComponent) bump(g.componentId!, g._max.createdAt)
     const productOf = new Map(products.flatMap((p) => p.variants.map((v) => [v.id, p.id] as const)))
     for (const g of byVariant) { bump(g.productVariantId!, g._max.createdAt); bump(productOf.get(g.productVariantId!) ?? '', g._max.createdAt) }
-    const laDay = (d: Date) => d.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' })
 
     const nameOf = new Map<string, string>()
     for (const p of products) nameOf.set(p.id, p.name)
     for (const c of components) nameOf.set(c.id, c.name)
     for (const v of vendors) nameOf.set(v.id, v.name)
-
-    const groups = new Map<string, string[]>()
-    for (const n of shown) {
-      const subject = n.entityId
-        ? `${nameOf.get(n.entityId) ?? n.entityType.toLowerCase().replace(/_/g, ' ')} [${n.entityId}]`
-        : 'General'
-      const list = groups.get(subject) ?? []
-      // The id is what add_note's `supersedes` and retire_note take. Without
-      // it on the page, replacing a note meant a lookup first, so it was
-      // almost never done and notes piled up one per update instead.
-      const overtaken = n.entityId ? latestCount.get(n.entityId) : undefined
-      const stale = overtaken && overtaken > n.createdAt && COUNT_WORDS.test(n.content)
-        ? ` (WRITTEN BEFORE THE LATEST COUNT, ${laDay(overtaken)}: if this note says how many there are, that number is out of date — use the on-hand figure above)`
-        : ''
-      list.push(`[${n.id}] ${n.content.replace(/\s+/g, ' ')}${stale}`)
-      groups.set(subject, list)
-    }
-
-    L.push('\n## Notes you have written')
-    L.push('Everything under this heading is CURRENT. Retired notes are not shown;')
-    L.push('to look one up on purpose ("what did we used to pay?"), use query_status')
-    L.push('with what "retiredNotes" — and never quote one as though it still held.')
-    L.push('Each note starts with its id in brackets: the id add_note\'s `supersedes`')
-    L.push('and retire_note take.')
-    if (onClosedPo.length) {
-      L.push(`(${onClosedPo.length} note${onClosedPo.length === 1 ? '' : 's'} on received or cancelled orders not shown — query_status with what "notes" and the order's id or number.)`)
-    }
-    if (dropped > 0) {
-      L.push(`(${dropped} older note${dropped === 1 ? '' : 's'} not shown — say so if asked rather than implying you have seen everything.)`)
-    }
-    // General last: entity notes are what get looked up, general ones are
-    // standing observations that read fine at the bottom.
-    const keys = [...groups.keys()].sort((a, b) => (a === 'General' ? 1 : b === 'General' ? -1 : a.localeCompare(b)))
-    for (const k of keys) {
-      L.push(`\n### ${k}`)
-      for (const c of groups.get(k)!) L.push(`- ${c}`)
-    }
-
+    const input = { notes, openPoKeys: openPo, nameOf, latestCount }
+    L.push(...(opts.notes === 'index' ? renderNotesIndex(input) : renderNotesFull(input)))
   }
 
   if (people.length) {
@@ -567,8 +499,8 @@ export function splitCatalog(text: string): CatalogParts {
 }
 
 /** The catalogue, built as always, in its two blocks. */
-export async function buildCatalogParts(): Promise<CatalogParts> {
-  return splitCatalog(await buildCatalog())
+export async function buildCatalogParts(opts: { notes?: 'full' | 'index' } = {}): Promise<CatalogParts> {
+  return splitCatalog(await buildCatalog(opts))
 }
 
 /**
