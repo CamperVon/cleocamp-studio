@@ -46,7 +46,7 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
 }
 
 export default async function Today() {
-  const [items, alerts, links, components, variants, sales24, sales7, pos, runs, notes, events, shopifySync, support, repliesWaiting, suggestedCloses] =
+  const [items, alerts, links, components, variants, sales24, sales7, pos, runs, notes, events, shopifySync, support, replies, draftPos, suggestedCloses] =
     await Promise.all([
       db.actionItem.findMany({
         where: { resolved: false },
@@ -90,7 +90,17 @@ export default async function Today() {
       // Customer support cases still with us, by how soon they need a person.
       db.supportCase.groupBy({ by: ['urgency'], where: { status: 'OPEN', category: { not: 'SPAM' } }, _count: true }),
       // Replies drafted and waiting on someone's tap to go out.
-      db.supportCase.count({ where: { status: 'OPEN', category: { not: 'SPAM' }, draftReply: { not: null } } }),
+      db.supportCase.findMany({
+        where: { status: 'OPEN', category: { not: 'SPAM' }, draftReply: { not: null } },
+        select: { id: true, customerName: true, customerEmail: true, shopifyOrderName: true, summary: true, urgency: true },
+        orderBy: [{ urgency: 'asc' }, { lastMessageAt: 'asc' }],
+      }),
+      // Purchase orders written and not yet sent to the vendor.
+      db.purchaseOrder.findMany({
+        where: { status: 'DRAFT' },
+        select: { id: true, poNumber: true, currency: true, vendor: { select: { name: true } }, lines: { select: { qtyOrdered: true, unitCostCents: true } } },
+        orderBy: { createdAt: 'asc' },
+      }),
       // The weekly review's "these look done" — see lib/mouse/tidy.ts.
       db.actionItem.findMany({ where: { resolved: false, closeSuggestion: { not: null } }, select: { id: true, title: true, closeSuggestion: true }, orderBy: { createdAt: 'asc' } }),
     ])
@@ -140,6 +150,7 @@ export default async function Today() {
   // A long list is skimmed, not read. Show the oldest few — they have waited
   // longest — and send the tail to /items rather than printing all of it.
   const SHOWN = 5
+  const yesCount = replies.length + draftPos.length
 
   const hour = Number(
     new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', hour12: false })
@@ -191,8 +202,146 @@ export default async function Today() {
         <Chat />
       </Card>
 
-      {/* Directly under the chat, because it is the question Jane and Cleo
-          actually open this app to ask: where is everything. It used to take
+      {/* Waiting for your yes (6 Oct 2026, from the general Mouse's phone
+          app): things that are written and ready and only need a person to
+          look and say go. A reply to a customer, a PO to a vendor. One row
+          each, one tap to the place where it is sent. First on the page
+          after the chat, because nothing else here is this close to done. */}
+      {yesCount ? (
+        <Card
+          title="Waiting for your yes"
+          action={<span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent">{yesCount}</span>}
+        >
+          <ul className="divide-y divide-line">
+            {replies.slice(0, SHOWN).map((r) => (
+              <li key={r.id}>
+                <a href={`/support#${r.id}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-sunk sm:px-5">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm">
+                      Reply to {r.customerName?.trim() || r.customerEmail}
+                      {r.shopifyOrderName ? <span className="text-faint"> · {r.shopifyOrderName}</span> : null}
+                    </p>
+                    {r.summary ? <p className="truncate text-xs text-muted">{r.summary}</p> : null}
+                  </div>
+                  <span className={`shrink-0 text-xs font-medium ${r.urgency === 'NOW' ? 'text-urgent' : 'text-accent'}`}>Read &amp; send &rarr;</span>
+                </a>
+              </li>
+            ))}
+            {replies.length > SHOWN ? (
+              <li><a href="/support" className="block px-4 py-2 text-xs text-muted hover:bg-sunk sm:px-5">{replies.length - SHOWN} more replies waiting</a></li>
+            ) : null}
+            {draftPos.map((p) => {
+              const total = p.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
+              return (
+                <li key={p.id}>
+                  <a href={`/po/${p.poNumber}`} target="_blank" rel="noreferrer" className="flex items-center gap-3 px-4 py-2.5 hover:bg-sunk sm:px-5">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">PO {p.poNumber} to {p.vendor.name}</p>
+                      <p className="truncate text-xs text-muted">
+                        Not sent · {p.lines.length} line{p.lines.length === 1 ? '' : 's'}
+                        {total ? ` · ${(total / 100).toLocaleString('en-US', { style: 'currency', currency: p.currency || 'USD' })}` : ''}
+                        {' '}· tell Mouse to send it
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-xs font-medium text-accent">Review &rarr;</span>
+                  </a>
+                </li>
+              )
+            })}
+          </ul>
+        </Card>
+      ) : null}
+      <SuggestedCloses items={suggestedCloses.map((i) => ({ id: i.id, title: i.title, why: i.closeSuggestion! }))} />
+
+      {/* Oversold variants used to get their own red banner above everything
+          else on the page — Brandon, 22 Sept 2026: with Products in
+          production carrying its own red flags now, a second banner doing
+          the same visual job felt like duplicate scaffolding. It isn't
+          quite the same signal (this is a stock count gone negative, that
+          is a late PO or run), so it moves in here rather than dissolving
+          into the brief's prose: the brief is deliberately compressed —
+          "one good fact beats three supporting ones" — and would likely
+          fold six oversold SKUs into one sentence, losing the exact
+          number someone needs to act on. Kept as a list for that reason,
+          not folded into the paragraphs below it. */}
+      {urgent.length || brief || supportFires + supportToday > 0 ? (
+        <section className="overflow-hidden rounded-xl border border-line bg-surface">
+          <div className="flex items-center gap-2 border-b border-line px-4 py-3 sm:px-5">
+            <MouseFace size={28} />
+            <h2 className="font-serif text-[17px] italic text-accent">Mouse&rsquo;s Corner</h2>
+          </div>
+          {supportFires + supportToday > 0 ? (
+            <a href="/support" className="flex items-baseline gap-2.5 border-b border-line px-4 py-2 text-sm hover:bg-sunk sm:px-5">
+              <span aria-hidden className={`h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full ${supportFires ? 'bg-urgent' : 'bg-transparent'}`} />
+              <span>
+                Customer support:{' '}
+                {supportFires ? <span className="font-semibold text-urgent">{supportFires} pressing</span> : null}
+                {supportFires && supportToday ? ', ' : ''}
+                {supportToday ? `${supportToday} to answer` : ''}
+{' '}
+                &rarr;
+              </span>
+            </a>
+          ) : null}
+          {urgent.length ? (
+            <ul className="divide-y divide-line border-b border-line">
+              {/* Each item folds; opened, it can be emailed to Cleo, Jane or Brandon (2 Oct 2026). */}
+              {urgent.slice(0, SHOWN).map((a) => (
+                <li key={a.id}>
+                  <CornerItem text={a.message} dot>{markTheNumber(a.message)}</CornerItem>
+                </li>
+              ))}
+              {urgent.length > SHOWN ? (
+                <li className="px-4 py-2 pl-8 text-xs text-muted sm:pl-9">and {urgent.length - SHOWN} more</li>
+              ) : null}
+            </ul>
+          ) : null}
+          {brief ? (
+            <ul className="flex flex-col py-1.5 leading-relaxed">
+              {brief.text.split(/\n\s*\n/).map((para) => para.trim()).filter(Boolean).map((para, i) => (
+                <li key={i}><CornerItem text={para}>{para}</CornerItem></li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
+
+      {/* Mouse's own questions. The only list on this page Cleo can clear by
+          answering, so it comes first and it is answerable in place. */}
+      <Card
+        title={
+          <>
+            <MouseFace size={20} />
+            Mouse is asking you
+          </>
+        }
+        action={<span className="text-xs text-faint">{asks.length}</span>}
+      >
+        {asks.length === 0 ? (
+          <Empty>Nothing to answer. Mouse knows what it needs.</Empty>
+        ) : (
+          <>
+            <ul className="divide-y divide-line">
+              {asks.slice(0, SHOWN).map((i) => (
+                <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} />
+              ))}
+            </ul>
+            {asks.length > SHOWN ? (
+              <Link
+                href="/items"
+                className="block border-t border-line px-4 py-2.5 text-xs text-muted hover:bg-sunk sm:px-5"
+              >
+                {asks.length - SHOWN} more question{asks.length - SHOWN === 1 ? '' : 's'} waiting
+              </Link>
+            ) : null}
+          </>
+        )}
+      </Card>
+
+      {/* Right after what needs a person (6 Oct 2026: the morning order is
+          needs you, waiting for your yes, Mouse is asking — then this). It is
+          still the question Jane and Cleo open this app to ask: where is
+          everything. It used to take
           four screens — the order on one, the arrival date on the calendar,
           the blocking question in a list, the specs in notes — joined in
           someone's head. Same rows, joined by product. */}
@@ -247,64 +396,6 @@ export default async function Today() {
           ? `Shopify counts synced ${sinceLabel(shopifySync.lastSyncedAt)} — automatically overnight and each morning, or ask Mouse to refresh anytime.`
           : 'Shopify counts have never synced — ask Mouse to run sync_shopify.'}
       </p>
-
-      {/* Oversold variants used to get their own red banner above everything
-          else on the page — Brandon, 22 Sept 2026: with Products in
-          production carrying its own red flags now, a second banner doing
-          the same visual job felt like duplicate scaffolding. It isn't
-          quite the same signal (this is a stock count gone negative, that
-          is a late PO or run), so it moves in here rather than dissolving
-          into the brief's prose: the brief is deliberately compressed —
-          "one good fact beats three supporting ones" — and would likely
-          fold six oversold SKUs into one sentence, losing the exact
-          number someone needs to act on. Kept as a list for that reason,
-          not folded into the paragraphs below it. */}
-      {urgent.length || brief || supportFires + supportToday + repliesWaiting > 0 ? (
-        <section className="overflow-hidden rounded-xl border border-line bg-surface">
-          <div className="flex items-center gap-2 border-b border-line px-4 py-3 sm:px-5">
-            <MouseFace size={28} />
-            <h2 className="font-serif text-[17px] italic text-accent">Mouse&rsquo;s Corner</h2>
-          </div>
-          {supportFires + supportToday + repliesWaiting > 0 ? (
-            <a href="/support" className="flex items-baseline gap-2.5 border-b border-line px-4 py-2 text-sm hover:bg-sunk sm:px-5">
-              <span aria-hidden className={`h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full ${supportFires ? 'bg-urgent' : 'bg-transparent'}`} />
-              <span>
-                Customer support:{' '}
-                {supportFires ? <span className="font-semibold text-urgent">{supportFires} pressing</span> : null}
-                {supportFires && supportToday ? ', ' : ''}
-                {supportToday ? `${supportToday} to answer` : ''}
-                {(supportFires || supportToday) && repliesWaiting ? ' · ' : ''}
-                {repliesWaiting ? (
-                  <span className="font-semibold text-accent">
-                    {repliesWaiting} {repliesWaiting === 1 ? 'reply' : 'replies'} waiting for a yes
-                  </span>
-                ) : null}{' '}
-                &rarr;
-              </span>
-            </a>
-          ) : null}
-          {urgent.length ? (
-            <ul className="divide-y divide-line border-b border-line">
-              {/* Each item folds; opened, it can be emailed to Cleo, Jane or Brandon (2 Oct 2026). */}
-              {urgent.slice(0, SHOWN).map((a) => (
-                <li key={a.id}>
-                  <CornerItem text={a.message} dot>{markTheNumber(a.message)}</CornerItem>
-                </li>
-              ))}
-              {urgent.length > SHOWN ? (
-                <li className="px-4 py-2 pl-8 text-xs text-muted sm:pl-9">and {urgent.length - SHOWN} more</li>
-              ) : null}
-            </ul>
-          ) : null}
-          {brief ? (
-            <ul className="flex flex-col py-1.5 leading-relaxed">
-              {brief.text.split(/\n\s*\n/).map((para) => para.trim()).filter(Boolean).map((para, i) => (
-                <li key={i}><CornerItem text={para}>{para}</CornerItem></li>
-              ))}
-            </ul>
-          ) : null}
-        </section>
-      ) : null}
 
       {/* What is out of the building and when it comes back. */}
       <details className="group overflow-hidden rounded-xl border border-line bg-surface" open>
@@ -392,40 +483,6 @@ export default async function Today() {
           <MonthGrid marked={marked} today={today} />
         </div>
         </div>
-      </Card>
-
-      <SuggestedCloses items={suggestedCloses.map((i) => ({ id: i.id, title: i.title, why: i.closeSuggestion! }))} />
-
-      {/* Mouse's own questions. The only list on this page Cleo can clear by
-          answering, so it comes first and it is answerable in place. */}
-      <Card
-        title={
-          <>
-            <MouseFace size={20} />
-            Mouse is asking you
-          </>
-        }
-        action={<span className="text-xs text-faint">{asks.length}</span>}
-      >
-        {asks.length === 0 ? (
-          <Empty>Nothing to answer. Mouse knows what it needs.</Empty>
-        ) : (
-          <>
-            <ul className="divide-y divide-line">
-              {asks.slice(0, SHOWN).map((i) => (
-                <ItemRow key={i.id} id={i.id} kind={i.kind} title={i.title} detail={i.detail} />
-              ))}
-            </ul>
-            {asks.length > SHOWN ? (
-              <Link
-                href="/items"
-                className="block border-t border-line px-4 py-2.5 text-xs text-muted hover:bg-sunk sm:px-5"
-              >
-                {asks.length - SHOWN} more question{asks.length - SHOWN === 1 ? '' : 's'} waiting
-              </Link>
-            ) : null}
-          </>
-        )}
       </Card>
 
       {/* Jobs for a person. Nothing here is answerable by typing — it gets

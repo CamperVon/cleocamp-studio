@@ -94,3 +94,23 @@ export function Stat({ label, value, sub, className = 'flex-1' }: { label: strin
     </div>
   )
 }
+
+/**
+ * A product photo from Shopify, small (6 Oct 2026: products had no pictures
+ * anywhere in the app, though Shopify has them). Asks Shopify's image CDN
+ * for a small copy so a list does not pull full-size photos. Nothing when
+ * there is no photo: a grey placeholder only takes room.
+ */
+export function Thumb({ src, size = 36 }: { src: string | null | undefined; size?: number }) {
+  if (!src) return null
+  let url = src
+  try {
+    const u = new URL(src)
+    if (/shopify/.test(u.hostname)) u.searchParams.set('width', String(size * 2))
+    url = u.toString()
+  } catch {}
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={url} alt="" loading="lazy" width={size} height={size} className="shrink-0 rounded bg-sunk object-cover" style={{ width: size, height: size }} />
+  )
+}

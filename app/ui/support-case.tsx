@@ -182,7 +182,13 @@ export function SupportCase({ c }: { c: CaseView }) {
               </button>
             ) : null}
             {c.status !== 'RESOLVED' ? (
-              <button type="button" disabled={pending} onClick={() => move('RESOLVED')} className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-bg">
+              // One pink button per card (6 Oct 2026). With a reply drafted, the
+              // send is the thing to do, so Close steps back to an outline;
+              // two equal pink buttons is how #2297's tap went to the wrong one.
+              <button
+                type="button" disabled={pending} onClick={() => move('RESOLVED')}
+                className={`rounded px-2.5 py-1.5 text-xs ${c.draft?.reply ? 'border border-line' : 'bg-accent font-medium text-bg'}`}
+              >
                 Close
               </button>
             ) : (
@@ -387,7 +393,7 @@ function ReplyBox({ c }: { c: CaseView }) {
                 else setMsg(q.error)
               })
               : run(() => refundOrderAndReply(c.id, text, refund))}
-            className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-bg disabled:opacity-40"
+            className={`rounded px-2.5 py-1.5 text-xs font-medium disabled:opacity-40 ${canSwap || canMove ? 'border border-line' : 'bg-accent text-bg'}`}
           >
             {pending ? 'Working…' : refund === null ? 'Refund in full & send' : `Refund $${refund.toFixed(2)} & send`}
           </button>
@@ -396,7 +402,7 @@ function ReplyBox({ c }: { c: CaseView }) {
           <button
             type="button" disabled={blocked}
             onClick={() => run(() => cancelOrderAndReply(c.id, text))}
-            className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-bg disabled:opacity-40"
+            className={`rounded px-2.5 py-1.5 text-xs font-medium disabled:opacity-40 ${canSwap || canMove ? 'border border-line' : 'bg-accent text-bg'}`}
           >
             {pending ? 'Cancelling in Shopify…' : partial ? `Cancel ${what} (not shipped), refund & send` : 'Cancel order, refund & send'}
           </button>

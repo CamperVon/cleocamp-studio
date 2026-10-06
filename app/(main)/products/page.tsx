@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
-import { Page, Card, Chip, Value, Money } from '@/app/ui/primitives'
+import { Page, Card, Chip, Value, Money, Thumb } from '@/app/ui/primitives'
 import { laDay, laMidnight } from '@/lib/dates'
 import { PageChat } from '@/app/ui/page-chat'
 
@@ -112,6 +112,7 @@ export default async function Products() {
                   <details className="group">
                     <summary className="flex cursor-pointer list-none items-center gap-2.5 px-4 py-3 hover:bg-sunk sm:px-5 [&::-webkit-details-marker]:hidden">
                       <span aria-hidden className="text-xs text-faint transition-transform group-open:rotate-90">▸</span>
+                      <Thumb src={p.variants.find((v) => v.imageUrl)?.imageUrl} size={40} />
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-medium">{p.name}</span>
                         <span className="block text-xs text-muted">

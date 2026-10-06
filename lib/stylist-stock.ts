@@ -100,14 +100,15 @@ export function stockNote(s: PieceStatus): string {
 }
 
 /** Labels and Shopify on-hand for some variants, as the page and Mouse show them. */
-export async function variantLabels(ids: string[]): Promise<Map<string, { label: string; onHand: number | null }>> {
+export async function variantLabels(ids: string[]): Promise<Map<string, { label: string; onHand: number | null; image: string | null }>> {
   if (!ids.length) return new Map()
   const vs = await db.productVariant.findMany({
     where: { id: { in: ids } },
-    select: { id: true, size: true, onHandQty: true, product: { select: { name: true } }, colorway: { select: { customerName: true } } },
+    select: { id: true, size: true, onHandQty: true, imageUrl: true, product: { select: { name: true } }, colorway: { select: { customerName: true } } },
   })
   return new Map(vs.map((v) => [v.id, {
     label: pieceName(v.product.name, v.colorway?.customerName, v.size),
     onHand: v.onHandQty == null ? null : Number(v.onHandQty),
+    image: v.imageUrl,
   }]))
 }

@@ -72,7 +72,17 @@ function isHere(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + '/')
 }
 
-export function NavBar({ personName }: { personName: string | null }) {
+/** A small count beside a tab. Nothing at zero: an empty badge is noise. */
+function Badge({ n, className = '' }: { n?: number; className?: string }) {
+  if (!n) return null
+  return (
+    <span className={`tnum min-w-[1.1rem] rounded-full bg-accent px-1 text-center text-[10px] font-semibold leading-[1.1rem] text-bg ${className}`}>
+      {n > 99 ? '99+' : n}
+    </span>
+  )
+}
+
+export function NavBar({ personName, counts = {} }: { personName: string | null; counts?: Record<string, number> }) {
   const pathname = usePathname()
   const [moreOpen, setMoreOpen] = useState(false)
   const [deskMore, setDeskMore] = useState(false)
@@ -122,6 +132,7 @@ export function NavBar({ personName }: { personName: string | null }) {
                   }
                 >
                   {l.label}
+                  <Badge n={counts[l.href]} className="ml-1.5 inline-block align-[1px]" />
                 </Link>
               )
             })}
@@ -194,7 +205,10 @@ export function NavBar({ personName }: { personName: string | null }) {
                 onClick={() => setMoreOpen(false)}
                 className={`flex flex-1 flex-col items-center gap-1 pb-2 pt-2.5 text-[11px] ${here ? 'font-semibold text-accent' : 'text-ink/65'}`}
               >
-                {l.icon}
+                <span className="relative">
+                  {l.icon}
+                  <Badge n={counts[l.href]} className="absolute -right-3 -top-1.5" />
+                </span>
                 {l.short ?? l.label}
               </Link>
             )
@@ -205,7 +219,10 @@ export function NavBar({ personName }: { personName: string | null }) {
             aria-expanded={moreOpen}
             className={`flex flex-1 flex-col items-center gap-1 pb-2 pt-2.5 text-[11px] ${moreOpen || inMore ? 'font-semibold text-accent' : 'text-ink/65'}`}
           >
-            <IconMore />
+            <span className="relative">
+              <IconMore />
+              <Badge n={OCCASIONAL.reduce((n, i) => n + (counts[i.href] ?? 0), 0)} className="absolute -right-3 -top-1.5" />
+            </span>
             More
           </button>
         </div>
@@ -228,9 +245,10 @@ export function NavBar({ personName }: { personName: string | null }) {
                       href={l.href}
                       aria-current={here ? 'page' : undefined}
                       onClick={() => setMoreOpen(false)}
-                      className={`block px-5 py-3.5 text-base ${here || l.pink ? 'text-accent' : 'text-ink'} ${l.pink ? 'font-medium' : ''}`}
+                      className={`flex items-center justify-between px-5 py-3.5 text-base ${here || l.pink ? 'text-accent' : 'text-ink'} ${l.pink ? 'font-medium' : ''}`}
                     >
                       {l.label}
+                      <Badge n={counts[l.href]} />
                     </Link>
                   </li>
                 )

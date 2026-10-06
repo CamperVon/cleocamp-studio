@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { currentPersonId } from '@/lib/session'
 import { NavBar } from './nav-bar'
+import { laMidnight } from '@/lib/dates'
 
 export async function Nav() {
   // Who the app thinks you are, shown because the answer changes what gets
@@ -9,9 +10,15 @@ export async function Nav() {
   // Cleo, and your name goes on what you record. Silent about it either way
   // would leave people guessing which one they are.
   const personId = await currentPersonId()
-  const person = personId
-    ? await db.person.findUnique({ where: { id: personId }, select: { name: true } })
-    : null
+  // Counts on the tabs (6 Oct 2026), so a glance at the bar says whether a
+  // page needs you before you open it. ToDo counts what is due today or
+  // overdue, not everything open: 50 open items on the badge was wallpaper.
+  // Support counts open cases.
+  const [person, todo, support] = await Promise.all([
+    personId ? db.person.findUnique({ where: { id: personId }, select: { name: true } }) : null,
+    db.actionItem.count({ where: { resolved: false, kind: { in: ['QUESTION', 'TODO'] }, dueDate: { lt: laMidnight(-1) } } }).catch(() => 0),
+    db.supportCase.count({ where: { status: 'OPEN', category: { not: 'SPAM' } } }).catch(() => 0),
+  ])
 
-  return <NavBar personName={person?.name ?? null} />
+  return <NavBar personName={person?.name ?? null} counts={{ '/items': todo, '/support': support }} />
 }

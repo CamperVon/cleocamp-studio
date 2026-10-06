@@ -1,4 +1,4 @@
-import { Page, Card, Empty, Fold } from '@/app/ui/primitives'
+import { Page, Card, Empty, Fold, Thumb } from '@/app/ui/primitives'
 import { ItemRow } from '@/app/ui/item-row'
 import { db } from '@/lib/db'
 import { loadStylists, pullOut, requestTitle, stillOut } from '@/lib/stylists'
@@ -209,7 +209,10 @@ export default async function Stylists() {
                       {st.length ? (
                         <ul className="mt-2 flex flex-col gap-0.5">
                           {st.map((x, k) => (
-                            <li key={k}>{x.qty} {x.label} <span className="text-xs text-accent">({stockNote(x)})</span></li>
+                            <li key={k} className="flex items-center gap-2">
+                              <Thumb src={labels.get(piecesOf(r.pieces)[k]?.productVariantId)?.image} size={28} />
+                              <span>{x.qty} {x.label} <span className="text-xs text-accent">({stockNote(x)})</span></span>
+                            </li>
                           ))}
                         </ul>
                       ) : (
