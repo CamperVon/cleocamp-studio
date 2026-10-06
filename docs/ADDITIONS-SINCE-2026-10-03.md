@@ -30,7 +30,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - The account tools take a name, matched the same way everywhere (`pickNamed` in `lib/stylists.ts`). A given id must match the name, and more than one match makes Mouse ask instead of picking.
 - **Files:** `lib/mouse/tools.ts`, `lib/mouse/context.ts`, `lib/stylists.ts`
 
-### A troubleshooting log · `HASH`
+### A troubleshooting log · `e3733d2`
 - **Problem:** when a tool failed or refused, or a turn stopped short, the only trace was whatever Mouse chose to say in its reply. Problems it glossed over were invisible to whoever maintains the code.
 - **Change:**
   - After every run, code writes each failed or refused tool call and each unfinished turn to a `MouseIssue` table, with the tool, the error and the input. Repeats of the same failure count up on one row.
@@ -126,7 +126,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** Shopify (draft orders).
 - **Files:** `lib/mouse/tools.ts`, `lib/mouse/prompt.ts`, `lib/live-sale.ts`
 
-### Line sheet words: add, don't overwrite · `HASH`
+### Line sheet words: add, don't overwrite · `e3733d2`
 - **Problem:** told to add shipping terms to the line sheet, Mouse set the footnote to them, and the footnote that was there disappeared. It had never been shown the existing words.
 - **Change:** listing the line sheet shows the words around the table; changing one reports what it was and what it is now; `add: true` puts a new line under what is there. In Excel each footnote line is its own row.
 - **Files:** `lib/mouse/tools.ts` (`update_line_sheet`), `lib/line-sheet-xlsx.ts`
@@ -153,7 +153,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Change:** when a reply is drafted, Close and any second order action drop to an outline. Only the action that does what the reply says stays filled.
 - **Files:** `app/ui/support-case.tsx`
 
-### Urgent to-dos first, in pink · `HASH`
+### Urgent to-dos first, in pink · `e3733d2`
 - **Change:** questions and to-dos that are marked urgent, due today, overdue or inside their reminder window sort to the top of every list and show in pink. The ToDo tab badge counts the same set.
 - **Files:** `lib/pressing.ts`, `app/ui/item-row.tsx`, `app/(main)/items/page.tsx`, `app/(main)/page.tsx`, `app/ui/nav.tsx`, `tests/pressing.test.ts`
 
