@@ -61,7 +61,7 @@ export function scoreText(query: string, text: string | null | undefined): numbe
   return 0
 }
 
-const KIND_ORDER = ['Product', 'Vendor', 'Component', 'Purchase order', 'Wholesale', 'Stylist', 'Cleo Crew', 'Friend of the Brand', 'To-do', 'Question', 'Support', 'Customer']
+const KIND_ORDER = ['Product', 'Vendor', 'Component', 'Purchase order', 'File', 'Wholesale', 'Stylist', 'Cleo Crew', 'Friend of the Brand', 'To-do', 'Question', 'Support', 'Customer']
 
 /** The best hits first, at most `limit`. A record's other names (a legal name, an email) count a little less than its own. Pure. */
 export function rankHits(query: string, candidates: Candidate[], limit = 8): SearchHit[] {
@@ -93,7 +93,7 @@ export async function searchEverything(query: string): Promise<SearchHit[]> {
   // so a typo can still find them.
   const words = norm(q).split(' ').filter((w) => w.length >= 2)
   const like = (field: string) => ({ OR: words.map((w) => ({ [field]: { contains: w, mode: 'insensitive' as const } })) })
-  const [products, components, vendors, pos, accounts, stylists, contacts, customers, cases, items] = await Promise.all([
+  const [products, components, vendors, pos, accounts, stylists, contacts, customers, cases, files, items] = await Promise.all([
     db.product.findMany({ select: { id: true, name: true, status: true } }),
     db.component.findMany({ where: { active: true }, select: { id: true, name: true, vendorSku: true, vendor: { select: { name: true } } } }),
     db.vendor.findMany({ select: { id: true, name: true, legalName: true, contactName: true, email: true } }),
@@ -112,6 +112,7 @@ export async function searchEverything(query: string): Promise<SearchHit[]> {
       select: { id: true, customerName: true, customerEmail: true, subject: true },
       take: 50,
     }) : [],
+    db.storedFile.findMany({ select: { id: true, title: true, filename: true } }),
     words.length ? db.actionItem.findMany({ where: { resolved: false, ...like('title') }, select: { id: true, title: true, kind: true }, take: 50 }) : [],
   ])
   const po = poNumberIn(q)
@@ -131,6 +132,7 @@ export async function searchEverything(query: string): Promise<SearchHit[]> {
     })),
     ...customers.map((c) => ({ kind: 'Customer', label: c.name, sub: c.email, href: at('/customers', c.id), also: [c.email] })),
     ...cases.map((c) => ({ kind: 'Support', label: c.customerName ?? c.customerEmail, sub: c.subject, href: at('/support', c.id), also: [c.customerEmail, c.subject] })),
+    ...files.map((f) => ({ kind: 'File', label: f.title, sub: f.filename, href: `/files#rec-${f.id}`, also: [f.filename] })),
     ...items.map((i) => ({ kind: i.kind === 'TODO' ? 'To-do' : 'Question', label: i.title, href: at('/items', i.id) })),
   ]
   return rankHits(q, candidates)

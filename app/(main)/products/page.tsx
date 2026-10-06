@@ -1,3 +1,5 @@
+import { filesFor } from '@/lib/files'
+import { FileLinks } from '@/app/ui/file-links'
 import { lineScopeLabel } from '@/lib/bom'
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
@@ -15,6 +17,7 @@ const STATUS_TONE = {
 const stockTone = (n: number) => (n <= 0 ? 'font-bold text-urgent' : 'text-accent')
 
 export default async function Products() {
+  const productFiles = await filesFor('product')
   const [products, pos, runs, sales] = await Promise.all([
     db.product.findMany({
       include: {
@@ -129,6 +132,7 @@ export default async function Products() {
                       <Chip tone={STATUS_TONE[p.status]}>{p.status.toLowerCase()}</Chip>
                     </summary>
                     <div className="border-t border-line">
+                      <FileLinks files={productFiles.get(p.id)} className="px-4 pt-2.5 sm:px-5" />
                       {flags.length ? (
                         <ul className="divide-y divide-line border-b border-line">
                           {flags.map((f, i) => (

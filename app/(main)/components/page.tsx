@@ -1,3 +1,4 @@
+import { filesFor } from '@/lib/files'
 import { db } from '@/lib/db'
 import { Page } from '@/app/ui/primitives'
 import { CollapsibleCard } from '@/app/ui/collapsible-card'
@@ -91,8 +92,9 @@ const placeStock = (c: Row): StockDisplay => ({
   })),
 })
 
-function Table({ rows, stockOf, stockHeader, vendors, products, inProductId }: {
+function Table({ rows, stockOf, stockHeader, vendors, products, inProductId, files }: {
   rows: Row[]
+  files: Map<string, Array<{ id: string; title: string }>>
   stockOf: (c: Row) => StockDisplay
   stockHeader: string
   vendors: { id: string; name: string }[]
@@ -130,6 +132,7 @@ function Table({ rows, stockOf, stockHeader, vendors, products, inProductId }: {
               bomUsage={bomUsageOf(c)}
               products={products}
               inProductId={inProductId}
+              files={files.get(c.id)}
             />
           ))}
         </tbody>
@@ -179,7 +182,7 @@ export default async function Components() {
     components: rows.filter((c) => c.usedIn.some((l) => l.parentProductId === p.id)),
   }))
 
-  const tableProps = { vendors, products }
+  const tableProps = { vendors, products, files: await filesFor('component') }
 
   return (
     <Page

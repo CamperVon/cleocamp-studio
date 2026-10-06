@@ -1702,3 +1702,41 @@ model MouseIssue {
 
   @@index([fixedAt, lastSeenAt])
 }
+
+/// A document kept for good: a supplier's colour card, a spec sheet, an old
+/// line sheet (Brandon, 6 Oct 2026: "a back area for things like this, linked
+/// via the products / components pages"). Bytes live in Postgres like
+/// ChatAttachment, because this project keeps its own storage, but unlike
+/// chat attachments the periodic cleanup never clears them: keeping them is
+/// the point. At most 4 MB each (a Vercel request carries 4.5 MB).
+model StoredFile {
+  id        String   @id @default(cuid())
+  title     String
+  filename  String
+  mediaType String
+  sizeBytes Int
+  /// Base64-encoded bytes.
+  data      String
+  notes     String?
+  createdAt DateTime @default(now())
+
+  links StoredFileLink[]
+
+  @@index([createdAt])
+}
+
+/// What a stored file is about: a product, a component or a vendor. Shown as
+/// a link on that record's row.
+model StoredFileLink {
+  id        String   @id @default(cuid())
+  fileId    String
+  /// "product", "component" or "vendor".
+  kind      String
+  recordId  String
+  createdAt DateTime @default(now())
+
+  file StoredFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@unique([fileId, kind, recordId])
+  @@index([kind, recordId])
+}

@@ -1,4 +1,5 @@
 'use client'
+import { FileLinks } from './file-links'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
@@ -68,7 +69,7 @@ export function RetiredComponentRow({
  */
 export function ComponentRow({
   id, name, vendorId, vendorSku, unitCostCents, unitOfMeasure, leadTimeDays,
-  stockedInStudio, stock, vendors, bomUsage, products, inProductId,
+  stockedInStudio, stock, vendors, bomUsage, products, inProductId, files,
 }: {
   id: string
   name: string
@@ -86,6 +87,8 @@ export function ComponentRow({
    *  per-unit column is that product's figure alone, not a list of every
    *  product the component appears on. */
   inProductId?: string
+  /** Kept files linked to this component (the Files page). */
+  files?: Array<{ id: string; title: string }>
 }) {
   const [open, setOpen] = useState(false)
   const [pending, start] = useTransition()
@@ -244,6 +247,7 @@ export function ComponentRow({
       {open ? (
         <tr>
           <td colSpan={7} className="bg-sunk px-4 py-3.5 sm:px-5">
+            <FileLinks files={files} className="mb-2.5" />
             <div
               className="flex flex-wrap items-end gap-3"
               onClick={(e) => e.stopPropagation()}

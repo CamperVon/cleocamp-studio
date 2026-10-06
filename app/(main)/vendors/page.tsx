@@ -1,3 +1,5 @@
+import { filesFor } from '@/lib/files'
+import { FileLinks } from '@/app/ui/file-links'
 import { db } from '@/lib/db'
 import { Page, Chip, Value, Fold } from '@/app/ui/primitives'
 import { CollapsibleCard } from '@/app/ui/collapsible-card'
@@ -11,9 +13,10 @@ const ROLE = {
 } as const
 
 export default async function Vendors() {
-  const vendors = await db.vendor.findMany({
-    orderBy: [{ active: 'desc' }, { role: 'asc' }, { name: 'asc' }],
-  })
+  const [vendors, vendorFiles] = await Promise.all([
+    db.vendor.findMany({ orderBy: [{ active: 'desc' }, { role: 'asc' }, { name: 'asc' }] }),
+    filesFor('vendor'),
+  ])
 
   const active = vendors.filter((v) => v.active)
   const retired = vendors.filter((v) => !v.active)
@@ -31,6 +34,7 @@ export default async function Vendors() {
       </span>
      }>
      <div className="px-4 pb-3.5 sm:px-5">
+      <FileLinks files={vendorFiles.get(v.id)} className="mt-1" />
       <dl className="mt-1.5 grid grid-cols-1 gap-x-6 gap-y-0.5 text-sm text-muted sm:grid-cols-2">
         {v.contactName || v.contactInfo ? (
           <div className="flex gap-2">

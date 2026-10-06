@@ -129,11 +129,16 @@ export async function openRecord(ref: string): Promise<Record<string, unknown>> 
   if (r.status === 'ambiguous') return { found: false, ambiguous: true, candidates: r.candidates.map((c) => ({ kind: c.kind, id: c.id, name: c.name })), reason: 'More than one record has that name. Ask again with the id of the one you mean.' }
   const rec = r.record
   const keys = await noteKeysFor(rec)
-  const [notes, detail, latest] = await Promise.all([currentNotes(keys), detailFor(rec), latestCounts()])
+  const fileKind = rec.kind === 'product' || rec.kind === 'component' || rec.kind === 'vendor' ? rec.kind : null
+  const [notes, detail, latest, files] = await Promise.all([
+    currentNotes(keys), detailFor(rec), latestCounts(),
+    fileKind ? db.storedFileLink.findMany({ where: { kind: fileKind, recordId: rec.id }, select: { file: { select: { id: true, title: true } } } }) : [],
+  ])
   return {
     found: true,
     record: { kind: rec.kind, id: rec.id, name: rec.name },
     detail,
+    ...(files.length ? { files: files.map((f) => f.file), filesNote: 'Kept files linked to this record. read_file gives you one.' } : {}),
     notes: notes.map((n) => noteLine(n, latest)),
     notesNote: notes.length ? 'Every current note on this record, in full. Each starts with the id add_note\'s supersedes and retire_note take.' : 'No current notes on this record.',
   }

@@ -21,12 +21,21 @@ export function jumpTo(hash: string, tries = 20) {
   const own = el.querySelector(':scope > details')
   if (own instanceof HTMLDetailsElement) own.open = true
   // Cards and product sections that fold with a button keep their rows in the
-  // page, hidden (data-fold-body): press the button just before each one.
-  for (let a = el.parentElement; a; a = a.parentElement) {
-    if (a.hasAttribute('data-fold-body') && a.hidden) (a.previousElementSibling as HTMLElement | null)?.click()
+  // page, hidden (data-fold-body): press the button just before the outermost
+  // closed one, then look again once it has opened. On a fresh page load the
+  // buttons may not answer yet, so this keeps trying for a couple of seconds.
+  let fold: HTMLElement | null = null
+  for (let a = el.parentElement; a; a = a.parentElement) if (a.hasAttribute('data-fold-body') && a.hidden) fold = a
+  if (fold) {
+    (fold.previousElementSibling as HTMLElement | null)?.click()
+    if (tries > 0) setTimeout(() => jumpTo(hash, tries - 1), 150)
+    return
   }
   // A row that opens itself on a tap (a component) is tapped open.
-  if (el.getAttribute('aria-expanded') === 'false') el.click()
+  if (el.getAttribute('aria-expanded') === 'false') {
+    el.click()
+    if (tries > 0) { setTimeout(() => jumpTo(hash, tries - 1), 150); return }
+  }
   // After the folds have opened.
   setTimeout(() => {
     el.scrollIntoView({ block: 'center', behavior: 'smooth' })

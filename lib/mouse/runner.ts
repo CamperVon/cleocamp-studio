@@ -162,7 +162,7 @@ export async function runLoop(opts: {
       calls.push({ name: u.name, input: diagnosticValue(u.input), ...classification,
         result: diagnosticValue(result), ...(error ? { error } : {}), durationMs: Date.now() - atTool })
       results.push({ type: 'tool_result', tool_use_id: u.id, is_error: classification.status === 'failed',
-        content: error ?? JSON.stringify(result ?? null, (_k, v) => typeof v === 'bigint' ? v.toString() : v) })
+        content: error ?? toolResultContent(result) })
     }
     messages.push({ role: 'user', content: results })
   }
@@ -195,4 +195,23 @@ export function isTransient(e: unknown): boolean {
 /** Non-chat callers must not close tasks or consume mail after an interrupted run. */
 export function requireComplete(result: Pick<LoopResult, 'text' | 'usage'>) {
   if (result.usage.stopReason !== 'complete') throw new Error(result.text)
+}
+
+/**
+ * What a tool's result looks like to the model. Normally its JSON. A result
+ * carrying fileForModel (read_file, a kept PDF or photo) goes as the
+ * document or image itself, then the rest as JSON, so Mouse reads the file
+ * rather than a wall of base64. Pure.
+ */
+export function toolResultContent(result: unknown): string | Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam | Anthropic.DocumentBlockParam> {
+  const json = (v: unknown) => JSON.stringify(v ?? null, (_k, x) => typeof x === 'bigint' ? x.toString() : x)
+  const r = result && typeof result === 'object' && !Array.isArray(result) ? result as Record<string, unknown> : null
+  const f = r?.fileForModel as { mediaType?: string; base64?: string } | undefined
+  if (!r || !f?.base64 || !f.mediaType) return json(result)
+  const { fileForModel: _file, ...rest } = r
+  void _file
+  const block: Anthropic.ImageBlockParam | Anthropic.DocumentBlockParam = f.mediaType === 'application/pdf'
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.base64 } }
+    : { type: 'image', source: { type: 'base64', media_type: f.mediaType as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif', data: f.base64 } }
+  return [block, { type: 'text', text: json(rest) }]
 }
