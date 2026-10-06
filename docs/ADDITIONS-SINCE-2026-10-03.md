@@ -44,7 +44,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** email, for the warning.
 - **Files:** `lib/mouse/credit-text.ts`, `lib/mouse/credit.ts`, `lib/mouse/runner.ts`, `lib/mouse/agent.ts`, `lib/mouse/issues.ts`, `lib/support/draft.ts`, `lib/support/pass.ts`, `tests/runner.test.ts`, `tests/mouse-issues.test.ts`
 
-### Catalogue split into stable and live cache blocks · `HASH`
+### Catalogue split into stable and live cache blocks · `11c6832`
 - **Problem:** the whole catalogue sat behind one five-minute cache mark, so it was written to the cache again on nearly every chat turn. Cache writes were most of the chat bill.
 - **Change:**
   - The catalogue is built exactly as before, then cut at its "## " headings. Sections that rarely change (places, vendors, wholesale stores, people, printed-document defaults) go in a block with a one-hour cache mark. Everything else, including notes, the date, stock, orders and to-dos, goes in the five-minute block. No section is reworded, shortened or dropped.
