@@ -21,7 +21,7 @@ export default async function Vendors() {
   // Each vendor folds closed; what needs attention (no email, so a PO cannot
   // be sent) stays on the closed line.
   const row = (v: (typeof vendors)[number]) => (
-    <li key={v.id}>
+    <li key={v.id} data-rec={v.id}>
      <Fold summary={
       <span className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{v.name}</span>

@@ -67,7 +67,7 @@ export default async function Stylists() {
   const row = (s: (typeof all)[number]) => {
     const overdue = !!s.due && s.due < now
     return (
-      <li key={s.id}>
+      <li key={s.id} data-rec={s.id}>
         <Fold
           summary={
             <span className="flex items-center justify-between gap-3">

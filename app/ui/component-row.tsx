@@ -159,6 +159,7 @@ export function ComponentRow({
   return (
     <>
       <tr
+        data-rec={id}
         onClick={() => setOpen((o) => !o)}
         className="cursor-pointer hover:bg-sunk"
         aria-expanded={open}

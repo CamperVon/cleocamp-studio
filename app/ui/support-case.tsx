@@ -86,7 +86,7 @@ export function SupportCase({ c }: { c: CaseView }) {
   // Brandon, 25 Sept 2026: notes emailed to the team should stand out on the page.
   const toJane = c.messages.some((m) => m.emailedTo)
   return (
-    <li id={c.id}>
+    <li id={c.id} data-rec={c.id}>
       <details className="group">
         <summary className="flex cursor-pointer items-start gap-2.5 px-4 py-3 hover:bg-sunk sm:px-5">
           <span

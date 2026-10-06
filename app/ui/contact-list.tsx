@@ -17,7 +17,7 @@ export function ContactList({ title, circle, people, removed }: { title: string;
         {people.length ? (
           <ul className="divide-y divide-line border-t border-line">
             {people.map((p) => (
-              <li key={p.id}>
+              <li key={p.id} data-rec={p.id}>
                 <Fold summary={
                   <span className="flex flex-wrap items-baseline gap-x-2">
                     <span className={`font-medium${p.atTop ? ' text-accent' : ''}`}>{p.name}</span>

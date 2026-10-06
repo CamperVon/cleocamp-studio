@@ -95,7 +95,7 @@ export default async function Wholesale() {
     const unconfirmed = a.shipments.filter((s) => s.paid === null).length
 
     return (
-      <li key={a.id}>
+      <li key={a.id} data-rec={a.id}>
         <Fold
           summary={
             <span className="flex items-center justify-between gap-3">

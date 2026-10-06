@@ -108,7 +108,7 @@ export default async function Products() {
             {g.items.map(({ p, relatedPos, relatedRuns, soldTotal, onHand, weeks, flags }) => {
               const urgent = flags.filter((f) => f.tone === 'urgent').length
               return (
-                <li key={p.id}>
+                <li key={p.id} data-rec={p.id}>
                   <details className="group">
                     <summary className="flex cursor-pointer list-none items-center gap-2.5 px-4 py-3 hover:bg-sunk sm:px-5 [&::-webkit-details-marker]:hidden">
                       <span aria-hidden className="text-xs text-faint transition-transform group-open:rotate-90">▸</span>

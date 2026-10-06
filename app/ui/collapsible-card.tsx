@@ -35,7 +35,9 @@ export function CollapsibleCard({
         <span className="inline-block w-3 shrink-0 text-faint">{open ? '▾' : '▸'}</span>
         <h2 className="flex items-center gap-2 font-serif text-[17px] italic text-accent">{title}</h2>
       </button>
-      {open ? children : null}
+      {/* Kept in the page while folded, hidden, so a search hit inside can be
+          found and the card opened to it (app/ui/jump.tsx). */}
+      <div data-fold-body hidden={!open}>{children}</div>
     </section>
   )
 }

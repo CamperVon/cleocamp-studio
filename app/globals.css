@@ -87,3 +87,9 @@ body {
 
 /* Numbers in columns should line up. */
 .tnum { font-variant-numeric: tabular-nums; }
+
+/* A row the search box just opened (app/ui/jump.tsx): a pink wash that fades. */
+.rec-hit {
+  background-color: var(--accent-soft);
+  transition: background-color 1.2s ease-out;
+}

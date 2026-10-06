@@ -23,7 +23,7 @@ async function load(where: object, orderBy: object[]) {
 
 function CustomerRow({ c }: { c: Row }) {
   return (
-    <li>
+    <li data-rec={c.id}>
       <Fold summary={
         <span className="flex items-baseline justify-between gap-3">
           <span className="min-w-0">

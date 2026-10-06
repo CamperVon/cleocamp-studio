@@ -43,7 +43,7 @@ export function ItemRow({
   }
 
   return (
-    <li>
+    <li data-rec={id}>
       <details className="group">
         <summary className="flex cursor-pointer items-center gap-2.5 px-4 py-2 hover:bg-sunk sm:px-5">
           {plain ? null : <Chip tone={kind === 'TODO' ? 'accent' : 'neutral'}>{kind === 'TODO' ? 'do' : 'ask'}</Chip>}

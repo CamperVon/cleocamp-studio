@@ -36,7 +36,9 @@ export function ProductSection({
           <Chip tone="warn">nothing recorded yet</Chip>
         )}
       </button>
-      {open ? <div className="border-t border-line bg-sunk/40">{children}</div> : null}
+      {/* Kept in the page while folded, hidden, so a search hit inside can be
+          found and the section opened to it (app/ui/jump.tsx). */}
+      <div data-fold-body hidden={!open} className="border-t border-line bg-sunk/40">{children}</div>
     </div>
   )
 }

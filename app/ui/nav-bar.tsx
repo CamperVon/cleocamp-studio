@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { signOut } from '@/app/login/actions'
 import { Wordmark } from './wordmark'
 import { MouseFace } from './mouse-face'
+import { SearchButton } from './search'
 
 /**
  * Two navs, one list.
@@ -171,9 +172,13 @@ export function NavBar({ personName, counts = {} }: { personName: string | null;
                 </>
               ) : null}
             </div>
+            {/* Search, beside More (Brandon, 6 Oct 2026). */}
+            <SearchButton className="shrink-0 rounded-md px-2.5 py-1.5 text-muted hover:bg-sunk hover:text-ink" />
           </nav>
 
           <span className="flex-1" />
+          {/* Phone: search at the top right; More is down in the tab bar. */}
+          <SearchButton className="-my-1 shrink-0 rounded-md p-1.5 text-ink/65 md:hidden" />
           {personName ? (
             <span className="shrink-0 text-sm text-muted" title="Signed in from your own link">
               {personName}
