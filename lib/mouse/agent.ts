@@ -2,7 +2,8 @@ import { runLoop, type AgentUsage } from '@/lib/mouse/runner'
 import { classifyResult } from '@/lib/mouse/outcomes'
 import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
-import { buildCatalog } from '@/lib/mouse/context'
+import { buildCatalogParts, catalogStats, type CatalogStats } from '@/lib/mouse/context'
+import { systemBlocks } from '@/lib/mouse/cache-blocks'
 import { SYSTEM_RULES } from '@/lib/mouse/prompt'
 import { TOOLS, TOOL_DEFS } from '@/lib/mouse/tools'
 import { refreshForecastsAndAlerts } from '@/lib/forecast'
@@ -341,18 +342,20 @@ export async function runAgent(opts: {
   // caller, and appending them to the rules would split the shared entry.
   // The longer lifetime has to come first (an API rule), which this order
   // satisfies.
-  const system: Anthropic.TextBlockParam[] = [
-    { type: 'text', text: SYSTEM_RULES, cache_control: { type: 'ephemeral', ttl: '1h' } },
-  ]
-  if (opts.extraRules) system.push({ type: 'text', text: opts.extraRules })
-  if (opts.practice) system.push({ type: 'text', text: PRACTICE_RULES })
-  if (opts.withCatalog !== false) {
-    system.push({
-      type: 'text',
-      text: `# What you currently know\n\n${await buildCatalog()}`,
-      cache_control: { type: 'ephemeral' },
-    })
-  }
+  //
+  // 6 Oct 2026: the catalogue is now two blocks. The sections that rarely
+  // change (places, vendors, wholesale stores, people, printed-document
+  // defaults) sit under a one-hour mark; everything else, notes included,
+  // under the five-minute one. Same sections, same text, stable ones first.
+  // Layout and the API rules it depends on: lib/mouse/cache-blocks.ts.
+  const parts = opts.withCatalog !== false ? await buildCatalogParts() : null
+  const contextStats: CatalogStats | null = parts ? catalogStats(parts) : null
+  const system: Anthropic.TextBlockParam[] = systemBlocks({
+    rules: SYSTEM_RULES,
+    extraRules: opts.extraRules,
+    practiceRules: opts.practice ? PRACTICE_RULES : null,
+    catalog: parts,
+  })
 
   // Attachments ride along on the turn they were sent. Chat also replays the
   // files from its last two file-bearing messages (see chatTurn), so a
@@ -483,6 +486,9 @@ export async function runAgent(opts: {
   result = { ...result, text: stripForgedActions(result.text) }
 
   await recordUsage(opts.source, result.usage.requests)
+  // Section sizes and block hashes ride on the usage record (saved with a
+  // chat reply as agentUsageJson). Sizes only: no business text.
+  if (contextStats) result = { ...result, usage: { ...result.usage, context: contextStats } }
 
   // The troubleshooting log: every failed or refused tool call and every
   // unfinished turn, written by code whatever the reply says (Brandon,

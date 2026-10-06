@@ -44,6 +44,14 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** email, for the warning.
 - **Files:** `lib/mouse/credit-text.ts`, `lib/mouse/credit.ts`, `lib/mouse/runner.ts`, `lib/mouse/agent.ts`, `lib/mouse/issues.ts`, `lib/support/draft.ts`, `lib/support/pass.ts`, `tests/runner.test.ts`, `tests/mouse-issues.test.ts`
 
+### Catalogue split into stable and live cache blocks · `HASH`
+- **Problem:** the whole catalogue sat behind one five-minute cache mark, so it was written to the cache again on nearly every chat turn. Cache writes were most of the chat bill.
+- **Change:**
+  - The catalogue is built exactly as before, then cut at its "## " headings. Sections that rarely change (places, vendors, wholesale stores, people, printed-document defaults) go in a block with a one-hour cache mark. Everything else, including notes, the date, stock, orders and to-dos, goes in the five-minute block. No section is reworded, shortened or dropped.
+  - If a stable heading appears twice (a note line that looks like a heading), everything goes in the live block.
+  - Each run records, alongside its token usage, the size and a short hash of each block and each section: sizes only, no text.
+- **Files:** `lib/mouse/context.ts` (`splitCatalog`, `buildCatalogParts`, `catalogStats`), `lib/mouse/cache-blocks.ts`, `lib/mouse/agent.ts`, `lib/mouse/runner.ts`, `tests/catalog-split.test.ts`
+
 ### Mouse asks instead of guessing quantities · `fa647db`
 - **Problem:** asked to add one item to an order, Mouse misread the request and changed quantities nobody had mentioned.
 - **Change:** the prompt rule on asking versus acting was tightened. A quantity nobody stated is a question, never a guess. A purchase order prints its "For" line only when the order is for a single product.

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
 import { inventoryWritesEnabled } from './tools'
@@ -507,4 +508,91 @@ export async function buildCatalog(): Promise<string> {
   }
 
   return L.join('\n')
+}
+
+/**
+ * The catalogue in two cache blocks (6 Oct 2026, phase 1 of the cost plan).
+ *
+ * The whole catalogue sat behind one five-minute cache mark, so it was
+ * written again on nearly every turn: turns are usually more than five
+ * minutes apart and any write changes the text. Sections that rarely change
+ * now go in a block of their own with the one-hour mark, ahead of the rest.
+ *
+ * Nothing is added, dropped, shortened or reworded: the catalogue is built
+ * exactly as before and cut at its "## " headings. Each section's text is
+ * byte for byte what it was. Only the order of whole sections changes:
+ * stable ones first, then the live ones in their usual order.
+ *
+ * Stable is an allowlist, and every section not on it is live. Notes are
+ * live on purpose (Brandon, 6 Oct 2026: high-churn and business-critical),
+ * as are the date, counts, stock, orders, runs, forecasts, alerts, calendar,
+ * to-dos and money. The five below change only when someone edits a place,
+ * a vendor's details, a wholesale store, a person, or the printed document
+ * defaults; none of them carries a count, a status or a date.
+ */
+export const STABLE_SECTIONS: readonly string[] = [
+  'Places',
+  'Vendors',
+  'Wholesale stores on file',
+  'People',
+  'What every printed document currently says',
+]
+
+export type CatalogSection = { heading: string; text: string; stable: boolean }
+export type CatalogParts = { stable: string; live: string; sections: CatalogSection[] }
+
+/**
+ * Cut the catalogue at its section headings and sort the sections into
+ * stable and live, each keeping its original order. Anything before the
+ * first heading, and any heading not on the allowlist, is live. Pure.
+ */
+export function splitCatalog(text: string): CatalogParts {
+  const starts = [...text.matchAll(/^## /gm)].map((m) => m.index!)
+  const cuts = starts[0] === 0 ? starts : [0, ...starts]
+  const sections: CatalogSection[] = cuts.map((at, k) => {
+    const chunk = text.slice(at, cuts[k + 1] ?? text.length)
+    const heading = chunk.startsWith('## ') ? chunk.slice(3, chunk.indexOf('\n') === -1 ? undefined : chunk.indexOf('\n')).trim() : ''
+    return { heading, text: chunk, stable: STABLE_SECTIONS.includes(heading) }
+  }).filter((s) => s.text.length > 0)
+  // Fail safe: a stable heading seen twice means some text (a note with a
+  // line reading "## Vendors", say) looks like a section. Rather than guess
+  // which is real, nothing goes in the long-lived block this time.
+  const stableHeads = sections.filter((s) => s.stable).map((s) => s.heading)
+  if (new Set(stableHeads).size !== stableHeads.length) for (const s of sections) s.stable = false
+  return {
+    stable: sections.filter((s) => s.stable).map((s) => s.text).join(''),
+    live: sections.filter((s) => !s.stable).map((s) => s.text).join(''),
+    sections,
+  }
+}
+
+/** The catalogue, built as always, in its two blocks. */
+export async function buildCatalogParts(): Promise<CatalogParts> {
+  return splitCatalog(await buildCatalog())
+}
+
+/**
+ * Sizes, not contents, for the usage record: each section's heading, bytes
+ * and a rough token estimate, which block it went in, and a short hash of
+ * each block so successive turns show whether a block was byte-identical
+ * (and so could have been read from cache). No business text is kept. Pure.
+ */
+export type CatalogStats = {
+  blocks: { stable: boolean; live: boolean }
+  stable: { bytes: number; estTokens: number; hash: string }
+  live: { bytes: number; estTokens: number; hash: string }
+  sections: Array<{ heading: string; bytes: number; estTokens: number; block: 'stable' | 'live' }>
+}
+
+export function catalogStats(p: CatalogParts): CatalogStats {
+  const bytes = (s: string) => Buffer.byteLength(s, 'utf8')
+  // About four characters a token for English prose: an estimate, labelled as one.
+  const est = (s: string) => Math.ceil(s.length / 4)
+  const hash = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 12)
+  return {
+    blocks: { stable: p.stable.length > 0, live: p.live.length > 0 },
+    stable: { bytes: bytes(p.stable), estTokens: est(p.stable), hash: hash(p.stable) },
+    live: { bytes: bytes(p.live), estTokens: est(p.live), hash: hash(p.live) },
+    sections: p.sections.map((s) => ({ heading: s.heading || '(before the first heading)', bytes: bytes(s.text), estTokens: est(s.text), block: s.stable ? 'stable' : 'live' })),
+  }
 }

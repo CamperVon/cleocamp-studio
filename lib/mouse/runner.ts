@@ -14,6 +14,8 @@ export type AgentUsage = {
   providerError: string | null
   durationMs: number
   stopReason: 'complete' | 'budget' | 'provider_error' | 'refusal'
+  /** Catalogue section sizes and block hashes, set by runAgent (lib/mouse/context.ts catalogStats). */
+  context?: import('./context').CatalogStats
 }
 export type LoopResult = {
   text: string; writes: Array<{ tool: string; summary: string }>; toolCalls: ToolOutcome[]
