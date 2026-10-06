@@ -1037,7 +1037,11 @@ export const TOOLS: Record<string, Tool> = {
           unitCostCents: num('Price in cents per unit of measure'),
           leadTimeDays: num('Days from order to in hand. 0 means in stock.'),
           vendorId: str('New vendor id'),
-          vendorSku: str("The vendor's own style number"),
+          vendorSku: str("The supplier's own item or style number and nothing else (\"2340\"). Printed on the PO before the supplier wording. " +
+            'Not a description: on 6 Oct 2026 a whole description went in here and the PO printed it twice.'),
+          vendorDescription: str('What the supplier calls it, in their own words as on their invoice or price list ("2340 Silk Satin Face organza, Color: 3196 black"). ' +
+            'This, not the name, is what prints on the PO the supplier receives. Never our own labels (which product or colour of ours it is for): ' +
+            'those stay in name. Brandon, 6 Oct 2026: the PO should read like the supplier\'s own wording, "not with our stuff". "" to clear.'),
           reorderThreshold: num('Level at which to reorder'),
           stockedInStudio: {
             type: 'boolean' as const,
@@ -1070,6 +1074,8 @@ export const TOOLS: Record<string, Tool> = {
       for (const [k, v] of Object.entries(rest)) if (v !== undefined && v !== null) data[k] = v
       if (data.reorderThreshold !== undefined) data.reorderThreshold = String(data.reorderThreshold)
       if (data.unitsPerPurchaseUnit !== undefined) data.unitsPerPurchaseUnit = String(data.unitsPerPurchaseUnit)
+      // "" clears: an empty supplier wording would print a blank PO line.
+      for (const k of ['vendorSku', 'vendorDescription']) if (typeof data[k] === 'string' && !data[k].trim()) data[k] = null
       return db.component.update({ where: { id }, data, select: { id: true, name: true } })
     },
   },
@@ -1365,7 +1371,12 @@ export const TOOLS: Record<string, Tool> = {
               'everything else defaults false unless told otherwise — ask if unsure rather ' +
               'than assume it lives here.',
           },
-          vendorId: str('Supplier'), vendorSku: str("Vendor's style number"),
+          vendorId: str('Supplier'),
+          vendorSku: str("The supplier's own item or style number and nothing else (\"2340\"). Printed on the PO before the supplier wording. " +
+            'Not a description: on 6 Oct 2026 a whole description went in here and the PO printed it twice.'),
+          vendorDescription: str('What the supplier calls it, in their own words as on their invoice or price list ("2340 Silk Satin Face organza, Color: 3196 black"). ' +
+            'This, not the name, is what prints on the PO the supplier receives. Never our own labels (which product or colour of ours it is for): ' +
+            'those stay in name. Brandon, 6 Oct 2026: the PO should read like the supplier\'s own wording, "not with our stuff". "" to clear.'),
           unitCostCents: num('Price in cents'), leadTimeDays: num('Days to arrive'),
           purchaseUnit: str('How it is bought'), notes: str('Anything else'),
         },

@@ -135,7 +135,7 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
 
   const lineLabel = (l: (typeof po.lines)[number]) => {
     if (l.component) {
-      return `${l.component.vendorSku ? `${t('style')} ${l.component.vendorSku} — ` : ''}${l.component.vendorDescription ?? l.component.name}`
+      return `${l.component.vendorSku ? `${t('style')} ${l.component.vendorSku} — ` : ''}${l.component.vendorDescription || l.component.name}`
     }
     // A line describing something the catalogue does not hold yet — a new
     // colour, a sample size. Its text is the whole label; there is no sku or

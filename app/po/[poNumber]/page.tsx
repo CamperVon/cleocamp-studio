@@ -146,7 +146,7 @@ export default async function PurchaseOrderDoc({
                   <>
                     <div>
                       {l.component.vendorSku ? `${t('style')} ${l.component.vendorSku} — ` : ''}
-                      {l.component.vendorDescription ?? l.component.name}
+                      {l.component.vendorDescription || l.component.name}
                     </div>
                     {l.component.spec ? (
                       <div className="text-[9.5pt] text-[#5C6663]">{l.component.spec}</div>
