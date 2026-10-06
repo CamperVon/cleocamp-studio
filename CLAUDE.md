@@ -14,11 +14,16 @@ Mouse's draft as it stood (`reviewDraft`). Fix the cause, then set
 `reviewedAt` and a one-line `reviewOutcome` so the list at the top of
 Support clears.
 
-**Log every change to Mouse in `docs/ADDITIONS-SINCE-2026-10-03.md`,** in
-the same commit (Brandon, 4 Oct 2026). A copy of this code was taken on
-3 Oct 2026 for a separate, general Mouse product; that file is how anything
-added here afterwards gets carried across by hand. Say whether each change
-is general, an add-on, or Cleo only.
+**Log code changes that would help any business in
+`docs/ADDITIONS-SINCE-2026-10-03.md`,** in the same commit (Brandon, 4 Oct
+2026). A copy of this code was taken on 3 Oct 2026 for a separate, general
+Mouse product (Jonathan's), and that file is how anything added here
+afterwards gets carried across by hand. Since 6 Oct, code changes only: "He
+doesn't need specific Cleo data. Just code changes that would benefit any
+user." Leave out Cleo's names, orders, customers and numbers, record or data
+changes, and features only this brand would use (stylist pulls, its own
+emails). Say what problem it solves, the commits and files, and whether it
+needs Shopify or email.
 
 **If `HANDOFF.md` exists in this repo, read it now, before doing anything
 else.** It is written by whoever worked here last: where things stand, what is
