@@ -97,6 +97,15 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** Shopify (order search), the support inbox.
 - **Files:** `lib/support/draft.ts`, `lib/support/reply.ts`, `tests/support-reply.test.ts`
 
+### A size or colour swap is made in Shopify before the reply says so · `d1e50af`
+- **Problem:** a customer asked to swap an unshipped item to another size, the team said yes, and the drafted reply promised it. The only button under it changed the address and sent the reply. The order still had the old size.
+- **Change:**
+  - The reply drafter names the swap (item, from, to). Code finds exactly one unshipped line and the wanted variant of the same product, and stores it with any problems.
+  - One tap does the swap with a Shopify order edit (new variant added, old one restocked), changes the address too if the draft has one, then sends. If the swap would change the order's subtotal (a different price, or a discount on the old item), nothing is committed and the person is told to do it in Shopify.
+  - Every send path refuses a reply that says an item changes to a size or colour the order doesn't show, while something is still waiting to ship.
+- **Needs:** Shopify (`write_order_edits`), the support inbox.
+- **Files:** `lib/support/reply.ts`, `lib/support/orders.ts`, `lib/support/draft.ts`, `app/(main)/support/`, `app/ui/support-case.tsx`, `prisma/schema.prisma` (`SupportCase.draftSwap`), `tests/support-swap.test.ts`
+
 ---
 
 ## Wholesale

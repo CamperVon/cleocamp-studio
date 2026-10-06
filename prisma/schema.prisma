@@ -1305,6 +1305,10 @@ model SupportCase {
   /// An address change the customer asked for, as fields, with the checks
   /// code ran on it. Applied to Shopify only by a person's tap.
   draftAddress      Json?
+  /// A size or colour swap on an item not yet shipped (DraftSwap in
+  /// lib/support/reply.ts), resolved to ids by code, with its checks.
+  /// Applied in Shopify only by a person's tap.
+  draftSwap         Json?
   draftedAt         DateTime?
   alertedAt         DateTime?
   lastMessageAt     DateTime         @default(now())

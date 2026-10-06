@@ -3,9 +3,9 @@ import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { BACKGROUND_MODEL, CHAT_MODEL } from '@/lib/mouse/agent'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
-import { findOrder, type OrderSnapshot } from '@/lib/support/orders'
+import { findOrder, variantSiblings, type OrderSnapshot } from '@/lib/support/orders'
 import { isConfigured, shopifyGraphQL } from '@/lib/integrations/shopify'
-import { addressChangeProblems, discountFacts, DRAFT_INSTRUCTIONS, mentionsDiscount, orderFacts, parseDraft, teamInstructions } from '@/lib/support/reply'
+import { addressChangeProblems, discountFacts, DRAFT_INSTRUCTIONS, mentionsDiscount, orderFacts, parseDraft, pickSwapLine, pickTargetVariant, teamInstructions, type DraftSwap, type DraftVariant } from '@/lib/support/reply'
 import { orderNumbersIn, trimQuoted } from '@/lib/support/core'
 
 /**
@@ -98,15 +98,38 @@ export async function draftForCase(caseId: string): Promise<void> {
   const address = d.newAddress
     ? { to: d.newAddress, from: order?.shipTo ?? null, problems: addressChangeProblems(order, c.customerEmail, d.newAddress) }
     : null
+  const swap = d.newVariant ? await resolveSwap(order, d.newVariant).catch((e): DraftSwap => ({
+    item: d!.newVariant!.item ?? 'item', from: d!.newVariant!.from ?? '', to: d!.newVariant!.to, quantity: 0,
+    lineItemId: null, fromVariantId: null, toVariantId: null,
+    problems: [`Could not read the product from Shopify: ${e instanceof Error ? e.message.slice(0, 120) : String(e)}`],
+  })) : null
   await db.supportCase.update({
     where: { id: caseId },
     data: {
       draftReply: d.reply,
       draftNeeds: d.needs,
       draftAddress: address ? (address as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+      draftSwap: swap ? (swap as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
       draftedAt: new Date(),
     },
   })
+}
+
+/**
+ * The swap the drafter named, found on the order and in the product by code.
+ * Stored with its problems so the card can show them; checked again on a
+ * fresh read of the order at the tap. Same ownership rule as a cancel: the
+ * order's own email, or the name on it matching the person writing in.
+ */
+export async function resolveSwap(order: OrderSnapshot | null, want: DraftVariant): Promise<DraftSwap> {
+  const base: DraftSwap = { item: want.item ?? 'item', from: want.from ?? '', to: want.to, quantity: 0, lineItemId: null, fromVariantId: null, toVariantId: null, problems: [] }
+  if (order?.emailMismatch && !order.sameName) base.problems.push(`This order was placed with ${order.emailMismatch} under another name.`)
+  const l = pickSwapLine(order, want)
+  if (!l.ok) return { ...base, problems: [...base.problems, l.problem] }
+  const line = { ...base, item: l.line.title, from: l.line.variant ?? '', quantity: l.line.quantity, lineItemId: l.line.id, fromVariantId: l.line.variantId }
+  if (!l.line.variantId) return { ...line, problems: [...line.problems, 'That item has no product in Shopify any more.'] }
+  const t = pickTargetVariant(await variantSiblings(l.line.variantId), want.to, l.line.variantId)
+  return t.ok ? { ...line, to: t.title, toVariantId: t.id } : { ...line, problems: [...line.problems, t.problem] }
 }
 
 /**

@@ -357,3 +357,73 @@ export async function cancelUnshippedLines(
   const amt = sug.amountSet.shopMoney
   return { ok: true, refunded: `${Number(amt.amount).toFixed(2)} ${amt.currencyCode}`, order: after }
 }
+
+/** The other variants of a line's product, as Shopify names them. For finding the size a customer wants. */
+export async function variantSiblings(variantId: string): Promise<Array<{ id: string; title: string }>> {
+  const d = await shopifyGraphQL<{ productVariant: { product: { variants: { nodes: Array<{ id: string; title: string }> } } } | null }>(
+    `query($id: ID!) { productVariant(id: $id) { id product { id variants(first: 100) { nodes { id title } } } } }`,
+    { id: variantId },
+  )
+  return d.productVariant?.product.variants.nodes ?? []
+}
+
+/**
+ * Swap the not-yet-shipped units of one line to another variant of the same
+ * product (a size or a colour), by an order edit: add the new variant, take
+ * the old one off back into stock, commit. Only on a person's tap.
+ *
+ * Money is Shopify's (CLAUDE.md §6): if the swap would change the order's
+ * subtotal at all (a dearer size, a discount that sat on the old line), the
+ * edit is left uncommitted, which changes nothing, and the person is told
+ * to do it in Shopify. Read back afterwards so the reply only goes once the
+ * order shows it. Needs write_order_edits.
+ */
+export async function swapLineVariant(
+  orderId: string, lineItemId: string, fromVariantId: string | null, toVariantId: string, quantity: number, staffNote: string,
+): Promise<{ ok: true; order: OrderSnapshot } | { ok: false; error: string }> {
+  type Calc = { id: string; title: string; variantTitle: string | null; quantity: number; editableQuantity: number; variant: { id: string } | null }
+  type Money = { shopMoney: { amount: string; currencyCode: string } }
+  const errs = (e: Array<{ message: string }>) => e.map((x) => x.message).join('; ')
+  const begin = await shopifyGraphQL<{ orderEditBegin: { calculatedOrder: { id: string; subtotalPriceSet: Money; lineItems: { nodes: Calc[] } } | null; userErrors: Array<{ message: string }> } }>(
+    `mutation($id: ID!) { orderEditBegin(id: $id) { calculatedOrder { id subtotalPriceSet { shopMoney { amount currencyCode } } lineItems(first: 50) { nodes { id title variantTitle quantity editableQuantity variant { id } } } } userErrors { field message } } }`,
+    { id: orderId },
+  )
+  const calc = begin.orderEditBegin.calculatedOrder
+  if (!calc || begin.orderEditBegin.userErrors.length) return { ok: false, error: errs(begin.orderEditBegin.userErrors) || 'Shopify would not open the order for editing.' }
+  const line = matchCalculatedLine(lineItemId, fromVariantId, calc.lineItems.nodes)
+  if (!line) return { ok: false, error: 'Could not find that item in the order edit. Change it in Shopify (Edit order).' }
+  if (line.editableQuantity < quantity) return { ok: false, error: 'That item is no longer waiting to ship.' }
+
+  const add = await shopifyGraphQL<{ orderEditAddVariant: { userErrors: Array<{ message: string }> } }>(
+    `mutation($id: ID!, $variantId: ID!, $quantity: Int!) { orderEditAddVariant(id: $id, variantId: $variantId, quantity: $quantity, allowDuplicates: false) { calculatedLineItem { id } userErrors { field message } } }`,
+    { id: calc.id, variantId: toVariantId, quantity },
+  )
+  if (add.orderEditAddVariant.userErrors.length) return { ok: false, error: errs(add.orderEditAddVariant.userErrors) }
+  const set = await shopifyGraphQL<{ orderEditSetQuantity: { calculatedOrder: { subtotalPriceSet: Money } | null; userErrors: Array<{ message: string }> } }>(
+    `mutation($id: ID!, $lineItemId: ID!, $quantity: Int!) { orderEditSetQuantity(id: $id, lineItemId: $lineItemId, quantity: $quantity, restock: true) { calculatedOrder { id subtotalPriceSet { shopMoney { amount currencyCode } } } userErrors { field message } } }`,
+    { id: calc.id, lineItemId: line.id, quantity: line.quantity - quantity },
+  )
+  if (set.orderEditSetQuantity.userErrors.length) return { ok: false, error: errs(set.orderEditSetQuantity.userErrors) }
+
+  const was = Number(calc.subtotalPriceSet.shopMoney.amount)
+  const now = Number(set.orderEditSetQuantity.calculatedOrder?.subtotalPriceSet.shopMoney.amount ?? NaN)
+  if (!(Math.abs(now - was) < 0.005)) {
+    return {
+      ok: false,
+      error: Number.isNaN(now)
+        ? 'Shopify did not say what the order would cost after the swap, so nothing was changed. Do it in Shopify (Edit order).'
+        : `The swap would change the order's subtotal from $${was.toFixed(2)} to $${now.toFixed(2)} (a different price, or a discount on the old item), so nothing was changed. Do it in Shopify (Edit order).`,
+    }
+  }
+
+  const commit = await shopifyGraphQL<{ orderEditCommit: { userErrors: Array<{ message: string }> } }>(
+    `mutation($id: ID!, $note: String) { orderEditCommit(id: $id, notifyCustomer: false, staffNote: $note) { order { id } userErrors { field message } } }`,
+    { id: calc.id, note: staffNote.slice(0, 250) },
+  )
+  if (commit.orderEditCommit.userErrors.length) return { ok: false, error: errs(commit.orderEditCommit.userErrors) }
+
+  const after = await freshOrder(orderId)
+  const landed = after?.items.some((i) => i.variantId === toVariantId && Math.min(i.unfulfilled ?? 0, i.current ?? i.quantity) >= quantity)
+  if (!after || !landed) return { ok: false, error: 'Shopify accepted the swap but the order does not show it yet. Check it in Shopify before sending anything.' }
+  return { ok: true, order: after }
+}

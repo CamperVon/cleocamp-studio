@@ -1,8 +1,8 @@
 'use client'
 import { useState, useTransition } from 'react'
 import type { Reviewer } from '@/app/(main)/support/actions'
-import { addCaseNote, applyAddressAndReply, approveReturnRefund, cancelOrderAndReply, flagForReview, markReviewed, quoteCaseRefund, quoteOrderRefund, redraftReply, refundOrderAndReply, removeUnshippedItem, sendReply, setCaseStatus, tellMouse } from '@/app/(main)/support/actions'
-import { claimsCancelled, claimsNotYetDone, claimsRefunded, mentionsDiscount, mentionsRefundToCustomer, teamInstructions, partlyShipped, refundIssued, unfilled, unshippedLines } from '@/lib/support/reply'
+import { addCaseNote, applyAddressAndReply, swapVariantAndReply, approveReturnRefund, cancelOrderAndReply, flagForReview, markReviewed, quoteCaseRefund, quoteOrderRefund, redraftReply, refundOrderAndReply, removeUnshippedItem, sendReply, setCaseStatus, tellMouse } from '@/app/(main)/support/actions'
+import { swapClaims, claimsCancelled, claimsNotYetDone, claimsRefunded, mentionsDiscount, mentionsRefundToCustomer, teamInstructions, partlyShipped, refundIssued, unfilled, unshippedLines } from '@/lib/support/reply'
 import { trimQuoted } from '@/lib/support/core'
 import { ReturnIntake } from '@/app/ui/return-intake'
 
@@ -46,6 +46,8 @@ export type CaseView = {
     reply: string | null
     needs: string | null
     address: { to: Addr; from: Addr | null; problems: string[] } | null
+    /** A size or colour swap, resolved by code (DraftSwap). */
+    swap: { item: string; from: string; to: string; quantity: number; toVariantId: string | null; problems: string[] } | null
     at: string
   } | null
 }
@@ -262,6 +264,11 @@ function ReplyBox({ c }: { c: CaseView }) {
   const gaps = unfilled(text)
   const a = d.address
   const canMove = !!a && !a.problems.length
+  // A size or colour swap: one tap swaps it in Shopify, changes the address
+  // too if there is one, then sends (swapVariantAndReply). #2297, 6 Oct 2026.
+  const sw = d.swap
+  const canSwap = !!sw && !!sw.toVariantId && !sw.problems.length
+  const swapUnset = !canSwap && swapClaims(text).length > 0
   // The reply tells the customer the order is cancelled or refunded: the tap
   // that sends it has to make that true first (cancelOrderAndReply).
   const o = c.order
@@ -280,7 +287,7 @@ function ReplyBox({ c }: { c: CaseView }) {
   // figure is fetched and shown on the first tap, paid on the second.
   const refunds = !!o && partial && !open.length && !refundIssued(o) && (!o.emailMismatch || !!o.sameName) &&
     (claimsRefunded(text) || (mentionsRefundToCustomer(text) && toldToRefund)) && !claimsCancelled(text)
-  const primary = canMove || cancels || refunds
+  const primary = canMove || canSwap || cancels || refunds
   const blocked = pending || !!gaps.length || !text.trim()
   const run = (fn: () => Promise<{ ok: true } | { ok: false; error: string }>) =>
     start(async () => {
@@ -331,6 +338,16 @@ function ReplyBox({ c }: { c: CaseView }) {
         </div>
       ) : null}
 
+      {sw ? (
+        <p className={`text-xs ${canSwap ? 'text-muted' : 'text-urgent'}`}>
+          {canSwap
+            ? <>Swap in Shopify: {sw.item} <span className="text-faint">{sw.from}</span> → <span className="font-medium text-ink">{sw.to}</span>{sw.quantity > 1 ? ` (${sw.quantity})` : ''}. Done only if the price is the same; the old size goes back into stock.</>
+            : <>Swap not set up: {sw.problems.join(' ')}</>}
+        </p>
+      ) : swapUnset ? (
+        <p className="text-xs text-urgent">This reply says an item changes size or colour, and nothing here changes it. Tap Redraft, or change it in Shopify first. Send checks.</p>
+      ) : null}
+
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -340,7 +357,16 @@ function ReplyBox({ c }: { c: CaseView }) {
       {gaps.length ? <p className="text-xs text-urgent">Fill in {gaps.map((g) => `[${g}]`).join(', ')} before sending.</p> : null}
 
       <div className="flex flex-wrap gap-2">
-        {canMove ? (
+        {canSwap ? (
+          <button
+            type="button" disabled={blocked}
+            onClick={() => run(() => swapVariantAndReply(c.id, text))}
+            className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-bg disabled:opacity-40"
+          >
+            {pending ? 'Working…' : `Swap to ${sw!.to}${canMove ? ', update address' : ''} & send`}
+          </button>
+        ) : null}
+        {canMove && !canSwap ? (
           <button
             type="button" disabled={blocked}
             onClick={() => run(() => applyAddressAndReply(c.id, text))}

@@ -6,8 +6,8 @@ import { Prisma } from '@/generated/prisma/client'
 import { sendEmail } from '@/lib/email'
 import { grantedScopes } from '@/lib/integrations/shopify'
 import { draftForCase, refreshOrder } from '@/lib/support/draft'
-import { cancelAndRefund, cancelUnshippedLines, freshOrder, removeUnshippedUnits, setShippingAddress } from '@/lib/support/orders'
-import { addressChangeProblems, claimsNotYetDone, partlyShipped, refundIssued, SUPPORT_FROM, SUPPORT_REPLY_TO, TOLD_MOUSE, unfilled, unshippedLines, type DraftAddress } from '@/lib/support/reply'
+import { cancelAndRefund, cancelUnshippedLines, freshOrder, removeUnshippedUnits, setShippingAddress, swapLineVariant } from '@/lib/support/orders'
+import { addressChangeProblems, claimsNotYetDone, partlyShipped, refundIssued, SUPPORT_FROM, SUPPORT_REPLY_TO, swapClaims, swapNotDone, TOLD_MOUSE, unfilled, unshippedLines, type DraftAddress, type DraftSwap } from '@/lib/support/reply'
 import { namesMatch } from '@/lib/support/core'
 import type { OrderSnapshot } from '@/lib/support/orders'
 
@@ -163,6 +163,21 @@ export async function sendReply(id: string, text: string): Promise<Result> {
     }
   }
 
+  // Same for a size or colour change (#2297, 6 Oct 2026): the reply said the
+  // tee was changing to a size 2 and nothing changed it. See swapNotDone.
+  if (swapClaims(body).length) {
+    const snap = (c.orderSnapshot as OrderSnapshot | null) ?? null
+    const now = snap?.id ? await freshOrder(snap.id).catch(() => null) : null
+    const problems = now ? swapNotDone(body, now) : ['This reply says an item changes size or colour, and Shopify could not be checked.']
+    if (problems.length) {
+      const swap = c.draftSwap as DraftSwap | null
+      return {
+        ok: false,
+        error: `${problems.join(' ')} ${swap?.toVariantId && !swap.problems.length ? `Tap "Swap to ${swap.to}" to change it and send` : 'Change it in Shopify (Edit order) first, or take it out of the reply'}. Nothing was sent.`,
+      }
+    }
+  }
+
   // Thread onto the customer's own last message when we know its id.
   const last = c.messages[0]?.inboundEmailId
     ? await db.inboundEmail.findUnique({ where: { id: c.messages[0].inboundEmailId }, select: { messageId: true, fromAddress: true } })
@@ -186,7 +201,7 @@ export async function sendReply(id: string, text: string): Promise<Result> {
     db.supportCase.update({
       where: { id },
       data: {
-        draftReply: null, draftNeeds: null, draftAddress: Prisma.DbNull, draftedAt: null,
+        draftReply: null, draftNeeds: null, draftAddress: Prisma.DbNull, draftSwap: Prisma.DbNull, draftedAt: null,
         // A return or exchange now waits on the parcel; anything else is
         // answered. A new email from the customer reopens it either way.
         status: c.category === 'RETURN_EXCHANGE' ? 'WAITING_ON_RETURN' : 'RESOLVED',
@@ -243,6 +258,53 @@ export async function applyAddressAndReply(id: string, text: string): Promise<Re
       body: `Ship-to on ${c.shopifyOrderName} changed in Shopify.\nWas: ${line(fresh?.shipTo)}\nNow: ${line(to)}`,
     },
   })
+  return sendReply(id, text)
+}
+
+/**
+ * Swap an unshipped item to the size or colour the customer asked for, then
+ * change the address too if the draft has one, then send. Checked again on
+ * a fresh read: the order is theirs, the same units are still waiting to
+ * ship. Refused, with nothing changed, if the price would move.
+ */
+export async function swapVariantAndReply(id: string, text: string): Promise<Result> {
+  const who = await approver()
+  if (!who) return { ok: false, error: 'Sign in again — only the team can do this.' }
+  if (unfilled(text).length) return { ok: false, error: 'Fill in the bracketed gaps in the reply first.' }
+  const c = await db.supportCase.findUnique({ where: { id } })
+  if (!c) return { ok: false, error: 'Case not found.' }
+  const s = c.draftSwap as DraftSwap | null
+  if (!s?.lineItemId || !s.toVariantId || s.problems.length) return { ok: false, error: 'No swap is set up on this case. Tap Redraft, or change it in Shopify.' }
+  const o = await ownedOrder(c)
+  if (!o.ok) return o
+  const line = o.order.items.find((i) => i.id === s.lineItemId)
+  const waiting = line ? Math.min(line.unfulfilled ?? 0, line.current ?? line.quantity) : 0
+
+  if (!o.order.items.some((i) => i.variantId === s.toVariantId && (i.current ?? i.quantity) > 0)) {
+    if (!line || line.variantId !== s.fromVariantId || waiting < s.quantity) {
+      return { ok: false, error: `${s.item} ${s.from} on ${c.shopifyOrderName} is no longer waiting to ship as it was. Check the order in Shopify. Nothing was changed or sent.` }
+    }
+    let r
+    try {
+      r = await swapLineVariant(o.order.id, s.lineItemId, s.fromVariantId, s.toVariantId, s.quantity,
+        `${s.item}: ${s.from} swapped to ${s.to} at the customer's request (support case), by ${who.name} in the Studio app.`)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return { ok: false, error: /access|scope|denied|permission/i.test(msg) ? await permissionError('edit this order', 'write_order_edits', msg) : `Shopify refused the swap: ${msg.slice(0, 160)}. Nothing was sent.` }
+    }
+    if (!r.ok) return { ok: false, error: `${r.error} Nothing was sent.` }
+    await db.$transaction([
+      db.supportCase.update({ where: { id }, data: { orderSnapshot: r.order as unknown as Prisma.InputJsonValue } }),
+      db.supportMessage.create({
+        data: { caseId: id, direction: 'NOTE', fromAddress: who.name, body: `${s.item} on ${c.shopifyOrderName} changed in Shopify: ${s.from} → ${s.to}${s.quantity > 1 ? ` (${s.quantity})` : ''}. ${s.from} went back into stock.` },
+      }),
+    ])
+  }
+  const a = c.draftAddress as { to?: DraftAddress; problems?: string[] } | null
+  if (a?.to && !a.problems?.length) {
+    const r = await applyAddressAndReply(id, text)
+    return r.ok ? r : { ok: false, error: `The size is changed in Shopify. The address is not: ${r.error}` }
+  }
   return sendReply(id, text)
 }
 

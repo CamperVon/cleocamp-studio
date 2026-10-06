@@ -48,6 +48,14 @@ ${RETURN_ADDRESS}
   with their name and order number inside the package.
 - Once it arrives we process the refund, or ship the replacement.
 
+CHANGING THE SIZE OR COLOUR OF AN ITEM NOT YET SHIPPED
+- When the customer asks for another size or colour of an item that has not
+  shipped, and TEAM INSTRUCTIONS say yes, fill "newVariant". The tap that
+  sends your reply swaps it in Shopify first (only at the same price), so
+  write it as done ("We've changed your Cleo Tee to White / 2").
+- Without a yes in TEAM INSTRUCTIONS, do not promise the swap: say we will
+  check, and say in "needs" that a person must decide.
+
 CANCELLING PART OF AN ORDER
 - An item that has NOT shipped can be cancelled: it is refunded in full to the
   original payment, with no restocking fee (it never left). A person removes it
@@ -141,11 +149,16 @@ Reply with ONLY a JSON object:
   "newAddress": null, or — ONLY when the customer asks to change where an order ships —
            {"name", "address1", "address2", "city", "provinceCode", "zip", "countryCode"}
            exactly as they wrote it (provinceCode as the 2-letter state, countryCode "US"
-           unless they say otherwise; address2 for the apartment/unit/building, else null)
+           unless they say otherwise; address2 for the apartment/unit/building, else null),
+  "newVariant": null, or — ONLY for a size or colour change the team said yes to —
+           {"item": the product as ORDER FACTS name it, "from": its variant as ORDER FACTS
+           write it, "to": the variant wanted, written the same way (e.g. "White / 2")}
 }`
 
 export type DraftAddress = ShipTo
-export type Draft = { reply: string | null; needs: string | null; newAddress: DraftAddress | null }
+/** A size or colour swap the drafter read from the conversation, in words. Code finds the ids. */
+export type DraftVariant = { item: string | null; from: string | null; to: string }
+export type Draft = { reply: string | null; needs: string | null; newAddress: DraftAddress | null; newVariant: DraftVariant | null }
 
 const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
 
@@ -180,6 +193,8 @@ export function parseDraft(raw: string): Draft | null {
     let o: Record<string, unknown>
     try { o = JSON.parse(json) } catch { o = JSON.parse(escapeBreaksInStrings(json)) }
     const a = o.newAddress && typeof o.newAddress === 'object' ? (o.newAddress as Record<string, unknown>) : null
+    const v = o.newVariant && typeof o.newVariant === 'object' ? (o.newVariant as Record<string, unknown>) : null
+    const to = v ? str(v.to, 80) : null
     return {
       reply: str(o.reply, 4000),
       needs: str(o.needs, 200),
@@ -190,6 +205,7 @@ export function parseDraft(raw: string): Draft | null {
             zip: str(a.zip, 20), countryCode: (str(a.countryCode, 2) ?? 'US').toUpperCase(),
           }
         : null,
+      newVariant: v && to ? { item: str(v.item, 120), from: str(v.from, 80), to } : null,
     }
   } catch {
     return null
@@ -412,4 +428,85 @@ export function teamInstructions(messages: Array<{ direction: string; fromAddres
   return messages
     .filter((m) => m.direction === 'NOTE' && m.fromAddress && !m.fromAddress.includes('@') && m.body.startsWith(TOLD_MOUSE))
     .map((m) => `${m.fromAddress}: ${m.body.slice(TOLD_MOUSE.length).trim()}`)
+}
+
+/**
+ * Size or colour swaps. 6 Oct 2026, #2297: the customer asked to go from a
+ * size 1 to a size 2, Brandon told Mouse yes, and the reply said "We'll
+ * change your Cleo Tee from White / 1 to White / 2". The button under it
+ * changed the address and sent. Nothing changed the size. Now the drafter
+ * names the swap, code finds the line and the variant, the tap swaps it in
+ * Shopify before the reply goes, and no send goes out claiming a swap the
+ * order does not show.
+ */
+export type DraftSwap = {
+  item: string; from: string; to: string; quantity: number
+  lineItemId: string | null; fromVariantId: string | null; toVariantId: string | null
+  problems: string[]
+}
+
+/** "White / Size 2" and "white/2" read alike. Pure. */
+export function variantKey(s: string | null | undefined): string {
+  return (s ?? '').toLowerCase().replace(/\bsize\s+/g, '').replace(/\s*\/\s*/g, '/').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * The one not-yet-shipped line the swap is about, or why there is not
+ * exactly one. Matched on the product and variant as the order names them,
+ * never a guess between two. Pure.
+ */
+export function pickSwapLine(order: OrderSnapshot | null, want: DraftVariant):
+  { ok: true; line: { id: string; title: string; variant: string | null; variantId: string | null; quantity: number } } | { ok: false; problem: string } {
+  if (!order) return { ok: false, problem: 'No order is matched on this case.' }
+  const open = order.items.filter((i) => i.id && Math.min(i.unfulfilled ?? 0, i.current ?? i.quantity) > 0)
+  const byItem = want.item ? open.filter((i) => i.title.toLowerCase().includes(want.item!.toLowerCase()) || want.item!.toLowerCase().includes(i.title.toLowerCase())) : open
+  const hits = want.from ? byItem.filter((i) => variantKey(i.variant) === variantKey(want.from)) : byItem
+  if (hits.length !== 1) {
+    return { ok: false, problem: hits.length ? `More than one unshipped ${want.item ?? 'item'} matches, so Mouse will not pick one. Change it in Shopify.` : `No unshipped ${[want.item, want.from].filter(Boolean).join(' ')} on ${order.name}.` }
+  }
+  const i = hits[0]
+  return { ok: true, line: { id: i.id!, title: i.title, variant: i.variant, variantId: i.variantId ?? null, quantity: Math.min(i.unfulfilled ?? 0, i.current ?? i.quantity) } }
+}
+
+/** The product's variant the customer wants, by its title. Pure. */
+export function pickTargetVariant(variants: Array<{ id: string; title: string }>, to: string, fromVariantId: string | null):
+  { ok: true; id: string; title: string } | { ok: false; problem: string } {
+  const hits = variants.filter((v) => variantKey(v.title) === variantKey(to))
+  if (hits.length !== 1) return { ok: false, problem: `This product has no ${to}. It comes in: ${variants.map((v) => v.title).join(', ') || 'nothing Shopify listed'}.` }
+  if (hits[0].id === fromVariantId) return { ok: false, problem: `The order already has ${hits[0].title}.` }
+  return { ok: true, id: hits[0].id, title: hits[0].title }
+}
+
+/**
+ * What a reply says an item is changing to: "from White / 1 to White / 2",
+ * "to a size 2". Only variant-shaped targets (with a "/" or a size), so an
+ * address "changed from LA to New York" is not read as one. Pure.
+ */
+export function swapClaims(reply: string): string[] {
+  const text = reply.replace(/\s+/g, ' ')
+  const verb = /\b(?:switch|swap|chang|exchang|siz(?:e|ing) (?:you |it )?up)\w*\b([^.!?]{0,160})/gi
+  const out: string[] = []
+  for (const m of text.matchAll(verb)) {
+    const to = /\bto (?:an? |the )?((?:size \w+)|(?:[\w-]+(?: [\w-]+){0,3} ?\/ ?[\w-]+))/i.exec(m[1])
+    if (to) out.push(to[1].replace(/[,;:]$/, '').trim())
+  }
+  return out
+}
+
+/**
+ * Swaps the reply tells the customer about that the order does not show:
+ * no line still on the order has that variant. Pure.
+ */
+export function swapNotDone(reply: string, order: Pick<OrderSnapshot, 'name' | 'items'> | null): string[] {
+  // Only while something is still waiting to ship: once it has all gone, a
+  // size change is an exchange by return, which this does not judge.
+  const claims = unshippedLines(order).length ? swapClaims(reply) : []
+  if (!claims.length) return []
+  const have = (order?.items ?? []).filter((i) => (i.current ?? i.quantity) > 0).map((i) => variantKey(i.variant))
+  return claims
+    .filter((to) => {
+      const k = variantKey(to)
+      return !have.some((h) => h === k || (!k.includes('/') && h.split('/').pop() === k))
+    })
+    .map((to) => `The reply says an item on ${order?.name ?? 'the order'} changes to ${to}, but Shopify does not show it.`)
 }
