@@ -77,8 +77,14 @@ async function classify(text: string, subject: string | null, order: OrderSnapsh
     let res = await ask(BACKGROUND_MODEL)
     if (res.stop_reason === 'refusal') res = await ask(CHAT_MODEL)
     return parseVerdict(res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join(''))
-  } catch {
+  } catch (e) {
     // No model, no verdict: a person looks at it today rather than nobody.
+    const { isOutOfCredit, warnOutOfCredit, OUT_OF_CREDIT_LOG } = await import('@/lib/mouse/credit')
+    if (isOutOfCredit(e instanceof Error ? e.message : String(e))) {
+      await warnOutOfCredit('sorting support email')
+      const { logIssues } = await import('@/lib/mouse/issues')
+      await logIssues('support', null, [{ kind: 'TURN_UNFINISHED', detail: OUT_OF_CREDIT_LOG }])
+    }
     return { category: 'OTHER', urgency: 'TODAY', summary: null, customerName: null }
   }
 }

@@ -46,7 +46,8 @@ export async function draftForCase(caseId: string): Promise<void> {
   // again once, then left as a note on the case, never silently dropped.
   let d: ReturnType<typeof parseDraft> = null
   let raw = ''
-  for (let attempt = 0; attempt < 2 && !d; attempt++) {
+  let outOfCredit = false
+  for (let attempt = 0; attempt < 2 && !d && !outOfCredit; attempt++) {
     // Sonnet first. The second try, after an unreadable reply or a safety
     // decline on the customer's words, goes to Opus.
     const model = attempt === 0 ? BACKGROUND_MODEL : CHAT_MODEL
@@ -78,8 +79,21 @@ export async function draftForCase(caseId: string): Promise<void> {
     } catch (e) {
       console.error('[support] draft failed', caseId, e)
       raw = ''
+      const { isOutOfCredit } = await import('@/lib/mouse/credit')
+      outOfCredit = isOutOfCredit(e instanceof Error ? e.message : String(e))
     }
     d = parseDraft(raw)
+  }
+  if (!d && outOfCredit) {
+    // Not the draft's fault: say what is actually wrong (6 Oct 2026).
+    const { warnOutOfCredit, OUT_OF_CREDIT_LOG } = await import('@/lib/mouse/credit')
+    await warnOutOfCredit('drafting a support reply')
+    const { logIssues } = await import('@/lib/mouse/issues')
+    await logIssues('support-draft', null, [{ kind: 'TURN_UNFINISHED', detail: OUT_OF_CREDIT_LOG }])
+    const body = "Mouse couldn't draft this one: the Anthropic account it runs on is out of credit. Once it is topped up, tap \"Draft a reply\", or write it yourself."
+    const said = await db.supportMessage.findFirst({ where: { caseId, direction: 'NOTE', body }, select: { id: true } })
+    if (!said) await db.supportMessage.create({ data: { caseId, direction: 'NOTE', body } })
+    return
   }
   if (!d) {
     const body = "Mouse couldn't write a draft for this one. Tap \"Draft a reply\" to try again, or write it yourself."

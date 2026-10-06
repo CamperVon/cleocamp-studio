@@ -22,3 +22,12 @@ test('a refusal with no words falls back to the result itself', () => {
   assert.equal(failureText({ result: { applied: false } }), '{"applied":false}')
   assert.deepEqual(issuesFrom({ stopReason: 'complete', toolCalls: [] }), [])
 })
+
+test('running out of Anthropic credit is logged as that, plainly', async () => {
+  const { isOutOfCredit, OUT_OF_CREDIT_LOG } = await import('../lib/mouse/credit-text')
+  const err = '400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}'
+  assert.equal(isOutOfCredit(err), true)
+  assert.equal(isOutOfCredit('529 overloaded'), false)
+  assert.deepEqual(issuesFrom({ stopReason: 'provider_error', providerError: err, toolCalls: [] }).map((o) => o.detail), [OUT_OF_CREDIT_LOG])
+  assert.deepEqual(issuesFrom({ stopReason: 'provider_error', providerError: '529 overloaded', toolCalls: [] }).map((o) => o.detail), ['The run stopped before finishing (provider_error).'])
+})

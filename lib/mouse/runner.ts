@@ -1,3 +1,4 @@
+import { isOutOfCredit, OUT_OF_CREDIT_TEXT } from './credit-text'
 import type Anthropic from '@anthropic-ai/sdk'
 import { classifyResult, completedWrites, diagnosticValue, type ToolOutcome } from './outcomes'
 
@@ -172,7 +173,11 @@ export async function runLoop(opts: {
     const done = completedWrites(calls).length
     const status = `${reason} before finishing. ${done ? `${done} action${done === 1 ? '' : 's'} completed; the saved changes remain.` : 'No completed changes were recorded.'}${failures ? ` ${failures} action${failures === 1 ? '' : 's'} failed; I have kept the diagnostic details.` : ''} Please continue from here; completed actions should not be repeated.`
     if (!text && said.length) text = said.join('\n\n')
-    text = text ? `${text}\n\n${status}` : status
+    // Out of credit is a bill, not a glitch: say so in words a person acts on.
+    const said2 = stopReason === 'provider_error' && isOutOfCredit(providerError)
+      ? `${OUT_OF_CREDIT_TEXT}${done ? ` (${done} action${done === 1 ? '' : 's'} had already completed and stay saved.)` : ''}`
+      : status
+    text = text ? `${text}\n\n${said2}` : said2
   }
   return { text, writes: completedWrites(calls), toolCalls: calls, model,
     usage: { requests, attemptedRequests, providerError, durationMs: Date.now() - started, stopReason } }

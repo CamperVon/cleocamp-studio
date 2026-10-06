@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
+import { isOutOfCredit, OUT_OF_CREDIT_LOG } from '@/lib/mouse/credit-text'
 
 /**
  * Mouse's troubleshooting log (MouseIssue). Written by code after each run,
@@ -15,11 +16,13 @@ const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…
 export function issuesFrom(run: {
   toolCalls: Array<{ name: string; status: string; input?: unknown; result?: unknown; error?: string }>
   stopReason: string
+  providerError?: string | null
 }): IssueDraft[] {
   const out: IssueDraft[] = run.toolCalls
     .filter((c) => c.status === 'failed')
     .map((c) => ({ kind: 'TOOL_FAILED' as const, tool: c.name, detail: short(failureText(c), 600), input: c.input }))
-  if (run.stopReason !== 'complete') out.push({ kind: 'TURN_UNFINISHED', detail: `The run stopped before finishing (${run.stopReason}).` })
+  if (run.stopReason === 'provider_error' && isOutOfCredit(run.providerError)) out.push({ kind: 'TURN_UNFINISHED', detail: OUT_OF_CREDIT_LOG })
+  else if (run.stopReason !== 'complete') out.push({ kind: 'TURN_UNFINISHED', detail: `The run stopped before finishing (${run.stopReason}).` })
   return out
 }
 

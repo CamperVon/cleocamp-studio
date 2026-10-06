@@ -228,3 +228,14 @@ test('a safety decline is reported as one, not as running out of reasoning', asy
   assert.match(r.text, /safety check declined/)
   assert.doesNotMatch(r.text, /reasoning limit/)
 })
+
+test('out of Anthropic credit says so, not "connection failed"', async () => {
+  const r = await runLoop({ ...base,
+    create: async () => { throw new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}') },
+    execute: async () => ({}),
+  })
+  assert.equal(r.usage.stopReason, 'provider_error')
+  assert.match(r.text, /out of credit/)
+  assert.match(r.text, /console\.anthropic\.com/)
+  assert.doesNotMatch(r.text, /connection failed/)
+})

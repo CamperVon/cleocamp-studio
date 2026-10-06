@@ -489,7 +489,9 @@ export async function runAgent(opts: {
   // 6 Oct 2026). Practice runs change nothing and are not logged.
   if (!opts.practice) {
     const { issuesFrom, logIssues } = await import('@/lib/mouse/issues')
-    await logIssues(opts.source, opts.fromAPerson ? opts.instruction : null, issuesFrom({ toolCalls: result.toolCalls, stopReason: result.usage.stopReason }))
+    const { isOutOfCredit, warnOutOfCredit } = await import('@/lib/mouse/credit')
+    if (result.usage.stopReason === 'provider_error' && isOutOfCredit(result.usage.providerError)) await warnOutOfCredit(opts.source)
+    await logIssues(opts.source, opts.fromAPerson ? opts.instruction : null, issuesFrom({ toolCalls: result.toolCalls, stopReason: result.usage.stopReason, providerError: result.usage.providerError }))
   }
 
   // Bring the forecast and its alerts into line with whatever just changed,
