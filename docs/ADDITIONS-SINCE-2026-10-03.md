@@ -97,7 +97,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** Shopify (order search), the support inbox.
 - **Files:** `lib/support/draft.ts`, `lib/support/reply.ts`, `tests/support-reply.test.ts`
 
-### A size or colour swap is made in Shopify before the reply says so · `d1e50af`
+### A size or colour swap is made in Shopify before the reply says so · `b719ad5`
 - **Problem:** a customer asked to swap an unshipped item to another size, the team said yes, and the drafted reply promised it. The only button under it changed the address and sent the reply. The order still had the old size.
 - **Change:**
   - The reply drafter names the swap (item, from, to). Code finds exactly one unshipped line and the wanted variant of the same product, and stores it with any problems.
