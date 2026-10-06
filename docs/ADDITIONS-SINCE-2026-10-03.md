@@ -308,7 +308,7 @@ What changed after the snapshot, by whether it carries over. Each one has a full
 - **Files:** `lib/mouse/prompt.ts`, `app/ui/chat.tsx`, `app/ui/page-chat.tsx`, `tests/render-mouse.test.ts`
 - **Carries over:** General.
 
-### 6 Oct · (this commit) · Mouse reads invoices and receipts emailed by the team
+### 6 Oct · `5958cdb` · Mouse reads invoices and receipts emailed by the team
 - **Why:** Brandon: "Yes on reading invoices." Mouse could read a PDF or photo attached in the chat, but not one attached to an email. It could only say it couldn't open it.
 - **What:**
   - On email from Brandon, Cleo or Jane, Mouse fetches attached PDFs and photos (JPG, PNG, WEBP) from Resend and reads them as it reads a file in the chat. The limits are the same: three files, each under 4MB, and anything it skipped is named so Mouse says so. Mail sent to Mouse and verified is acted on as usual; mail it was only copied on, or that can't be verified, is still look-ups only.
