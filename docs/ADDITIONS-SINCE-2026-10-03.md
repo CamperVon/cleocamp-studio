@@ -131,10 +131,9 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 
 ## Layout
 
-### Home in the order a person acts · `43c5d29`
-- **Problem:** things that were written and ready (a customer reply, a PO not yet sent) were mixed in with everything else on the home page, below production lists and stats.
-- **Change:** a "Waiting for your yes" card comes first after the chat: each unsent PO, one row each, one tap to where it is sent. Then needs-you alerts, then Mouse's questions, then production and stats. Customer support shows on the home page only when a case is pressing, as one pink line in the alerts; the tab badge counts pressing cases too.
-- **Files:** `app/(main)/page.tsx`
+### Only pressing customer support on the home page · `788e0a6`
+- **Change:** the home page shows customer support only when a case is pressing, as one line in the alerts; everything else waits on the Support page. The tab badge counts pressing cases too.
+- **Files:** `app/(main)/page.tsx`, `app/ui/nav.tsx`
 
 ### One main button per card · `43c5d29`
 - **Problem:** two equally loud buttons on a support card, and the one tapped did less than the reply promised.
