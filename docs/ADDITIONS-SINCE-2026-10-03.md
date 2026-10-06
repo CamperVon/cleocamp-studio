@@ -52,7 +52,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - Each run records, alongside its token usage, the size and a short hash of each block and each section: sizes only, no text.
 - **Files:** `lib/mouse/context.ts` (`splitCatalog`, `buildCatalogParts`, `catalogStats`), `lib/mouse/cache-blocks.ts`, `lib/mouse/agent.ts`, `lib/mouse/runner.ts`, `tests/catalog-split.test.ts`
 
-### Notes as an index in chat, full notes on demand · `HASH`
+### Notes as an index in chat, full notes on demand · `41322f6`
 - **Problem:** every chat turn carried every current note in full (about 14,500 tokens), mostly about records the turn had nothing to do with.
 - **Change:**
   - Chat's catalogue lists notes by subject: how many are current, when the newest was written, and how many were written before the latest count. Notes with no subject stay in full. Background runs keep the full notes, unchanged.
