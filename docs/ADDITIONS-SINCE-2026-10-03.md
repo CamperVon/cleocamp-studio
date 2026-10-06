@@ -52,7 +52,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - Each run records, alongside its token usage, the size and a short hash of each block and each section: sizes only, no text.
 - **Files:** `lib/mouse/context.ts` (`splitCatalog`, `buildCatalogParts`, `catalogStats`), `lib/mouse/cache-blocks.ts`, `lib/mouse/agent.ts`, `lib/mouse/runner.ts`, `tests/catalog-split.test.ts`
 
-### Recipe lines for one colour of a product · `HASH`
+### Recipe lines for one colour of a product · `a7c2e79`
 - **Problem:** a bill-of-materials line could be limited to one size but not one colour, so a lining used only in the black version either charged every colour for it or had its quantity left blank.
 - **Change:** `BomLine.colorway` (nullable; with `size` it means that colour in that size). The forecast counts the line against only the matching variants' sales, the component kickoff after a PO goes out counts only the matching variants ordered, and the recipe tool refuses a colour the product does not have and stores the product's own spelling. Shown as "(Black only)" on the Products page and in the assistant's context.
 - **Files:** `lib/bom.ts` (`lineFits`, `lineScopeLabel`, `matchColorway`), `lib/forecast.ts`, `lib/mouse/component-kickoff.ts`, `lib/mouse/tools.ts` (`update_product_bom`, PO kickoff caller), `lib/mouse/context.ts`, `app/(main)/products/page.tsx`, `prisma/schema.prisma`, migration `20261006230000_bom_line_colorway`, `tests/bom-scope.test.ts`
