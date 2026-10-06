@@ -118,12 +118,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 
 ## Stock and orders
 
-### Orders placed in packs or rolls are counted in single units · `HASH`
+### Orders placed in packs or rolls are counted in single units · `3db36c4`
 - **Problem:** a PO ordered stickers by the roll ("6 roll (500/roll)") while stock counts single stickers. Every figure that read the order took 6 rolls as 6 stickers: the forecast said 6 on order and short, and when 3,000 stickers arrived the receipt was refused as more than the order owed.
 - **Change:** a PO line's quantity is converted to the component's counting unit, using the pack size the line states ("500/roll") or the component's own purchase unit and units per purchase unit. What a PO still owes, receipts, reversals and the incoming figure the forecast uses all go through it. A line with no conversion is read as it is, as before.
 - **Files:** `lib/po-units.ts`, `lib/po-receipts.ts`, `lib/forecast.ts`, `tests/po-units.test.ts`
 
-### Recipe lines for one size only · `HASH`
+### Recipe lines for one size only · `3db36c4`
 - **Problem:** a component used only by one size of a product (a size 2 label on size 2 garments) could only be recorded for the whole product, so stock and the forecast could not tell sizes apart.
 - **Change:** a recipe line can carry a size. The forecast works out that line's usage from that size's sales only. Mouse can set it, and sees "(size 2 only)" in its context.
 - **Files:** `prisma/schema.prisma` (`BomLine.size`), `lib/forecast.ts`, `lib/mouse/tools.ts` (`update_product_bom`), `lib/mouse/context.ts`
