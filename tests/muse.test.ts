@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ASK_TEAM, checkQuestion, checkReport, museAuthorized, readAnswer, taskForMuse } from '../lib/muse'
+import { ASK_TEAM, checkQuestion, checkReport, museAuthorized, museKey, readAnswer, taskForMuse } from '../lib/muse'
 
 const KEY = 'k'.repeat(40)
 
@@ -11,6 +11,15 @@ test('the Muse API answers only its own key, and is off without one', () => {
   assert.equal(museAuthorized(null, KEY), false)
   assert.equal(museAuthorized(`Bearer ${KEY}`, undefined), false) // no key set: off
   assert.equal(museAuthorized('Bearer short', 'short'), false) // a weak key never works
+})
+
+test('harmless variations of the right key still work; a wrong key still does not', () => {
+  assert.equal(museAuthorized(`bearer ${KEY}`, KEY), true)
+  assert.equal(museAuthorized(`Bearer   ${KEY}  `, KEY), true)
+  assert.equal(museAuthorized(null, KEY, ` ${KEY}\n`), true) // X-API-Key
+  assert.equal(museAuthorized(null, museKey(`${KEY}\n`), KEY), true) // a line break pasted into Vercel
+  assert.equal(museAuthorized(null, KEY, `${KEY}x`), false)
+  assert.equal(museAuthorized('Basic abc', KEY), false)
 })
 
 test('a question must be text, and not too long', () => {

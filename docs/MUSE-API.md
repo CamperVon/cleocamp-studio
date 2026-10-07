@@ -7,11 +7,13 @@ questions, and post a report. You cannot change anything else in the app.
 ## Access
 
 - Base address: `https://admin.cleocamp.com/api/muse`
-- Every request carries `Authorization: Bearer <key>`. The key is given to you
-  separately; keep it in secure storage.
+- Every request carries `Authorization: Bearer <key>` (or, if that is
+  awkward, `X-API-Key: <key>`). The key is given to you separately; keep it in
+  secure storage.
 - JSON in and out, over HTTPS. Requests are capped at 4.5 MB.
 - Poll every 30 minutes, or when asked. Nothing is pushed to you.
-- `401` means the key is wrong. `503` means the team has switched the API off.
+- `401` means the key does not match. `503` means the team has switched the
+  API off, or the key set on our side is too short; the message says which.
 
 ## 1. List open tasks
 

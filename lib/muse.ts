@@ -40,12 +40,25 @@ export const LIMITS = {
 
 const digest = (s: string) => createHash('sha256').update(s).digest()
 
-/** Is this the request's key Muse's? False when no key is set. Pure apart from the env. */
-export function museAuthorized(header: string | null, key = process.env.MUSE_API_KEY): boolean {
-  if (!key || key.length < 32 || !header) return false
-  const m = /^Bearer\s+(.+)$/.exec(header.trim())
-  if (!m) return false
-  return timingSafeEqual(digest(m[1].trim()), digest(key))
+/**
+ * The key as set in Vercel, with any space or line break a paste picked up
+ * taken off (the first live test, 7 Oct 2026, got a 401 with the key sent).
+ */
+export function museKey(raw = process.env.MUSE_API_KEY): string {
+  return (raw ?? '').trim()
+}
+
+/**
+ * Is this request's key Muse's? Either `Authorization: Bearer <key>` (any
+ * case of "Bearer") or `X-API-Key: <key>`, spaces trimmed. False when no key
+ * of at least 32 characters is set. Pure apart from the env.
+ */
+export function museAuthorized(header: string | null, key = museKey(), apiKeyHeader: string | null = null): boolean {
+  if (key.length < 32) return false
+  const bearer = header ? /^bearer\s+(.+)$/i.exec(header.trim())?.[1] : undefined
+  const given = (bearer ?? apiKeyHeader ?? '').trim()
+  if (!given) return false
+  return timingSafeEqual(digest(given), digest(key))
 }
 
 // ── What Muse sends: checked before anything is stored ────────
