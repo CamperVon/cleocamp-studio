@@ -243,6 +243,11 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Change:** `create_component` takes the product (and colour or size) it goes into and adds the recipe line in the same step, quantity unknown unless given; without one, it tells the assistant to ask. The assistant's context marks every non-packaging component on no product and lists them each turn, telling it to ask rather than guess. The daily email carries a line while any has sat on no product for over a day.
 - **Files:** `lib/mouse/tools.ts` (`create_component`), `lib/bom.ts` (`onNoProduct`), `lib/mouse/context.ts`, `lib/mouse/daily-cheese.ts`, `tests/on-no-product.test.ts`
 
+### A recipe line per size or colour · `HASH`
+- **Problem:** a product's recipe held one line per component, so a material used in different amounts by size (3.44 sq ft of leather in the small bag, 4.48 in the larger) could not be recorded: the second figure overwrote the first. The forecast also read only the first line it found.
+- **Change:** one line per component per size and colour (unique index `NULLS NOT DISTINCT`, so two all-variants lines still clash). The recipe tool finds a line by component and scope, turns an all-variants placeholder with no amount into the scoped line, and refuses to put an all-variants line with an amount beside a scoped one, since that would count those variants twice. The forecast adds every line for a component, each over the variants it fits. The assistant is told that leather "feet" means square feet and to use invoice square feet per skin as the estimate when converting.
+- **Files:** `prisma/schema.prisma`, `prisma/migrations/20261007200000_bom_line_per_scope`, `lib/bom.ts` (`pickBomLine`), `lib/mouse/tools.ts` (`update_product_bom`), `lib/forecast.ts`, `lib/mouse/prompt.ts`, `tests/bom-lines.test.ts`
+
 ---
 
 ## Wholesale

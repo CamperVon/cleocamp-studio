@@ -379,7 +379,10 @@ model BomLine {
   parentComponent Component? @relation("ComponentBom", fields: [parentComponentId], references: [id], onDelete: Cascade)
   component       Component  @relation("BomComponent", fields: [componentId], references: [id])
 
-  @@unique([parentProductId, componentId])
+  // One line per component per size and colour (Brandon, 7 Oct 2026: the
+  // Bean Bag takes 3.44 sq ft Petite, 4.48 Medium). In the database the
+  // index is NULLS NOT DISTINCT, so two all-variants lines still clash.
+  @@unique([parentProductId, componentId, size, colorway])
   @@unique([parentComponentId, componentId])
 }
 

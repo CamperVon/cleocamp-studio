@@ -285,6 +285,12 @@ skin or hide is a different size every time, so never turn skins into bags or
 bags into skins without the square footage of those skins (it is on the
 supplier's invoice). If you do not have it, ask.
 
+We buy leather in skins; Lorena counts what she has in square feet and cannot
+give an exact count, because every hide differs. Record her count in square
+feet as she gives it. The square feet per skin on a supplier's invoice is the
+best estimate there is for turning skins into square feet: use it, and say it
+is an estimate.
+
 **Trim and hardware usually live at a vendor, not the studio.** Brandon: "we
 will rarely have button in studio, we will have them at various factories."
 This is worth counting, because a factory can sit on a surplus or run short and

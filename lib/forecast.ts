@@ -256,15 +256,19 @@ export async function recomputeForecasts() {
     // year 2162. A date built on part of the usage is worse than no date.
     const unknownQty: string[] = []
     for (const p of usedIn) {
-      const line = p.bomLines.find((b) => b.componentId === c.id)!
-      const qty = Number(line.qtyPerUnit)
-      if (qty === 0) {
-        if ((productDemand.get(p.id) ?? 0) > 0) unknownQty.push(p.name)
-        continue
+      // One component can have several lines on a product, one per size or
+      // colour (the Bean Bag: 3.44 sq ft Petite, 4.48 sq ft Medium). Each
+      // counts only the variants it fits.
+      for (const line of p.bomLines.filter((b) => b.componentId === c.id)) {
+        const qty = Number(line.qtyPerUnit)
+        if (qty === 0) {
+          if ((productDemand.get(p.id) ?? 0) > 0 && !unknownQty.includes(p.name)) unknownQty.push(p.name)
+          continue
+        }
+        perDay += (line.size || line.colorway
+          ? p.variants.filter((v) => lineFits(line, v)).reduce((n, v) => n + (variantRate.get(v.id) ?? 0), 0)
+          : (productDemand.get(p.id) ?? 0)) * qty
       }
-      perDay += (line.size || line.colorway
-        ? p.variants.filter((v) => lineFits(line, v)).reduce((n, v) => n + (variantRate.get(v.id) ?? 0), 0)
-        : (productDemand.get(p.id) ?? 0)) * qty
     }
     // Nothing known at all: no rate, no date, nothing misleading — as before.
     if (perDay <= 0) continue

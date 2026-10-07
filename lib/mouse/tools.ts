@@ -1,4 +1,4 @@
-import { matchColorway } from '@/lib/bom'
+import { BomRefusal, lineScopeLabel, matchColorway, pickBomLine } from '@/lib/bom'
 import { currentActor } from '@/lib/mouse/actor'
 import type Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
@@ -1322,7 +1322,9 @@ export const TOOLS: Record<string, Tool> = {
         'Set what goes into one unit of a product — as many lines as you need, in one ' +
         'call. Adds a component that was missing, changes a quantity, and takes off a line ' +
         'that should not be there, all in the same motion; do not make a separate call per ' +
-        'line. Only ever with real figures you were actually given — never an estimate. ' +
+        'line. One component can take a different amount per size or colour: give one line ' +
+        'per size or colour in the same call (Bean Bag leather: 3.44 sq ft size Petite, 4.48 ' +
+        'size Medium). Only ever with real figures you were actually given — never an estimate. ' +
         'Removing a line means this product genuinely does not use that component. If ' +
         'instead one component turned out to be another under a second name, use ' +
         'merge_component, which repoints every product at once rather than product by ' +
@@ -1369,12 +1371,12 @@ export const TOOLS: Record<string, Tool> = {
       if (!set.length && !remove.length) return { error: 'Nothing to do — give set, remove, or both.' }
       // A colour the product does not have would quietly match no variant and
       // count for nothing. Refuse it and say which colours there are.
-      const colourOf = new Map<string, string | null>()
-      for (const l of set) {
+      const colourOf = new Map<number, string | null>()
+      for (const [n, l] of set.entries()) {
         if (typeof l.colorway !== 'string' || !l.colorway.trim()) continue
         const own = matchColorway(l.colorway, product.colorways)
         if (!own) return { error: `${product.name} has no colour "${l.colorway}". Its colours: ${product.colorways.map((c) => c.customerName).join(', ') || 'none recorded'}. Nothing changed.` }
-        colourOf.set(l.componentId, own)
+        colourOf.set(n, own)
       }
 
       // Naming both sides of the same component is a contradiction, not an
@@ -1395,32 +1397,43 @@ export const TOOLS: Record<string, Tool> = {
       return db.$transaction(async (tx) => {
         const added: string[] = []
         const changed: string[] = []
-        for (const line of set) {
-          const existing = await tx.bomLine.findFirst({
+        for (const [n, line] of set.entries()) {
+          // A component can have one line per size and colour (Brandon,
+          // 7 Oct 2026: the Bean Bag takes 3.44 sq ft of leather Petite and
+          // 4.48 Medium; until then the second figure overwrote the first).
+          // A line is found by component AND scope; scope left out means the
+          // one line there is, as before.
+          const lines = await tx.bomLine.findMany({
             where: { parentProductId: productId, componentId: line.componentId },
-            select: { id: true, qtyPerUnit: true },
+            select: { id: true, qtyPerUnit: true, size: true, colorway: true },
           })
+          const scoped = typeof line.size === 'string' || typeof line.colorway === 'string'
+          const size = typeof line.size === 'string' ? line.size.trim() || null : null
+          const colorway = typeof line.colorway === 'string' ? colourOf.get(n) ?? null : null
+          const name = byId.get(line.componentId)!.name
+          const pick = pickBomLine(lines, scoped, size, colorway)
+          if ('error' in pick) throw new BomRefusal(`${product.name}, ${name}: ${pick.error} Nothing changed.`)
+          const existing = pick.line
           // 0 is "not known yet" throughout this codebase — shown as unknown,
           // counted as a gap, and skipped by the forecaster rather than taken
           // as zero demand. An omitted quantity records the line honestly
           // instead of refusing to record it at all.
           const qty = line.qtyPerUnit != null && line.qtyPerUnit > 0 ? line.qtyPerUnit : 0
-          const show = (n: number) => (n === 0 ? 'unknown' : String(n))
+          const show = (v: number) => (v === 0 ? 'unknown' : String(v))
           const data = {
             parentProductId: productId, componentId: line.componentId,
             qtyPerUnit: String(qty), notes: line.notes ?? null,
-            ...(typeof line.size === 'string' ? { size: line.size.trim() || null } : {}),
-            ...(typeof line.colorway === 'string' ? { colorway: colourOf.get(line.componentId) ?? null } : {}),
+            ...(scoped ? { size, colorway } : {}),
           }
-          const name = byId.get(line.componentId)!.name
+          const label = `${name}${lineScopeLabel(scoped ? { size, colorway } : existing ?? { size: null, colorway: null })}`
           if (existing) {
             await tx.bomLine.update({ where: { id: existing.id }, data })
             if (Number(existing.qtyPerUnit) !== qty) {
-              changed.push(`${name} ${show(Number(existing.qtyPerUnit))} → ${show(qty)}`)
+              changed.push(`${label} ${show(Number(existing.qtyPerUnit))} → ${show(qty)}`)
             }
           } else {
             await tx.bomLine.create({ data })
-            added.push(qty === 0 ? `${name} (quantity not known yet)` : `${name} ×${qty}`)
+            added.push(qty === 0 ? `${label} (quantity not known yet)` : `${label} ×${qty}`)
           }
         }
         const dropped: string[] = []
@@ -1440,6 +1453,9 @@ export const TOOLS: Record<string, Tool> = {
             ? `${product.name}: ${parts.join('; ')}.`
             : `${product.name}'s bill of materials was already exactly that — nothing changed.`,
         }
+      }).catch((e) => {
+        if (e instanceof BomRefusal) return { error: e.message }
+        throw e
       })
     },
   },
