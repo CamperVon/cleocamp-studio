@@ -246,9 +246,14 @@ export async function recomputeForecasts() {
   }
 
   // ── Components ────────────────────────────────────────────
+  // Shipping supplies: what shipping actually used, from the nightly packing
+  // deduction (lib/packing.ts), not the recipe. The two would count the same
+  // boxes and newsprint twice, and mailers, envelopes and tape are on no recipe.
+  const { packingRates } = await import('@/lib/packing')
+  const packed = await packingRates().catch(() => new Map<string, number>())
   for (const c of components) {
-    const usedIn = products.filter((p) => p.bomLines.some((b) => b.componentId === c.id))
-    let perDay = 0
+    const usedIn = packed.has(c.id) ? [] : products.filter((p) => p.bomLines.some((b) => b.componentId === c.id))
+    let perDay = packed.get(c.id) ?? 0
     // Products that are selling and use this, with no quantity per unit on
     // file (0 means unknown). Leaving them out used to make the rate quietly
     // too low: on 24 Sept 2026 only the Story Dress counted toward size

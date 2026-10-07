@@ -98,6 +98,16 @@ export async function GET(req: NextRequest) {
     }
   })
 
+  // Shipping supplies used by what shipped, taken off the studio's stock, so
+  // the alerts below can say when mailers and the rest will run out
+  // (Brandon, 7 Oct 2026; lib/packing.ts). Before the alerts, after the sync.
+  await step('packing', async () => {
+    if (!shopifyConfigured()) return { skipped: 'not connected' }
+    const { deductPacking } = await import('@/lib/packing')
+    const r = await deductPacking({ dryRun })
+    return { days: r.days.length ? `${r.days[0]}..${r.days.at(-1)}` : 'none', packages: r.orders, entries: r.written.length, ...(r.skipped ? { skipped: r.skipped } : {}) }
+  })
+
   // Anything that went on sale in Shopify joins the wholesale line sheet,
   // with a question for whatever it cannot print without.
   await step('lineSheet', async () => {

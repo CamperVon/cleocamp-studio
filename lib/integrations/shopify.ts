@@ -213,6 +213,67 @@ export async function fetchSoldLines(sinceISO: string): Promise<SoldLine[]> {
   return out
 }
 
+export type ShippedOrder = { name: string; shippedOn: string; items: Array<{ variantId: string; title: string; quantity: number }> }
+
+type RawFulfillment = { createdAt: string; status: string; fulfillmentLineItems: { nodes: Array<{ quantity: number; lineItem: { title: string; requiresShipping: boolean; variant: { id: string } | null } }> } }
+
+/**
+ * Packages from one order: one per successful fulfilment on or after a LA day,
+ * with the items in it that needed shipping. Wholesale orders are left out
+ * (they go in cartons); gifts are in, packed like any order. An order sent in
+ * two goes in two packages (#2316, 9 and 22 Sept 2026). Pure.
+ */
+export function packagesFrom(o: { name: string; cancelledAt: string | null; tags: string[] | null; fulfillments: RawFulfillment[] | null }, sinceDay: string): ShippedOrder[] {
+  if (o.cancelledAt) return []
+  if ((o.tags ?? []).some((t) => t.toLowerCase() === 'wholesale')) return []
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' })
+  const out: ShippedOrder[] = []
+  for (const f of o.fulfillments ?? []) {
+    if (f.status !== 'SUCCESS') continue
+    const shippedOn = fmt.format(new Date(f.createdAt))
+    if (shippedOn < sinceDay) continue
+    const items = f.fulfillmentLineItems.nodes
+      .filter((li) => li.lineItem.requiresShipping !== false && li.quantity > 0)
+      .map((li) => ({ variantId: li.lineItem.variant?.id ?? '', title: li.lineItem.title, quantity: li.quantity }))
+    if (items.length) out.push({ name: o.name, shippedOn, items })
+  }
+  return out
+}
+
+/**
+ * Packages the studio shipped on or after a LA day, for the packing deduction
+ * (lib/packing.ts). Asks for every order changed since that day, since a
+ * fulfilment changes its order, and keeps the fulfilments themselves by date.
+ * (A search for "shipped OR partial" was read by Shopify differently and lost
+ * most of them: 12 of 163, 7 Oct 2026.) Read-only.
+ */
+export async function fetchShippedOrders(sinceDay: string): Promise<ShippedOrder[]> {
+  const out: ShippedOrder[] = []
+  let cursor: string | null = null
+  do {
+    const d: any = await withRetry(() =>
+      shopifyGraphQL(
+        `query($cursor: String, $q: String!) {
+          orders(first: 40, after: $cursor, query: $q, sortKey: UPDATED_AT) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              name cancelledAt tags
+              fulfillments(first: 10) {
+                createdAt status
+                fulfillmentLineItems(first: 50) { nodes { quantity lineItem { title requiresShipping variant { id } } } }
+              }
+            }
+          }
+        }`,
+        { cursor, q: `updated_at:>=${sinceDay}` },
+      ),
+    )
+    for (const o of d.orders.nodes) out.push(...packagesFrom(o, sinceDay))
+    cursor = d.orders.pageInfo.hasNextPage ? d.orders.pageInfo.endCursor : null
+  } while (cursor)
+  return out
+}
+
 /** Shopify throttles on a cost budget; back off rather than failing the sync. */
 async function withRetry<T>(fn: () => Promise<T>, tries = 5): Promise<T> {
   for (let i = 0; ; i++) {

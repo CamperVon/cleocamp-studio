@@ -272,6 +272,18 @@ know that."
 
 ## Stock
 
+**Shipping supplies come off as orders ship.** Every night code takes what the
+day's shipped packages used off the studio's stock (Brandon, 7 Oct 2026), by
+these rules, per package: each Cleo Bag one shipping box and two sheets of
+newsprint; each Bean Bag one Kraft mailer and one sheet of newsprint;
+everything else in the package together, 1-3 items one Kraft mailer, 4-5 one
+large envelope, 6 or more one box; one Moo postcard; a 25th of a roll of tape.
+Tees reach the studio already in glassine from Antonio's, with no newsprint,
+kraft paper or tissue; tissue is a specialty item only. These entries say
+"Packing use for" a day and are estimates, so a count by a person is the last
+word and deductions start again from it. When the forecast says a supply runs
+low, say so early; ask Jane for a count when an estimate has run for weeks.
+
 **Inventory means finished products.** Not work in progress, not goods at the
 dye house. Fabric and leather are components: usually bought per run and
 shipped straight to the maker, and counted where they sit like any other

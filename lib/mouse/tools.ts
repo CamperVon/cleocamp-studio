@@ -62,7 +62,7 @@ function asksForFiguresToBeRecorded(title: string): boolean {
  * together or the two disagree. onHandQty is a materialized sum of the ledger
  * and has to stay recomputable from it. See CLAUDE.md §3.
  */
-async function writeEvent(args: {
+export async function writeEvent(args: {
   componentId?: string
   productVariantId?: string
   deltaQty?: number
@@ -71,6 +71,8 @@ async function writeEvent(args: {
   note?: string
   locationId?: string
   atVendorId?: string
+  /** SYSTEM for code's own entries (the nightly packing deduction); chat otherwise. */
+  source?: 'CHAT' | 'SYSTEM'
 }) {
   // deltaQty was typed as always-present and the input schema listed it as
   // required, but the tool's own description tells the model to give
@@ -126,7 +128,7 @@ async function writeEvent(args: {
         data: {
           componentId: args.componentId, deltaQty: String(resolvedDelta),
           countedQty: args.countedQty === undefined ? null : String(args.countedQty),
-          type: args.type as never, source: 'CHAT', note: args.note ?? null, createdById: currentActor(),
+          type: args.type as never, source: args.source ?? 'CHAT', note: args.note ?? null, createdById: currentActor(),
           locationId, atVendorId,
         },
       })
