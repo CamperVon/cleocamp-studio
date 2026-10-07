@@ -199,6 +199,19 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
   const waiting = await db.supportCase.count({ where: { status: 'OPEN', category: { not: 'SPAM' }, draftReply: { not: null } } })
   // The weekly review's suggestions (Monday), until someone taps them.
   const looksDone = await db.actionItem.count({ where: { resolved: false, closeSuggestion: { not: null } } })
+  // Components on no product never show on Products and the forecast cannot
+  // count them (Brandon, 7 Oct 2026: "make sure this never happens again").
+  // A day's grace, so one added this afternoon is not a fault by morning.
+  const orphans = await db.component.count({
+    where: { active: true, category: { not: 'PACKAGING' }, usedIn: { none: {} }, createdAt: { lt: new Date(Date.now() - DAY) } },
+  })
+  if (orphans) {
+    out.unshift({
+      on: today, tag: 'SET UP',
+      sentence: `${orphans} component${orphans === 1 ? ' is' : 's are'} on no product, so ${orphans === 1 ? 'it does' : 'they do'} not show on Products. Say which product each goes into.`,
+      href: `${APP}/components`,
+    })
+  }
   if (looksDone) {
     out.unshift({
       on: today, tag: 'TIDY',

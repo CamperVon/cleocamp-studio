@@ -1512,11 +1512,28 @@ export const TOOLS: Record<string, Tool> = {
   create_component: {
     def: {
       name: 'create_component',
-      description: 'Add a material, trim, hardware item or packaging supply.',
+      description:
+        'Add a material, trim, hardware item or packaging supply. When it goes into a product, ' +
+        'say which with forProduct, in this same call: a component on no product never shows ' +
+        'on Products and the forecast cannot count it. On 2 and 6 Oct 2026, 16 leathers, suedes ' +
+        'and silks were added named for their products ("Black leather (Bean Bag)") and put on ' +
+        'none. Leave forProduct out only for packaging or when nobody has said which product; ' +
+        'then ask.',
       input_schema: {
         type: 'object',
         properties: {
           name: str('What Cleo calls it'),
+          forProduct: {
+            type: 'object' as const,
+            description: 'The product it goes into, added to that product\'s recipe now. qtyPerUnit only if someone gave it; left out, it reads as unknown.',
+            properties: {
+              productId: str('Product id'),
+              colorway: str('Only when just one colour of the product uses it, as the product\'s colours spell it'),
+              size: str('Only when just one size uses it'),
+              qtyPerUnit: num('How much one finished unit takes, if known'),
+            },
+            required: ['productId'],
+          },
           category: { type: 'string' as const, enum: ['MATERIAL', 'TRIM', 'HARDWARE', 'PACKAGING', 'SUBASSEMBLY'] },
           unitOfMeasure: str('How it is used, e.g. yard, button, tag'),
           stockedInStudio: {
@@ -1540,11 +1557,32 @@ export const TOOLS: Record<string, Tool> = {
         required: ['name', 'category', 'unitOfMeasure'],
       },
     },
-    run: async (i) =>
-      db.component.create({
+    run: async ({ forProduct, ...i }) => {
+      const fp = forProduct as { productId: string; colorway?: string; size?: string; qtyPerUnit?: number } | undefined
+      // Checked before anything is written: a wrong product or colour is an
+      // error, never a component left on nothing.
+      if (fp) {
+        const p = await db.product.findUnique({ where: { id: fp.productId }, select: { name: true, colorways: { select: { customerName: true } } } })
+        if (!p) return { error: `No product ${fp.productId}. Nothing was added.` }
+        if (fp.colorway?.trim() && !matchColorway(fp.colorway, p.colorways)) {
+          return { error: `${p.name} has no colour "${fp.colorway}". Its colours: ${p.colorways.map((c) => c.customerName).join(', ') || 'none recorded'}. Nothing was added.` }
+        }
+      }
+      const c = await db.component.create({
         data: { ...i, stockedInStudio: i.stockedInStudio ?? i.category === 'PACKAGING' },
         select: { id: true, name: true },
-      }),
+      })
+      if (!fp) {
+        return i.category === 'PACKAGING'
+          ? c
+          : { ...c, onNoProduct: true, tellTheUser: `Added ${c.name}. It is on no product yet, so it will not show on Products: ask which product it goes into.` }
+      }
+      const bom = await TOOLS.update_product_bom.run({
+        productId: fp.productId,
+        set: [{ componentId: c.id, qtyPerUnit: fp.qtyPerUnit, colorway: fp.colorway, size: fp.size }],
+      })
+      return { ...c, recipe: bom }
+    },
   },
 
   create_product: {

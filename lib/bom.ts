@@ -25,3 +25,13 @@ export function lineScopeLabel(line: LineScope): string {
 export function matchColorway(name: string, colorways: Array<{ customerName: string }>): string | null {
   return colorways.find((c) => same(c.customerName, name))?.customerName ?? null
 }
+
+/**
+ * A component that goes into no product: it never shows on Products and the
+ * forecast cannot count it. Packaging is meant to sit on no product. Brandon,
+ * 7 Oct 2026, after 16 leathers and silks sat like this unnoticed: "make sure
+ * this never happens again." Pure.
+ */
+export function onNoProduct(c: { category: string; _count: { usedIn: number } }): boolean {
+  return c.category !== 'PACKAGING' && c._count.usedIn === 0
+}

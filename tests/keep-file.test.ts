@@ -52,7 +52,9 @@ test('with no chat thread at all, nothing is looked up and nothing is saved', as
 test("a file sent in the current thread is kept, with its title, notes and links", async () => {
   const k = fakeKeep()
   const r = await keepChatFile('mine', { title: 'Calamo card', notes: 'Our colours marked', links: [{ kind: 'vendor', id: 'v1' }] },
-    { find: async (t) => [file(t, 'card.pdf', 2, 'MINE'), file('other', 'card.pdf', 1, 'OTHER')], keep: k.keep })
+    // keepChatFile checks against the real clock, so these are minutes before
+    // now, not before the fixed `now` above (which went stale at 18:30Z).
+    { find: async (t) => [{ ...file(t, 'card.pdf', 0, 'MINE'), createdAt: new Date(Date.now() - 2 * 60_000) }, { ...file('other', 'card.pdf', 0, 'OTHER'), createdAt: new Date(Date.now() - 60_000) }], keep: k.keep })
   assert.equal(r.kept, true)
   assert.equal(k.calls.length, 1)
   assert.equal(k.calls[0].base64, 'MINE')

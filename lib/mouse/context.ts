@@ -1,4 +1,4 @@
-import { lineScopeLabel } from '@/lib/bom'
+import { lineScopeLabel, onNoProduct } from '@/lib/bom'
 import { createHash } from 'node:crypto'
 import { renderNotesFull, renderNotesIndex } from '@/lib/mouse/notes'
 import { db } from '@/lib/db'
@@ -32,7 +32,7 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index' } = {}): Pro
       // A retired record (merged, split, discontinued) is history, not stock.
       where: { active: true },
       orderBy: { name: 'asc' },
-      include: { vendor: true, locationStock: { include: { location: true, atVendor: true } } },
+      include: { vendor: true, locationStock: { include: { location: true, atVendor: true } }, _count: { select: { usedIn: true } } },
     }),
     db.vendor.findMany({ orderBy: { name: 'asc' } }),
     db.location.findMany({ orderBy: { name: 'asc' } }),
@@ -174,7 +174,14 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index' } = {}): Pro
       .filter((s) => Number(s.qty) !== 0)
       .map((s) => `${s.qty} at ${s.location?.name ?? s.atVendor?.name ?? 'unknown place'}`)
     const stock = `${c.onHandQty} on hand${places.length ? ` (${places.join(', ')})` : ''}${c.stockedInStudio ? '' : ' · bought per run'}`
-    L.push(`- ${c.name} [${c.id}] · ${c.category} · ${c.vendor?.name ?? 'no vendor'}${c.vendorSku ? ` · style ${c.vendorSku}` : ''} · ${money(c.unitCostCents)}/${c.unitOfMeasure} · lead time ${c.leadTimeDays === null ? 'UNKNOWN' : c.leadTimeDays + 'd'} · ${stock}${Number(c.incomingQty) > 0 ? `, ${c.incomingQty} incoming` : ''}`)
+    L.push(`- ${c.name} [${c.id}] · ${c.category} · ${c.vendor?.name ?? 'no vendor'}${c.vendorSku ? ` · style ${c.vendorSku}` : ''} · ${money(c.unitCostCents)}/${c.unitOfMeasure} · lead time ${c.leadTimeDays === null ? 'UNKNOWN' : c.leadTimeDays + 'd'} · ${stock}${Number(c.incomingQty) > 0 ? `, ${c.incomingQty} incoming` : ''}${onNoProduct(c) ? ' · ON NO PRODUCT' : ''}`)
+  }
+  // Brandon, 7 Oct 2026, finding 16 leathers and silks on no product: "make
+  // sure this never happens again." Said out loud every turn until fixed.
+  const orphans = components.filter(onNoProduct)
+  if (orphans.length) {
+    L.push(`\n${orphans.length} component${orphans.length === 1 ? ' is' : 's are'} on no product, so ${orphans.length === 1 ? 'it does' : 'they do'} not show on Products and the forecast cannot count ${orphans.length === 1 ? 'it' : 'them'}: ${orphans.map((c) => c.name).join('; ')}. ` +
+      'When one comes up, or the person has a moment, ask which product it goes into and put it there with update_product_bom (quantity unknown is fine). Never guess the product.')
   }
 
   // A purchase order line names a component, or a variant, or neither — the
