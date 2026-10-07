@@ -52,7 +52,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - Each run records, alongside its token usage, the size and a short hash of each block and each section: sizes only, no text.
 - **Files:** `lib/mouse/context.ts` (`splitCatalog`, `buildCatalogParts`, `catalogStats`), `lib/mouse/cache-blocks.ts`, `lib/mouse/agent.ts`, `lib/mouse/runner.ts`, `tests/catalog-split.test.ts`
 
-### keep_file scoped to the chat it was called from · `HASH`
+### keep_file scoped to the chat it was called from · `78749e8`
 - **Problem:** `keep_file` picked the newest chat attachment in the whole app, so with two conversations going it could keep someone else's file, and any run with the default tool set could call it.
 - **Change:** it only chooses an attachment sent in the calling chat thread (still the last half hour, still by filename when several), and with no eligible one saves nothing and asks for the file again. Tools listed in `CHAT_ONLY_TOOLS` are given only to a run that has a chat thread (`toolsFor`), so background, email, in-flight and to-do runs never see it; called without a thread it refuses. The Files upload form gained a Notes field that is saved with the file.
 - **Files:** `lib/files.ts` (`chooseChatAttachment`, `keepChatFile`, `uploadFromForm`, `storedFileData`), `lib/mouse/tools.ts` (tool context), `lib/mouse/agent.ts` (`CHAT_ONLY_TOOLS`, `toolsFor`, `chatThreadId`), `app/api/files/route.ts`, `app/(main)/files/file-controls.tsx`, `tests/keep-file.test.ts`
