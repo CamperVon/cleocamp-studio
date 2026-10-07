@@ -71,7 +71,100 @@ export function checkQuestion(body: unknown): { question: string } | { error: st
 }
 
 export type MuseSource = { name: string; url: string; price: string | null; currency: string | null; unit: string | null; notes: string | null }
-export type CheckedReport = { summary: string; report: string; sources: MuseSource[]; pdf: string | null }
+/**
+ * One useful find set against what we pay now (Brandon, 7 Oct 2026: "give us
+ * a report that directly compares costs ... so we don't have to go look at
+ * POs"). componentId points at one of the task's `ourCosts`, so our side of
+ * the comparison comes from our own records, not Muse's restatement of them.
+ */
+export type MuseComparison = {
+  componentId: string | null; item: string; source: string; url: string | null
+  price: number; currency: string; unit: string; landedPrice: number | null; notes: string | null
+}
+export type CheckedReport = { summary: string; report: string; sources: MuseSource[]; comparisons: MuseComparison[]; pdf: string | null }
+
+const num = (v: unknown): number | null => {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v.replace(/[$,\s]/g, '')) : NaN
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+/** The comparisons in a report, checked. Pure. */
+export function checkComparisons(raw: unknown): MuseComparison[] | { error: string } {
+  if (raw === undefined || raw === null) return []
+  if (!Array.isArray(raw)) return { error: '"comparisons" must be a list.' }
+  if (raw.length > LIMITS.sources) return { error: `At most ${LIMITS.sources} comparisons.` }
+  const out: MuseComparison[] = []
+  for (const [i, c] of (raw as Array<Record<string, unknown>>).entries()) {
+    const at = `comparisons[${i}]`
+    const item = field(c?.item, 200)
+    const source = field(c?.source, 200)
+    const price = num(c?.price)
+    const unit = field(c?.unit, 40)
+    const currency = (field(c?.currency, 3) ?? 'USD').toUpperCase()
+    const url = field(c?.url, LIMITS.sourceFieldChars)
+    if (!item || !source) return { error: `${at} needs "item" and "source".` }
+    if (price === null) return { error: `${at} needs "price" as a number per unit.` }
+    if (!unit) return { error: `${at} needs "unit" (yard, sq ft, hide…).` }
+    if (!/^[A-Z]{3}$/.test(currency)) return { error: `${at} "currency" is a 3-letter code like USD.` }
+    if (url && !/^https?:\/\/[^\s]+$/i.test(url)) return { error: `${at} "url" must be http(s).` }
+    out.push({
+      componentId: field(c.componentId, 40), item, source, url, price, currency, unit,
+      landedPrice: num(c.landedPrice), notes: field(c.notes, LIMITS.sourceFieldChars),
+    })
+  }
+  return out
+}
+
+/** "yd", "yards", "Yard" → "yard"; "sqft", "square feet" → "sq ft". Pure. */
+export function sameUnit(u: string): string {
+  const s = u.toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim()
+  if (/^(yd|yds|yard|yards)$/.test(s)) return 'yard'
+  if (/^(sq ft|sqft|sf|square foot|square feet|ft sq)$/.test(s)) return 'sq ft'
+  if (/^(m|meter|meters|metre|metres)$/.test(s)) return 'meter'
+  return s.replace(/s$/, '')
+}
+
+export type OurCost = { componentId: string; name: string; vendor: string | null; priceCents: number | null; unit: string }
+
+/**
+ * One row of the comparison table: what we pay (from our records), what was
+ * found, and the difference when both are in dollars per the same unit.
+ * Muse's landed price is used when given, since that is what we would pay
+ * delivered. Pure.
+ */
+export function compareRow(ours: OurCost | undefined, c: MuseComparison): { ours: string | null; found: string; difference: string | null; cheaper: boolean | null } {
+  const theirs = c.landedPrice ?? c.price
+  const found = `${c.currency === 'USD' ? '$' : `${c.currency} `}${c.price.toFixed(2)}/${c.unit}${c.landedPrice ? ` (landed ${c.currency === 'USD' ? '$' : ''}${c.landedPrice.toFixed(2)})` : ''}`
+  if (!ours || ours.priceCents === null) return { ours: ours ? `price not on file /${ours.unit}` : null, found, difference: null, cheaper: null }
+  const oursText = `$${(ours.priceCents / 100).toFixed(2)}/${ours.unit}${ours.vendor ? ` from ${ours.vendor}` : ''}`
+  if (c.currency !== 'USD' || sameUnit(ours.unit) !== sameUnit(c.unit)) return { ours: oursText, found, difference: 'different unit or currency: see notes', cheaper: null }
+  const diff = theirs - ours.priceCents / 100
+  const pct = Math.round((diff / (ours.priceCents / 100)) * 100)
+  return {
+    ours: oursText, found,
+    difference: diff === 0 ? 'same' : `${diff < 0 ? '−' : '+'}$${Math.abs(diff).toFixed(2)}/${ours.unit} (${pct > 0 ? '+' : ''}${pct}%)`,
+    cheaper: diff < 0,
+  }
+}
+
+/** What we pay now for everything a task is about: its components, and those on its orders and products. */
+export async function ourCosts(records: unknown): Promise<OurCost[]> {
+  const list = (Array.isArray(records) ? records : []) as MuseRecord[]
+  const ids = new Set(list.filter((r) => r.kind === 'component').map((r) => r.id))
+  const poIds = list.filter((r) => r.kind === 'purchase order').map((r) => r.id)
+  const productIds = list.filter((r) => r.kind === 'product').map((r) => r.id)
+  const [poLines, bom] = await Promise.all([
+    poIds.length ? db.purchaseOrderLine.findMany({ where: { purchaseOrderId: { in: poIds }, componentId: { not: null } }, select: { componentId: true } }) : [],
+    productIds.length ? db.bomLine.findMany({ where: { parentProductId: { in: productIds } }, select: { componentId: true } }) : [],
+  ])
+  for (const l of [...poLines, ...bom]) if (l.componentId) ids.add(l.componentId)
+  if (!ids.size) return []
+  const cs = await db.component.findMany({
+    where: { id: { in: [...ids] } }, orderBy: { name: 'asc' }, take: 60,
+    select: { id: true, name: true, unitCostCents: true, unitOfMeasure: true, vendor: { select: { name: true } } },
+  })
+  return cs.map((c) => ({ componentId: c.id, name: c.name, vendor: c.vendor?.name ?? null, priceCents: c.unitCostCents, unit: c.unitOfMeasure }))
+}
 
 const field = (v: unknown, max: number): string | null => {
   if (v === undefined || v === null || v === '') return null
@@ -108,7 +201,9 @@ export function checkReport(body: unknown): CheckedReport | { error: string } {
     if (bytes.subarray(0, 5).toString() !== '%PDF-') return { error: '"pdf" is not a PDF.' }
     pdf = bytes.toString('base64')
   }
-  return { summary, report, sources, pdf }
+  const comparisons = checkComparisons(b.comparisons)
+  if ('error' in comparisons) return comparisons
+  return { summary, report, sources, comparisons, pdf }
 }
 
 // ── What Muse sees ────────────────────────────────────────────
@@ -116,10 +211,12 @@ export function checkReport(body: unknown): CheckedReport | { error: string } {
 type TaskRow = Prisma.MuseTaskGetPayload<{ include: { questions: true } }>
 
 /** A task as Muse sees it. File links carry no key; fetch them with the same header. Pure. */
-export function taskForMuse(t: TaskRow, files: Array<{ id: string; title: string; mediaType: string; sizeBytes: number }>, base: string) {
+export function taskForMuse(t: TaskRow, files: Array<{ id: string; title: string; mediaType: string; sizeBytes: number }>, base: string, costs: OurCost[] = []) {
   return {
     id: t.id, number: t.number, title: t.title, status: t.status.toLowerCase(), createdAt: t.createdAt.toISOString(),
     brief: t.brief,
+    // What we pay now, from our records: compare against these, by componentId.
+    ourCosts: costs.map((c) => ({ componentId: c.componentId, item: c.name, vendor: c.vendor, price: c.priceCents === null ? null : c.priceCents / 100, currency: 'USD', unit: c.unit })),
     files: files.map((f) => ({ id: f.id, title: f.title, mediaType: f.mediaType, sizeBytes: f.sizeBytes, url: `${base}/api/muse/tasks/${t.id}/files/${f.id}` })),
     questions: t.questions.map((q) => ({
       id: q.id, question: q.question, askedAt: q.createdAt.toISOString(),
@@ -257,6 +354,7 @@ export async function recordReport(taskId: string, r: CheckedReport): Promise<vo
     where: { id: taskId },
     data: {
       summary: r.summary, report: r.report, sources: r.sources as unknown as Prisma.InputJsonValue,
+      comparisons: r.comparisons as unknown as Prisma.InputJsonValue,
       reportFileId, reportedAt: new Date(), status: t.status === 'OPEN' ? 'REPORTED' : t.status,
     },
   })

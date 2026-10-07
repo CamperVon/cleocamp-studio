@@ -67,3 +67,26 @@ test('Muse sees an answer only once it is answered, and file links need its key'
   assert.deepEqual(v.questions.map((q) => [q.status, q.answer]), [['answered', '54 in'], ['pending', null]])
   assert.equal(v.files[0].url, 'https://admin.cleocamp.com/api/muse/tasks/t1/files/f1')
 })
+
+test('comparisons are checked, and set against our own price by code', async () => {
+  const { checkComparisons, compareRow, sameUnit } = await import('../lib/muse')
+  const ok = checkComparisons([{ componentId: 'c1', item: 'Organza black', source: 'Mill A', url: 'https://example.com', price: '18.50', unit: 'yd', landedPrice: 20.1 }])
+  assert.ok(Array.isArray(ok) && ok[0].price === 18.5 && ok[0].currency === 'USD')
+  assert.ok('error' in checkComparisons([{ item: 'x', source: 'y', unit: 'yard' }])) // no price
+  assert.ok('error' in checkComparisons([{ item: 'x', source: 'y', price: 5, unit: 'yard', url: 'javascript:x' }]))
+  assert.equal(sameUnit('Yards'), 'yard')
+  assert.equal(sameUnit('sqft'), 'sq ft')
+  assert.equal(sameUnit('square feet'), 'sq ft')
+
+  const ours = { componentId: 'c1', name: 'Organza black', vendor: 'Calamo Silk', priceCents: 2395, unit: 'yard' }
+  const r = compareRow(ours, (ok as never[])[0])
+  assert.equal(r.ours, '$23.95/yard from Calamo Silk')
+  assert.equal(r.difference, '−$3.85/yard (-16%)') // landed $20.10 against $23.95
+  assert.equal(r.cheaper, true)
+  // Different units are shown side by side, never subtracted.
+  const hide = compareRow({ ...ours, unit: 'sq ft' }, { ...(ok as never[])[0] as object, unit: 'hide', landedPrice: null } as never)
+  assert.equal(hide.cheaper, null)
+  assert.match(String(hide.difference), /different unit/)
+  // Not matched to one of ours: shown, with no difference.
+  assert.equal(compareRow(undefined, (ok as never[])[0]).difference, null)
+})

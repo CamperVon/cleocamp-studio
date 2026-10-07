@@ -1776,6 +1776,8 @@ model MuseTask {
   report        String?
   /// [{ name, url, price, currency, unit, notes }] as Muse sent them.
   sources       Json?
+  /// Each useful find set against what we pay (lib/muse.ts MuseComparison).
+  comparisons   Json?
   reportFileId  String?
   closedAt      DateTime?
 

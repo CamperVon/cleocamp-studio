@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { Card, Empty, Fold, Page } from '@/app/ui/primitives'
-import { settleTeamAnswers, type MuseSource } from '@/lib/muse'
+import { compareRow, ourCosts, settleTeamAnswers, type MuseComparison, type MuseSource } from '@/lib/muse'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,6 +18,8 @@ export default async function MusePage() {
     include: { questions: { orderBy: { createdAt: 'asc' } } },
   })
   const tasks = await Promise.all(rows.map((t) => settleTeamAnswers(t)))
+  // Our side of each comparison, from our own records at the time of looking.
+  const costs = new Map(await Promise.all(tasks.map(async (t) => [t.id, await ourCosts(t.records)] as const)))
   return (
     <Page title="Muse" lede="Research Mouse has handed to Muse, the outside researcher. Muse reports; it never changes anything here. Ask Mouse to hand something over.">
       <Card title={`Tasks (${tasks.length})`}>
@@ -26,6 +28,9 @@ export default async function MusePage() {
             {tasks.map((t) => {
               const waiting = t.questions.filter((q) => q.status !== 'ANSWERED').length
               const sources = (Array.isArray(t.sources) ? t.sources : []) as MuseSource[]
+              const ours = costs.get(t.id) ?? []
+              const comparisons = ((Array.isArray(t.comparisons) ? t.comparisons : []) as MuseComparison[])
+                .map((c) => ({ c, mine: ours.find((o) => o.componentId === c.componentId), row: compareRow(ours.find((o) => o.componentId === c.componentId), c) }))
               return (
                 <li key={t.id} data-rec={t.id}>
                   <Fold summary={
@@ -42,6 +47,30 @@ export default async function MusePage() {
                           <p className="mt-1 whitespace-pre-wrap">{t.summary}</p>
                           <p className="mt-1 text-xs text-faint">Web research by Muse, not checked by us.</p>
                         </section>
+                      ) : null}
+                      {comparisons.length ? (
+                        <section>
+                          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Against what we pay</h3>
+                          <ul className="mt-1 divide-y divide-line rounded-lg border border-line">
+                            {comparisons.map(({ c, mine, row }, n) => (
+                              <li key={n} className="px-3 py-2">
+                                <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                                  <span className="font-medium">{mine?.name ?? c.item}</span>
+                                  {row.difference ? (
+                                    <span className={`tnum text-xs font-semibold ${row.cheaper ? 'text-accent' : 'text-muted'}`}>{row.difference}</span>
+                                  ) : null}
+                                </div>
+                                <p className="text-xs text-muted">We pay: {row.ours ?? 'not matched to one of our items'}</p>
+                                <p className="text-xs text-muted">
+                                  Found: {row.found} at {c.url ? <a href={c.url} target="_blank" rel="noopener noreferrer nofollow" className="underline">{c.source}</a> : c.source}
+                                  {c.notes ? ` · ${c.notes}` : ''}
+                                </p>
+                              </li>
+                            ))}
+                          </ul>
+                        </section>
+                      ) : t.reportedAt ? (
+                        <p className="text-xs text-faint">No side-by-side cost comparison in this report. Ask Mouse to have Muse re-post it with one.</p>
                       ) : null}
                       {sources.length ? (
                         <section>

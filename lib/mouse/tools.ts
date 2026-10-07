@@ -1007,6 +1007,28 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  send_back_to_muse: {
+    def: {
+      name: 'send_back_to_muse',
+      description:
+        'Send a reported Muse task back with a follow-up: what is missing or what to dig into ' +
+        'further. It reopens, so Muse picks it up on its next check, and the note is added to the ' +
+        'end of the brief. Same rules as the brief: it leaves the company. Only when a person asks.',
+      input_schema: { type: 'object', properties: { id: str('Task id or number'), note: str('What Muse should do next') }, required: ['id', 'note'] },
+    },
+    run: async (i) => {
+      const key = String(i.id ?? '').replace(/^task\s*/i, '')
+      const note = String(i.note ?? '').trim()
+      if (!note) return { error: 'Say what Muse should do next.' }
+      const t = await db.museTask.findFirst({ where: /^\d+$/.test(key) ? { number: Number(key) } : { id: key }, select: { id: true, number: true, status: true, brief: true } })
+      if (!t) return { error: `No Muse task "${i.id}".` }
+      if (t.status === 'CANCELLED') return { error: `Task ${t.number} was cancelled. Hand Muse a new one instead.` }
+      const day = new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', year: 'numeric' })
+      await db.museTask.update({ where: { id: t.id }, data: { status: 'OPEN', closedAt: null, brief: `${t.brief}\n\n## Follow-up, ${day}\n${note}` } })
+      return { task: t.number, reopened: true, tellTheUser: `Sent task ${t.number} back to Muse. It will pick it up on its next check.` }
+    },
+  },
+
   close_muse_task: {
     def: {
       name: 'close_muse_task',

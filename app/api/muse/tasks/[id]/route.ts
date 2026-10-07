@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { settleTeamAnswers, taskForMuse } from '@/lib/muse'
+import { ourCosts, settleTeamAnswers, taskForMuse } from '@/lib/muse'
 import { BASE, denied } from '../../_auth'
 
 /** GET /api/muse/tasks/{id} — the brief, its files and the questions so far. */
@@ -12,8 +12,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!found || found.status === 'CANCELLED') return NextResponse.json({ error: 'No such task.' }, { status: 404 })
   const t = await settleTeamAnswers(found)
   if (!t.pickedUpAt) await db.museTask.update({ where: { id }, data: { pickedUpAt: new Date() } })
-  const files = t.fileIds.length
-    ? await db.storedFile.findMany({ where: { id: { in: t.fileIds } }, select: { id: true, title: true, mediaType: true, sizeBytes: true } })
-    : []
-  return NextResponse.json(taskForMuse(t, files, BASE))
+  const [files, costs] = await Promise.all([
+    t.fileIds.length
+      ? db.storedFile.findMany({ where: { id: { in: t.fileIds } }, select: { id: true, title: true, mediaType: true, sizeBytes: true } })
+      : [],
+    ourCosts(t.records),
+  ])
+  return NextResponse.json(taskForMuse(t, files, BASE, costs))
 }

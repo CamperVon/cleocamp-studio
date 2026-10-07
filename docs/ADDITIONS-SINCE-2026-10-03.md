@@ -162,6 +162,11 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** email.
 - **Files:** `lib/mouse/nightly-pass.ts` (`APPLY_RULES`)
 
+### Research reports compare costs directly · `HASH`
+- **Problem:** an outside research report said things were cheaper, but to know by how much the team had to look up what it pays now.
+- **Change:** each task the agent reads carries `ourCosts`, what we pay now for every item it is about (its components, and those on its orders and products), from our own records. Reports carry `comparisons`, one per useful find, tied to an item by id, priced in the same unit, with a landed price where possible. The page shows each item with our price (from the records, not the agent's restatement), the price found and the difference, worked out in code only when both are in dollars per the same unit; otherwise both are shown side by side. A reported task can be sent back with a follow-up note (`send_back_to_muse`), which reopens it.
+- **Files:** `lib/muse.ts` (`ourCosts`, `checkComparisons`, `compareRow`, `sameUnit`), `app/api/muse/tasks/[id]/route.ts`, `app/(main)/muse/page.tsx`, `lib/mouse/tools.ts`, `lib/mouse/team-mail.ts`, `prisma/schema.prisma` (`MuseTask.comparisons`), `docs/MUSE-API.md`, `tests/muse.test.ts`
+
 ### Handing research to an outside agent · `49ec1a8`
 - **Problem:** some work needs the open web (finding a cheaper supplier worldwide, checking stock or lead times), which the assistant cannot do, and an outside research agent had no way to receive a task or ask about one.
 - **Change:** the assistant can hand a task to an outside agent with a written brief, linked records and attached files (`hand_to_muse`), read what came back (`muse_tasks`) and close it. The agent polls a small key-protected API: list open tasks, read one, fetch its files, ask a question, post a report. Questions are answered by a model with no tools, from the brief and the task's own records only, or put to the team as an open question whose answer flows back. Reports are stored and shown as information and announced to whoever asked. The agent can change nothing else. Off until an API key of 32+ characters is set; limits on question count and size. A page lists the tasks, questions and reports.
