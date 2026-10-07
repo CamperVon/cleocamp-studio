@@ -162,6 +162,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** email.
 - **Files:** `lib/mouse/nightly-pass.ts` (`APPLY_RULES`)
 
+### Handing research to an outside agent · `HASH`
+- **Problem:** some work needs the open web (finding a cheaper supplier worldwide, checking stock or lead times), which the assistant cannot do, and an outside research agent had no way to receive a task or ask about one.
+- **Change:** the assistant can hand a task to an outside agent with a written brief, linked records and attached files (`hand_to_muse`), read what came back (`muse_tasks`) and close it. The agent polls a small key-protected API: list open tasks, read one, fetch its files, ask a question, post a report. Questions are answered by a model with no tools, from the brief and the task's own records only, or put to the team as an open question whose answer flows back. Reports are stored and shown as information and announced to whoever asked. The agent can change nothing else. Off until an API key of 32+ characters is set; limits on question count and size. A page lists the tasks, questions and reports.
+- **Needs:** email (the report notice). Set `MUSE_API_KEY`.
+- **Files:** `lib/muse.ts`, `app/api/muse/`, `app/(main)/muse/page.tsx`, `lib/mouse/tools.ts` (`hand_to_muse`, `muse_tasks`, `close_muse_task`), `lib/mouse/context.ts`, `lib/mouse/team-mail.ts`, `proxy.ts`, `prisma/schema.prisma` (`MuseTask`, `MuseQuestion`), `docs/MUSE-API.md`, `tests/muse.test.ts`
+
 ---
 
 ## Selling and customers

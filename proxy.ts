@@ -28,6 +28,9 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith('/api/cron') ||
     pathname.startsWith('/api/inbound') ||
     pathname.startsWith('/api/finances') ||
+    // Muse, the team's outside researcher: its own key, checked in each
+    // route (app/api/muse/_auth.ts). Off entirely until MUSE_API_KEY is set.
+    pathname.startsWith('/api/muse/') ||
     pathname === '/say' ||
     pathname === '/api/say' ||
     // Trading a personal link for a session cannot itself require a session.

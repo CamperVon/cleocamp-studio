@@ -1745,3 +1745,56 @@ model StoredFileLink {
   @@unique([fileId, kind, recordId])
   @@index([kind, recordId])
 }
+
+/// A research task Mouse hands to Muse, the team's outside research assistant
+/// on Meta's platform (Brandon, 7 Oct 2026: "mouse, have muse search for a
+/// better price on the black silk"). Muse polls /api/muse for open tasks,
+/// may ask questions, and posts a report. It never writes anything else.
+model MuseTask {
+  id            String    @id @default(cuid())
+  /// A short number for people and for Muse: "Muse task 3".
+  number        Int       @unique @default(autoincrement())
+  title         String
+  /// What Mouse told Muse, in full. Goes outside the company.
+  brief         String
+  /// OPEN (waiting on Muse), REPORTED, CLOSED or CANCELLED.
+  status        String    @default("OPEN")
+  /// What the task is about, as [{ kind, id }]: products, components,
+  /// vendors, purchase orders. Mouse answers Muse's questions from these.
+  records       Json?
+  /// StoredFile ids sent with the brief (a colour card, a spec sheet).
+  fileIds       String[]  @default([])
+  requestedById String?
+  createdAt     DateTime  @default(now())
+  /// First time Muse fetched it.
+  pickedUpAt    DateTime?
+  reportedAt    DateTime?
+  summary       String?
+  report        String?
+  /// [{ name, url, price, currency, unit, notes }] as Muse sent them.
+  sources       Json?
+  reportFileId  String?
+  closedAt      DateTime?
+
+  questions MuseQuestion[]
+
+  @@index([status, createdAt])
+}
+
+/// A question Muse asked on a task. Mouse answers from the brief and the
+/// task's records, or puts it to the team as an open question.
+model MuseQuestion {
+  id           String    @id @default(cuid())
+  taskId       String
+  question     String
+  answer       String?
+  /// ANSWERED, or ASKED_TEAM until the team answers actionItemId.
+  status       String    @default("ASKED_TEAM")
+  actionItemId String?
+  createdAt    DateTime  @default(now())
+  answeredAt   DateTime?
+
+  task MuseTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+}

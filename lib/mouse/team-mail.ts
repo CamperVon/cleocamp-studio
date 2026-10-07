@@ -26,6 +26,8 @@ export const NOT_FROM_EMAIL = new Set([
   'cancel_live_sale', 'update_person_email', 'update_notification_settings', 'record_financials',
   // Takes the newest chat attachment: from an email it would keep the wrong file.
   'keep_file',
+  // Sends our information outside the company.
+  'hand_to_muse',
 ])
 
 /** Is Mouse's mailbox in the To line (not just copied)? Pure. */

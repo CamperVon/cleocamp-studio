@@ -50,6 +50,7 @@ const OCCASIONAL: Item[] = [
   { href: '/friends', label: 'Friends of the Brand' },
   { href: '/inbox', label: 'Inbox' },
   { href: '/manual', label: 'Mouse Manual' },
+  { href: '/muse', label: 'Muse' },
   { href: '/phones', label: 'Phones' },
   // One-off emails and the like, kept apart so nobody mistakes them for
   // everyday Support (Brandon, 4 Oct 2026: "make it pink").

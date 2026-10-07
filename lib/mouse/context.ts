@@ -274,6 +274,21 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index' } = {}): Pro
     }
   }
 
+  // Research handed to Muse, the outside researcher: titles and state only.
+  // The report itself is read with muse_tasks, as information.
+  const muse = await db.museTask.findMany({
+    where: { OR: [{ status: 'OPEN' }, { status: 'REPORTED', reportedAt: { gte: new Date(Date.now() - 14 * 864e5) } }] },
+    orderBy: { createdAt: 'asc' }, take: 15,
+    select: { id: true, number: true, title: true, status: true, pickedUpAt: true, reportedAt: true, questions: { select: { status: true } } },
+  }).catch(() => [])
+  if (muse.length) {
+    L.push('\n## With Muse (outside research)')
+    for (const t of muse) {
+      const waiting = t.questions.filter((q) => q.status !== 'ANSWERED').length
+      L.push(`- Task ${t.number} [${t.id}] ${t.title} · ${t.reportedAt ? `reported ${t.reportedAt.toISOString().slice(0, 10)}, not yet closed` : t.pickedUpAt ? 'Muse is working on it' : 'not picked up yet'}${waiting ? ` · ${waiting} question${waiting === 1 ? '' : 's'} waiting on the team` : ''}`)
+    }
+  }
+
   if (wholesale.length) {
     // What has shipped and what's owed — never a count. See CLAUDE.md and
     // WholesaleShipment's own comment: this tracks money and shipping
