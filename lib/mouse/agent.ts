@@ -1,4 +1,4 @@
-import { runLoop, type AgentUsage } from '@/lib/mouse/runner'
+import { runLoop, type AgentUsage, type TurnRoute } from '@/lib/mouse/runner'
 import { classifyResult } from '@/lib/mouse/outcomes'
 import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
@@ -331,10 +331,12 @@ export async function runAgent(opts: {
   practice?: boolean
   /** The chat thread, set by chatTurn only. Chat-only tools need it. */
   chatThreadId?: string
+  /** "read": the read lane (lib/mouse/route.ts). Look-up tools only, enforced three times over. */
+  lane?: 'read'
 }): Promise<AgentResult> {
   const client = new Anthropic({ maxRetries: 0 })
   const maxRounds = opts.maxRounds ?? (Number(process.env.MOUSE_MAX_REQUESTS) || 6)
-  const allowed = toolsFor(opts.allowedTools, opts.chatThreadId)
+  const allowed = toolsFor(opts.allowedTools, opts.chatThreadId, opts.lane)
   const tools = TOOL_DEFS.filter((t) => allowed.includes(t.name))
 
   // ── Two caches, not one ──────────────────────────────────────────────────
@@ -404,8 +406,11 @@ export async function runAgent(opts: {
         }
       },
       system, messages: msgs, tools,
-      execute: async (name, input) => practiceStop(opts.practice === true, name, input) ??
-        withLineSheetQuestions(name, withNotesOnWhatChanged(name, input, await TOOLS[name].run(input, { threadId: opts.chatThreadId }))),
+      execute: async (name, input) => {
+        readLaneGuard(opts.lane, name)
+        return practiceStop(opts.practice === true, name, input) ??
+          withLineSheetQuestions(name, withNotesOnWhatChanged(name, input, await TOOLS[name].run(input, { threadId: opts.chatThreadId })))
+      },
       model: opts.model ?? CHAT_MODEL,
       effort: opts.effort ?? 'high', maxRequests: rounds,
       maxOutputTokens: Number(process.env.MOUSE_MAX_OUTPUT_TOKENS) || 24000,
@@ -432,7 +437,7 @@ export async function runAgent(opts: {
   // fires only once, and only for a run that actually holds a tool capable of
   // writing — a look-only run has nothing to be guilty of.
   if (
-    !opts.practice &&
+    !opts.practice && opts.lane !== 'read' &&
     owedTheRecordSomething({
       wroteSomething: result.toolCalls.some((c) => c.status === 'succeeded' && c.isWrite),
       canWrite: allowed.some((n) => n !== 'query_status' && n !== 'check_sent_mail'),
@@ -467,7 +472,7 @@ export async function runAgent(opts: {
     }
   }
 
-  const changed = opts.fromAPerson === true && result.usage.stopReason === 'complete'
+  const changed = opts.fromAPerson === true && opts.lane !== 'read' && result.usage.stopReason === 'complete'
     ? stockChangesThisTurn(result.toolCalls)
     : []
   if (changed.length) {
@@ -505,7 +510,9 @@ export async function runAgent(opts: {
   // The troubleshooting log: every failed or refused tool call and every
   // unfinished turn, written by code whatever the reply says (Brandon,
   // 6 Oct 2026). Practice runs change nothing and are not logged.
-  if (!opts.practice) {
+  // A read-lane attempt being handed to Opus is not a failure to log: the
+  // Opus turn that follows logs its own.
+  if (!opts.practice && !(opts.lane === 'read' && whyOpus(result))) {
     const { issuesFrom, logIssues } = await import('@/lib/mouse/issues')
     const { isOutOfCredit, warnOutOfCredit } = await import('@/lib/mouse/credit')
     if (result.usage.stopReason === 'provider_error' && isOutOfCredit(result.usage.providerError)) await warnOutOfCredit(opts.source)
@@ -539,9 +546,73 @@ export async function runAgent(opts: {
 export const CHAT_ONLY_TOOLS = new Set(['keep_file'])
 
 /** The tools a run may use. Pure. */
-export function toolsFor(allowedTools: string[] | undefined, chatThreadId: string | undefined): string[] {
+export function toolsFor(allowedTools: string[] | undefined, chatThreadId: string | undefined, lane?: 'read'): string[] {
   const all = allowedTools ?? Object.keys(TOOLS)
-  return chatThreadId ? all : all.filter((n) => !CHAT_ONLY_TOOLS.has(n))
+  const allowed = chatThreadId ? all : all.filter((n) => !CHAT_ONLY_TOOLS.has(n))
+  return lane === 'read' ? allowed.filter((n) => READ_LANE_TOOLS.has(n)) : allowed
+}
+
+/**
+ * The read lane's whole tool set (approved 7 Oct 2026). Look-ups only: no
+ * note_problem (it writes the troubleshooting log), no read_file (reading a
+ * PDF or photo stays with Opus), no draft_order_links, nothing that writes,
+ * sends, records or changes a thing.
+ */
+export const READ_LANE_TOOLS = new Set([
+  'open_record', 'query_status', 'check_sent_mail', 'search_chat', 'find_in_shopify', 'find_customer',
+  'find_contacts', 'reorder_math', 'shopify_analytics', 'unpaid_live_sales',
+])
+
+/** The third lock: in the read lane, a tool outside READ_LANE_TOOLS throws before it runs. */
+export function readLaneGuard(lane: 'read' | undefined, name: string): null {
+  if (lane === 'read' && !READ_LANE_TOOLS.has(name)) throw new Error(`${name} is not available in the read lane.`)
+  return null
+}
+
+export const READ_LANE_MODEL = BACKGROUND_MODEL
+export const READ_LANE_EFFORT = 'medium' as const
+export const OPUS_ESCALATE = '[[OPUS]]'
+
+const READ_LANE_RULES =
+  'THIS TURN: you can only look things up. If the person wants anything changed, recorded, sent, ordered ' +
+  'or written down, if they are telling you a fact rather than asking, if a file needs reading, or if you ' +
+  `are unsure, reply with exactly ${OPUS_ESCALATE} and nothing else. Otherwise answer the question plainly from ` +
+  'what you know and can look up.'
+
+/**
+ * Why a read-lane attempt must be handed to Opus, or null if its answer
+ * stands: it asked for Opus, stopped early, was declined, failed a tool, or
+ * said nothing. Pure.
+ */
+export function whyOpus(r: Pick<AgentResult, 'text' | 'toolCalls' | 'usage'>): string | null {
+  if (r.text.includes(OPUS_ESCALATE)) return 'asked-for-opus'
+  if (r.usage.stopReason !== 'complete') return `stopped:${r.usage.stopReason}`
+  if ((r.toolCalls as Array<{ status?: string }>).some((c) => c.status === 'failed')) return 'tool-failed'
+  if (!r.text.trim()) return 'empty'
+  return null
+}
+
+/**
+ * Run a read-lane attempt and, if it must be handed over, the Opus turn. Only
+ * one reply comes back: the attempt's own when it stands, otherwise Opus's,
+ * whole, with the attempt kept solely as cost in usage.route. Nothing the
+ * attempt said or did is shown or saved as Mouse's reply.
+ */
+export async function readLaneTurn(reason: string, read: () => Promise<AgentResult>, opus: () => Promise<AgentResult>): Promise<AgentResult> {
+  const attempt = await read()
+  const because = whyOpus(attempt)
+  if (!because) {
+    return { ...attempt, usage: { ...attempt.usage, route: { lane: 'read', reason, model: attempt.model, effort: READ_LANE_EFFORT } } }
+  }
+  const r = await opus()
+  const route: TurnRoute = {
+    lane: 'read', reason, model: r.model, effort: 'high', escalated: true, escalatedBecause: because,
+    attempt: {
+      model: attempt.model, stopReason: attempt.usage.stopReason, requests: attempt.usage.requests, durationMs: attempt.usage.durationMs,
+      tools: (attempt.toolCalls as Array<{ name?: string }>).map((c) => String(c.name)),
+    },
+  }
+  return { ...r, usage: { ...r.usage, route } }
 }
 
 /**
@@ -676,7 +747,7 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
   // this message names exactly come with their notes already looked up.
   const { prefetchForMessage } = await import('@/lib/mouse/records')
   const prefetch = await prefetchForMessage(message)
-  return runAgent({
+  const base: Parameters<typeof runAgent>[0] = {
     instruction: message,
     source,
     attachments,
@@ -707,5 +778,26 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
           : m.content,
       }]
     }),
+  }
+  const opus = () => runAgent(base)
+
+  // The read lane (approved 7 Oct 2026, MOUSE_READ_LANE, off by default):
+  // a plain look-up question may go to Sonnet with look-up tools only, and
+  // anything else, or any doubt, is today's Opus turn exactly as it was.
+  const { routeChat } = await import('@/lib/mouse/route')
+  const lastReply = [...history].reverse().find((m) => m.role !== 'USER')?.content ?? null
+  const route = routeChat(message, {
+    enabled: process.env.MOUSE_READ_LANE === '1',
+    source, practice,
+    hasAttachments: (attachments?.length ?? 0) > 0,
+    filesInHistory: withFiles.size > 0,
+    lastReply,
   })
+  if (route.lane === 'read') {
+    return readLaneTurn(route.reason,
+      () => runAgent({ ...base, model: READ_LANE_MODEL, effort: READ_LANE_EFFORT, lane: 'read', extraRules: READ_LANE_RULES }),
+      opus)
+  }
+  const r = await opus()
+  return { ...r, usage: { ...r.usage, route: { lane: 'opus' as const, reason: route.reason, model: r.model, effort: 'high' as const } } }
 }

@@ -16,6 +16,22 @@ export type AgentUsage = {
   stopReason: 'complete' | 'budget' | 'provider_error' | 'refusal'
   /** Catalogue section sizes and block hashes, set by runAgent (lib/mouse/context.ts catalogStats). */
   context?: import('./context').CatalogStats
+  /** Which lane a chat turn took and why, set by chatTurn (lib/mouse/agent.ts, lib/mouse/route.ts). */
+  route?: TurnRoute
+}
+
+/**
+ * How a chat turn was routed. When a read-lane attempt was handed to Opus,
+ * the attempt's cost is kept here for comparison, and nothing it wrote is.
+ */
+export type TurnRoute = {
+  lane: 'opus' | 'read'
+  reason: string
+  model: string
+  effort: 'low' | 'medium' | 'high'
+  escalated?: boolean
+  escalatedBecause?: string
+  attempt?: { model: string; stopReason: AgentUsage['stopReason']; requests: RequestUsage[]; durationMs: number; tools: string[] }
 }
 export type LoopResult = {
   text: string; writes: Array<{ tool: string; summary: string }>; toolCalls: ToolOutcome[]
