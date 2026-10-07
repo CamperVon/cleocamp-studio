@@ -248,7 +248,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Change:** `create_component` takes the product (and colour or size) it goes into and adds the recipe line in the same step, quantity unknown unless given; without one, it tells the assistant to ask. The assistant's context marks every non-packaging component on no product and lists them each turn, telling it to ask rather than guess. The daily email carries a line while any has sat on no product for over a day.
 - **Files:** `lib/mouse/tools.ts` (`create_component`), `lib/bom.ts` (`onNoProduct`), `lib/mouse/context.ts`, `lib/mouse/daily-cheese.ts`, `tests/on-no-product.test.ts`
 
-### Ping a teammate about an entry · `HASH`
+### Ping a teammate about an entry · `39b073d`
 - **Change:** stylist requests and pulls have Ping buttons for two teammates. Tapping one opens a one-line optional note; sending emails them what the entry is (who, what, dates, what is still out), the note, and a link that opens the page at that entry. Built on the same send-to-teammate function as the assistant's corner items, from the person who tapped to the teammate's address on file.
 - **Needs:** email.
 - **Files:** `app/(main)/corner-actions.ts` (`emailTeammate`), `app/(main)/stylists/actions.ts` (`pingAbout`), `app/(main)/stylists/stylist-controls.tsx` (`PingButtons`), `app/(main)/stylists/page.tsx`
