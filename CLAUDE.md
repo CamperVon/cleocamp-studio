@@ -137,8 +137,10 @@ data. That must not happen again.
   reply-all thread with a vendor stays a proposal) AND the receiving server's
   DMARC result is pass, so a forged From line is not enough. Nothing that
   sends, invoices or moves money runs from email (`NOT_FROM_EMAIL` in
-  `lib/mouse/team-mail.ts`), and Mouse replies to the sender's address on
-  file with what it changed.
+  `lib/mouse/team-mail.ts`). Mouse writes back to the sender's address on
+  file only when there is a concern, a question, an answer they asked for or
+  something it could not do (Brandon, 7 Oct 2026); otherwise the change in the
+  app is the record and nothing is sent.
 - **A purchase order's `notes` field is printed on the document the vendor
   receives.** It is not a scratchpad. Only what someone deliberately wrote TO
   the supplier belongs there — a rush request, a spec, a payment confirmation.

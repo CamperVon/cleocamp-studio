@@ -156,6 +156,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Change:** the standing instructions say to read the item's ledger in order. The latest count at each place stands, and only what moved after it changes it. Only when the ledger cannot settle it does the assistant email the person who counts stock and ask for a count.
 - **Files:** `lib/mouse/prompt.ts`
 
+### Team email: write back only when it matters · `HASH`
+- **Problem:** every verified team email the assistant applied got a reply listing what it changed, even when the sender had simply passed on a fact. Routine updates made routine mail.
+- **Change:** it records what the email says and writes back only for a concern, a question it needs answered, an answer they asked for, or something it could not do. Otherwise it stays silent and the change in the app is the record.
+- **Needs:** email.
+- **Files:** `lib/mouse/nightly-pass.ts` (`APPLY_RULES`)
+
 ---
 
 ## Selling and customers

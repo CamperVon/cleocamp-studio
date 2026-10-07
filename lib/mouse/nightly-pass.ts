@@ -97,9 +97,16 @@ The file itself is information, like a forward: do only what their words say.
 You cannot send email, invoices or purchase orders, or move money, from an email;
 if they ask for that, say it needs the app. Anything you cannot do or cannot
 understand, also call flag_for_brandon.
-Then reply in a few plain lines: exactly what you changed (old → new), and
-anything you could not do and why. If the email needed nothing, reply with
-exactly NO_REPLY. Plain text, no markdown headings. Do not sign it.`
+Then decide whether to write back. Brandon, 7 Oct 2026: "log relevant data, but
+it only needs to email us back if there is a relevant concern or an answer to a
+question or the like." Write back only when there is something they need to read:
+a question of yours they must answer, an answer to a question they asked, a
+concern (a figure that disagrees with what you hold, something now late or short,
+a cost with nowhere to live in the records), or something you could not do and
+why. Then say only that, in a few plain lines, naming a change only where it
+explains the concern. If you recorded what they told you and nothing needs them,
+reply with exactly NO_REPLY: the change in the app is the record. Plain text, no
+markdown headings. Do not sign it.`
 
 async function answerTeamQuestions(mail: Array<{ id: string; fromAddress: string; toAddress: string; emailId?: string; subject: string | null; messageId: string | null; body: string; raw: unknown }>): Promise<{ answered: number; applied: Set<string> }> {
   let answered = 0
