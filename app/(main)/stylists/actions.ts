@@ -270,3 +270,25 @@ export async function removeStylistNote(noteId: string): Promise<Result> {
   revalidatePath('/stylists')
   return { ok: true }
 }
+
+/**
+ * Ping Jane or Cleo about one request or pull (Brandon, 7 Oct 2026): an email
+ * to them with what it is, an optional note, and a link straight to it.
+ */
+export async function pingAbout(to: 'jane' | 'cleo', kind: 'request' | 'pull', id: string, note: string): Promise<Result> {
+  const { emailTeammate } = await import('../corner-actions')
+  const day = (d: Date) => d.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' })
+  let text = ''
+  if (kind === 'request') {
+    const r = await db.stylistRequest.findUnique({ where: { id }, select: { what: true, qty: true, neededBy: true, notes: true, createdAt: true, stylist: { select: { name: true } } } })
+    if (!r) return { ok: false, error: 'That request is gone.' }
+    text = [`Stylist request: ${r.stylist.name}`, `${r.what}${r.qty ? ` × ${r.qty}` : ''}`, `Asked ${day(r.createdAt)}${r.neededBy ? `, needed ${day(r.neededBy)}` : ''}.`, r.notes ?? ''].filter(Boolean).join('\n')
+  } else {
+    const p = await db.stylistPull.findUnique({ where: { id }, select: { project: true, sentAt: true, dueBackAt: true, notes: true, stylist: { select: { name: true } }, lines: { select: { item: true, qty: true, returnedQty: true } } } })
+    if (!p) return { ok: false, error: 'That pull is gone.' }
+    const out = p.lines.filter((l) => l.qty - l.returnedQty > 0).map((l) => `- ${l.qty - l.returnedQty} × ${l.item}`)
+    text = [`Pull: ${p.stylist.name}${p.project ? `, ${p.project}` : ''}`, `Sent ${day(p.sentAt)}${p.dueBackAt ? `, due back ${day(p.dueBackAt)}` : ', no return date'}.`, out.length ? `Still out:\n${out.join('\n')}` : 'Everything is back.', p.notes ?? ''].filter(Boolean).join('\n')
+  }
+  const r = await emailTeammate(to, { from: 'Stylists', text, note, link: `https://admin.cleocamp.com/stylists#rec-${id}` })
+  return r.ok ? { ok: true, message: r.message } : r
+}

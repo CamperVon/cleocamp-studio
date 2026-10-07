@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { addPull, addRequest, addStylist, addStylistNote, changeStylistStock, closePull, editStylistNote, removeStylist, removeStylistNote, returnPieces, sendRequest, setRequestStatus, updateStylist, takeShortFromSales } from './actions'
+import { addPull, addRequest, addStylist, addStylistNote, changeStylistStock, closePull, editStylistNote, pingAbout, removeStylist, removeStylistNote, returnPieces, sendRequest, setRequestStatus, updateStylist, takeShortFromSales } from './actions'
 
 type Res = { ok: true; message?: string } | { ok: false; error: string }
 const input = 'min-w-0 rounded-lg border border-line bg-bg px-3 py-2 text-sm'
@@ -60,6 +60,37 @@ export function RequestButtons({ requestId, status, short = false }: { requestId
       </span>
       {note}
     </span>
+  )
+}
+
+/**
+ * Ping Jane or Ping Cleo about this request or pull: an email with what it is,
+ * a note if you add one, and a link back to it (Brandon, 7 Oct 2026).
+ */
+export function PingButtons({ kind, id }: { kind: 'request' | 'pull'; id: string }) {
+  const [to, setTo] = useState<'jane' | 'cleo' | null>(null)
+  const [text, setText] = useState('')
+  const { pending, go, note } = useAction()
+  if (!to) {
+    return (
+      <span className="inline-flex flex-col items-end gap-0.5">
+        <span className="flex gap-1.5">
+          <button type="button" className={small} onClick={() => setTo('jane')}>Ping Jane</button>
+          <button type="button" className={small} onClick={() => setTo('cleo')}>Ping Cleo</button>
+        </span>
+        {note}
+      </span>
+    )
+  }
+  return (
+    <form className="flex w-full flex-col gap-1.5 sm:w-auto" onSubmit={(e) => { e.preventDefault(); go(() => pingAbout(to, kind, id, text), () => { setText(''); setTo(null) }) }}>
+      <input value={text} onChange={(e) => setText(e.target.value)} autoFocus placeholder={`Note for ${to === 'jane' ? 'Jane' : 'Cleo'} (optional)`} className={`${input} py-1.5 text-xs`} />
+      <span className="flex justify-end gap-1.5">
+        <button type="submit" disabled={pending} className="rounded bg-ink px-2.5 py-1 text-[11px] font-medium text-bg disabled:opacity-40">{pending ? 'Sending…' : `Send to ${to === 'jane' ? 'Jane' : 'Cleo'}`}</button>
+        <button type="button" disabled={pending} className={small} onClick={() => setTo(null)}>Cancel</button>
+      </span>
+      {note}
+    </form>
   )
 }
 

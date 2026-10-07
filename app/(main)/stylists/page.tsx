@@ -3,7 +3,7 @@ import { ItemRow } from '@/app/ui/item-row'
 import { db } from '@/lib/db'
 import { loadStylists, pullOut, requestTitle, stillOut } from '@/lib/stylists'
 import { pieceStatus, piecesOf, stockNote, stylistStock, variantLabels } from '@/lib/stylist-stock'
-import { AddByHand, AddStylistStock, NoteBox, PullCloseButtons, RequestButtons, ReturnButton, StylistDetails, StylistStockRow } from './stylist-controls'
+import { AddByHand, AddStylistStock, NoteBox, PingButtons, PullCloseButtons, RequestButtons, ReturnButton, StylistDetails, StylistStockRow } from './stylist-controls'
 import { PageChat } from '@/app/ui/page-chat'
 
 /**
@@ -98,7 +98,7 @@ export default async function Stylists() {
                     const kept = p.closedAs === 'KEPT'
                     const late = out > 0 && !!p.dueBackAt && p.dueBackAt < now
                     return (
-                      <li key={p.id} className="text-xs">
+                      <li key={p.id} data-rec={p.id} className="text-xs">
                         <Fold
                           summary={
                             <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
@@ -114,6 +114,7 @@ export default async function Stylists() {
                         >
                           <div className="px-4 pb-2 sm:px-5">
                             {p.notes ? <p className="pb-1 text-muted">{p.notes}</p> : null}
+                            <div className="flex justify-end pb-1.5"><PingButtons kind="pull" id={p.id} /></div>
                             {/* The buttons first, so a long pull does not hide them (Brandon, 30 Sept 2026). */}
                             {out > 0 || kept ? (
                               <div className="flex flex-col gap-1 border-b border-line pb-2">
@@ -184,7 +185,7 @@ export default async function Stylists() {
               const short = st.filter((x) => x.short > 0).length
               const late = !!r.neededBy && r.neededBy < now
               return (
-                <li key={r.id}>
+                <li key={r.id} data-rec={r.id}>
                   {/* Folded like a pull (Brandon, 5 Oct 2026): who and what on the
                       closed line, with what needs doing; the rest inside. */}
                   <Fold
@@ -202,7 +203,8 @@ export default async function Stylists() {
                     }
                   >
                     <div className="px-4 pb-3 text-sm sm:px-5">
-                      <div className="flex justify-end border-b border-line pb-2">
+                      <div className="flex flex-wrap items-start justify-end gap-1.5 border-b border-line pb-2">
+                        <PingButtons kind="request" id={r.id} />
                         <RequestButtons requestId={r.id} status={r.status} short={short > 0} />
                       </div>
                       {/* The pieces, one per line in ink, stock in pink. */}
