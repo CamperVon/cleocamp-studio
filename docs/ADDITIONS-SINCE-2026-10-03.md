@@ -162,7 +162,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** email.
 - **Files:** `lib/mouse/nightly-pass.ts` (`APPLY_RULES`)
 
-### Research reports compare costs directly · `HASH`
+### Research reports compare costs directly · `c83cffd`
 - **Problem:** an outside research report said things were cheaper, but to know by how much the team had to look up what it pays now.
 - **Change:** each task the agent reads carries `ourCosts`, what we pay now for every item it is about (its components, and those on its orders and products), from our own records. Reports carry `comparisons`, one per useful find, tied to an item by id, priced in the same unit, with a landed price where possible. The page shows each item with our price (from the records, not the agent's restatement), the price found and the difference, worked out in code only when both are in dollars per the same unit; otherwise both are shown side by side. A reported task can be sent back with a follow-up note (`send_back_to_muse`), which reopens it.
 - **Files:** `lib/muse.ts` (`ourCosts`, `checkComparisons`, `compareRow`, `sameUnit`), `app/api/muse/tasks/[id]/route.ts`, `app/(main)/muse/page.tsx`, `lib/mouse/tools.ts`, `lib/mouse/team-mail.ts`, `prisma/schema.prisma` (`MuseTask.comparisons`), `docs/MUSE-API.md`, `tests/muse.test.ts`
