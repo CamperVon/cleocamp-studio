@@ -238,7 +238,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Change:** the check ignores spacing.
 - **Files:** `tests/po-pdf.test.ts`
 
-### No component left on no product · `HASH`
+### No component left on no product · `1360ed7`
 - **Problem:** the assistant created components named for their products ("Black leather (Bean Bag)") but never added them to any product's recipe, so they never showed on the product and the forecast could not count them. Sixteen built up unnoticed in five days; the page's own "not on a product yet" list was not enough.
 - **Change:** `create_component` takes the product (and colour or size) it goes into and adds the recipe line in the same step, quantity unknown unless given; without one, it tells the assistant to ask. The assistant's context marks every non-packaging component on no product and lists them each turn, telling it to ask rather than guess. The daily email carries a line while any has sat on no product for over a day.
 - **Files:** `lib/mouse/tools.ts` (`create_component`), `lib/bom.ts` (`onNoProduct`), `lib/mouse/context.ts`, `lib/mouse/daily-cheese.ts`, `tests/on-no-product.test.ts`
