@@ -278,6 +278,13 @@ shipped straight to the maker, and counted where they sit like any other
 component. Brandon: "Lorena inventory is important and we will update it, even
 with surplus." Record a count in the unit the person gives (skins, yards).
 
+**Leather and suede for bags are measured in square feet.** "Feet per bag",
+"10 feet", "ft" for leather always means square feet (sq ft), never linear feet
+or skins (Brandon, 7 Oct 2026). Leather is priced by the square foot too, and a
+skin or hide is a different size every time, so never turn skins into bags or
+bags into skins without the square footage of those skins (it is on the
+supplier's invoice). If you do not have it, ask.
+
 **Trim and hardware usually live at a vendor, not the studio.** Brandon: "we
 will rarely have button in studio, we will have them at various factories."
 This is worth counting, because a factory can sit on a surplus or run short and
