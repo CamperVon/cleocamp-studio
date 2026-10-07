@@ -146,12 +146,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Change:** items Mouse files for whoever maintains the code can be dismissed from the ToDo page.
 - **Files:** `app/(main)/items/`
 
-### Changing a to-do in place · `HASH`
+### Changing a to-do in place · `988e834`
 - **Problem:** asked to mark an existing to-do urgent, the assistant had no tool for it, so it made an urgent copy and closed the original, losing its history.
 - **Change:** an `update_todo` tool marks an open to-do or question urgent (or not), moves or clears its due date, or rewords it. Only what is passed changes. It refuses a closed item and hands back the open list when an id is mistyped.
 - **Files:** `lib/mouse/tools.ts` (`update_todo`, `todoChanges`), `lib/mouse/agent.ts`, `app/ui/chat.tsx`, `tests/update-todo.test.ts`
 
-### The last count is the last word · `HASH`
+### The last count is the last word · `988e834`
 - **Problem:** a transfer took a place to 0 and a count minutes later set it to 2,000. The assistant saw both figures, logged them as a contradiction and did nothing.
 - **Change:** the standing instructions say to read the item's ledger in order. The latest count at each place stands, and only what moved after it changes it. Only when the ledger cannot settle it does the assistant email the person who counts stock and ask for a count.
 - **Files:** `lib/mouse/prompt.ts`
@@ -195,7 +195,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** Shopify (`write_order_edits`), the support inbox.
 - **Files:** `lib/support/reply.ts`, `lib/support/orders.ts`, `lib/support/draft.ts`, `app/(main)/support/`, `app/ui/support-case.tsx`, `prisma/schema.prisma` (`SupportCase.draftSwap`), `tests/support-swap.test.ts`
 
-### Tell Mouse on a support case makes the change, not just the reply · `HASH`
+### Tell Mouse on a support case makes the change, not just the reply · `988e834`
 - **Problem:** on a support case, "Tell Mouse" only reached the toolless reply drafter. Asked to record something about the customer or add a to-do, it rewrote the email and changed nothing.
 - **Change:** when the instruction asks for a change in the app (a to-do, a note, stock, the calendar, a record about the customer), the full assistant makes it first, as the person who typed it. It is given only their words and facts checked by code: the customer's name only if it is plainly a name, their email only if it is plainly an address, the order number, the category, and our own records under that email. It never sees the customer's email. Tools that send, invoice or move money are withheld; those stay with the card's taps. What it did goes on the case as a note, and the reply is redrafted knowing it. A note filed from email can never pass for one of these.
 - **Change:** the reply drafter is shown the sender's own records, matched by email: open to-dos naming them, plus any brand-specific record kept on that email (here, items on loan; leave that part out or swap in your own).
@@ -216,12 +216,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Change:** a recipe line can carry a size. The forecast works out that line's usage from that size's sales only. Mouse can set it, and sees "(size 2 only)" in its context.
 - **Files:** `prisma/schema.prisma` (`BomLine.size`), `lib/forecast.ts`, `lib/mouse/tools.ts` (`update_product_bom`), `lib/mouse/context.ts`
 
-### A first delivery of something not on Shopify sets its stock · `HASH`
+### A first delivery of something not on Shopify sets its stock · `988e834`
 - **Problem:** a product made in the app and never listed on Shopify starts with stock unknown. Its first delivery was added to unknown, which stays unknown, so it read UNKNOWN on hand through gifts and wholesale shipments until someone counted it.
 - **Change:** the first stock entry for a variant that has none, is not on Shopify, and is a delivery sets the count to what arrived. Anything else on an unknown count still stays unknown, and the tool now tells the assistant to ask for a count when it does.
 - **Files:** `lib/stock-push.ts` (`localNextCount`), `lib/mouse/tools.ts` (`log_inventory_event`), `tests/stock-push.test.ts`
 
-### PO PDF test reads letter-spaced headings · `HASH`
+### PO PDF test reads letter-spaced headings · `988e834`
 - **Problem:** the bilingual PO test failed because `pdftotext` reads the letter-spaced 7pt column headings as "A RT I C O L O". The document itself was right.
 - **Change:** the check ignores spacing.
 - **Files:** `tests/po-pdf.test.ts`
