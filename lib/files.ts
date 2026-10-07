@@ -71,14 +71,94 @@ export async function keepFile(input: {
   const links = await checkLinks(input.links ?? [])
   if ('error' in links) return { ok: false, error: links.error }
   const f = await db.storedFile.create({
-    data: {
-      title: input.title.trim(), filename: input.filename || 'file', mediaType: input.mediaType, sizeBytes, data: input.base64,
-      notes: input.notes?.trim() || null,
-      links: { create: links.ok },
-    },
+    data: { ...storedFileData({ ...input, sizeBytes }), links: { create: links.ok } },
     select: { id: true },
   })
   return { ok: true, id: f.id }
+}
+
+/** The row keepFile writes, links aside: notes kept, trimmed, or null when blank. Pure. */
+export function storedFileData(input: { title: string; filename: string; mediaType: string; base64: string; sizeBytes: number; notes?: string | null }) {
+  return {
+    title: input.title.trim(), filename: input.filename || 'file', mediaType: input.mediaType, sizeBytes: input.sizeBytes, data: input.base64,
+    notes: input.notes?.trim() || null,
+  }
+}
+
+/** The Files page's upload (app/api/files): the form's file, title, notes and links, handed to keepFile. */
+export async function uploadFromForm(form: FormData, keep: typeof keepFile = keepFile): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const file = form.get('file')
+  if (!(file instanceof File)) return { ok: false, error: 'No file came through.' }
+  let links: Array<{ kind: string; recordId: string }> = []
+  try { links = JSON.parse(String(form.get('links') ?? '[]')) } catch { return { ok: false, error: 'The links were unreadable.' } }
+  return keep({
+    title: String(form.get('title') ?? '') || file.name.replace(/\.[a-z0-9]+$/i, ''),
+    filename: file.name,
+    mediaType: file.type,
+    base64: Buffer.from(await file.arrayBuffer()).toString('base64'),
+    notes: String(form.get('notes') ?? ''),
+    links,
+  })
+}
+
+// ── keep_file: a file just sent in this chat, never another conversation's ──
+
+/** How far back keep_file looks for a file sent in chat. */
+export const KEEP_WINDOW_MS = 30 * 60 * 1000
+
+export type ChatFile = { threadId: string; filename: string; mediaType: string; data: string | null; createdAt: Date }
+
+/**
+ * Which recent attachment keep_file means: only ones sent in this chat
+ * thread, in the last half hour, still holding their bytes; the newest, or
+ * the one with the filename given. An attachment from any other thread is
+ * never chosen, however recent or however named. Pure.
+ */
+export function chooseChatAttachment(threadId: string, candidates: ChatFile[], filename?: string | null, now = new Date()): { file: ChatFile } | { error: string } {
+  const mine = candidates
+    .filter((c) => c.threadId === threadId && c.data && +now - +c.createdAt <= KEEP_WINDOW_MS && (!filename || c.filename === filename))
+    .sort((a, b) => +b.createdAt - +a.createdAt)
+  if (!mine.length) {
+    return { error: filename
+      ? `No file called "${filename}" was sent in this chat in the last half hour. Ask them to attach it again.`
+      : 'No file was sent in this chat in the last half hour. Ask them to attach it again.' }
+  }
+  const a = mine[0]
+  const others = mine.slice(1).filter((x) => +a.createdAt - +x.createdAt < 60_000).map((x) => x.filename)
+  if (!filename && others.length) return { error: `More than one file was just sent (${[a.filename, ...others].join(', ')}). Say which one with filename.` }
+  return { file: a }
+}
+
+/** This thread's recent attachments; the query is limited to the thread as well. */
+async function threadAttachments(threadId: string): Promise<ChatFile[]> {
+  const rows = await db.chatAttachment.findMany({
+    where: { message: { threadId }, createdAt: { gte: new Date(Date.now() - KEEP_WINDOW_MS) }, data: { not: null } },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+    select: { filename: true, mediaType: true, data: true, createdAt: true, message: { select: { threadId: true } } },
+  })
+  return rows.map((r) => ({ threadId: r.message.threadId, filename: r.filename, mediaType: r.mediaType, data: r.data, createdAt: r.createdAt }))
+}
+
+/**
+ * keep_file's work. Needs the chat thread it was called from: with none (any
+ * run that is not an interactive chat) nothing is looked up and nothing saved.
+ */
+export async function keepChatFile(
+  threadId: string | null | undefined,
+  input: { title?: unknown; filename?: unknown; notes?: unknown; links?: unknown },
+  deps: { find: (threadId: string) => Promise<ChatFile[]>; keep: typeof keepFile } = { find: threadAttachments, keep: keepFile },
+) {
+  if (!threadId) return { ok: false, kept: false, reason: 'Files can only be kept from a chat conversation. Ask them to attach it in chat.' }
+  const filename = typeof input.filename === 'string' && input.filename.trim() ? input.filename.trim() : null
+  const c = chooseChatAttachment(threadId, await deps.find(threadId), filename)
+  if ('error' in c) return { ok: false, kept: false, reason: c.error }
+  const a = c.file
+  const links = ((Array.isArray(input.links) ? input.links : []) as Array<{ kind: string; id: string }>).map((l) => ({ kind: l.kind, recordId: l.id }))
+  const title = String(input.title ?? '')
+  const r = await deps.keep({ title, filename: a.filename, mediaType: a.mediaType, base64: a.data!, notes: typeof input.notes === 'string' ? input.notes : null, links })
+  if (!r.ok) return { ok: false, kept: false, reason: r.error }
+  return { kept: true, id: r.id, file: a.filename, linked: links.length, tellTheUser: `Kept "${title}" (${a.filename}) in Files${links.length ? `, linked to ${links.length} record${links.length === 1 ? '' : 's'}` : ''}.` }
 }
 
 /** Links that point at real records, or the first that does not. */

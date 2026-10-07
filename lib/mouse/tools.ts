@@ -12,8 +12,11 @@ import { asDocLanguage } from '@/lib/po-strings'
 /** A tool definition paired with the code that runs it. */
 type Tool = {
   def: Anthropic.Tool
-  run: (input: any) => Promise<unknown>
+  run: (input: any, ctx?: ToolContext) => Promise<unknown>
 }
+
+/** What a run knows about where it came from. threadId: set only for an interactive chat turn. */
+export type ToolContext = { threadId?: string }
 
 const str = (description: string) => ({ type: 'string' as const, description })
 
@@ -5530,7 +5533,7 @@ export const TOOLS: Record<string, Tool> = {
         'in the Files area for good, linked to the products, components or vendors it is about, so it shows ' +
         'on their rows. Chat attachments are otherwise cleared after about two months. Use it when a person ' +
         'asks you to keep or file something, not for every attachment. It takes the newest attachment sent ' +
-        'in chat in the last half hour (or the one whose filename you give) and says which file it kept.',
+        'in this chat in the last half hour (or the one whose filename you give) and says which file it kept.',
       input_schema: {
         type: 'object',
         properties: {
@@ -5550,23 +5553,11 @@ export const TOOLS: Record<string, Tool> = {
         required: ['title'],
       },
     },
-    run: async (i) => {
-      const since = new Date(Date.now() - 30 * 60 * 1000)
-      const recent = await db.chatAttachment.findMany({
-        where: { createdAt: { gte: since }, data: { not: null }, ...(i.filename ? { filename: String(i.filename) } : {}) },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-        select: { filename: true, mediaType: true, data: true, createdAt: true },
-      })
-      if (!recent.length) return { ok: false, kept: false, reason: i.filename ? `No file called "${i.filename}" was sent in chat in the last half hour.` : 'No file was sent in chat in the last half hour. Ask them to attach it again.' }
-      const a = recent[0]
-      const others = recent.slice(1).filter((x) => +a.createdAt - +x.createdAt < 60_000).map((x) => x.filename)
-      if (!i.filename && others.length) return { ok: false, kept: false, reason: `More than one file was just sent (${[a.filename, ...others].join(', ')}). Say which one with filename.` }
-      const links = ((i.links ?? []) as Array<{ kind: string; id: string }>).map((l) => ({ kind: l.kind, recordId: l.id }))
-      const { keepFile } = await import('@/lib/files')
-      const r = await keepFile({ title: String(i.title ?? ''), filename: a.filename, mediaType: a.mediaType, base64: a.data!, notes: (i.notes as string) ?? null, links })
-      if (!r.ok) return { ok: false, kept: false, reason: r.error }
-      return { kept: true, id: r.id, file: a.filename, linked: links.length, tellTheUser: `Kept "${i.title}" (${a.filename}) in Files${links.length ? `, linked to ${links.length} record${links.length === 1 ? '' : 's'}` : ''}.` }
+    run: async (i, ctx) => {
+      // Only this chat thread's attachments, and only from an interactive
+      // chat: lib/files.ts keepChatFile.
+      const { keepChatFile } = await import('@/lib/files')
+      return keepChatFile(ctx?.threadId, i)
     },
   },
 

@@ -52,6 +52,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - Each run records, alongside its token usage, the size and a short hash of each block and each section: sizes only, no text.
 - **Files:** `lib/mouse/context.ts` (`splitCatalog`, `buildCatalogParts`, `catalogStats`), `lib/mouse/cache-blocks.ts`, `lib/mouse/agent.ts`, `lib/mouse/runner.ts`, `tests/catalog-split.test.ts`
 
+### keep_file scoped to the chat it was called from · `HASH`
+- **Problem:** `keep_file` picked the newest chat attachment in the whole app, so with two conversations going it could keep someone else's file, and any run with the default tool set could call it.
+- **Change:** it only chooses an attachment sent in the calling chat thread (still the last half hour, still by filename when several), and with no eligible one saves nothing and asks for the file again. Tools listed in `CHAT_ONLY_TOOLS` are given only to a run that has a chat thread (`toolsFor`), so background, email, in-flight and to-do runs never see it; called without a thread it refuses. The Files upload form gained a Notes field that is saved with the file.
+- **Files:** `lib/files.ts` (`chooseChatAttachment`, `keepChatFile`, `uploadFromForm`, `storedFileData`), `lib/mouse/tools.ts` (tool context), `lib/mouse/agent.ts` (`CHAT_ONLY_TOOLS`, `toolsFor`, `chatThreadId`), `app/api/files/route.ts`, `app/(main)/files/file-controls.tsx`, `tests/keep-file.test.ts`
+- **Needs:** nothing external.
+
 ### Files area: documents kept for good, linked to records · `ce25ec5`
 - **Problem:** a supplier's colour card or spec sheet had nowhere to live. Chat attachments are cleared after about two months, and nothing tied a document to the components or vendors it was about.
 - **Change:** a Files page (under More) to upload PDFs and photos up to 4 MB, give each a title and notes, and link it to products, components and vendors; each linked row shows "Files: …" with a link that opens it. The assistant can keep a file just sent in chat (`keep_file`, not from email), sees a record's files in `open_record`, and can read one (`read_file`). A tool result carrying `fileForModel` goes to the model as the document or image itself, not JSON, and the bytes are redacted from the saved chat turn. Files are searchable. Bytes are stored in Postgres (no outside storage) and never cleared by the storage cleanup.

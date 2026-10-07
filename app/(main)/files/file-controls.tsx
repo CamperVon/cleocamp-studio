@@ -31,6 +31,7 @@ export function UploadFile({ targets }: { targets: Targets }) {
   const ref = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [title, setTitle] = useState('')
+  const [notes, setNotes] = useState('')
   const [links, setLinks] = useState<string[]>([])
   const [pick, setPick] = useState('')
   const [busy, setBusy] = useState(false)
@@ -44,12 +45,13 @@ export function UploadFile({ targets }: { targets: Targets }) {
     const form = new FormData()
     form.set('file', file)
     form.set('title', title)
+    form.set('notes', notes)
     form.set('links', JSON.stringify(links.map(split)))
     const r = await fetch('/api/files', { method: 'POST', body: form }).then((x) => x.json()).catch(() => ({ error: 'The upload did not go through. Try again.' }))
     setBusy(false)
     if (r.error) { setMsg({ text: r.error, bad: true }); return }
     setMsg({ text: 'Kept.', bad: false })
-    setFile(null); setTitle(''); setLinks([]); if (ref.current) ref.current.value = ''
+    setFile(null); setTitle(''); setNotes(''); setLinks([]); if (ref.current) ref.current.value = ''
     router.refresh()
   }
 
@@ -59,6 +61,7 @@ export function UploadFile({ targets }: { targets: Targets }) {
         onChange={(e) => { const f = e.target.files?.[0] ?? null; setFile(f); if (f && !title) setTitle(f.name.replace(/\.[a-z0-9]+$/i, '')) }}
         className="text-sm file:mr-3 file:rounded-lg file:border file:border-line file:bg-bg file:px-3 file:py-1.5 file:text-sm" />
       <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title, e.g. Calamo colour card" className={input} />
+      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes (optional)" rows={2} className={input} />
       <RecordPicker targets={targets} value={pick} onChange={(v) => { if (v && !links.includes(v)) setLinks([...links, v]); setPick('') }} />
       {links.length ? (
         <div className="flex flex-wrap gap-1.5">

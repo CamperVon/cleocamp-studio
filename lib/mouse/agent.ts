@@ -329,10 +329,12 @@ export async function runAgent(opts: {
    * reads the real records, but nothing that would change anything runs.
    */
   practice?: boolean
+  /** The chat thread, set by chatTurn only. Chat-only tools need it. */
+  chatThreadId?: string
 }): Promise<AgentResult> {
   const client = new Anthropic({ maxRetries: 0 })
   const maxRounds = opts.maxRounds ?? (Number(process.env.MOUSE_MAX_REQUESTS) || 6)
-  const allowed = opts.allowedTools ?? Object.keys(TOOLS)
+  const allowed = toolsFor(opts.allowedTools, opts.chatThreadId)
   const tools = TOOL_DEFS.filter((t) => allowed.includes(t.name))
 
   // ── Two caches, not one ──────────────────────────────────────────────────
@@ -403,7 +405,7 @@ export async function runAgent(opts: {
       },
       system, messages: msgs, tools,
       execute: async (name, input) => practiceStop(opts.practice === true, name, input) ??
-        withLineSheetQuestions(name, withNotesOnWhatChanged(name, input, await TOOLS[name].run(input))),
+        withLineSheetQuestions(name, withNotesOnWhatChanged(name, input, await TOOLS[name].run(input, { threadId: opts.chatThreadId }))),
       model: opts.model ?? CHAT_MODEL,
       effort: opts.effort ?? 'high', maxRequests: rounds,
       maxOutputTokens: Number(process.env.MOUSE_MAX_OUTPUT_TOKENS) || 24000,
@@ -526,6 +528,20 @@ export async function runAgent(opts: {
   }
 
   return result
+}
+
+/**
+ * Tools only an interactive chat turn gets. keep_file picks a file sent in
+ * the chat thread it was called from, so a run with no thread (the nightly
+ * pass, team email, an in-flight update, answering a to-do) never has it,
+ * even when it otherwise takes the whole tool set.
+ */
+export const CHAT_ONLY_TOOLS = new Set(['keep_file'])
+
+/** The tools a run may use. Pure. */
+export function toolsFor(allowedTools: string[] | undefined, chatThreadId: string | undefined): string[] {
+  const all = allowedTools ?? Object.keys(TOOLS)
+  return chatThreadId ? all : all.filter((n) => !CHAT_ONLY_TOOLS.has(n))
 }
 
 /**
@@ -670,6 +686,7 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
     // so it is the only one whose instruction is read for corrections.
     fromAPerson: true,
     practice,
+    chatThreadId: threadId,
     // Consecutive user messages are joined by the API, so the record of a
     // reply's actions reads as the opening of the next person's message.
     history: history.flatMap((m): Anthropic.MessageParam[] => {
