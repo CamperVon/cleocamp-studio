@@ -278,7 +278,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** Shopify (product sync).
 - **Files:** `app/ui/primitives.tsx` (`Thumb`), `app/(main)/products/page.tsx`, `app/(main)/stylists/page.tsx`, `lib/stylist-stock.ts`
 
-### Links in the daily email · `HASH`
+### Links in the daily email · `c15af59`
 - **Problem:** the daily email listed what needed doing, but to act on a line you had to open the app and find it.
 - **Change:** each line links to where it is dealt with: a to-do to its row on the items page, a purchase order to its own page, a run at a maker to its product's row, support and the tidy-up to their pages. The plain-text version prints the link under each line. A one-off note can be shown at the top of a chosen day's edition, fixed text keyed by date (`NEWS`), used here to say the lines are now links.
 - **Files:** `lib/mouse/daily-cheese.ts` (`APP`, `sentenceHtml`, `newsFor`), `tests/daily-cheese-links.test.ts`
