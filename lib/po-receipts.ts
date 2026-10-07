@@ -24,6 +24,18 @@ export function poNumberIn(text: string | null | undefined): string | null {
 }
 
 /**
+ * A line that is a charge, not goods: shipping, tax, a fee. Nothing ever
+ * arrives for it, so it never holds an order open. Until 7 Oct 2026 every
+ * line had to be received, and PO 2396 (Moo postcards, with Shipping &
+ * Handling and Sales tax lines) would have sat at part-received for good
+ * once the cards came. Pure.
+ */
+export function isChargeLine(l: { componentId?: string | null; productVariantId?: string | null; description?: string | null }): boolean {
+  if (l.componentId || l.productVariantId) return false
+  return /\b(shipping|handling|freight|delivery|postage|tax|vat|duty|duties|fee|fees|surcharge|discount|deposit|setup|set-up)\b/i.test(l.description ?? '')
+}
+
+/**
  * Put `qty` received against the PO's line(s) for this item: fills each
  * matching line up to what was ordered, and any extra lands on the last one
  * (a vendor sending more than ordered is recorded as it happened, not
@@ -52,8 +64,8 @@ export async function receiveOnPo(
     left -= take
     if (left <= 0) break
   }
-  const after = po.lines.map((l) => ({ ordered: Number(l.qtyOrdered), received: updates.find((u) => u.id === l.id)?.received ?? Number(l.qtyReceived), f: unitsPerLineUnit(l.unit, l.component) }))
-  const all = after.every((l) => l.received >= l.ordered)
+  const after = po.lines.map((l) => ({ ordered: Number(l.qtyOrdered), received: updates.find((u) => u.id === l.id)?.received ?? Number(l.qtyReceived), f: unitsPerLineUnit(l.unit, l.component), charge: isChargeLine(l) }))
+  const all = after.every((l) => l.charge || l.received >= l.ordered)
   const status = all ? 'RECEIVED' : after.some((l) => l.received > 0) ? 'PARTIALLY_RECEIVED' : po.status
   await db.$transaction([
     ...updates.map((u) => db.purchaseOrderLine.update({ where: { id: u.id }, data: { qtyReceived: String(u.received) } })),
@@ -93,8 +105,8 @@ export async function unreceiveOnPo(
     if (left <= 0) break
   }
   if (!updates.length) return { ok: false, message: `PO ${poNumber} had nothing received on this item, so nothing was taken off it.` }
-  const after = po.lines.map((l) => ({ ordered: Number(l.qtyOrdered), received: updates.find((u) => u.id === l.id)?.received ?? Number(l.qtyReceived), f: unitsPerLineUnit(l.unit, l.component) }))
-  const status = after.every((l) => l.received >= l.ordered) ? 'RECEIVED' : after.some((l) => l.received > 0) ? 'PARTIALLY_RECEIVED' : 'SENT'
+  const after = po.lines.map((l) => ({ ordered: Number(l.qtyOrdered), received: updates.find((u) => u.id === l.id)?.received ?? Number(l.qtyReceived), f: unitsPerLineUnit(l.unit, l.component), charge: isChargeLine(l) }))
+  const status = after.every((l) => l.charge || l.received >= l.ordered) ? 'RECEIVED' : after.some((l) => l.received > 0) ? 'PARTIALLY_RECEIVED' : 'SENT'
   await db.$transaction([
     ...updates.map((u) => db.purchaseOrderLine.update({ where: { id: u.id }, data: { qtyReceived: String(u.received) } })),
     ...(status !== po.status ? [db.purchaseOrder.update({ where: { id: po.id }, data: { status } })] : []),

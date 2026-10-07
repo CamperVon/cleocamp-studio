@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { isChargeLine } from '@/lib/po-receipts'
 
 /**
  * Close a purchase order: nothing more is coming on it. Brandon, 1 Oct 2026:
@@ -29,7 +30,7 @@ export async function closePurchaseOrder(poNumber: string, reason: string): Prom
   })
   if (!po) return { ok: false, error: `No purchase order ${poNumber}.` }
   if (po.status === 'DRAFT') return { ok: false, error: `PO ${poNumber} is still a draft, never sent. Cancel it instead (status CANCELLED).` }
-  const lines = po.lines.map((l) => ({
+  const lines = po.lines.filter((l) => !isChargeLine(l)).map((l) => ({
     label: l.productVariant ? [l.productVariant.product.name, l.productVariant.colorway?.customerName, l.productVariant.size].filter(Boolean).join(' / ') : (l.component?.name ?? l.description ?? 'line'),
     ordered: Number(l.qtyOrdered), received: Number(l.qtyReceived), unit: l.unit,
   }))
