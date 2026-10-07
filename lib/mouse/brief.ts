@@ -5,6 +5,8 @@ import { poLineLabel } from '@/lib/po'
 import { laMidnight } from '@/lib/dates'
 import { BACKGROUND_MODEL } from '@/lib/mouse/agent'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
+import { ratePerDay } from '@/lib/forecast'
+import { coverLine } from '@/lib/mouse/brief-cover'
 
 const VOICE = `You are Studio Mouse. You live in a Los Angeles fashion studio. You are
 British, you are small, and you have been watching this business closely.
@@ -28,7 +30,10 @@ Banned: em dashes. The words "worth noting", "that said", "meanwhile",
 "landscape", "navigate", "leverage". Sentences that explain what you just said.
 Ending on a neat summary. Sign-offs.
 
-Never invent a number. If something is unknown, say so plainly. Not knowing is
+Never invent a number. If something is unknown, say so plainly. The cover
+figures (what is left once a delivery lands) are worked out for you: use them
+as given, and do not say you cannot tell whether an order covers a shortfall
+when a cover line answers it. Not knowing is
 often the most useful thing you can point at.
 
 Only what she needs to know today. If the night's notes ran long — a lot of
@@ -87,14 +92,41 @@ export async function composeDailyBrief(overnight?: string): Promise<{ text: str
     db.salesSnapshot.aggregate({ _sum: { unitsSold: true }, where: { date: { gte: laMidnight(1), lt: laMidnight(0) } } }),
   ])
 
+  // Cover for everything oversold plus the lowest few: stock now, sales a day
+  // (the forecast's own measure), what is due on open POs and when, and what
+  // is left once it lands. Worked out here so the brief never has to say it
+  // cannot tell (brief-cover.ts).
+  const oversold = await db.productVariant.findMany({
+    where: { onHandQty: { lt: 0 } },
+    orderBy: { onHandQty: 'asc' },
+    take: 12,
+    include: { product: true, colorway: true },
+  })
+  const watch = [...new Map([...oversold, ...lowStock].map((v) => [v.id, v])).values()]
+    .sort((a, b) => Number(a.onHandQty) - Number(b.onHandQty))
+    .slice(0, 12)
+  const ids = watch.map((v) => v.id)
+  const [sold56, openLines] = await Promise.all([
+    db.salesSnapshot.findMany({ where: { productVariantId: { in: ids }, date: { gte: laMidnight(56) } }, select: { productVariantId: true, date: true, unitsSold: true } }),
+    db.purchaseOrderLine.findMany({
+      where: { productVariantId: { in: ids }, purchaseOrder: { status: { in: ['SENT', 'PARTIALLY_RECEIVED'] } } },
+      select: { productVariantId: true, qtyOrdered: true, qtyReceived: true, purchaseOrder: { select: { poNumber: true, expectedAt: true } } },
+    }),
+  ])
+  const cover = watch.map((v) => coverLine({
+    label: [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / '),
+    onHand: Number(v.onHandQty),
+    perDay: ratePerDay(sold56.filter((s) => s.productVariantId === v.id)),
+    incoming: openLines.filter((l) => l.productVariantId === v.id).map((l) => ({
+      po: l.purchaseOrder.poNumber, qty: Number(l.qtyOrdered) - Number(l.qtyReceived), due: l.purchaseOrder.expectedAt,
+    })),
+  }, laMidnight(0)))
+
   const facts = [
     `Sold yesterday: ${sales1._sum.unitsSold ?? 0} units. Last 7 days: ${sales7._sum.unitsSold ?? 0}.`,
     '',
-    'Lowest stock (negative means oversold):',
-    ...lowStock.map(
-      (v) =>
-        `- ${[v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')}: ${v.onHandQty}`,
-    ),
+    'Lowest stock and cover (negative means oversold; worked out by code, use as given):',
+    ...cover.map((l) => `- ${l}`),
     '',
     'On order:',
     ...pos.map(

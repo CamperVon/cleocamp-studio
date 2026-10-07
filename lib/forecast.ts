@@ -26,7 +26,7 @@ const DAY = 864e5
 export type Blocked = { reason: string }
 
 /** Weighted mean units per day. Last two weeks count triple, weeks three and four double. */
-function ratePerDay(rows: Array<{ date: Date; unitsSold: number }>): number {
+export function ratePerDay(rows: Array<{ date: Date; unitsSold: number }>): number {
   const now = Date.now()
   let num = 0
   let den = 0
