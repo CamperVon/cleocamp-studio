@@ -248,7 +248,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Change:** `create_component` takes the product (and colour or size) it goes into and adds the recipe line in the same step, quantity unknown unless given; without one, it tells the assistant to ask. The assistant's context marks every non-packaging component on no product and lists them each turn, telling it to ask rather than guess. The daily email carries a line while any has sat on no product for over a day.
 - **Files:** `lib/mouse/tools.ts` (`create_component`), `lib/bom.ts` (`onNoProduct`), `lib/mouse/context.ts`, `lib/mouse/daily-cheese.ts`, `tests/on-no-product.test.ts`
 
-### Charge lines never hold an order open · `HASH`
+### Charge lines never hold an order open · `6445ca3`
 - **Problem:** an order counted as fully received only when every line was, and a shipping, tax or fee line never "arrives", so an order with one stayed part-received for good after its goods came in.
 - **Change:** a line with no component or product whose wording is a charge (shipping, handling, freight, tax, duty, fee, surcharge, discount, deposit, setup) is left out of the received check and of the close-out shortfall. Free-text lines for goods are unaffected.
 - **Files:** `lib/po-receipts.ts` (`isChargeLine`), `lib/po-close.ts`, `tests/po-charge-lines.test.ts`
