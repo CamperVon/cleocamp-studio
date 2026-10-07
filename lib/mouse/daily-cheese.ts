@@ -24,7 +24,27 @@ import { URGENT_WINDOW_DAYS } from '@/lib/production-view'
 
 const DAY = 864e5
 
-type Item = { on: Date; tag: string; sentence: string }
+/**
+ * Where a line opens in the app. Brandon, 7 Oct 2026: tap a to-do in the
+ * email and update it there. The team's phones are signed in, so a link
+ * lands on the row itself (app/ui/jump.tsx opens a page at #rec-<id>).
+ */
+export const APP = 'https://admin.cleocamp.com'
+
+type Item = { on: Date; tag: string; sentence: string; href?: string }
+
+/**
+ * A one-off line at the top of a given morning's edition, to say something
+ * changed. Fixed text, keyed by the LA date it runs; it never repeats.
+ */
+const NEWS: Array<{ on: string; text: string }> = [
+  { on: '2026-10-08', text: 'New: every line below is now a link. Tap one to open it in the app and update it there.' },
+]
+
+/** The news line for a morning's edition, if any. `day` is the LA date, YYYY-MM-DD. Pure. */
+export function newsFor(day: string): string | null {
+  return NEWS.find((n) => n.on === day)?.text ?? null
+}
 
 // Cleo, 17 Sept 2026: "Overdue is so harsh. Let's only make something
 // overdue if it's 2 days late. Otherwise make it today." A date that
@@ -116,7 +136,7 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
         ? `PO ${po.poNumber} (${po.vendor.name}, ${what}) is overdue. Confirm when it will ship.`
         : `PO ${po.poNumber} (${po.vendor.name}, ${what}). ${duePhrase(on, today)} Confirm it is on track.`
 
-    out.push({ on, tag: staleDraft ? 'DRAFT' : tag(on, today), sentence })
+    out.push({ on, tag: staleDraft ? 'DRAFT' : tag(on, today), sentence, href: `${APP}/po/${encodeURIComponent(po.poNumber)}` })
   }
 
   // ── Runs at a maker ───────────────────────────────────────
@@ -133,7 +153,7 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
     const sentence = isPast && isReallyOverdue(r.expectedReadyAt, today)
       ? `${r.product.name} at ${vendor} is overdue. Confirm when it will be ready.`
       : `${r.product.name} at ${vendor}. ${duePhrase(r.expectedReadyAt, today)} Confirm it is ready.`
-    out.push({ on: r.expectedReadyAt, tag: tag(r.expectedReadyAt, today), sentence })
+    out.push({ on: r.expectedReadyAt, tag: tag(r.expectedReadyAt, today), sentence, href: `${APP}/products#rec-${r.productId}` })
   }
 
   // ── Calendar — only when Jane is actually named ────────────
@@ -144,7 +164,8 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
     const mentionsJane = /\bjane\b/i.test(e.title) || (!!e.notes && /\bjane\b/i.test(e.notes))
     if (!mentionsJane) continue
     const sentence = `${period(e.title)} ${duePhrase(e.date, today)}`
-    out.push({ on: e.date, tag: tag(e.date, today), sentence })
+    // The calendar lives on Home; there is no page per entry.
+    out.push({ on: e.date, tag: tag(e.date, today), sentence, href: `${APP}/` })
   }
 
   // ── Todos ─────────────────────────────────────────────────
@@ -168,7 +189,7 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
       : urgentNoDate
         ? `${period(i.title)} This is urgent.`
         : `${period(i.title)} ${duePhrase(i.dueDate!, today)}`
-    out.push({ on, tag: urgentNoDate ? 'URGENT' : tag(on, today), sentence })
+    out.push({ on, tag: urgentNoDate ? 'URGENT' : tag(on, today), sentence, href: `${APP}/items#rec-${i.id}` })
   }
 
   out.sort((a, b) => a.on.getTime() - b.on.getTime())
@@ -182,12 +203,14 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
     out.unshift({
       on: today, tag: 'TIDY',
       sentence: `Mouse thinks ${looksDone} item${looksDone === 1 ? ' is' : 's are'} already done — one tap to close or keep each, on Home.`,
+      href: `${APP}/`,
     })
   }
   if (waiting) {
     out.unshift({
       on: today, tag: 'SUPPORT',
-      sentence: `${waiting} customer ${waiting === 1 ? 'reply is' : 'replies are'} drafted and waiting for a yes on the Support page (admin.cleocamp.com/support).`,
+      sentence: `${waiting} customer ${waiting === 1 ? 'reply is' : 'replies are'} drafted and waiting for a yes on the Support page.`,
+      href: `${APP}/support`,
     })
   }
   return out
@@ -197,8 +220,16 @@ export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+/** A line's sentence, as a link when it has somewhere to open. Pure. */
+export function sentenceHtml(i: Item): string {
+  return i.href
+    ? `<a href="${escapeHtml(i.href).replace(/"/g, '&quot;')}" style="color:#3A342A;text-decoration:underline;text-decoration-color:#D9A79C;">${escapeHtml(i.sentence)}</a>`
+    : escapeHtml(i.sentence)
+}
+
 export async function composeDailyCheese(): Promise<{ subject: string; text: string; html: string }> {
   const today = laMidnight(0)
+  const news = newsFor(today.toISOString().slice(0, 10))
   const items = await buildDailyCheeseItems()
   // Who ordered since the last Cheese and is notable, a repeat buyer or a big
   // one (Brandon, 30 Sept 2026). Fixed sentences, like everything here. A
@@ -220,11 +251,12 @@ export async function composeDailyCheese(): Promise<{ subject: string; text: str
     '',
     `"${quote.text}" — ${quote.who}`,
     '',
+    ...(news ? [news, ''] : []),
     // Customers first, above everything else. Brandon, 5 Oct 2026: "put the
     // customers alert at top of daily cheese from now on."
     ...(customers.length ? ['Customers:', ...customers.map((c) => `- ${c}`), ''] : []),
     items.length ? 'Needs attention today:' : '',
-    ...items.map((i) => `- ${i.sentence} [${i.tag}]`),
+    ...items.map((i) => `- ${i.sentence} [${i.tag}]${i.href ? `\n  ${i.href}` : ''}`),
     items.length ? '' : 'Nothing needs attention today.',
     '',
     'That is everything that needs attention today.',
@@ -244,7 +276,7 @@ export async function composeDailyCheese(): Promise<{ subject: string; text: str
                style="border-collapse:separate;border-radius:10px;background:#FBECE9;
                       border:1px solid #EFC8C0;margin-top:8px;">
           <tr>
-            <td style="padding:12px 4px 12px 14px;color:#3A342A;font-size:13.5px;line-height:1.5;">${escapeHtml(i.sentence)}</td>
+            <td style="padding:12px 4px 12px 14px;color:#3A342A;font-size:13.5px;line-height:1.5;">${sentenceHtml(i)}</td>
             <td align="right" valign="top" style="padding:12px 14px 12px 16px;white-space:nowrap;">
               <span style="display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.05em;color:#fff;
                            background:#AE3527;padding:3px 8px;border-radius:5px;white-space:nowrap;">${escapeHtml(i.tag)}</span>
@@ -275,6 +307,7 @@ export async function composeDailyCheese(): Promise<{ subject: string; text: str
       <div class="name">The Daily Cheese</div>
       <div class="quote">&ldquo;${escapeHtml(quote.text)}&rdquo;<cite>${escapeHtml(quote.who)}</cite></div>
     </div>
+    ${news ? `<div style="border-radius:10px;background:#EAF1EC;border:1px solid #C9DCCF;margin-bottom:20px;padding:12px 14px;color:#2F4A39;font-size:13.5px;line-height:1.5;">${escapeHtml(news)}</div>` : ''}
     ${customers.length ? `<div class="eyebrow">Customers</div>${customers.map((c) => `
         <div style="border-radius:10px;background:#F4F1EA;border:1px solid #E2DCCC;margin-top:8px;padding:12px 14px;color:#3A342A;font-size:13.5px;line-height:1.5;">${escapeHtml(c)}</div>`).join('')}` : ''}
     <div class="eyebrow"${customers.length ? ' style="margin-top:22px;"' : ''}>${items.length ? 'Needs attention today' : 'All clear'}</div>
