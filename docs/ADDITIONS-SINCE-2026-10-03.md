@@ -52,7 +52,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - Each run records, alongside its token usage, the size and a short hash of each block and each section: sizes only, no text.
 - **Files:** `lib/mouse/context.ts` (`splitCatalog`, `buildCatalogParts`, `catalogStats`), `lib/mouse/cache-blocks.ts`, `lib/mouse/agent.ts`, `lib/mouse/runner.ts`, `tests/catalog-split.test.ts`
 
-### Morning brief gets cover worked out in code · `HASH`
+### Morning brief gets cover worked out in code · `f73f802`
 - **Problem:** the morning brief (one model call, no tools) was given each item's stock and the open PO lines but only shop-wide sales totals, and is told never to invent a number, so it could only say it "can't see" whether a delivery covers a shortfall.
 - **Change:** for everything oversold plus the lowest few, code works out stock now, sales a day (the forecast's own weighted rate), what is due on open POs for exactly that variant and when, and what is left once it lands (or how short it stays), and hands those lines to the brief to use as given.
 - **Files:** `lib/mouse/brief-cover.ts` (`coverLine`), `lib/mouse/brief.ts`, `lib/forecast.ts` (`ratePerDay` exported), `tests/brief-cover.test.ts`
