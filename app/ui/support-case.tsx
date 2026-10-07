@@ -1,8 +1,8 @@
 'use client'
 import { useState, useTransition } from 'react'
 import type { Reviewer } from '@/app/(main)/support/actions'
-import { addCaseNote, applyAddressAndReply, swapVariantAndReply, approveReturnRefund, cancelOrderAndReply, flagForReview, markReviewed, quoteCaseRefund, quoteOrderRefund, redraftReply, refundOrderAndReply, removeUnshippedItem, sendReply, setCaseStatus, tellMouse } from '@/app/(main)/support/actions'
-import { swapClaims, claimsCancelled, claimsNotYetDone, claimsRefunded, mentionsDiscount, mentionsRefundToCustomer, teamInstructions, partlyShipped, refundIssued, unfilled, unshippedLines } from '@/lib/support/reply'
+import { addCaseNote, applyAddressAndReply, invoiceAndReply, swapVariantAndReply, approveReturnRefund, cancelOrderAndReply, flagForReview, markReviewed, quoteCaseRefund, quoteOrderRefund, redraftReply, refundOrderAndReply, removeUnshippedItem, sendReply, setCaseStatus, tellMouse } from '@/app/(main)/support/actions'
+import { swapClaims, claimsInvoice, claimsCancelled, claimsNotYetDone, claimsRefunded, mentionsDiscount, mentionsRefundToCustomer, teamInstructions, partlyShipped, refundIssued, unfilled, unshippedLines } from '@/lib/support/reply'
 import { trimQuoted } from '@/lib/support/core'
 import { ReturnIntake } from '@/app/ui/return-intake'
 
@@ -48,6 +48,8 @@ export type CaseView = {
     address: { to: Addr; from: Addr | null; problems: string[] } | null
     /** A size or colour swap, resolved by code (DraftSwap). */
     swap: { item: string; from: string; to: string; quantity: number; toVariantId: string | null; problems: string[] } | null
+    /** An invoice the team asked for, resolved by code (DraftInvoice). */
+    invoice: { item: string; variant: string; quantity: number; shopifyVariantId: string | null; email: string; name: string | null; unitPrice: number | null; problems: string[] } | null
     at: string
   } | null
 }
@@ -293,7 +295,12 @@ function ReplyBox({ c }: { c: CaseView }) {
   // figure is fetched and shown on the first tap, paid on the second.
   const refunds = !!o && partial && !open.length && !refundIssued(o) && (!o.emailMismatch || !!o.sameName) &&
     (claimsRefunded(text) || (mentionsRefundToCustomer(text) && toldToRefund)) && !claimsCancelled(text)
-  const primary = canMove || canSwap || cancels || refunds
+  // An invoice the team asked for: one tap has Shopify send it, then the reply
+  // (invoiceAndReply). Brandon, 7 Oct 2026.
+  const inv = d.invoice
+  const canInvoice = !!inv && !!inv.shopifyVariantId && !inv.problems.length && !!inv.name
+  const invoiceUnset = !canInvoice && claimsInvoice(text)
+  const primary = canMove || canSwap || cancels || refunds || canInvoice
   const blocked = pending || !!gaps.length || !text.trim()
   const run = (fn: () => Promise<{ ok: true } | { ok: false; error: string }>) =>
     start(async () => {
@@ -354,6 +361,16 @@ function ReplyBox({ c }: { c: CaseView }) {
         <p className="text-xs text-urgent">This reply says an item changes size or colour, and nothing here changes it. Tap Redraft, or change it in Shopify first. Send checks.</p>
       ) : null}
 
+      {inv ? (
+        <p className={`text-xs ${canInvoice ? 'text-muted' : 'text-urgent'}`}>
+          {canInvoice
+            ? <>Invoice from Shopify to {inv.name} &lt;{inv.email}&gt;: {inv.quantity} × {inv.item} <span className="font-medium text-ink">{inv.variant}</span>{inv.unitPrice != null ? ` at $${inv.unitPrice.toFixed(2)} each (Shopify's price)` : ''}. She adds shipping and tax at checkout; the order appears when she pays.</>
+            : <>Invoice not set up: {inv.problems.join(' ') || 'no name for her.'}</>}
+        </p>
+      ) : invoiceUnset ? (
+        <p className="text-xs text-urgent">This reply says an invoice was sent, and nothing here sends one. Tap Redraft, or invoice from the main Mouse chat first. Send checks.</p>
+      ) : null}
+
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -363,6 +380,15 @@ function ReplyBox({ c }: { c: CaseView }) {
       {gaps.length ? <p className="text-xs text-urgent">Fill in {gaps.map((g) => `[${g}]`).join(', ')} before sending.</p> : null}
 
       <div className="flex flex-wrap gap-2">
+        {canInvoice && !canSwap ? (
+          <button
+            type="button" disabled={blocked}
+            onClick={() => run(() => invoiceAndReply(c.id, text))}
+            className="rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-bg disabled:opacity-40"
+          >
+            {pending ? 'Sending the invoice…' : 'Send invoice & reply'}
+          </button>
+        ) : null}
         {canSwap ? (
           <button
             type="button" disabled={blocked}
@@ -372,7 +398,7 @@ function ReplyBox({ c }: { c: CaseView }) {
             {pending ? 'Working…' : `Swap to ${sw!.to}${canMove ? ', update address' : ''} & send`}
           </button>
         ) : null}
-        {canMove && !canSwap ? (
+        {canMove && !canSwap && !canInvoice ? (
           <button
             type="button" disabled={blocked}
             onClick={() => run(() => applyAddressAndReply(c.id, text))}
@@ -393,7 +419,7 @@ function ReplyBox({ c }: { c: CaseView }) {
                 else setMsg(q.error)
               })
               : run(() => refundOrderAndReply(c.id, text, refund))}
-            className={`rounded px-2.5 py-1.5 text-xs font-medium disabled:opacity-40 ${canSwap || canMove ? 'border border-line' : 'bg-accent text-bg'}`}
+            className={`rounded px-2.5 py-1.5 text-xs font-medium disabled:opacity-40 ${canSwap || canMove || canInvoice ? 'border border-line' : 'bg-accent text-bg'}`}
           >
             {pending ? 'Working…' : refund === null ? 'Refund in full & send' : `Refund $${refund.toFixed(2)} & send`}
           </button>
@@ -402,7 +428,7 @@ function ReplyBox({ c }: { c: CaseView }) {
           <button
             type="button" disabled={blocked}
             onClick={() => run(() => cancelOrderAndReply(c.id, text))}
-            className={`rounded px-2.5 py-1.5 text-xs font-medium disabled:opacity-40 ${canSwap || canMove ? 'border border-line' : 'bg-accent text-bg'}`}
+            className={`rounded px-2.5 py-1.5 text-xs font-medium disabled:opacity-40 ${canSwap || canMove || canInvoice ? 'border border-line' : 'bg-accent text-bg'}`}
           >
             {pending ? 'Cancelling in Shopify…' : partial ? `Cancel ${what} (not shipped), refund & send` : 'Cancel order, refund & send'}
           </button>

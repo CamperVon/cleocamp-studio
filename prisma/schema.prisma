@@ -1318,6 +1318,11 @@ model SupportCase {
   /// lib/support/reply.ts), resolved to ids by code, with its checks.
   /// Applied in Shopify only by a person's tap.
   draftSwap         Json?
+  /// An invoice the team asked for ("create an invoice for her for a medium belt"),
+  /// resolved by code against Shopify (DraftInvoice in lib/support/draft.ts). The
+  /// card's "Send invoice & reply" tap has Shopify create and email it, then
+  /// sends the reply. Brandon, 7 Oct 2026.
+  draftInvoice      Json?
   draftedAt         DateTime?
   alertedAt         DateTime?
   lastMessageAt     DateTime         @default(now())

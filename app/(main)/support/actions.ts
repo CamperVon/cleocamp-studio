@@ -4,10 +4,10 @@ import { db } from '@/lib/db'
 import { currentPersonId } from '@/lib/session'
 import { Prisma } from '@/generated/prisma/client'
 import { sendEmail } from '@/lib/email'
-import { grantedScopes } from '@/lib/integrations/shopify'
-import { draftForCase, refreshOrder } from '@/lib/support/draft'
+import { grantedScopes, isConfigured, shopifyGraphQL } from '@/lib/integrations/shopify'
+import { draftForCase, refreshOrder, type DraftInvoice } from '@/lib/support/draft'
 import { cancelAndRefund, cancelUnshippedLines, freshOrder, removeUnshippedUnits, setShippingAddress, swapLineVariant } from '@/lib/support/orders'
-import { addressChangeProblems, claimsNotYetDone, partlyShipped, refundIssued, SUPPORT_FROM, SUPPORT_REPLY_TO, swapClaims, swapNotDone, TOLD_MOUSE, unfilled, unshippedLines, type DraftAddress, type DraftSwap } from '@/lib/support/reply'
+import { addressChangeProblems, claimsInvoice, claimsNotYetDone, INVOICE_NOTE, partlyShipped, refundIssued, SUPPORT_FROM, SUPPORT_REPLY_TO, swapClaims, swapNotDone, TOLD_MOUSE, unfilled, unshippedLines, type DraftAddress, type DraftSwap } from '@/lib/support/reply'
 import { namesMatch } from '@/lib/support/core'
 import type { OrderSnapshot } from '@/lib/support/orders'
 
@@ -178,6 +178,17 @@ export async function sendReply(id: string, text: string): Promise<Result> {
     }
   }
 
+  // Same for an invoice (7 Oct 2026: a draft said "We're sending you an
+  // invoice now" and nothing had made one). It must exist before this lands:
+  // sent from this case's tap, or found in Shopify for this email.
+  if (claimsInvoice(body) && !(await invoiceSentFor(id, c.customerEmail))) {
+    const inv = c.draftInvoice as DraftInvoice | null
+    return {
+      ok: false,
+      error: `This reply says an invoice was sent, and none has been for ${c.customerEmail}. ${inv?.shopifyVariantId && !inv.problems.length ? 'Tap "Send invoice & reply" to send it first' : 'Invoice her from the main Mouse chat first, or take it out of the reply'}. Nothing was sent.`,
+    }
+  }
+
   // Thread onto the customer's own last message when we know its id.
   const last = c.messages[0]?.inboundEmailId
     ? await db.inboundEmail.findUnique({ where: { id: c.messages[0].inboundEmailId }, select: { messageId: true, fromAddress: true } })
@@ -201,7 +212,7 @@ export async function sendReply(id: string, text: string): Promise<Result> {
     db.supportCase.update({
       where: { id },
       data: {
-        draftReply: null, draftNeeds: null, draftAddress: Prisma.DbNull, draftSwap: Prisma.DbNull, draftedAt: null,
+        draftReply: null, draftNeeds: null, draftAddress: Prisma.DbNull, draftSwap: Prisma.DbNull, draftInvoice: Prisma.DbNull, draftedAt: null,
         // A return or exchange now waits on the parcel; anything else is
         // answered. A new email from the customer reopens it either way.
         status: c.category === 'RETURN_EXCHANGE' ? 'WAITING_ON_RETURN' : 'RESOLVED',
@@ -259,6 +270,65 @@ export async function applyAddressAndReply(id: string, text: string): Promise<Re
     },
   })
   return sendReply(id, text)
+}
+
+/**
+ * Has an invoice gone to this customer? A note from this case's tap, or a
+ * Shopify draft order for their email sent or paid in the last fortnight
+ * (one made from the main Mouse chat counts too).
+ */
+async function invoiceSentFor(caseId: string, email: string): Promise<boolean> {
+  const note = await db.supportMessage.findFirst({ where: { caseId, direction: 'NOTE', body: { startsWith: INVOICE_NOTE } }, select: { id: true } })
+  if (note) return true
+  if (!isConfigured()) return false
+  const d = await shopifyGraphQL<{ draftOrders: { nodes: Array<{ email: string | null; status: string; createdAt: string }> } }>(
+    `{ draftOrders(first: 50, reverse: true) { nodes { email status createdAt } } }`, {},
+  ).catch(() => null)
+  const since = Date.now() - 14 * 864e5
+  return !!d?.draftOrders.nodes.some((n) => n.email?.toLowerCase() === email.toLowerCase() && n.status !== 'OPEN' && Date.parse(n.createdAt) >= since)
+}
+
+/**
+ * Send the invoice the team asked for, then the reply (Brandon, 7 Oct 2026).
+ * Shopify makes the draft order at its own prices and emails her the invoice;
+ * she adds shipping and pays, and only then is there an order. The tap is
+ * the approval (money always needs one). If Shopify does not send it, the
+ * reply does not go. A second tap never makes a second invoice.
+ */
+export async function invoiceAndReply(id: string, text: string): Promise<Result> {
+  const who = await approver()
+  if (!who) return { ok: false, error: 'Sign in again — only the team can do this.' }
+  if (unfilled(text).length) return { ok: false, error: 'Fill in the bracketed gaps in the reply first.' }
+  const c = await db.supportCase.findUnique({ where: { id } })
+  if (!c) return { ok: false, error: 'Case not found.' }
+  const inv = c.draftInvoice as DraftInvoice | null
+  if (!inv?.shopifyVariantId || inv.problems.length || !inv.name) return { ok: false, error: 'No invoice is set up on this case. Tap Redraft, or invoice from the main Mouse chat.' }
+  if (inv.email.toLowerCase() !== c.customerEmail.toLowerCase()) return { ok: false, error: 'The invoice is set up for a different address than this case. Tap Redraft. Nothing was sent.' }
+  const already = c.draftedAt
+    ? await db.supportMessage.findFirst({ where: { caseId: id, direction: 'NOTE', body: { startsWith: INVOICE_NOTE }, createdAt: { gte: c.draftedAt } }, select: { id: true } })
+    : null
+  if (!already) {
+    const { invoiceToShip } = await import('@/lib/live-sale')
+    const label = `${inv.item} / ${inv.variant}`
+    let d
+    try {
+      d = await invoiceToShip({
+        email: inv.email, customerName: inv.name,
+        lines: [{ shopifyVariantId: inv.shopifyVariantId, label, quantity: inv.quantity, priceOverride: null }],
+        note: `Invoice from support case${c.shopifyOrderName ? ` (order ${c.shopifyOrderName})` : ''}, sent by ${who.name} in the Studio app.`,
+      })
+    } catch (e) {
+      return { ok: false, error: `Shopify refused the invoice: ${(e instanceof Error ? e.message : String(e)).slice(0, 160)}. Check Orders → Drafts in Shopify. Nothing was sent.` }
+    }
+    if (!d.invoiceSent) {
+      return { ok: false, error: `Shopify ${d.draftName ? `made draft ${d.draftName} but` : ''} did not send the invoice${d.problems.length ? `: ${d.problems.join(' ')}` : ''}. Send it from Orders → Drafts in Shopify, then Send reply. Nothing was sent to her from here.` }
+    }
+    await db.supportMessage.create({
+      data: { caseId: id, direction: 'NOTE', fromAddress: who.name, body: `${INVOICE_NOTE} ${d.draftName ?? 'a Shopify invoice'} for ${inv.quantity} × ${label} went to ${inv.email}. When she pays, the order appears in Shopify ready for a shipping label.` },
+    })
+  }
+  const r = await sendReply(id, text)
+  return r.ok ? r : { ok: false, error: `The invoice is sent. The reply is not: ${r.error}` }
 }
 
 /**

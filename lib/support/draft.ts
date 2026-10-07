@@ -5,7 +5,7 @@ import { BACKGROUND_MODEL, CHAT_MODEL } from '@/lib/mouse/agent'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
 import { findOrder, variantSiblings, type OrderSnapshot } from '@/lib/support/orders'
 import { isConfigured, shopifyGraphQL } from '@/lib/integrations/shopify'
-import { addressChangeProblems, discountFacts, DRAFT_INSTRUCTIONS, mentionsDiscount, orderFacts, parseDraft, pickSwapLine, pickTargetVariant, teamInstructions, type DraftSwap, type DraftVariant } from '@/lib/support/reply'
+import { addressChangeProblems, discountFacts, DRAFT_INSTRUCTIONS, mentionsDiscount, orderFacts, parseDraft, pickInvoiceProduct, pickSwapLine, pickTargetVariant, teamInstructions, type DraftInvoiceAsk, type DraftSwap, type DraftVariant } from '@/lib/support/reply'
 import { orderNumbersIn, trimQuoted } from '@/lib/support/core'
 
 /**
@@ -117,6 +117,15 @@ export async function draftForCase(caseId: string): Promise<void> {
     lineItemId: null, fromVariantId: null, toVariantId: null,
     problems: [`Could not read the product from Shopify: ${e instanceof Error ? e.message.slice(0, 120) : String(e)}`],
   })) : null
+  // An invoice only when the team asked for one: a customer's email can make
+  // the drafter mention one, never put one on the card.
+  const askedForInvoice = told.some((t) => /\b(invoice|charge|bill)\b/i.test(t))
+  const invoice = d.newInvoice && askedForInvoice
+    ? await resolveInvoice(c, order, d.newInvoice).catch((e): DraftInvoice => ({
+      item: d!.newInvoice!.item, variant: d!.newInvoice!.variant ?? '', quantity: d!.newInvoice!.quantity, shopifyVariantId: null,
+      email: c.customerEmail, name: null, unitPrice: null, problems: [`Could not read the product from Shopify: ${e instanceof Error ? e.message.slice(0, 120) : String(e)}`],
+    }))
+    : null
   await db.supportCase.update({
     where: { id: caseId },
     data: {
@@ -124,9 +133,52 @@ export async function draftForCase(caseId: string): Promise<void> {
       draftNeeds: d.needs,
       draftAddress: address ? (address as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
       draftSwap: swap ? (swap as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+      draftInvoice: invoice ? (invoice as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
       draftedAt: new Date(),
     },
   })
+}
+
+/**
+ * An invoice the team asked for on a case, set up for one tap: the shop
+ * product and variant, the name and email it goes to, and Shopify's own price
+ * (money is worked out by Shopify, never by Mouse). Stored with its problems
+ * so the card can show them; the tap checks again before anything is sent.
+ */
+export type DraftInvoice = {
+  item: string; variant: string; quantity: number; shopifyVariantId: string | null
+  email: string; name: string | null; unitPrice: number | null; problems: string[]
+}
+
+export async function resolveInvoice(
+  c: { customerEmail: string; customerName: string | null },
+  order: OrderSnapshot | null,
+  want: DraftInvoiceAsk,
+): Promise<DraftInvoice> {
+  const theirs = order && !(order.emailMismatch && !order.sameName)
+  const name = c.customerName?.trim() || (theirs ? order!.shipTo?.name?.trim() || order!.billName?.trim() : null) || null
+  const base: DraftInvoice = { item: want.item, variant: want.variant ?? '', quantity: want.quantity, shopifyVariantId: null, email: c.customerEmail, name, unitPrice: null, problems: [] }
+  if (/@(send\.)?cleocamp\.com$/i.test(c.customerEmail)) base.problems.push('This case is filed under our own address, so there is no customer to invoice.')
+  if (!name) base.problems.push('There is no name for this customer on the case or the order. Invoice from the main Mouse chat, giving her name.')
+  if (!isConfigured()) return { ...base, problems: [...base.problems, 'Shopify is not connected.'] }
+  const d = await shopifyGraphQL<{ products: { nodes: CatalogProduct[] } }>(
+    `query { products(first: 100, query: "status:active OR status:unlisted") { nodes { title status variants(first: 50) { nodes { id title availableForSale inventoryPolicy inventoryQuantity } } } } }`,
+    {},
+  )
+  const p = pickInvoiceProduct(d.products.nodes, want.item, (theirs ? order!.items : []).map((i) => i.title))
+  if (!p.ok) return { ...base, problems: [...base.problems, p.problem] }
+  const vs = p.product.variants.nodes
+  const v = vs.length === 1 && !want.variant
+    ? { ok: true as const, id: vs[0].id, title: vs[0].title }
+    : pickTargetVariant(vs, want.variant ?? '', null)
+  if (!v.ok) return { ...base, item: p.product.title, problems: [...base.problems, v.problem] }
+  const found = { ...base, item: p.product.title, variant: v.title, shopifyVariantId: v.id }
+  const sv = vs.find((x) => x.id === v.id)!
+  if (!sv.availableForSale) found.problems.push(`${p.product.title} ${v.title} cannot be bought on the site right now.`)
+  else if ((sv.inventoryQuantity ?? 0) < want.quantity && sv.inventoryPolicy !== 'CONTINUE') found.problems.push(`Shopify shows ${sv.inventoryQuantity ?? 0} of ${p.product.title} ${v.title} in stock.`)
+  const { quoteLiveSale } = await import('@/lib/live-sale')
+  const q = await quoteLiveSale(c.customerEmail, [{ shopifyVariantId: v.id, label: `${p.product.title} / ${v.title}`, quantity: want.quantity, priceOverride: null }]).catch(() => null)
+  return { ...found, unitPrice: q?.lines[0]?.unitPrice ?? null, ...(q ? {} : { problems: [...found.problems, 'Shopify could not price it.'] }) }
 }
 
 /**

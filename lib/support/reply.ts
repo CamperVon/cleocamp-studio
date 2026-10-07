@@ -123,6 +123,12 @@ TEAM INSTRUCTIONS
 - A refund they ask for is made in Shopify by a person's tap before your reply
   goes, so write it as done ("We've refunded order #… in full to your original
   payment; it can take a few days to show"). Never state an amount.
+- An invoice they ask for ("invoice her for a medium belt") is created and
+  emailed by Shopify at a person's tap before your reply goes, so write it as
+  sent ("We've sent you an invoice for a Medium Boy Belt; it comes from
+  Shopify, and you add your shipping when you pay") and fill "newInvoice".
+  Never state a price or total: Shopify works it out. Never write that an
+  invoice is sent or coming unless TEAM INSTRUCTIONS asked for one.
 - Do not decide anything they did not say (whether the customer keeps the
   item, whether a replacement is sent). If the reply needs that answered, say
   so in "needs".
@@ -158,13 +164,19 @@ Reply with ONLY a JSON object:
            unless they say otherwise; address2 for the apartment/unit/building, else null),
   "newVariant": null, or — ONLY for a size or colour change the team said yes to —
            {"item": the product as ORDER FACTS name it, "from": its variant as ORDER FACTS
-           write it, "to": the variant wanted, written the same way (e.g. "White / 2")}
+           write it, "to": the variant wanted, written the same way (e.g. "White / 2")},
+  "newInvoice": null, or — ONLY when TEAM INSTRUCTIONS say to invoice or charge the
+           customer for something — {"item": the product as the shop names it (e.g.
+           "Boy Belt"), "variant": the size or colour as the shop writes it (e.g.
+           "Medium", "Black / 1"), "quantity": a number, 1 unless they said otherwise}
 }`
 
 export type DraftAddress = ShipTo
 /** A size or colour swap the drafter read from the conversation, in words. Code finds the ids. */
 export type DraftVariant = { item: string | null; from: string | null; to: string }
-export type Draft = { reply: string | null; needs: string | null; newAddress: DraftAddress | null; newVariant: DraftVariant | null }
+/** An invoice the team asked for, in words. Code finds the Shopify variant and the price (DraftInvoice). */
+export type DraftInvoiceAsk = { item: string; variant: string | null; quantity: number }
+export type Draft = { reply: string | null; needs: string | null; newAddress: DraftAddress | null; newVariant: DraftVariant | null; newInvoice: DraftInvoiceAsk | null }
 
 const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
 
@@ -201,6 +213,9 @@ export function parseDraft(raw: string): Draft | null {
     const a = o.newAddress && typeof o.newAddress === 'object' ? (o.newAddress as Record<string, unknown>) : null
     const v = o.newVariant && typeof o.newVariant === 'object' ? (o.newVariant as Record<string, unknown>) : null
     const to = v ? str(v.to, 80) : null
+    const inv = o.newInvoice && typeof o.newInvoice === 'object' ? (o.newInvoice as Record<string, unknown>) : null
+    const invItem = inv ? str(inv.item, 120) : null
+    const invQty = inv ? Math.round(Number(inv.quantity ?? 1)) : 1
     return {
       reply: str(o.reply, 4000),
       needs: str(o.needs, 200),
@@ -212,6 +227,7 @@ export function parseDraft(raw: string): Draft | null {
           }
         : null,
       newVariant: v && to ? { item: str(v.item, 120), from: str(v.from, 80), to } : null,
+      newInvoice: invItem ? { item: invItem, variant: str(inv!.variant, 80), quantity: Number.isFinite(invQty) && invQty >= 1 && invQty <= 20 ? invQty : 1 } : null,
     }
   } catch {
     return null
@@ -515,4 +531,44 @@ export function swapNotDone(reply: string, order: Pick<OrderSnapshot, 'name' | '
       return !have.some((h) => h === k || (!k.includes('/') && h.split('/').pop() === k))
     })
     .map((to) => `The reply says an item on ${order?.name ?? 'the order'} changes to ${to}, but Shopify does not show it.`)
+}
+
+/** Starts the case note written when an invoice is sent from a support card; Send looks for it. */
+export const INVOICE_NOTE = 'Invoice sent from this case:'
+
+/**
+ * Does the reply tell the customer an invoice has been sent or is coming?
+ * Such a reply must be true when it lands (Brandon, 7 Oct 2026: a draft said
+ * "We're sending you an invoice now" and nothing had made one). Pure.
+ */
+export function claimsInvoice(reply: string): boolean {
+  const t = reply.replace(/\s+/g, ' ').toLowerCase().replace(/[’‘]/g, "'")
+  return [
+    /\b(we've|we have|i've|i have|we just|we) (just )?(sent|emailed|e-mailed) (you |over )?(an |the |your |a )?(shopify )?invoice\b/,
+    /\b(we're|we are|i'm|i am) (now )?(sending|emailing) (you |over )?(an |the |your |a )?(shopify )?invoice\b/,
+    /\b(we'll|we will|i'll|i will) (now )?(send|email) (you |over )?(an |the |your |a )?(shopify )?invoice\b/,
+    /\b(an |the |your |a )?invoice (is|has been|was|will be) (on its way|sent|coming|in your inbox|emailed)\b/,
+    /\byou('ll| will| should) (get|receive|see) (an |the |a |your )?(shopify )?invoice\b/,
+    /\b(we've|we have) invoiced\b/,
+  ].some((r) => r.test(t))
+}
+
+/**
+ * Which shop product an invoice is for: the one whose name (before any
+ * " - Colour") is the item named, preferring a product already on the
+ * customer's order. Null when none or more than one could be meant. Pure.
+ */
+export function pickInvoiceProduct<P extends { title: string; status?: string }>(products: P[], item: string, onOrder: string[] = []): { ok: true; product: P } | { ok: false; problem: string } {
+  const key = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim()
+  const base = (t: string) => key(t.split(/\s[-—–]\s/)[0])
+  const want = key(item)
+  const exact = products.filter((p) => key(p.title) === want)
+  const hits = exact.length ? exact : products.filter((p) => base(p.title) === want)
+  if (!hits.length) return { ok: false, problem: `The shop has no product called "${item}".` }
+  if (hits.length === 1) return { ok: true, product: hits[0] }
+  const mine = hits.filter((p) => onOrder.some((o) => key(o) === key(p.title)))
+  if (mine.length === 1) return { ok: true, product: mine[0] }
+  const live = hits.filter((p) => p.status === 'ACTIVE')
+  if (live.length === 1) return { ok: true, product: live[0] }
+  return { ok: false, problem: `"${item}" could be ${hits.map((p) => p.title).join(' or ')}. Say which.` }
 }

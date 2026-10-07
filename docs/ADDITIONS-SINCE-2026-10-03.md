@@ -52,6 +52,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - Each run records, alongside its token usage, the size and a short hash of each block and each section: sizes only, no text.
 - **Files:** `lib/mouse/context.ts` (`splitCatalog`, `buildCatalogParts`, `catalogStats`), `lib/mouse/cache-blocks.ts`, `lib/mouse/agent.ts`, `lib/mouse/runner.ts`, `tests/catalog-split.test.ts`
 
+### Support: one tap sends an invoice the team asked for, and Send refuses a false invoice claim · `HASH`
+- **Problem:** telling the support drafter "create an invoice for her and send it" only rewrote the email to say an invoice was coming; the drafter has no tools, so nothing made one, and the reply could go out claiming it.
+- **Change:** when a team instruction asks to invoice or charge, the drafter names the item and size; code finds the product and variant in Shopify, takes Shopify's price, checks stock and the customer's name, and the card shows "Send invoice & reply". That tap has Shopify create and email the invoice (she adds shipping and pays; the order appears when she does), notes it on the case, then sends the reply; a second tap never makes a second invoice. Any reply that says an invoice was sent or is coming is refused at Send unless this case sent one or Shopify shows one for that email in the last fortnight.
+- **Files:** `lib/support/reply.ts` (`claimsInvoice`, `pickInvoiceProduct`, `INVOICE_NOTE`, the drafter's `newInvoice`), `lib/support/draft.ts` (`resolveInvoice`, `DraftInvoice`), `app/(main)/support/actions.ts` (`invoiceAndReply`, the Send check), `app/ui/support-case.tsx`, `app/(main)/support/page.tsx`, `prisma/schema.prisma`, migration `20261007120000_support_draft_invoice`, `tests/support-invoice.test.ts`
+- **Needs:** Shopify (draft orders and invoices); a database migration (one nullable column).
+
 ### Morning brief gets cover worked out in code · `f73f802`
 - **Problem:** the morning brief (one model call, no tools) was given each item's stock and the open PO lines but only shop-wide sales totals, and is told never to invent a number, so it could only say it "can't see" whether a delivery covers a shortfall.
 - **Change:** for everything oversold plus the lowest few, code works out stock now, sales a day (the forecast's own weighted rate), what is due on open POs for exactly that variant and when, and what is left once it lands (or how short it stays), and hands those lines to the brief to use as given.
