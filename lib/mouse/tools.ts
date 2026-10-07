@@ -5,7 +5,7 @@ import { db } from '@/lib/db'
 import { chooseDeliverTo } from '@/lib/po-deliver-to'
 import { DUPLICATE_WINDOW_MS, SAME_DELIVERY_WINDOW_MS, isRepeatOf, looksLikeSameDelivery } from '@/lib/inventory-duplicate'
 import { laMidnight } from '@/lib/dates'
-import { planVariantPush, isStaleCountRefusal } from '@/lib/stock-push'
+import { planVariantPush, isStaleCountRefusal, localNextCount } from '@/lib/stock-push'
 import { poLineLabel } from '@/lib/po'
 import { asDocLanguage } from '@/lib/po-strings'
 
@@ -178,7 +178,10 @@ async function writeEvent(args: {
   // writing is off, or the variant has no Shopify link, there is nothing to
   // read and our own cache is the only baseline there is.
   let resolvedDelta = args.countedQty !== undefined ? args.countedQty - (cached ?? 0) : args.deltaQty!
-  let next: number | null = args.countedQty ?? (cached === null ? null : cached + resolvedDelta)
+  let next: number | null = localNextCount({
+    cached, countedQty: args.countedQty, deltaQty: resolvedDelta, type: args.type, onShopify: !!v.shopifyInventoryItemId,
+    earlierEvents: cached === null ? await db.inventoryEvent.count({ where: { productVariantId: v.id } }) : 1,
+  })
   let drift = 0
   let shopifyNote = ''
   // A pre-generated id, not Prisma's own @default(cuid()) — needed as the
@@ -264,7 +267,10 @@ async function writeEvent(args: {
         where: { id: v.id },
         data: { onHandQty: next === null ? null : String(next) },
       })
-      return { eventId: event.id, name, newQty: next ?? 'still unknown', shopify: shopifyNote }
+      return {
+        eventId: event.id, name, newQty: next ?? 'still unknown', shopify: shopifyNote,
+        ...(next === null ? { tellTheUser: `Logged, but ${name} has never been counted, so its stock is still unknown. Ask for a count of what is there now.` } : {}),
+      }
     })
   } catch (e) {
     // Shopify may already have this delta (shopifyNote says so above if it
@@ -867,6 +873,46 @@ export const TOOLS: Record<string, Tool> = {
         },
         select: { id: true, title: true, dueDate: true },
       }),
+  },
+
+  // Jane, 6 Oct 2026, asked for Cleo's skirt-pull todo to be marked urgent.
+  // There was no way to change an open item, so Mouse made an urgent copy and
+  // resolved the original, losing its history and its place on the row.
+  update_todo: {
+    def: {
+      name: 'update_todo',
+      description:
+        'Change an open todo or question in place: mark it urgent (or not), move or clear ' +
+        'its due date, or reword it. Use this, never a new copy, when a person says an ' +
+        'existing item is urgent, due on another day, or worded wrong. Only what you pass ' +
+        'changes. urgent follows what a person said, not your own judgement.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          id: str("The item's id"),
+          urgent: { type: 'boolean' as const, description: 'true when a person called it urgent or pressing; false when they said it no longer is' },
+          dueDate: str('ISO date, e.g. 2026-10-09, or "" to clear the date'),
+          title: str('New wording, only if a person asked for it'),
+          detail: str('New detail, or "" to clear it'),
+        },
+        required: ['id'],
+      },
+    },
+    run: async (i) => {
+      const data = todoChanges(i)
+      if ('error' in data) return { updated: false, error: data.error }
+      const found = await db.actionItem.findUnique({ where: { id: String(i.id) }, select: { id: true, resolved: true } })
+      if (!found) {
+        const open = await db.actionItem.findMany({ where: { resolved: false }, orderBy: { createdAt: 'desc' }, take: 30, select: { id: true, title: true } })
+        return {
+          updated: false,
+          error: `No question or todo has the id "${i.id}". Match the one you meant from this list and try once more. Do not invent an id.`,
+          openItems: open.map((o) => `[${o.id}] ${o.title}`),
+        }
+      }
+      if (found.resolved) return { updated: false, error: 'That item is already closed. Say so rather than reopening it.' }
+      return db.actionItem.update({ where: { id: found.id }, data, select: { id: true, title: true, urgent: true, dueDate: true } })
+    },
   },
 
   add_note: {
@@ -5709,3 +5755,19 @@ export const TOOLS: Record<string, Tool> = {
 }
 
 export const TOOL_DEFS: Anthropic.Tool[] = Object.values(TOOLS).map((t) => t.def)
+
+/** The fields update_todo writes, from what Mouse passed. Pure. */
+export function todoChanges(i: Record<string, unknown>): { urgent?: boolean; dueDate?: Date | null; title?: string; detail?: string | null } | { error: string } {
+  const out: { urgent?: boolean; dueDate?: Date | null; title?: string; detail?: string | null } = {}
+  if (typeof i.urgent === 'boolean') out.urgent = i.urgent
+  if (typeof i.dueDate === 'string') {
+    const d = i.dueDate.trim()
+    if (!d) out.dueDate = null
+    else if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { error: `"${d}" is not a date like 2026-10-09.` }
+    else out.dueDate = new Date(d + 'T12:00:00-07:00')
+  }
+  if (typeof i.title === 'string' && i.title.trim()) out.title = i.title.trim()
+  if (typeof i.detail === 'string') out.detail = i.detail.trim() || null
+  if (!Object.keys(out).length) return { error: 'Nothing to change: pass urgent, dueDate, title or detail.' }
+  return out
+}

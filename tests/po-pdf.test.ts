@@ -48,9 +48,11 @@ test('a PO renders sendable in every language, with no draft label at any status
 
   // Both halves of the bilingual chrome, so neither side can quietly go
   // missing and leave a vendor reading a label in the wrong language.
-  const it = extract('italian')
+  // Spaces out: the 7pt column headings are letter-spaced, and pdftotext
+  // reads "ARTICOLO" there as "A RT I C O L O". The page itself is right.
+  const it = extract('italian').replace(/\s+/g, '')
   for (const word of ['PURCHASE ORDER', 'ORDINE DI ACQUISTO', 'ARTICOLO', 'Q.TÀ', 'PREZZO', 'IMPORTO', 'FORNITORE']) {
-    assert.ok(it.includes(word), `bilingual Italian PO is missing "${word}"`)
+    assert.ok(it.includes(word.replace(/\s+/g, '')), `bilingual Italian PO is missing "${word}"`)
   }
 
   for (const name of ['english', 'spanish', 'italian']) {

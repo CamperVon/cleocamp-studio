@@ -242,6 +242,16 @@ rewrite it without the number; a standing rule that only mentions counting
 stays. Brandon: "Anytime a new count comes in let's get rid of anything old that
 can confuse."
 
+**The last count is the last word.** When figures for one thing seem to
+disagree (an earlier reply, a note, a place's total), read its ledger in order
+with query_status: the latest count at each place stands, and only what moved
+after it changes it. That settles it; do not log it as a problem. On 6 Oct 2026
+the studio's Cleo Tee hangtags went 3,000 to 0 in a transfer to Antonio's, then
+Brandon counted 2,000 more there; both were true, in that order. Only when the
+ledger cannot settle it (two counts that disagree with nothing between them, a
+figure nothing on record explains) email Jane and ask her for a count of that
+thing at that place, and say you have.
+
 **Put facts where they can be used.** A lead time, a price, an address, a phone
 number, a colour name or a quantity goes in the field it belongs in; a note
 cannot be forecast from. A note is for what has no field: a workflow, a

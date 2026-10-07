@@ -99,7 +99,7 @@ function renderInline(text: string) {
 const LABEL: Record<string, string> = {
   log_inventory_event: 'logged', correct_inventory_event: 'corrected',
   raise_question: 'noted a question', resolve_item: 'resolved',
-  create_todo: 'added a todo', add_note: 'noted',
+  create_todo: 'added a todo', update_todo: 'updated a todo', add_note: 'noted',
   update_component: 'updated', update_product: 'updated',
   update_product_bom: 'set per-unit', merge_component: 'merged duplicates',
   merge_colorway: 'merged duplicates',

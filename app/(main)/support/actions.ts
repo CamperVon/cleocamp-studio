@@ -9,6 +9,7 @@ import { draftForCase, refreshOrder, type DraftInvoice } from '@/lib/support/dra
 import { cancelAndRefund, cancelUnshippedLines, freshOrder, removeUnshippedUnits, setShippingAddress, swapLineVariant } from '@/lib/support/orders'
 import { addressChangeProblems, claimsInvoice, claimsNotYetDone, INVOICE_NOTE, partlyShipped, refundIssued, SUPPORT_FROM, SUPPORT_REPLY_TO, swapClaims, swapNotDone, TOLD_MOUSE, unfilled, unshippedLines, type DraftAddress, type DraftSwap } from '@/lib/support/reply'
 import { namesMatch } from '@/lib/support/core'
+import { ACT_RULES, asksForAction, caseFactsForMouse, MOUSE_DID, senderRecords, senderRecordsText } from '@/lib/support/tell'
 import type { OrderSnapshot } from '@/lib/support/orders'
 
 const STATUSES = ['OPEN', 'WAITING_ON_CUSTOMER', 'WAITING_ON_RETURN', 'RESOLVED'] as const
@@ -474,9 +475,11 @@ export async function cancelOrderAndReply(id: string, text: string): Promise<Res
  * Brandon, 29 Sept 2026, on #2104: "I would tell mouse to go ahead and refund
  * her and draft an email to that effect."
  *
- * The words go to the drafter only, which has no tools, as a TEAM
- * INSTRUCTION it follows over the default policy. Nothing is refunded or sent
- * here: the reply box then offers the tap that does what the draft says. The
+ * The words go to the drafter, which has no tools, as a TEAM INSTRUCTION it
+ * follows over the default policy. When they also ask for a change in the app
+ * (a stylist pull, a to-do, a note), full Mouse makes it first, from checked
+ * facts only (Brandon, 7 Oct 2026). Nothing is refunded or sent here: the
+ * reply box then offers the tap that does what the draft says. The
  * instruction is kept on the case as a note, so later redrafts still follow it.
  */
 export async function tellMouse(id: string, text: string): Promise<Result> {
@@ -491,10 +494,49 @@ export async function tellMouse(id: string, text: string): Promise<Result> {
   // The team is working on it again, so a closed case opens back up.
   if (c.status === 'RESOLVED') await db.supportCase.update({ where: { id }, data: { status: 'OPEN', resolvedAt: null } })
   await refreshOrder(id).catch((e) => console.error('[support] order refresh', e))
+  // A change in the app ("move the belt to her pull", "add a to-do"): full
+  // Mouse does it first, from checked facts only, so the redraft can say so.
+  if (asksForAction(said)) await actOnCase(id, who, said)
   await draftForCase(id)
   revalidatePath('/support')
   const d = await db.supportCase.findUnique({ where: { id }, select: { draftReply: true, draftNeeds: true } })
   return d?.draftReply || d?.draftNeeds ? { ok: true } : { ok: false, error: "Mouse couldn't write the draft. Try again, or write it yourself." }
+}
+
+/**
+ * Full Mouse acts on a team instruction, as that person, with the customer's
+ * words withheld and no tool that sends or moves money (lib/support/tell.ts).
+ * What it did goes on the case as a note the drafter reads.
+ */
+async function actOnCase(id: string, who: { id: string; name: string }, said: string): Promise<void> {
+  const c = await db.supportCase.findUnique({ where: { id }, select: { customerName: true, customerEmail: true, category: true, orderSnapshot: true } })
+  if (!c) return
+  const records = await senderRecords(c.customerEmail).then(senderRecordsText).catch(() => '')
+  const facts = caseFactsForMouse({ ...c, order: (c.orderSnapshot as OrderSnapshot | null) ?? null }, records)
+  let body: string
+  try {
+    const { runAgent, CHAT_MODEL } = await import('@/lib/mouse/agent')
+    const { TOOLS } = await import('@/lib/mouse/tools')
+    const { NOT_FROM_EMAIL } = await import('@/lib/mouse/team-mail')
+    const { asPerson } = await import('@/lib/mouse/actor')
+    const r = await asPerson(who.id, () => runAgent({
+      source: 'support-tell',
+      instruction: `${who.name} typed this on a support case:\n\n${said}\n\nThe case (checked by code):\n${facts}`,
+      extraRules: ACT_RULES,
+      allowedTools: Object.keys(TOOLS).filter((t) => !NOT_FROM_EMAIL.has(t)),
+      model: CHAT_MODEL,
+      effort: 'medium',
+      maxRounds: 8,
+    }))
+    const text = (r.text ?? '').trim()
+    body = r.usage.stopReason === 'complete' && text
+      ? `${MOUSE_DID}${text.slice(0, 1200)}`
+      : "Mouse couldn't finish acting on that, so nothing may have changed. Check the record, or tell Mouse in chat."
+  } catch (e) {
+    console.error('[support] tell mouse act', id, e)
+    body = "Mouse couldn't act on that, so nothing changed. Tell Mouse in chat, or make the change yourself."
+  }
+  await db.supportMessage.create({ data: { caseId: id, direction: 'NOTE', fromAddress: 'Studio Mouse', body } })
 }
 
 /** The order on a case, read fresh, if the person writing in is its customer. */

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { planVariantPush, isStaleCountRefusal } from '../lib/stock-push'
+import { planVariantPush, isStaleCountRefusal, localNextCount } from '../lib/stock-push'
 
 test('new stock is added on top of Shopify\'s live count, not ours', () => {
   // We last saw 5; a web order since then left Shopify at 4. 20 arrive.
@@ -22,4 +22,15 @@ test('drift plus the change always lands the ledger on the new count', () => {
 test('only Shopify\'s stale-count refusal is retried', () => {
   assert.equal(isStaleCountRefusal('The changeFromQuantity argument no longer matches the persisted quantity.'), true)
   assert.equal(isStaleCountRefusal('Access denied for inventoryAdjustQuantities'), false)
+})
+
+test('a first delivery of something not on Shopify sets the stock; anything else unknown stays unknown', () => {
+  const base = { cached: null, deltaQty: 2, type: 'RECEIVED', onShopify: false, earlierEvents: 0 }
+  assert.equal(localNextCount(base), 2) // the 5to7 Skirt, 25 Sept
+  assert.equal(localNextCount({ ...base, earlierEvents: 1 }), null)
+  assert.equal(localNextCount({ ...base, onShopify: true }), null)
+  assert.equal(localNextCount({ ...base, type: 'GIFTED', deltaQty: -1 }), null)
+  assert.equal(localNextCount({ ...base, type: 'CORRECTION' }), null)
+  assert.equal(localNextCount({ ...base, countedQty: 5 }), 5)
+  assert.equal(localNextCount({ ...base, cached: 3, deltaQty: -1, type: 'GIFTED' }), 2)
 })

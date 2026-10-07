@@ -76,6 +76,7 @@ export const PROPOSAL_TOOLS = [
   'flag_for_brandon',
   'resolve_item',
   'create_todo',
+  'update_todo',
   'add_note',
 ]
 

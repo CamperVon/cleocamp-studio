@@ -34,3 +34,25 @@ export function planVariantPush(a: {
 export function isStaleCountRefusal(error: string): boolean {
   return /changeFromQuantity/i.test(error)
 }
+
+/**
+ * The count to keep locally when Shopify is not in the picture (no Shopify
+ * link, or writing off). Our cache is the only baseline: unknown plus a
+ * change stays unknown, because a change says nothing about what was there.
+ *
+ * The one exception is the first delivery of something that has never had a
+ * stock entry and is not on Shopify. Nothing can have been there before it
+ * was made, so the ledger is the whole story. Until 7 Oct 2026 this stayed
+ * unknown too: the 5to7 Skirt was logged in at 2 a size on 25 Sept and read
+ * UNKNOWN on hand for eleven days, through two gifts and six wholesale
+ * shipments, until someone counted it. Pure.
+ */
+export function localNextCount(a: {
+  cached: number | null; countedQty?: number; deltaQty: number
+  type: string; onShopify: boolean; earlierEvents: number
+}): number | null {
+  if (a.countedQty !== undefined) return a.countedQty
+  if (a.cached !== null) return a.cached + a.deltaQty
+  if (a.type === 'RECEIVED' && !a.onShopify && a.earlierEvents === 0 && a.deltaQty > 0) return a.deltaQty
+  return null
+}

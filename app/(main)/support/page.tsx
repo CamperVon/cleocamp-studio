@@ -6,6 +6,8 @@ import { OrderLookup } from '@/app/ui/order-lookup'
 import { CATEGORY_LABEL, type Category } from '@/lib/support/core'
 
 export const dynamic = 'force-dynamic'
+// Tell Mouse can run full Mouse and then the drafter in one tap.
+export const maxDuration = 300
 
 // Outside the component: a server page reading the clock is fine, but the
 // lint rule for components cannot tell it apart from a client re-render.

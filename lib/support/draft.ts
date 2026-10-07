@@ -7,6 +7,7 @@ import { findOrder, variantSiblings, type OrderSnapshot } from '@/lib/support/or
 import { isConfigured, shopifyGraphQL } from '@/lib/integrations/shopify'
 import { addressChangeProblems, discountFacts, DRAFT_INSTRUCTIONS, mentionsDiscount, orderFacts, parseDraft, pickInvoiceProduct, pickSwapLine, pickTargetVariant, teamInstructions, type DraftInvoiceAsk, type DraftSwap, type DraftVariant } from '@/lib/support/reply'
 import { orderNumbersIn, trimQuoted } from '@/lib/support/core'
+import { mouseActions, senderRecords, senderRecordsText } from '@/lib/support/tell'
 
 /**
  * Write (or rewrite) the drafted reply on one case.
@@ -36,11 +37,13 @@ export async function draftForCase(caseId: string): Promise<void> {
     .join('\n---\n')
 
   const latest = c.messages.filter((m) => m.direction === 'INBOUND').slice(-3).map((m) => trimQuoted(m.body).text).join('\n')
-  const [stock, catalog, examples, discount] = await Promise.all([
+  const did = mouseActions(c.messages)
+  const [stock, catalog, examples, discount, records] = await Promise.all([
     stockFacts(order).catch(() => ''),
     catalogFacts(catalogText(c.subject, latest, order)).catch((e) => { console.error('[support] catalog facts', e); return '' }),
     recentReplies(caseId).catch(() => ''),
     discountHistory(c.customerEmail).catch((e) => { console.error('[support] discount facts', e); return '' }),
+    senderRecords(c.customerEmail).then(senderRecordsText).catch((e) => { console.error('[support] sender records', e); return '' }),
   ])
   // Asked up to twice: a reply that cannot be read as a draft is asked for
   // again once, then left as a note on the case, never silently dropped.
@@ -68,9 +71,11 @@ export async function draftForCase(caseId: string): Promise<void> {
             (stock ? `STOCK FACTS for items not yet shipped (from our records):\n${stock}\n\n` : '') +
             (catalog ? `CATALOG FACTS for products the customer names or has on their order (from the shop, just now):\n${catalog}\n\n` : '') +
             (discount ? `DISCOUNT FACTS (checked by code):\n${discount}\n\n` : '') +
+            (records ? `THEIR RECORDS WITH US (our own, under their email):\n${records}\n\n` : '') +
             (examples ? `${examples}\n\n` : '') +
             `<conversation>\n${thread.slice(-9000)}\n</conversation>\n\n` +
             (told.length ? `TEAM INSTRUCTIONS (typed into the app by the team, newest last; follow them):\n${told.map((t) => `- ${t.slice(0, 600)}`).join('\n')}\n\n` : '') +
+            (did.length ? `WHAT MOUSE CHANGED IN OUR RECORDS on the team's instruction (done; the reply may say so):\n${did.map((t) => `- ${t.slice(0, 600)}`).join('\n')}\n\n` : '') +
             `Draft the reply to the customer's latest email.`,
         }],
       })
