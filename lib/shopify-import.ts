@@ -229,5 +229,9 @@ export async function importShopifyProduct(
       counts.push(`${label}: ${v.inventoryQuantity}`)
     }
   }
-  return { imported: true, productId: product.id, product: product.name, created, linked, alreadyIn, counts }
+  // A numbered style's new variants get their SKUs where every part is
+  // confirmed (lib/style-admin.ts); what is missing is said, not guessed.
+  const { assignSkus } = await import('@/lib/style-admin')
+  const skus = created.length ? await assignSkus(product.id) : null
+  return { imported: true, productId: product.id, product: product.name, created, linked, alreadyIn, counts, ...(skus?.ok ? { skus } : {}) }
 }

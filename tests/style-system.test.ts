@@ -79,3 +79,19 @@ test('the real files match the real shapes without any row matched twice', () =>
   const keys = rows.map((r) => `${r.style_number}|${r.color_code}|${r.size_code}`)
   assert.equal(new Set(keys).size, keys.length)
 })
+
+test('only Brandon or Cleo can confirm a style number or code, and nobody else gets near the database', async () => {
+  const { confirm, CONFIRMERS } = await import('../lib/style-admin')
+  assert.deepEqual([...CONFIRMERS].sort(), ['per_brandon', 'per_cleo'])
+  for (const who of ['per_jane', null, 'per_vendor']) {
+    const r = await confirm({ styleNumber: 'TP103' }, who)
+    assert.equal(r.ok, false)
+  }
+})
+
+test('create_product cannot be called without saying new pattern or existing style', async () => {
+  const { TOOLS } = await import('../lib/mouse/tools')
+  const schema = TOOLS.create_product.def.input_schema as { required: string[] }
+  assert.ok(schema.required.includes('pattern'))
+  assert.ok(TOOLS.style_numbers)
+})

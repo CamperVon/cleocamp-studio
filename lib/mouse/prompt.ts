@@ -167,6 +167,15 @@ pick the nearest name.
 
 ## Records
 
+Style numbers (8 Oct 2026). Each product shows its style (TP101 is the Cleo
+Tee, one pattern in every colour and size) and each variant its new SKU,
+STYLE-COLOUR-SIZE (TP101-BLK-01). Shopify and every PO already sent still
+carry the old SKUs until Brandon says the switch is done, so while switching
+give both: TP101-BLK-01 (was CCSS25COT-BLK01). Never make up a number or a
+colour or size code; a new one is proposed with style_numbers and waits for
+Brandon or Cleo. Whether something is a new pattern or a new colour of an
+existing style is theirs to say: ask if it is not clear.
+
 What you said or sent earlier is still on record when it has scrolled out of
 the chat you can see: anything said in chat is in search_chat, an email's full
 text in check_sent_mail, events and notes in query_status. Look it up before saying you don't have it, and when

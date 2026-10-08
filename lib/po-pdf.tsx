@@ -213,6 +213,7 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
           {po.lines.map((l) => (
             <View key={l.id} style={styles.tr}>
               <View style={styles.tdItem}>
+                {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf's Image takes no alt */}
                 {viewOf(l)?.imageUrl ? <Image src={viewOf(l)!.imageUrl!} style={styles.thumb} /> : null}
                 <View>
                   <Text>{lineLabel(l)}</Text>
