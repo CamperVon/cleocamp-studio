@@ -80,6 +80,8 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index' } = {}): Pro
   ])
 
   const sold = new Map(sales.map((s) => [s.productVariantId, s._sum.unitsSold ?? 0]))
+  const { kitsByProduct } = await import('@/lib/kits')
+  const kits = await kitsByProduct()
   const money = (c: number | null) => (c === null ? 'unknown' : `$${(c / 100).toFixed(2)}`)
   const L: string[] = []
 
@@ -161,6 +163,14 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index' } = {}): Pro
       }
       if (idle.uncounted.length) L.push(`  - UNKNOWN on hand, 0 sold: ${idle.uncounted.join(', ')}`)
       if (idle.zero.length) L.push(`  - 0 on hand, 0 sold: ${idle.zero.join(', ')}`)
+    }
+    // A kit (KitPart, 8 Oct 2026): made up from other products, so only as
+    // many can be made up as the scarcest part allows.
+    const kit = kits.get(p.id)
+    if (kit) {
+      L.push(`kit: ${kit.parts.join(' + ')}. Can be made up now (lower of the parts): ` +
+        kit.lines.map((k) => `${k.colour ?? 'default'} ${k.available ?? 'UNKNOWN'} (${k.parts.map((x) => `${x.name} ${x.onHand ?? x.problem ?? 'UNKNOWN'}`).join(', ')})`).join('; ') +
+        (kit.shared.length ? `. Each colour's figure is "up to": ${kit.shared.join('; ')}.` : ''))
     }
   }
 

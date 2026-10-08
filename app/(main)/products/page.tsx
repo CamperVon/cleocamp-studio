@@ -2,6 +2,7 @@ import { filesFor } from '@/lib/files'
 import { FileLinks } from '@/app/ui/file-links'
 import { AddFileTo } from '../files/file-controls'
 import { SkuModeToggle } from './sku-mode'
+import { kitsByProduct } from '@/lib/kits'
 import { asSkuDisplayMode, skuText } from '@/lib/po-snapshot'
 import { lineScopeLabel } from '@/lib/bom'
 import { db } from '@/lib/db'
@@ -20,7 +21,7 @@ const STATUS_TONE = {
 const stockTone = (n: number) => (n <= 0 ? 'font-bold text-urgent' : 'text-accent')
 
 export default async function Products() {
-  const productFiles = await filesFor('product')
+  const [productFiles, kits] = await Promise.all([filesFor('product'), kitsByProduct()])
   const [products, pos, runs, sales, defaults] = await Promise.all([
     db.product.findMany({
       include: {
@@ -203,6 +204,26 @@ export default async function Products() {
                           <dd><Value value={p.productionLeadTimeDays} unit="days" /></dd>
                         </div>
                       </dl>
+
+                      {kits.get(p.id) ? (
+                        // A kit (KitPart): sold as its parts together. It can be made up
+                        // only while every part is on hand, so the lower count wins.
+                        <div className="border-b border-line px-4 py-3 sm:px-5">
+                          <p className="mb-1.5 text-xs text-faint">Made up from {kits.get(p.id)!.parts.join(' + ')}. Can be made up now:</p>
+                          <ul className="flex flex-col gap-1">
+                            {kits.get(p.id)!.lines.map((k, i) => (
+                              <li key={i} className="flex flex-wrap justify-between gap-x-3 text-sm">
+                                <span>{k.colour ?? 'One variant'}</span>
+                                <span className="text-muted">
+                                  <span className={`tnum ${k.available === null ? 'italic text-faint' : stockTone(k.available)}`}>{k.available ?? 'unknown'}</span>
+                                  <span className="text-xs text-faint"> ({k.parts.map((x) => `${x.name.split(' — ')[0].replace(/^Bateau |^Petite Bateau /, '').toLowerCase()} ${x.onHand ?? x.problem ?? '?'}`).join(', ')})</span>
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                          {kits.get(p.id)!.shared.length ? <p className="mt-1.5 text-xs text-muted">Each is &ldquo;up to&rdquo;: {kits.get(p.id)!.shared.join('; ')}.</p> : null}
+                        </div>
+                      ) : null}
 
                       {p.variants.length ? (
                         <details className="group/skus border-b border-line">
