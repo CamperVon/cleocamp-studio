@@ -224,6 +224,22 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** Shopify (order search), the support inbox.
 - **Files:** `lib/support/draft.ts`, `lib/support/reply.ts`, `tests/support-reply.test.ts`
 
+### The fast look-up lane can never answer worse than the full assistant · (this commit)
+- **Problem:** plain look-up questions go to a cheaper model that holds only look-up tools. If a look-up tool was added to the assistant but not to that lane, the lane could answer "there is no tool for that" when the full assistant could have answered. The lane's rules handed over for changes, files and doubt, but not for a missing tool. The lists of which tools look things up (the lane's, practice mode's, and the one that says a call was not a write) were kept by hand in three places and had already drifted.
+- **Change:**
+  - `lib/mouse/tool-kinds.ts` gives every tool one kind: in the lane; a look-up only the full model holds; a tool that changes things but also answers questions (a "list" action, or it settles records as it reads); or changes only. The lane's tool set, practice mode's set and the write check are all read from it.
+  - A test fails on any tool with no kind, on a look-up kind outside the pinned lists, and on any tool the lane lacks that has no example questions the router sends to the full model.
+  - The router sends a question needing one of those tools to the full model by code (`NEEDS_OPUS_TOOL`), not by the lane noticing. That covers a kept file, photo, PDF, colour card, tech pack, draft order, payment link, research report, the stylist stock or the line sheet's words.
+  - The lane is told to hand over whenever it cannot fully answer, and never to say it can't. As a backstop, code hands over any lane answer that says "I can't", "I don't have a way" or "there is no tool" (`whyOpus`, reason `could-not-answer`). Over-matching only costs a full-model turn.
+- **Files:** `lib/mouse/tool-kinds.ts`, `lib/mouse/agent.ts` (`READ_LANE_TOOLS`, `READ_LANE_LEAVES_TO_OPUS`, `READ_LANE_RULES`, `whyOpus`, `PRACTICE_TOOLS`), `lib/mouse/outcomes.ts`, `lib/mouse/route.ts` (`NEEDS_OPUS_TOOL`), `tests/tool-kinds.test.ts`, `tests/read-lane.test.ts`
+- **Needs:** nothing.
+
+### What went out on labels made on a day · (this commit)
+- **Problem:** asked how many of one item, by size, were in the orders labelled on a given day, the assistant could not answer. Sales analytics has order dates, not label dates, and no tool listed orders by when their label was made.
+- **Change:** a read-only `shipped_orders` tool. It takes a day or a range (Los Angeles), and optionally an exact product title and a colour or size. It returns quantities per variant with the order numbers. It reuses the shipped-packages reader the packing count already had, which now also carries the variant name. Voided labels and wholesale orders are left out. It is available in chat and in the read-only fast lane.
+- **Files:** `lib/shipped-report.ts` (`tallyShipped`), `lib/integrations/shopify.ts` (variant on `ShippedOrder`), `lib/mouse/tools.ts`, `tests/shipped-orders.test.ts`
+- **Needs:** Shopify (read_orders).
+
 ### A size or colour swap is made in Shopify before the reply says so · `b719ad5`
 - **Problem:** a customer asked to swap an unshipped item to another size, the team said yes, and the drafted reply promised it. The only button under it changed the address and sent the reply. The order still had the old size.
 - **Change:**

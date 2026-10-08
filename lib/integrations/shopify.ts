@@ -213,9 +213,9 @@ export async function fetchSoldLines(sinceISO: string): Promise<SoldLine[]> {
   return out
 }
 
-export type ShippedOrder = { name: string; shippedOn: string; items: Array<{ variantId: string; title: string; quantity: number }> }
+export type ShippedOrder = { name: string; shippedOn: string; items: Array<{ variantId: string; title: string; variant: string | null; quantity: number }> }
 
-type RawFulfillment = { createdAt: string; status: string; fulfillmentLineItems: { nodes: Array<{ quantity: number; lineItem: { title: string; requiresShipping: boolean; variant: { id: string } | null } }> } }
+type RawFulfillment = { createdAt: string; status: string; fulfillmentLineItems: { nodes: Array<{ quantity: number; lineItem: { title: string; variantTitle?: string | null; requiresShipping: boolean; variant: { id: string } | null } }> } }
 
 /**
  * Packages from one order: one per successful fulfilment on or after a LA day,
@@ -234,7 +234,7 @@ export function packagesFrom(o: { name: string; cancelledAt: string | null; tags
     if (shippedOn < sinceDay) continue
     const items = f.fulfillmentLineItems.nodes
       .filter((li) => li.lineItem.requiresShipping !== false && li.quantity > 0)
-      .map((li) => ({ variantId: li.lineItem.variant?.id ?? '', title: li.lineItem.title, quantity: li.quantity }))
+      .map((li) => ({ variantId: li.lineItem.variant?.id ?? '', title: li.lineItem.title, variant: li.lineItem.variantTitle ?? null, quantity: li.quantity }))
     if (items.length) out.push({ name: o.name, shippedOn, items })
   }
   return out
@@ -260,7 +260,7 @@ export async function fetchShippedOrders(sinceDay: string): Promise<ShippedOrder
               name cancelledAt tags
               fulfillments(first: 10) {
                 createdAt status
-                fulfillmentLineItems(first: 50) { nodes { quantity lineItem { title requiresShipping variant { id } } } }
+                fulfillmentLineItems(first: 50) { nodes { quantity lineItem { title variantTitle requiresShipping variant { id } } } }
               }
             }
           }

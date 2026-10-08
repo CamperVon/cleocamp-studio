@@ -5918,6 +5918,46 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  shipped_orders: {
+    def: {
+      name: 'shipped_orders',
+      description:
+        'What went out on Shopify shipping labels made on a day or between two days (Los Angeles), item by item ' +
+        'with the order numbers: "how many Black Cleo Tees are in the orders we bought labels for on 7 Oct". A ' +
+        'label is a fulfilment, dated when it was made, so this answers by label date, which sales analytics ' +
+        'cannot. Voided labels and wholesale orders are left out. Read-only.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          from: str('First day, YYYY-MM-DD, Los Angeles'),
+          to: str('Last day, YYYY-MM-DD; leave out for one day'),
+          item: str('Only this product, by its exact Shopify title ("Cleo Tee" is not "Cleo Tee - Splish"); leave out for everything'),
+          variant: str('Only this colour or size as Shopify writes it ("Black", "Black / 1"); leave out for all'),
+        },
+        required: ['from'],
+      },
+    },
+    run: async (i) => {
+      const day = /^\d{4}-\d{2}-\d{2}$/
+      const from = String(i.from ?? '').trim()
+      const to = String(i.to ?? from).trim()
+      if (!day.test(from) || !day.test(to) || to < from) return { ok: false, reason: 'Give from (and to) as YYYY-MM-DD, to on or after from.' }
+      const { isConfigured, fetchShippedOrders } = await import('@/lib/integrations/shopify')
+      if (!isConfigured()) return { ok: false, reason: 'Shopify is not connected.' }
+      const { tallyShipped } = await import('@/lib/shipped-report')
+      const t = tallyShipped(await fetchShippedOrders(from), { from, to, item: i.item ?? null, variant: i.variant ?? null })
+      return {
+        ok: true, from, to, orders: t.orders, labels: t.packages,
+        totalUnits: t.lines.reduce((n, l) => n + l.quantity, 0),
+        lines: t.lines.map((l) => ({
+          item: l.item, variant: l.variant, quantity: l.quantity,
+          orders: l.orders.length > 60 ? [...l.orders.slice(0, 60), `and ${l.orders.length - 60} more`] : l.orders,
+        })),
+        note: 'Counted on the Los Angeles day each label was made. Voided labels, wholesale orders and items that do not ship are not counted. labels counts every package in the range, whatever it held.',
+      }
+    },
+  },
+
   open_record: {
     def: {
       name: 'open_record',

@@ -9,6 +9,7 @@ import { TOOLS, TOOL_DEFS, type ToolContext } from '@/lib/mouse/tools'
 import { refreshForecastsAndAlerts } from '@/lib/forecast'
 import { recordUsage } from '@/lib/mouse/usage'
 import { withNotesOnWhatChanged } from '@/lib/mouse/stale-notes'
+import { LOOK_UP_KIND, OPUS_ONLY_ANSWERS, READ_LANE_KIND } from '@/lib/mouse/tool-kinds'
 
 /**
  * One brain.
@@ -572,14 +573,20 @@ export function toolsFor(allowedTools: string[] | undefined, chatThreadId: strin
 
 /**
  * The read lane's whole tool set (approved 7 Oct 2026). Look-ups only: no
- * note_problem (it writes the troubleshooting log), no read_file (reading a
- * PDF or photo stays with Opus), no draft_order_links, nothing that writes,
- * sends, records or changes a thing.
+ * note_problem (it writes the troubleshooting log), nothing that writes,
+ * sends, records or changes a thing. Read from lib/mouse/tool-kinds.ts,
+ * where every tool has a kind.
+ *
+ * The lane must never make Mouse dumber (Brandon, 8 Oct 2026: "either these
+ * things are added or it switches to higher model"). So a question needing
+ * a tool the lane lacks (READ_LANE_LEAVES_TO_OPUS) goes to Opus by code
+ * (NEEDS_OPUS_TOOL in route.ts), and an answer that says it can't is handed
+ * to Opus too (whyOpus). tests/tool-kinds.test.ts holds both to it.
  */
-export const READ_LANE_TOOLS = new Set([
-  'open_record', 'query_status', 'check_sent_mail', 'search_chat', 'find_in_shopify', 'find_customer',
-  'find_contacts', 'reorder_math', 'shopify_analytics', 'unpaid_live_sales',
-])
+export const READ_LANE_TOOLS: ReadonlySet<string> = READ_LANE_KIND
+
+/** Tools a question may need that the read lane does not hold; such a question goes to Opus. */
+export const READ_LANE_LEAVES_TO_OPUS: ReadonlySet<string> = OPUS_ONLY_ANSWERS
 
 /** The third lock: in the read lane, a tool outside READ_LANE_TOOLS throws before it runs. */
 export function readLaneGuard(lane: 'read' | undefined, name: string): null {
@@ -593,9 +600,10 @@ export const OPUS_ESCALATE = '[[OPUS]]'
 
 const READ_LANE_RULES =
   'THIS TURN: you can only look things up. If the person wants anything changed, recorded, sent, ordered ' +
-  'or written down, if they are telling you a fact rather than asking, if a file needs reading, or if you ' +
-  `are unsure, reply with exactly ${OPUS_ESCALATE} and nothing else. Otherwise answer the question plainly from ` +
-  'what you know and can look up.'
+  'or written down, if they are telling you a fact rather than asking, if a file needs reading, if a draft ' +
+  'order link is wanted, if you cannot fully answer with the tools you have here, or if you are unsure, reply ' +
+  `with exactly ${OPUS_ESCALATE} and nothing else. Never tell the person you can't do something or have no way ` +
+  'to: hand it over instead. Otherwise answer the question plainly from what you know and can look up.'
 
 /**
  * Why a read-lane attempt must be handed to Opus, or null if its answer
@@ -607,8 +615,18 @@ export function whyOpus(r: Pick<AgentResult, 'text' | 'toolCalls' | 'usage'>): s
   if (r.usage.stopReason !== 'complete') return `stopped:${r.usage.stopReason}`
   if ((r.toolCalls as Array<{ status?: string }>).some((c) => c.status === 'failed')) return 'tool-failed'
   if (!r.text.trim()) return 'empty'
+  // The backstop for "never dumber": an answer that says it can't is not an
+  // answer. Over-matching only costs an Opus turn.
+  if (SAYS_IT_CANT.test(r.text)) return 'could-not-answer'
   return null
 }
+
+const SAYS_IT_CANT = new RegExp([
+  "\\bI\\s+(?:can(?:no|['\u2019])t|cannot|am unable|['\u2019]m unable|am not able|['\u2019]m not able|have no (?:way|tool|access))\\b",
+  "\\bI\\s+do(?:n['\u2019]t| not) have (?:a |any )?(?:way|tool|access)",
+  '\\bthere(?:\'s| is) no (?:tool|way for me)\\b',
+  '\\bno tool (?:here |that )?(?:to|for|can)\\b',
+].join('|'), 'i')
 
 /**
  * Run a read-lane attempt and, if it must be handed over, the Opus turn. Only
@@ -634,11 +652,11 @@ export async function readLaneTurn(reason: string, read: () => Promise<AgentResu
 }
 
 /**
- * Practice mode. Only these run; they look things up and change nothing (the
- * same look-up-only set the team's emailed questions get, see nightly-pass).
- * Everything else is answered with what it would have done.
+ * Practice mode. Only these run; they look things up and change nothing
+ * (lib/mouse/tool-kinds.ts). Everything else is answered with what it would
+ * have done.
  */
-export const PRACTICE_TOOLS = new Set(['open_record', 'read_file', 'query_status', 'check_sent_mail', 'search_chat', 'draft_order_links', 'unpaid_live_sales', 'find_in_shopify', 'find_contacts', 'find_customer', 'reorder_math', 'shopify_analytics'])
+export const PRACTICE_TOOLS: ReadonlySet<string> = LOOK_UP_KIND
 
 /** In practice, what a tool that would change something hands back instead of running. Null means run it. Pure. */
 export function practiceStop(practice: boolean, name: string, input: unknown) {

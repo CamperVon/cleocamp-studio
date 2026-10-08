@@ -1,3 +1,5 @@
+import { LOOK_UP_KIND } from '@/lib/mouse/tool-kinds'
+
 export type ToolOutcome = {
   name: string
   input: unknown
@@ -10,14 +12,13 @@ export type ToolOutcome = {
 
 // Look-ups: a call to one is never a write, so it cannot count as having
 // recorded something (see owedTheRecordSomething).
+// Every look-up in lib/mouse/tool-kinds.ts, so a new one is never counted as
+// a write by being missed here.
 const READ_TOOLS = new Set([
-  'read_file',
-  'query_status', 'check_sent_mail', 'search_chat', 'find_in_shopify', 'find_customer',
-  'find_contacts', 'reorder_math', 'shopify_analytics', 'unpaid_live_sales', 'draft_order_links',
+  ...LOOK_UP_KIND,
   // A line in the troubleshooting log is not a record of the business: it
   // must not satisfy "you said it was noted, so write something down".
   'note_problem',
-  'open_record',
 ])
 
 export function classifyResult(name: string, result: unknown): Pick<ToolOutcome, 'status' | 'isWrite'> {
