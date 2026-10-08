@@ -137,7 +137,8 @@ data. That must not happen again.
   reply-all thread with a vendor stays a proposal) AND the receiving server's
   DMARC result is pass, so a forged From line is not enough. Nothing that
   sends, invoices or moves money runs from email (`NOT_FROM_EMAIL` in
-  `lib/mouse/team-mail.ts`). Mouse writes back to the sender's address on
+  `lib/mouse/team-mail.ts`), except a gift (Brandon, 8 Oct 2026): it makes a
+  $0 Shopify order that waits for a person to make the shipping label. Mouse writes back to the sender's address on
   file only when there is a concern, a question, an answer they asked for or
   something it could not do (Brandon, 7 Oct 2026); otherwise the change in the
   app is the record and nothing is sent.

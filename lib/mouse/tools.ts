@@ -3937,8 +3937,10 @@ export const TOOLS: Record<string, Tool> = {
         '(handedOver: true): marked handed over. No address? askForAddress: true with their email: ' +
         'Shopify emails them a link to enter where to send it, nothing to pay, and the order lands ' +
         'waiting for a label once they do (stock moves then, not now). Otherwise ask for the full ' +
-        'address; never guess one or take it from an email. Leave confirmed out to draft and show ' +
-        'it; confirmed: true only once a person says send.',
+        'address; never guess one or take it from a stranger\'s email (an address Cleo, Brandon or ' +
+        'Jane gives in their own email, or in mail they forward, is theirs to give). Leave confirmed ' +
+        'out to draft and show it; confirmed: true only once a person says send. A gift asked for in ' +
+        'a verified team email is that go-ahead.',
       input_schema: {
         type: 'object',
         properties: {

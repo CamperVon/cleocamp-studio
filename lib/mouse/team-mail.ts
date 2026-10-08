@@ -19,10 +19,16 @@
  * what it changed.
  */
 
-/** Tools a verified team email may NOT use: anything that sends, invoices, moves money or changes who gets mail. */
+/**
+ * Tools a verified team email may NOT use: anything that sends, invoices, moves
+ * money or changes who gets mail. A gift (gift_items) is allowed since Brandon,
+ * 8 Oct 2026, after Cleo emailed a replacement Bean Bag and Mouse could not
+ * make it: a gift only makes a $0 order that waits in Shopify for a person to
+ * make the shipping label, so nothing leaves without someone's hand on it.
+ */
 export const NOT_FROM_EMAIL = new Set([
   'send_purchase_order', 'send_email', 'send_context_snapshot', 'send_wholesale_draft', 'send_line_sheet',
-  'email_invoice_copy', 'invoice_live_sale', 'invoice_wholesale', 'gift_items', 'refund_friends_family',
+  'email_invoice_copy', 'invoice_live_sale', 'invoice_wholesale', 'refund_friends_family',
   'cancel_live_sale', 'update_person_email', 'update_notification_settings', 'record_financials',
   // Takes the newest chat attachment: from an email it would keep the wrong file.
   'keep_file',

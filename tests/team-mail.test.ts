@@ -21,3 +21,8 @@ test("DMARC is read from the receiving server's top header, folded lines and all
 test('nothing that sends or moves money runs from an email', () => {
   for (const t of ['send_email', 'send_purchase_order', 'invoice_live_sale', 'refund_friends_family', 'update_person_email']) assert.ok(NOT_FROM_EMAIL.has(t), t)
 })
+
+test('a gift can be made from verified team email; money and sending still cannot', () => {
+  assert.equal(NOT_FROM_EMAIL.has('gift_items'), false)
+  for (const t of ['invoice_live_sale', 'refund_friends_family', 'send_purchase_order', 'send_email', 'cancel_live_sale']) assert.ok(NOT_FROM_EMAIL.has(t), t)
+})
