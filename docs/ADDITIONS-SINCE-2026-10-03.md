@@ -345,7 +345,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Change:** products are sorted alphabetically within each group.
 - **Files:** `app/(main)/products/page.tsx`
 
-### Add a file from a product's own row · `HASH`
+### Add a file from a product's own row · `d4ac71b`
 - **Problem:** tech packs and spec sheets could only be uploaded from the Files page, then linked by hand, so people looked for them on the product and never found a way to add one there.
 - **Change:** every product's fold shows its files (or "No files yet") and "+ Add a file", which uploads to Files already linked to that product. The closed line shows "· N files". `AddFileTo` works for components and vendors too. The upload code is shared with the Files page (`postFile`).
 - **Files:** `app/(main)/files/file-controls.tsx`, `app/(main)/products/page.tsx`
