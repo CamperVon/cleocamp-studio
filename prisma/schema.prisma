@@ -160,6 +160,10 @@ model Product {
   id                     String        @id @default(cuid())
   name                   String
   shopifyProductId       String?
+  /// The style (pattern) this product is, e.g. TP101. Null = not numbered
+  /// yet. Several products can share one style: the Cleo Bag is five
+  /// products in this app and one style (docs/style-system/).
+  styleId                String?
   status                 ProductStatus @default(DEVELOPMENT)
   /// CMT turnaround from "components in hand" to "finished goods ready to
   /// sell". Separate from any single component's lead time. Null = unknown,
@@ -187,8 +191,12 @@ model Product {
   forecasts      ForecastResult[]
   calendarEvents CalendarEvent[]
   purchaseOrders PurchaseOrder[]
+  style          Style?           @relation(fields: [styleId], references: [id])
+  kitParts       KitPart[]        @relation("KitParent")
+  partOfKits     KitPart[]        @relation("KitPart")
 
   @@index([status])
+  @@index([styleId])
 }
 
 /// Colors carry two names. Customers see "Shell"; LA Dye Masters calls it
@@ -204,6 +212,9 @@ model Colorway {
   inHouseMatch Boolean @default(false)
   active       Boolean @default(true)
   notes        String?
+  /// The 3-letter colour code from the style system (BLK, SHL). Null = not
+  /// coded yet; never invented, see StyleCode.
+  colorCode    String?
 
   product  Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
   variants ProductVariant[]
@@ -225,6 +236,16 @@ model ProductVariant {
   /// on a cut-and-sew purchase order line, not Shopify's own variant id.
   /// Null means never given one, not blank on purpose.
   sku                    String?
+  /// The style-system SKU, STYLE-COLOR-SIZE (TP101-BLK-01). Separate from
+  /// the old sku above, which stays untouched and searchable. Null = not
+  /// assigned. Checked against the regex in lib/style-system.ts.
+  newSku                 String?  @unique
+  /// The codes newSku is built from, kept so a missing one can be reported.
+  colorCode              String?
+  sizeCode               String?
+  /// The SKU Shopify holds for this variant, read by the nightly sync. Read
+  /// only: this app never writes a SKU to Shopify.
+  shopifySku             String?
   /// The product photo, pulled from Shopify (the variant's own image, or the
   /// product's featured image as a fallback) — refreshed on every sync, same
   /// as onHandQty. Used on a cut-and-sew PO so the maker sees what they're
@@ -243,13 +264,13 @@ model ProductVariant {
   onHandQty              Decimal? @db.Decimal(12, 3)
   createdAt              DateTime @default(now())
 
-  product   Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
-  colorway  Colorway?           @relation(fields: [colorwayId], references: [id])
-  location  Location?           @relation(fields: [locationId], references: [id])
-  events    InventoryEvent[]
-  runLines  ProductionRunLine[]
-  snapshots SalesSnapshot[]
-  poLines   PurchaseOrderLine[]
+  product      Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  colorway     Colorway?           @relation(fields: [colorwayId], references: [id])
+  location     Location?           @relation(fields: [locationId], references: [id])
+  events       InventoryEvent[]
+  runLines     ProductionRunLine[]
+  snapshots    SalesSnapshot[]
+  poLines      PurchaseOrderLine[]
   stylistStock StylistStockEvent[]
 
   @@index([productId])
@@ -635,7 +656,7 @@ model PurchaseOrder {
 /// productVariantId is set; nothing in the schema forces that, so every
 /// writer must, the same convention InventoryEvent already uses.
 model PurchaseOrderLine {
-  id               String  @id @default(cuid())
+  id               String    @id @default(cuid())
   purchaseOrderId  String
   componentId      String?
   productVariantId String?
@@ -655,13 +676,25 @@ model PurchaseOrderLine {
   /// Quantity in the PURCHASE unit (rolls, or finished pieces for a
   /// cut-and-sew line), with the conversion recorded so incoming stock lands
   /// in the consumption unit (yards).
-  qtyOrdered       Decimal @db.Decimal(12, 3)
+  qtyOrdered       Decimal   @db.Decimal(12, 3)
   unit             String
   /// "pz" beside "pcs", "iarde" beside "yards". Short enough to look trivial
   /// and exactly the kind of thing a factory reads rather than the number.
   unitAlt          String?
   unitCostCents    Int?
-  qtyReceived      Decimal @default(0) @db.Decimal(12, 3)
+  qtyReceived      Decimal   @default(0) @db.Decimal(12, 3)
+  /// What a variant line said when the order was sent, so a sent PO keeps
+  /// showing exactly that after any SKU or name change (style system, 8 Oct
+  /// 2026: "Purchase orders already sent are not revised"). Null on a draft,
+  /// which reads the variant live. Filled once, never overwritten by a resend.
+  /// See lib/po-snapshot.ts.
+  snapshotAt       DateTime?
+  snapSku          String?
+  snapStyleNumber  String?
+  snapProductName  String?
+  snapColorway     String?
+  snapSize         String?
+  snapImageUrl     String?
 
   purchaseOrder  PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   component      Component?      @relation(fields: [componentId], references: [id])
@@ -926,23 +959,27 @@ model NotificationSettings {
 /// Studio Mouse can edit it; typography, columns and page layout stay in
 /// the template where they belong.
 model DocumentDefaults {
-  id            String   @id @default("singleton")
+  id             String   @id @default("singleton")
   /// Newline-separated, same convention as PurchaseOrder.deliverTo.
-  billToLines   String
+  billToLines    String
   /// The standing sentence above the contact block.
-  confirmLine   String
+  confirmLine    String
   /// The same sentence in Spanish, for an order rendered in Spanish. Null
   /// falls back to the English one rather than machine-translating it — a
   /// sentence a vendor acts on is content, not chrome. See lib/po-strings.ts.
-  confirmLineEs String?
+  confirmLineEs  String?
   /// The same sentence in Italian, for Cinturificiog's belt orders. Same rule
   /// as the Spanish one: null falls back to English rather than being
   /// machine-translated, because a sentence a vendor acts on is content.
-  confirmLineIt String?
+  confirmLineIt  String?
   /// Who to confirm with, newline-separated. A PO can override this for
   /// itself; most never do.
-  contactLines  String
-  updatedAt     DateTime @updatedAt
+  contactLines   String
+  /// How SKUs read on screens and draft POs while the style system rolls
+  /// out: "transition" shows TP101-WHT-01 (was CCSS25COT-WHT01), "new" shows
+  /// the new SKU only. Sent POs are not affected: they show their snapshot.
+  skuDisplayMode String   @default("transition")
+  updatedAt      DateTime @updatedAt
 }
 
 /// One row, id "singleton". Set at the end of every real syncShopify() call
@@ -1802,4 +1839,87 @@ model MuseQuestion {
   task MuseTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([taskId, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Style numbers (8 Oct 2026, docs/style-system/style-system.md)
+// ─────────────────────────────────────────────────────────────
+
+enum StyleStatus {
+  ACTIVE
+  DRAFT
+  DEVELOPMENT
+  NOT_LIVE
+  LIVE_ONLY
+  PROPOSED
+  RETIRED
+}
+
+/// A style is one pattern or design: TP101 is the Cleo Tee in every colour
+/// and size. A number is never reused, so a style is never deleted; retiring
+/// one keeps its number reserved. PROPOSED styles are not confirmed and are
+/// kept off anything a partner sees.
+model Style {
+  id           String      @id @default(cuid())
+  /// "TP101": 2-letter category + 3 digits.
+  number       String      @unique
+  name         String
+  categoryCode String
+  status       StyleStatus
+  /// "01, 02, 03", as given; TBD for a proposed style.
+  sizes        String?
+  notes        String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  products Product[]
+}
+
+enum StyleCodeType {
+  CATEGORY
+  COLOR
+  SIZE
+}
+
+enum StyleCodeStatus {
+  CONFIRMED
+  PROPOSED
+}
+
+/// The code tables: categories (TP), colours (BLK) and sizes (01). A code
+/// nobody has confirmed is PROPOSED and cannot be used in a SKU until Brandon
+/// or Cleo confirms it.
+model StyleCode {
+  id         String          @id @default(cuid())
+  type       StyleCodeType
+  code       String
+  name       String
+  /// The code the old SKUs used for the same thing (CHOC for CHC).
+  legacyCode String?
+  status     StyleCodeStatus @default(CONFIRMED)
+  notes      String?
+  createdAt  DateTime        @default(now())
+
+  @@unique([type, code])
+}
+
+/// A product sold as a kit of other products: the Bateau Bag is a Bateau
+/// Body (PT101) plus a Bateau Handle (AC102) in the bag's colour. Both parts
+/// are finished goods with their own Shopify counts, so this is not a recipe
+/// (BomLine holds components). A bag's availability is the lower of its
+/// parts. Nothing here moves stock.
+model KitPart {
+  id          String   @id @default(cuid())
+  parentId    String
+  partId      String
+  qty         Int      @default(1)
+  /// True: use the part's variant in the parent variant's colour (the
+  /// handle). False: the part's only variant (the body).
+  matchColour Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  parent Product @relation("KitParent", fields: [parentId], references: [id], onDelete: Cascade)
+  part   Product @relation("KitPart", fields: [partId], references: [id])
+
+  @@unique([parentId, partId])
 }

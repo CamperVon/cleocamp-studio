@@ -1,0 +1,27 @@
+style_number,name,category_code,category,status,sizes,notes
+TP101,Cleo Tee,TP,Tops,ACTIVE,"01, 02, 03","One style, many colorways (Black, White, Blackberry, Hot Pink, Splash, Red, Shell, Splish, Sunshine). Shopify spreads these across 8 product pages."
+TP102,Cosmo Tee,TP,Tops,DRAFT,"01, 02, 03","Red Stripe. Separate pattern from the Cleo Tee, so its own style."
+DR101,You Dress,DR,Dresses,ACTIVE,"01, 02, 03",Black and White.
+DR102,Story Dress,DR,Dresses,ACTIVE,"00, 01, 02, 03",Red (Wiltshire) and Green (Betsey).
+BT101,5to7 Skirt,BT,Bottoms,NOT LIVE,"XS, SM, MD, LG, XL","Product exists, not in Shopify yet. Pink and Purple assumed to be two colorways (confirm)."
+BG101,Cleo Bag,BG,Bags,ACTIVE,OS,"Chocolate, Black, Silver, Olive, Denim Baby Blue, Denim Pink. Same pattern whether Shopify shows 5 products or 1 with variants."
+BG102,Little Sister,BG,Bags,ACTIVE,OS,Black.
+BG103,Bateau Bag,BG,Bags,ACTIVE,OS,Kit: body PT101 + handle AC102 in the same color. Sold as a bundle; the handle also sold alone. Confirmed.
+BG104,Petite Bateau Bag,BG,Bags,ACTIVE,OS,Kit: body PT102 + handle AC102. Same handle fits both bag sizes. Confirmed.
+BG105,Bean Bag,BG,Bags,ACTIVE,"PT, MD","Petite and Medium are sizes of one style. Confirmed. Red Petite is sold live only, not in Shopify."
+BG106,Cachet,BG,Bags,ACTIVE,OS,"Wallet/clutch, floral and crushed gold leather."
+AC101,Boy Belt,AC,Accessories,ACTIVE,"XS, SM, MD, LG","Dark chocolate leather, silver buckle."
+AC102,Bateau Handle,AC,Accessories,ACTIVE,OS,Sold on its own and as the add-on for the Bateau Bags.
+AC103,Flower Hair Tie,AC,Accessories,ACTIVE,OS,Hot Pink.
+AC104,Sardine,AC,Accessories,ACTIVE,OS,Beaded or Naked.
+PT101,Bateau Body,PT,Parts / Components,DRAFT,OS,Component. Not sold on its own yet.
+PT102,Petite Bateau Body,PT,Parts / Components,DRAFT,OS,Component. Not sold on its own yet.
+OT101,Splash Photo Book,OT,Other,ACTIVE,OS,Book. Currently at zero stock.
+IN101,Cleo Underwear,IN,Intimates,DEVELOPMENT,"XS, SM, MD, LG, XL",In development. White and Pink assumed to be two colorways. New category IN (Intimates) proposed.
+TP103,Cleo Sweater,TP,Tops,PROPOSED,TBD,"In development in Studio Mouse. Number proposed, not confirmed."
+TP104,Cleo Tank,TP,Tops,PROPOSED,TBD,"In development in Studio Mouse. Number proposed, not confirmed."
+TP105,Long Sleeve Cleo Tee,TP,Tops,PROPOSED,TBD,"Assumed a new pattern (new sleeve). If it is the Cleo Tee body with a sleeve swap, tell me and it moves under TP101."
+DR103,Cleo Tee Dress,DR,Dresses,PROPOSED,TBD,"In development in Studio Mouse. Number proposed, not confirmed."
+DR104,Scoop Neck Dress,DR,Dresses,PROPOSED,TBD,"Sampling. Number proposed, not confirmed."
+DR105,Christmas Dress,DR,Dresses,PROPOSED,TBD,"Sampling. Number proposed, not confirmed."
+BT102,Tutu,BT,Bottoms,PROPOSED,TBD,"Sampling. Number proposed, not confirmed."

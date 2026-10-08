@@ -1,0 +1,105 @@
+sku_new,style_number,product,color_code,colorway,size_code,size_name,shopify_handle,shopify_variant_title,sku_old,status,season,in_shopify,notes
+TP101-BLK-01,TP101,Cleo Tee,BLK,Black,01,Size 1,cleo-tee-w,Black / 1,CCSS25COT-BLK01,ACTIVE,SS25,true,
+TP101-BLK-02,TP101,Cleo Tee,BLK,Black,02,Size 2,cleo-tee-w,Black / 2,CCSS25COT-BLK02,ACTIVE,SS25,true,
+TP101-BLK-03,TP101,Cleo Tee,BLK,Black,03,Size 3,cleo-tee-w,Black / 3,CCSS25COT-BLK03,ACTIVE,SS25,true,
+TP101-WHT-01,TP101,Cleo Tee,WHT,White,01,Size 1,cleo-tee-w,White / 1,CCSS25COT-WHT01,ACTIVE,SS25,true,
+TP101-WHT-02,TP101,Cleo Tee,WHT,White,02,Size 2,cleo-tee-w,White / 2,CCSS25COT-WHT02,ACTIVE,SS25,true,
+TP101-WHT-03,TP101,Cleo Tee,WHT,White,03,Size 3,cleo-tee-w,White / 3,CCSS25COT-WHT03,ACTIVE,SS25,true,
+TP101-BER-01,TP101,Cleo Tee,BER,Blackberry,01,Size 1,cleo-tee-blackberry,Blackberry / 1,CCSS26COT-BER01,UNLISTED,SS26,true,
+TP101-BER-02,TP101,Cleo Tee,BER,Blackberry,02,Size 2,cleo-tee-blackberry,Blackberry / 2,CCSS26COT-BER02,UNLISTED,SS26,true,
+TP101-BER-03,TP101,Cleo Tee,BER,Blackberry,03,Size 3,cleo-tee-blackberry,Blackberry / 3,CCSS26COT-BER03,UNLISTED,SS26,true,
+TP101-HPK-01,TP101,Cleo Tee,HPK,Hot Pink,01,Size 1,cleo-tee-hot-pink,Hot Pink / 1,,ACTIVE,,true,
+TP101-HPK-02,TP101,Cleo Tee,HPK,Hot Pink,02,Size 2,cleo-tee-hot-pink,Hot Pink / 2,,ACTIVE,,true,
+TP101-HPK-03,TP101,Cleo Tee,HPK,Hot Pink,03,Size 3,cleo-tee-hot-pink,Hot Pink / 3,,ACTIVE,,true,
+TP101-SPS-01,TP101,Cleo Tee,SPS,Splash,01,Size 1,neverworns-tee,Splash / 1,CCFW25COTNV-SLPS01,ACTIVE,FW25,true,
+TP101-SPS-02,TP101,Cleo Tee,SPS,Splash,02,Size 2,neverworns-tee,Splash / 2,CCFW25COTNV-SLPS02,ACTIVE,FW25,true,
+TP101-SPS-03,TP101,Cleo Tee,SPS,Splash,03,Size 3,neverworns-tee,Splash / 3,CCFW25COTNV-SLPS03,ACTIVE,FW25,true,
+TP101-RED-01,TP101,Cleo Tee,RED,Red,01,Size 1,ruby-red-tee,Red / 1,CCFW25COT-RED01,UNLISTED,FW25,true,
+TP101-RED-02,TP101,Cleo Tee,RED,Red,02,Size 2,ruby-red-tee,Red / 2,CCFW25COT-RED02,UNLISTED,FW25,true,
+TP101-RED-03,TP101,Cleo Tee,RED,Red,03,Size 3,ruby-red-tee,Red / 3,CCFW25COT-RED03,UNLISTED,FW25,true,
+TP101-SHL-01,TP101,Cleo Tee,SHL,Shell,01,Size 1,cleo-tee-shell,Shell / 1,CCSS26COT-SHL01,ACTIVE,SS26,true,
+TP101-SHL-02,TP101,Cleo Tee,SHL,Shell,02,Size 2,cleo-tee-shell,Shell / 2,CCSS26COT-SHL02,ACTIVE,SS26,true,
+TP101-SHL-03,TP101,Cleo Tee,SHL,Shell,03,Size 3,cleo-tee-shell,Shell / 3,CCSS26COT-SHL03,ACTIVE,SS26,true,
+TP101-SPL-01,TP101,Cleo Tee,SPL,Splish,01,Size 1,cleo-tee-splish,Splish / 1,,ACTIVE,,true,
+TP101-SPL-02,TP101,Cleo Tee,SPL,Splish,02,Size 2,cleo-tee-splish,Splish / 2,,ACTIVE,,true,
+TP101-SPL-03,TP101,Cleo Tee,SPL,Splish,03,Size 3,cleo-tee-splish,Splish / 3,,ACTIVE,,true,
+TP101-SNS-01,TP101,Cleo Tee,SNS,Sunshine,01,Size 1,cleo-tee-wheat,Sunshine / 1,CCSS26COT-SNS01,ACTIVE,SS26,true,
+TP101-SNS-02,TP101,Cleo Tee,SNS,Sunshine,02,Size 2,cleo-tee-wheat,Sunshine / 2,CCSS26COT-SNS02,ACTIVE,SS26,true,
+TP101-SNS-03,TP101,Cleo Tee,SNS,Sunshine,03,Size 3,cleo-tee-wheat,Sunshine / 3,CCSS26COT-SNS03,ACTIVE,SS26,true,
+TP102-RST-01,TP102,Cosmo Tee,RST,Red Stripe,01,Size 1,cosmo-tee,Red Stripe / 1,,DRAFT,,true,
+TP102-RST-02,TP102,Cosmo Tee,RST,Red Stripe,02,Size 2,cosmo-tee,Red Stripe / 2,,DRAFT,,true,
+TP102-RST-03,TP102,Cosmo Tee,RST,Red Stripe,03,Size 3,cosmo-tee,Red Stripe / 3,,DRAFT,,true,
+DR101-BLK-01,DR101,You Dress,BLK,Black,01,Size 1,you-dress,Black / 1,CCSS25COD-BLK01,ACTIVE,SS25,true,
+DR101-BLK-02,DR101,You Dress,BLK,Black,02,Size 2,you-dress,Black / 2,CCSS25COD-BLK02,ACTIVE,SS25,true,
+DR101-BLK-03,DR101,You Dress,BLK,Black,03,Size 3,you-dress,Black / 3,CCSS25COD-BLK03,ACTIVE,SS25,true,
+DR101-WHT-01,DR101,You Dress,WHT,White,01,Size 1,you-dress,White / 1,CCSS25COD-WHT01,ACTIVE,SS25,true,
+DR101-WHT-02,DR101,You Dress,WHT,White,02,Size 2,you-dress,White / 2,CCSS25COD-WHT02,ACTIVE,SS25,true,
+DR101-WHT-03,DR101,You Dress,WHT,White,03,Size 3,you-dress,White / 3,CCSS25COD-WHT03,ACTIVE,SS25,true,
+DR102-WLT-00,DR102,Story Dress,WLT,Wiltshire (Red),00,Size 0,story-dress,Red (Wiltshire) / 0,,ACTIVE,,true,
+DR102-WLT-01,DR102,Story Dress,WLT,Wiltshire (Red),01,Size 1,story-dress,Red (Wiltshire) / 1,,ACTIVE,,true,
+DR102-WLT-02,DR102,Story Dress,WLT,Wiltshire (Red),02,Size 2,story-dress,Red (Wiltshire) / 2,,ACTIVE,,true,
+DR102-WLT-03,DR102,Story Dress,WLT,Wiltshire (Red),03,Size 3,story-dress,Red (Wiltshire) / 3,,ACTIVE,,true,
+DR102-BTS-00,DR102,Story Dress,BTS,Betsey (Green),00,Size 0,story-dress,Green (Betsey) / 0,,ACTIVE,,true,
+DR102-BTS-01,DR102,Story Dress,BTS,Betsey (Green),01,Size 1,story-dress,Green (Betsey) / 1,,ACTIVE,,true,
+DR102-BTS-02,DR102,Story Dress,BTS,Betsey (Green),02,Size 2,story-dress,Green (Betsey) / 2,,ACTIVE,,true,
+DR102-BTS-03,DR102,Story Dress,BTS,Betsey (Green),03,Size 3,story-dress,Green (Betsey) / 3,,ACTIVE,,true,
+BG101-CHC-OS,BG101,Cleo Bag,CHC,Chocolate,OS,One Size,cleo-bag,Default Title,CC23LRTCB-CHOC,ACTIVE,2023,true,
+BG101-BLK-OS,BG101,Cleo Bag,BLK,Black,OS,One Size,cleo-bag-black-leather,Default Title,CC23LRTCB-BLK,ACTIVE,2023,true,
+BG101-SLV-OS,BG101,Cleo Bag,SLV,Silver,OS,One Size,cleo-bag-silver,Default Title,CC23LRTCB-SLV,ACTIVE,2023,true,
+BG101-DBL-OS,BG101,Cleo Bag,DBL,Denim Baby Blue,OS,One Size,cleo-bag-denim,Baby Blue,CC23LRTCB-DNM(BLU),ACTIVE,2023,true,
+BG101-DPK-OS,BG101,Cleo Bag,DPK,Denim Pink,OS,One Size,cleo-bag-denim,Pink,CC23LRTCB-DNM(PNK),ACTIVE,2023,true,
+BG101-OLV-OS,BG101,Cleo Bag,OLV,Olive,OS,One Size,olive-bag,Default Title,CC23LRTCB-OLV,ACTIVE,2023,true,
+BG102-BLK-OS,BG102,Little Sister,BLK,Black,OS,One Size,little-sister,Black,,ACTIVE,,true,
+BG103-SLV-OS,BG103,Bateau Bag,SLV,Silver,OS,One Size,bateau-bag,Silver,,ACTIVE,,true,Assembled from PT101-NAT-OS + AC102-<color>-OS
+BG103-GLD-OS,BG103,Bateau Bag,GLD,Gold,OS,One Size,bateau-bag,Gold,,ACTIVE,,true,Assembled from PT101-NAT-OS + AC102-<color>-OS
+BG103-MRS-OS,BG103,Bateau Bag,MRS,Maraschino,OS,One Size,bateau-bag,Maraschino,,ACTIVE,,true,Assembled from PT101-NAT-OS + AC102-<color>-OS
+BG103-VRD-OS,BG103,Bateau Bag,VRD,Verdant,OS,One Size,bateau-bag,Verdant,,ACTIVE,,true,Assembled from PT101-NAT-OS + AC102-<color>-OS
+BG103-CSP-OS,BG103,Bateau Bag,CSP,Caspian,OS,One Size,bateau-bag,Caspian,,ACTIVE,,true,Assembled from PT101-NAT-OS + AC102-<color>-OS
+BG103-CHC-OS,BG103,Bateau Bag,CHC,Chocolate,OS,One Size,bateau-bag,Chocolate,,ACTIVE,,true,Assembled from PT101-NAT-OS + AC102-<color>-OS
+BG104-GLD-OS,BG104,Petite Bateau Bag,GLD,Gold,OS,One Size,petite-bateau-bag,Gold,,ACTIVE,,true,Assembled from PT102-NAT-OS + AC102-<color>-OS
+BG104-SLV-OS,BG104,Petite Bateau Bag,SLV,Silver,OS,One Size,petite-bateau-bag,Silver,,ACTIVE,,true,Assembled from PT102-NAT-OS + AC102-<color>-OS
+BG104-MRS-OS,BG104,Petite Bateau Bag,MRS,Maraschino,OS,One Size,petite-bateau-bag,Maraschino,,ACTIVE,,true,Assembled from PT102-NAT-OS + AC102-<color>-OS
+BG104-VRD-OS,BG104,Petite Bateau Bag,VRD,Verdant,OS,One Size,petite-bateau-bag,Verdant,,ACTIVE,,true,Assembled from PT102-NAT-OS + AC102-<color>-OS
+BG104-CSP-OS,BG104,Petite Bateau Bag,CSP,Caspian,OS,One Size,petite-bateau-bag,Caspian,,ACTIVE,,true,Assembled from PT102-NAT-OS + AC102-<color>-OS
+BG104-CHC-OS,BG104,Petite Bateau Bag,CHC,Chocolate,OS,One Size,petite-bateau-bag,Chocolate,,ACTIVE,,true,Assembled from PT102-NAT-OS + AC102-<color>-OS
+BG105-CHP-PT,BG105,Bean Bag,CHP,Champagne,PT,Petite,bean-bag,Champagne / Petite,,ACTIVE,,true,
+BG105-BLK-PT,BG105,Bean Bag,BLK,Black,PT,Petite,bean-bag,Black / Petite,,ACTIVE,,true,
+BG105-SLV-MD,BG105,Bean Bag,SLV,Silver,MD,Medium,bean-bag,Silver / Medium,,ACTIVE,,true,
+BG106-FLG-OS,BG106,Cachet,FLG,Floral / Gold,OS,One Size,cachet,Default Title,,ACTIVE,,true,
+AC101-DCH-XS,AC101,Boy Belt,DCH,Dark Chocolate,XS,Extra Small,boy-belt,Extra Small,,ACTIVE,,true,
+AC101-DCH-SM,AC101,Boy Belt,DCH,Dark Chocolate,SM,Small,boy-belt,Small,,ACTIVE,,true,
+AC101-DCH-MD,AC101,Boy Belt,DCH,Dark Chocolate,MD,Medium,boy-belt,Medium,,ACTIVE,,true,
+AC101-DCH-LG,AC101,Boy Belt,DCH,Dark Chocolate,LG,Large,boy-belt,Large,,ACTIVE,,true,
+AC102-SLV-OS,AC102,Bateau Handle,SLV,Silver,OS,One Size,bateau-handle,Silver,,ACTIVE,,true,
+AC102-GLD-OS,AC102,Bateau Handle,GLD,Gold,OS,One Size,bateau-handle,Gold,,ACTIVE,,true,
+AC102-MRS-OS,AC102,Bateau Handle,MRS,Maraschino,OS,One Size,bateau-handle,Maraschino,,ACTIVE,,true,
+AC102-VRD-OS,AC102,Bateau Handle,VRD,Verdant,OS,One Size,bateau-handle,Verdant,,ACTIVE,,true,
+AC102-CSP-OS,AC102,Bateau Handle,CSP,Caspian,OS,One Size,bateau-handle,Caspian,,ACTIVE,,true,
+AC102-CHC-OS,AC102,Bateau Handle,CHC,Chocolate,OS,One Size,bateau-handle,Chocolate,,ACTIVE,,true,
+AC103-HPK-OS,AC103,Flower Hair Tie,HPK,Hot Pink,OS,One Size,flower-hairtie,Hot Pink,FLWR-HT-HP,ACTIVE,,true,
+AC104-BDD-OS,AC104,Sardine,BDD,Beaded,OS,One Size,sardine,Beaded,,ACTIVE,,true,
+AC104-NKD-OS,AC104,Sardine,NKD,Naked,OS,One Size,sardine,Naked,,ACTIVE,,true,
+PT101-NAT-OS,PT101,Bateau Body,NAT,Natural,OS,One Size,bateau-body-part,Default Title,,DRAFT,,true,
+PT102-NAT-OS,PT102,Petite Bateau Body,NAT,Natural,OS,One Size,petite-bateau-body-part,Default Title,,DRAFT,,true,
+OT101-STD-OS,OT101,Splash Photo Book,STD,Standard,OS,One Size,splash-photobook,Default Title,,ACTIVE,,true,
+BT101-PNK-XS,BT101,5to7 Skirt,PNK,Pink,XS,Extra Small,,,,NOT LIVE,,false,Pink and Purple assumed to be two colorways
+BT101-PNK-SM,BT101,5to7 Skirt,PNK,Pink,SM,Small,,,,NOT LIVE,,false,Pink and Purple assumed to be two colorways
+BT101-PNK-MD,BT101,5to7 Skirt,PNK,Pink,MD,Medium,,,,NOT LIVE,,false,Pink and Purple assumed to be two colorways
+BT101-PNK-LG,BT101,5to7 Skirt,PNK,Pink,LG,Large,,,,NOT LIVE,,false,Pink and Purple assumed to be two colorways
+BT101-PNK-XL,BT101,5to7 Skirt,PNK,Pink,XL,Extra Large,,,,NOT LIVE,,false,Pink and Purple assumed to be two colorways
+BT101-PRP-XS,BT101,5to7 Skirt,PRP,Purple,XS,Extra Small,,,,NOT LIVE,,false,Pink and Purple assumed to be two colorways
+BT101-PRP-SM,BT101,5to7 Skirt,PRP,Purple,SM,Small,,,,NOT LIVE,,false,Pink and Purple assumed to be two colorways
+BT101-PRP-MD,BT101,5to7 Skirt,PRP,Purple,MD,Medium,,,,NOT LIVE,,false,Pink and Purple assumed to be two colorways
+BT101-PRP-LG,BT101,5to7 Skirt,PRP,Purple,LG,Large,,,,NOT LIVE,,false,Pink and Purple assumed to be two colorways
+BT101-PRP-XL,BT101,5to7 Skirt,PRP,Purple,XL,Extra Large,,,,NOT LIVE,,false,Pink and Purple assumed to be two colorways
+IN101-WHT-XS,IN101,Cleo Underwear,WHT,White,XS,Extra Small,,,,DEVELOPMENT,,false,White and Pink assumed to be two colorways
+IN101-WHT-SM,IN101,Cleo Underwear,WHT,White,SM,Small,,,,DEVELOPMENT,,false,White and Pink assumed to be two colorways
+IN101-WHT-MD,IN101,Cleo Underwear,WHT,White,MD,Medium,,,,DEVELOPMENT,,false,White and Pink assumed to be two colorways
+IN101-WHT-LG,IN101,Cleo Underwear,WHT,White,LG,Large,,,,DEVELOPMENT,,false,White and Pink assumed to be two colorways
+IN101-WHT-XL,IN101,Cleo Underwear,WHT,White,XL,Extra Large,,,,DEVELOPMENT,,false,White and Pink assumed to be two colorways
+IN101-PNK-XS,IN101,Cleo Underwear,PNK,Pink,XS,Extra Small,,,,DEVELOPMENT,,false,White and Pink assumed to be two colorways
+IN101-PNK-SM,IN101,Cleo Underwear,PNK,Pink,SM,Small,,,,DEVELOPMENT,,false,White and Pink assumed to be two colorways
+IN101-PNK-MD,IN101,Cleo Underwear,PNK,Pink,MD,Medium,,,,DEVELOPMENT,,false,White and Pink assumed to be two colorways
+IN101-PNK-LG,IN101,Cleo Underwear,PNK,Pink,LG,Large,,,,DEVELOPMENT,,false,White and Pink assumed to be two colorways
+IN101-PNK-XL,IN101,Cleo Underwear,PNK,Pink,XL,Extra Large,,,,DEVELOPMENT,,false,White and Pink assumed to be two colorways
+BG105-RED-PT,BG105,Bean Bag,RED,Red,PT,Petite,,,,LIVE ONLY,,false,"Sold in person only. Proposed code, confirm."
