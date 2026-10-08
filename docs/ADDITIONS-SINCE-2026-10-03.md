@@ -156,7 +156,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Change:** the standing instructions say to read the item's ledger in order. The latest count at each place stands, and only what moved after it changes it. Only when the ledger cannot settle it does the assistant email the person who counts stock and ask for a count.
 - **Files:** `lib/mouse/prompt.ts`
 
-### Gifts from verified team email · `HASH`
+### Gifts from verified team email · `4bb2a00`
 - **Problem:** a teammate emailing "send her a replacement at no charge" got "I couldn't do this": gifting was on the list of tools blocked from email, with the money and sending tools.
 - **Change:** the gift tool runs from a verified team email (sent to the assistant, passing DMARC), and the email counts as the go-ahead. It is safe to allow because a gift only makes a $0 order that waits in the store for a person to make the shipping label. An address the teammate gives in their own email, or in mail they forward, may be used; a stranger's still may not. Invoices, refunds, purchase orders and outgoing mail stay blocked from email.
 - **Files:** `lib/mouse/team-mail.ts` (`NOT_FROM_EMAIL`), `lib/mouse/nightly-pass.ts` (`APPLY_RULES`), `lib/mouse/tools.ts` (`gift_items`), `tests/team-mail.test.ts`
