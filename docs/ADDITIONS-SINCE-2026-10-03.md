@@ -351,6 +351,20 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `app/(main)/files/file-controls.tsx`, `app/(main)/products/page.tsx`
 - **Needs:** nothing beyond Files itself (no Shopify, no email).
 
+### Style numbers and SKUs, with sent purchase orders frozen · `3bfd723`…`da83dd0` (seven commits)
+- **Problem:** a brand moving to style numbers (a pattern code like TP101, SKUs nested as STYLE-COLOUR-SIZE) needs them stored, shown, checked and reported, without rewriting purchase orders already sent: the PO page and PDF read a variant's SKU live, so any SKU change would silently reprint every sent order.
+- **Change:**
+  - Sent POs: a variant line is frozen (SKU, name, colour, size, photo) when its order leaves draft; a draft reads live; a failed or dry-run send undoes the freeze; a resend never overwrites; a deliberate revision re-freezes that line. Backfill script, and a before/after render check (PDF text and page HTML) for every sent PO.
+  - Data: Style (number never reused or deleted; statuses incl. PROPOSED and RETIRED), StyleCode (category, colour, size; CONFIRMED or PROPOSED), product style link, variant new SKU (unique) with its codes, old SKU untouched.
+  - Rules in code: SKU regex and equality to style-colour-size, uniqueness, next number in a category (highest ever used plus one), size names to codes; a new code or number is PROPOSED with a question; only named people can confirm (checked against who is asking).
+  - Seeding from CSVs, matched on product, colour and size (never forced; unmatched and ambiguous become questions).
+  - Display: one setting (new with old in brackets, or new only); style numbers and SKU lists on Products; SKUs on the PO list; search on style number, old and new SKU; the assistant's catalogue and open_record carry them.
+  - Kits: a product made up of other products (body plus same-colour part); availability is the lower of the parts, unknown if any count is, with the shared part's pool said plainly. Not a recipe; moves no stock.
+  - Report: products without a style, missing codes or SKUs, SKUs that fail the format (app and the e-commerce platform), open PO lines without a style, proposals waiting; one line when nothing is outstanding. In the daily email, the context snapshot and the assistant's context.
+  - Partner reference: printable page and PDF of confirmed styles and codes only, and how to read a SKU; behind sign-in.
+- **Files:** `lib/po-snapshot.ts`, `lib/style-system.ts`, `lib/style-admin.ts`, `lib/style-report.ts`, `lib/style-reference.ts`, `lib/style-reference-pdf.tsx`, `lib/kits.ts`, `app/styles/`, `app/(main)/products/` (page, actions, sku-mode), `app/(main)/purchase-orders/page.tsx`, `app/po/[poNumber]/` (page, pdf-button), `lib/po-pdf.tsx`, `lib/search.ts`, `lib/mouse/tools.ts` (create_product pattern, style_numbers, create_colorway colour code, send/update PO freezing), `lib/mouse/context.ts`, `lib/mouse/records.ts`, `lib/mouse/prompt.ts`, `lib/mouse/daily-cheese.ts`, `lib/shopify-import.ts`, `lib/integrations/shopify-sync.ts`, `scripts/seed-style-system.ts`, `scripts/freeze-sent-pos.ts`, `scripts/po-render-capture.ts`, `prisma/migrations/20261008150000_style_system`, tests `style-system`, `po-snapshot`, `kits`.
+- **Needs:** Shopify only to read each variant's SKU in the nightly sync (read only). No email.
+
 ---
 
 ## Setup notes for a new install
