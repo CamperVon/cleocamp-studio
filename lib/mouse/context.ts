@@ -23,6 +23,7 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index' } = {}): Pro
     db.product.findMany({
       orderBy: { name: 'asc' },
       include: {
+        style: { select: { number: true, status: true } },
         colorways: { orderBy: { customerName: 'asc' } },
         variants: { orderBy: [{ size: 'asc' }], include: { colorway: true } },
         bomLines: { include: { component: true } },
@@ -122,7 +123,9 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index' } = {}): Pro
 
   L.push('## Products')
   for (const p of products) {
-    L.push(`\n### ${p.name} [${p.id}] — ${p.status.toLowerCase()}, retail ${money(p.retailPriceCents)}`)
+    // The style number (docs/style-system/), "TP103 (PROPOSED)" when not confirmed.
+    const style = p.style ? ` — style ${p.style.number}${p.style.status === 'PROPOSED' ? ' (PROPOSED)' : ''}` : ' — no style number'
+    L.push(`\n### ${p.name} [${p.id}]${style} — ${p.status.toLowerCase()}, retail ${money(p.retailPriceCents)}`)
     L.push(`production lead time: ${p.productionLeadTimeDays ?? 'UNKNOWN'}`)
     if (p.notes) L.push(`note: ${p.notes}`)
     if (p.colorways.length) {
@@ -147,7 +150,7 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index' } = {}): Pro
       // they are different facts.
       const idle = { uncounted: [] as string[], zero: [] as string[] }
       for (const v of p.variants) {
-        const name = [v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'default'
+        const name = ([v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'default') + (v.newSku ? ` ${v.newSku}` : '')
         const n = sold.get(v.id) ?? 0
         if (n === 0 && (v.onHandQty === null || Number(v.onHandQty) === 0)) {
           idle[v.onHandQty === null ? 'uncounted' : 'zero'].push(`${name} [${v.id}]`)

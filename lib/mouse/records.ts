@@ -74,8 +74,15 @@ const day = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : 
 async function detailFor(r: RecordRef): Promise<Record<string, unknown>> {
   switch (r.kind) {
     case 'product': {
-      const p = await db.product.findUnique({ where: { id: r.id }, include: { variants: { include: { colorway: true }, orderBy: { size: 'asc' } } } })
-      return p ? { status: p.status, variants: p.variants.map((v) => ({ id: v.id, label: [v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'default', onHand: v.onHandQty === null ? 'UNKNOWN' : Number(v.onHandQty) })) } : {}
+      const p = await db.product.findUnique({ where: { id: r.id }, include: { style: true, variants: { include: { colorway: true }, orderBy: { size: 'asc' } } } })
+      return p ? {
+        status: p.status,
+        style: p.style ? { number: p.style.number, status: p.style.status } : null,
+        variants: p.variants.map((v) => ({
+          id: v.id, label: [v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'default', onHand: v.onHandQty === null ? 'UNKNOWN' : Number(v.onHandQty),
+          sku: v.newSku, oldSku: v.sku,
+        })),
+      } : {}
     }
     case 'component': {
       const c = await db.component.findUnique({ where: { id: r.id }, include: { vendor: true, locationStock: { include: { location: true, atVendor: true } } } })

@@ -1,6 +1,8 @@
 import { filesFor } from '@/lib/files'
 import { FileLinks } from '@/app/ui/file-links'
 import { AddFileTo } from '../files/file-controls'
+import { SkuModeToggle } from './sku-mode'
+import { asSkuDisplayMode, skuText } from '@/lib/po-snapshot'
 import { lineScopeLabel } from '@/lib/bom'
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
@@ -19,9 +21,10 @@ const stockTone = (n: number) => (n <= 0 ? 'font-bold text-urgent' : 'text-accen
 
 export default async function Products() {
   const productFiles = await filesFor('product')
-  const [products, pos, runs, sales] = await Promise.all([
+  const [products, pos, runs, sales, defaults] = await Promise.all([
     db.product.findMany({
       include: {
+        style: { select: { number: true, status: true } },
         colorways: { orderBy: { customerName: 'asc' } },
         variants: { include: { colorway: true } },
         bomLines: { include: { component: { include: { vendor: true } } } },
@@ -40,7 +43,9 @@ export default async function Products() {
       _sum: { unitsSold: true },
       where: { date: { gte: laMidnight(56) } },
     }),
+    db.documentDefaults.findUnique({ where: { id: 'singleton' }, select: { skuDisplayMode: true } }),
   ])
+  const skuMode = asSkuDisplayMode(defaults?.skuDisplayMode)
 
   const sold = new Map(sales.map((s) => [s.productVariantId, s._sum.unitsSold ?? 0]))
 
@@ -107,6 +112,7 @@ export default async function Products() {
   return (
     <Page title="Products" lede="A to Z. Tap a product for what is on order, in production, and what Studio Mouse would flag.">
       <PageChat page="Products" placeholder="A note for Mouse…" />
+      <SkuModeToggle mode={skuMode} />
       {groups.map((g) => (
         <Card key={g.title} title={`${g.title} (${g.items.length})`}>
           <ul className="divide-y divide-line">
@@ -119,7 +125,11 @@ export default async function Products() {
                       <span aria-hidden className="text-xs text-faint transition-transform group-open:rotate-90">▸</span>
                       <Thumb src={p.variants.find((v) => v.imageUrl)?.imageUrl} size={40} />
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium">{p.name}</span>
+                        <span className="block text-sm font-medium">
+                          {p.name}
+                          {/* The style number (docs/style-system/); a proposed one says so. */}
+                          {p.style ? <span className="ml-1.5 text-xs font-normal text-faint">{p.style.number}{p.style.status === 'PROPOSED' ? ' proposed' : ''}</span> : null}
+                        </span>
                         <span className="block text-xs text-muted">
                           <span className={`tnum ${stockTone(onHand)}`}>{onHand} on hand</span> · <span className="tnum">{soldTotal}</span> sold in 8 wks
                           {relatedPos.length || relatedRuns.length ? ` · ${relatedPos.length + relatedRuns.length} on order` : ''}
@@ -194,6 +204,23 @@ export default async function Products() {
                         </div>
                       </dl>
 
+                      {p.variants.length ? (
+                        <details className="group/skus border-b border-line">
+                          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-xs text-faint sm:px-5 [&::-webkit-details-marker]:hidden">
+                            <span aria-hidden className="transition-transform group-open/skus:rotate-90">▸</span>
+                            SKUs ({p.variants.length}){p.variants.some((v) => !v.newSku) ? <span className="text-warn"> · {p.variants.filter((v) => !v.newSku).length} without a new SKU</span> : null}
+                          </summary>
+                          <ul className="flex flex-col gap-1 px-4 pb-3 sm:px-5">
+                            {[...p.variants].sort((a, b) => (a.newSku ?? a.sku ?? '~').localeCompare(b.newSku ?? b.sku ?? '~')).map((v) => (
+                              <li key={v.id} className="flex flex-wrap justify-between gap-x-3 text-sm">
+                                <span>{[v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'One variant'}</span>
+                                <span className={`font-mono text-xs ${v.newSku ? 'text-ink' : 'text-faint'}`}>{skuText(v, skuMode) ?? 'no SKU'}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      ) : null}
+
                       {p.colorways.length ? (
                         <div className="border-b border-line px-4 py-3 sm:px-5">
                           <p className="mb-2 text-xs text-faint">Colourways — customer name · dye house name</p>
@@ -201,6 +228,7 @@ export default async function Products() {
                             {p.colorways.map((c) => (
                               <li key={c.id} className="text-sm">
                                 <span className={c.active ? '' : 'text-faint line-through'}>{c.customerName}</span>
+                                {c.colorCode ? <span className="font-mono text-xs text-faint"> {c.colorCode}</span> : null}
                                 {c.dyeHouseName ? <span className="text-faint"> · {c.dyeHouseName}</span>
                                   : c.inHouseMatch ? <span className="text-warn"> · in-house match</span> : null}
                               </li>

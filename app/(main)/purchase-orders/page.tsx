@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
+import { asSkuDisplayMode, lineView } from '@/lib/po-snapshot'
 import { paymentStages } from '@/lib/payments'
 import { Page, Card, Chip, Empty, Money, Stat } from '@/app/ui/primitives'
 
@@ -34,6 +35,8 @@ export default async function PurchaseOrders() {
       lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } },
     },
   })
+  const defaults = await db.documentDefaults.findUnique({ where: { id: 'singleton' }, select: { skuDisplayMode: true } })
+  const skuMode = asSkuDisplayMode(defaults?.skuDisplayMode)
 
   const groups: Array<{ key: string; title: string; items: typeof pos }> = [
     { key: 'DRAFT', title: 'Drafts — not sent', items: pos.filter((p) => p.status === 'DRAFT') },
@@ -76,7 +79,7 @@ export default async function PurchaseOrders() {
           </div>
         </a>
         <p className="mt-1 truncate text-sm text-muted">
-          {p.lines.map((l) => poLineLabel(l)).join(', ')}
+          {p.lines.map((l) => { const sku = l.productVariant ? lineView(l, skuMode)?.sku : null; return sku ? `${poLineLabel(l)} (${sku})` : poLineLabel(l) }).join(', ')}
           {p.forProduct ? ` · for the ${p.forProduct.name}` : ''}
         </p>
         <p className="mt-0.5 text-xs text-faint">

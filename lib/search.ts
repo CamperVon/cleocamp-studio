@@ -94,7 +94,7 @@ export async function searchEverything(query: string): Promise<SearchHit[]> {
   const words = norm(q).split(' ').filter((w) => w.length >= 2)
   const like = (field: string) => ({ OR: words.map((w) => ({ [field]: { contains: w, mode: 'insensitive' as const } })) })
   const [products, components, vendors, pos, accounts, stylists, contacts, customers, cases, files, items] = await Promise.all([
-    db.product.findMany({ select: { id: true, name: true, status: true } }),
+    db.product.findMany({ select: { id: true, name: true, status: true, style: { select: { number: true } }, variants: { select: { id: true, sku: true, newSku: true, size: true, colorway: { select: { customerName: true } } } } } }),
     db.component.findMany({ where: { active: true }, select: { id: true, name: true, vendorSku: true, vendor: { select: { name: true } } } }),
     db.vendor.findMany({ select: { id: true, name: true, legalName: true, contactName: true, email: true } }),
     db.purchaseOrder.findMany({ select: { poNumber: true, status: true, vendor: { select: { name: true } } } }),
@@ -121,7 +121,12 @@ export async function searchEverything(query: string): Promise<SearchHit[]> {
       kind: 'Purchase order', label: `PO ${p.poNumber} · ${p.vendor.name}`, sub: p.status.replace(/_/g, ' ').toLowerCase(), href: `/po/${p.poNumber}`,
       also: [`PO ${p.poNumber}`], exact: po === p.poNumber,
     })),
-    ...products.map((p) => ({ kind: 'Product', label: p.name, sub: p.status.toLowerCase(), href: at('/products', p.id) })),
+    ...products.map((p) => ({ kind: 'Product', label: p.name, sub: [p.style?.number, p.status.toLowerCase()].filter(Boolean).join(' · '), href: at('/products', p.id), also: [p.style?.number] })),
+    // Each SKU, old and new, finds its product (style system, 8 Oct 2026).
+    ...products.flatMap((p) => p.variants.filter((v) => v.sku || v.newSku).map((v) => ({
+      kind: 'Product', label: v.newSku ?? v.sku!, sub: [p.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ') + (v.newSku && v.sku ? ` · was ${v.sku}` : ''),
+      href: at('/products', p.id), also: [v.sku, v.newSku],
+    }))),
     ...components.map((c) => ({ kind: 'Component', label: c.name, sub: c.vendor?.name ?? null, href: at('/components', c.id), also: [c.vendorSku] })),
     ...vendors.map((v) => ({ kind: 'Vendor', label: v.name, sub: v.legalName ?? v.contactName, href: at('/vendors', v.id), also: [v.legalName, v.contactName, v.email] })),
     ...accounts.map((a) => ({ kind: 'Wholesale', label: a.name, sub: a.contactName, href: at('/wholesale', a.id), also: [a.contactName, a.email] })),
