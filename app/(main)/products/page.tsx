@@ -1,5 +1,6 @@
 import { filesFor } from '@/lib/files'
 import { FileLinks } from '@/app/ui/file-links'
+import { AddFileTo } from '../files/file-controls'
 import { lineScopeLabel } from '@/lib/bom'
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
@@ -122,6 +123,7 @@ export default async function Products() {
                         <span className="block text-xs text-muted">
                           <span className={`tnum ${stockTone(onHand)}`}>{onHand} on hand</span> · <span className="tnum">{soldTotal}</span> sold in 8 wks
                           {relatedPos.length || relatedRuns.length ? ` · ${relatedPos.length + relatedRuns.length} on order` : ''}
+                          {productFiles.get(p.id)?.length ? ` · ${productFiles.get(p.id)!.length} file${productFiles.get(p.id)!.length === 1 ? '' : 's'}` : ''}
                         </span>
                         {/* Oversold shows on the closed line (Brandon, 2 Oct 2026: "visible w/o having to click"). */}
                         {flags.filter((f) => f.oversold).map((f, i) => (
@@ -132,7 +134,13 @@ export default async function Products() {
                       <Chip tone={STATUS_TONE[p.status]}>{p.status.toLowerCase()}</Chip>
                     </summary>
                     <div className="border-t border-line">
-                      <FileLinks files={productFiles.get(p.id)} className="px-4 pt-2.5 sm:px-5" />
+                      {/* Tech packs and the like, kept in Files and added from here (Brandon, 8 Oct 2026). */}
+                      <div className="border-b border-line px-4 py-2.5 sm:px-5">
+                        {productFiles.get(p.id)?.length
+                          ? <FileLinks files={productFiles.get(p.id)} />
+                          : <p className="text-xs text-faint">No files yet: tech pack, spec sheet, photos.</p>}
+                        <AddFileTo kind="product" recordId={p.id} />
+                      </div>
                       {flags.length ? (
                         <ul className="divide-y divide-line border-b border-line">
                           {flags.map((f, i) => (

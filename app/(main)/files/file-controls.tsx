@@ -26,6 +26,66 @@ function RecordPicker({ targets, value, onChange }: { targets: Targets; value: s
 
 const split = (v: string) => { const i = v.indexOf(':'); return { kind: v.slice(0, i), recordId: v.slice(i + 1) } }
 
+/** Send one file to /api/files with its links. The size is checked here first so a big file fails before it uploads. */
+async function postFile(file: File, title: string, notes: string, links: Array<{ kind: string; recordId: string }>): Promise<{ id: string } | { error: string }> {
+  if (file.size > MAX) return { error: `That file is ${(file.size / 1048576).toFixed(1)} MB; the limit is 4 MB. Scan or export it smaller and try again.` }
+  const form = new FormData()
+  form.set('file', file)
+  form.set('title', title)
+  form.set('notes', notes)
+  form.set('links', JSON.stringify(links))
+  return fetch('/api/files', { method: 'POST', body: form }).then((x) => x.json()).catch(() => ({ error: 'The upload did not go through. Try again.' }))
+}
+
+const ACCEPT = 'application/pdf,image/jpeg,image/png,image/webp,image/gif'
+
+/**
+ * Add a file from a product's own row, already linked to it (Brandon, 8 Oct
+ * 2026: "a files section where we can find tech paks ... prolly should live
+ * in the products page"). Kept in Files like any other.
+ */
+export function AddFileTo({ kind, recordId }: { kind: 'product' | 'component' | 'vendor'; recordId: string }) {
+  const router = useRouter()
+  const ref = useRef<HTMLInputElement>(null)
+  const [open, setOpen] = useState(false)
+  const [file, setFile] = useState<File | null>(null)
+  const [title, setTitle] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ text: string; bad: boolean } | null>(null)
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => { setOpen(true); setMsg(null) }} className="text-xs text-accent underline underline-offset-2">
+        + Add a file
+      </button>
+    )
+  }
+  const send = async () => {
+    if (!file) return
+    setBusy(true); setMsg(null)
+    const r = await postFile(file, title, '', [{ kind, recordId }])
+    setBusy(false)
+    if ('error' in r) { setMsg({ text: r.error, bad: true }); return }
+    setFile(null); setTitle(''); setOpen(false); if (ref.current) ref.current.value = ''
+    router.refresh()
+  }
+  return (
+    <div className="mt-1.5 flex flex-col gap-2">
+      <input ref={ref} type="file" accept={ACCEPT}
+        onChange={(e) => { const f = e.target.files?.[0] ?? null; setFile(f); if (f && !title) setTitle(f.name.replace(/\.[a-z0-9]+$/i, '')) }}
+        className="text-sm file:mr-3 file:rounded-lg file:border file:border-line file:bg-bg file:px-3 file:py-1.5 file:text-sm" />
+      <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title, e.g. Tech pack" className={input} />
+      <div className="flex gap-2">
+        <button type="button" disabled={!file || busy || !title.trim()} onClick={send} className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-bg disabled:opacity-40">
+          {busy ? 'Keeping…' : 'Keep this file'}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className={small}>Cancel</button>
+      </div>
+      {msg ? <p className={`text-xs ${msg.bad ? 'font-medium text-urgent' : 'text-muted'}`}>{msg.text}</p> : null}
+    </div>
+  )
+}
+
 export function UploadFile({ targets }: { targets: Targets }) {
   const router = useRouter()
   const ref = useRef<HTMLInputElement>(null)
@@ -40,16 +100,10 @@ export function UploadFile({ targets }: { targets: Targets }) {
 
   const send = async () => {
     if (!file) return
-    if (file.size > MAX) { setMsg({ text: `That file is ${(file.size / 1048576).toFixed(1)} MB; the limit is 4 MB. Scan or export it smaller and try again.`, bad: true }); return }
     setBusy(true); setMsg(null)
-    const form = new FormData()
-    form.set('file', file)
-    form.set('title', title)
-    form.set('notes', notes)
-    form.set('links', JSON.stringify(links.map(split)))
-    const r = await fetch('/api/files', { method: 'POST', body: form }).then((x) => x.json()).catch(() => ({ error: 'The upload did not go through. Try again.' }))
+    const r = await postFile(file, title, notes, links.map(split))
     setBusy(false)
-    if (r.error) { setMsg({ text: r.error, bad: true }); return }
+    if ('error' in r) { setMsg({ text: r.error, bad: true }); return }
     setMsg({ text: 'Kept.', bad: false })
     setFile(null); setTitle(''); setNotes(''); setLinks([]); if (ref.current) ref.current.value = ''
     router.refresh()
@@ -57,7 +111,7 @@ export function UploadFile({ targets }: { targets: Targets }) {
 
   return (
     <div className="flex flex-col gap-2 px-4 py-3 sm:px-5">
-      <input ref={ref} type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/gif"
+      <input ref={ref} type="file" accept={ACCEPT}
         onChange={(e) => { const f = e.target.files?.[0] ?? null; setFile(f); if (f && !title) setTitle(f.name.replace(/\.[a-z0-9]+$/i, '')) }}
         className="text-sm file:mr-3 file:rounded-lg file:border file:border-line file:bg-bg file:px-3 file:py-1.5 file:text-sm" />
       <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title, e.g. Calamo colour card" className={input} />
