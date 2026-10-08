@@ -301,6 +301,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** email.
 - **Files:** `app/(main)/corner-actions.ts` (`emailTeammate`), `app/(main)/stylists/actions.ts` (`pingAbout`), `app/(main)/stylists/stylist-controls.tsx` (`PingButtons`), `app/(main)/stylists/page.tsx`
 
+### An order marked received has its lines received · (this commit)
+- **Problem:** told an order had arrived, the assistant set its status to received, but every line stayed at 0 received. Lines are only ticked when a delivery is logged into stock, and new items with no stock record yet never were. So the order read "received" with nothing received on it.
+- **Change:** setting an order to RECEIVED ticks every line still short up to what was ordered, and says how many it ticked. It changes no stock. A later stock entry naming the order adds nothing past what was ordered (`receiveOnPo` already caps), so nothing is counted twice. Part deliveries still use PARTIALLY_RECEIVED or the close tool.
+- **Files:** `lib/po-receipts.ts` (`ticksForReceived`), `lib/mouse/tools.ts` (`update_purchase_order`), `tests/order-address.test.ts`
+- **Needs:** nothing.
+
 ### Charge lines never hold an order open · `6445ca3`
 - **Problem:** an order counted as fully received only when every line was, and a shipping, tax or fee line never "arrives", so an order with one stayed part-received for good after its goods came in.
 - **Change:** a line with no component or product whose wording is a charge (shipping, handling, freight, tax, duty, fee, surcharge, discount, deposit, setup) is left out of the received check and of the close-out shortfall. Free-text lines for goods are unaffected.

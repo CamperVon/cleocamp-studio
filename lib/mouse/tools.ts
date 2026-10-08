@@ -2636,6 +2636,8 @@ export const TOOLS: Record<string, Tool> = {
         'if it is not already set). If the place named is somewhere the goods were shipped ' +
         'to — fabric from RichLine delivered to Antonio\'s, say — then the GOODS have ' +
         'landed: set receivedAt and RECEIVED, or PARTIALLY_RECEIVED if only part came. ' +
+        'RECEIVED ticks every line as fully received; it does not add stock (log that with ' +
+        'log_inventory_event). ' +
         'Check the order\'s vendor before choosing; only ask if it is genuinely unclear ' +
         'which of the two happened. ' +
         'IMPORTANT: when you are told a payment date and you know the lead time, work out ' +
@@ -2710,6 +2712,18 @@ export const TOOLS: Record<string, Tool> = {
         await freezePoLines(po.id)
       }
 
+      // RECEIVED means everything came, so every line says so too (PO 2379,
+      // 8 Oct 2026: marked received with both lines left at 0). A later
+      // stock entry naming the PO adds nothing past what was ordered.
+      let linesTicked = 0
+      if (updated.status === 'RECEIVED' && po.status !== 'RECEIVED') {
+        const { ticksForReceived } = await import('@/lib/po-receipts')
+        const lines = await db.purchaseOrderLine.findMany({ where: { purchaseOrderId: po.id }, select: { id: true, qtyOrdered: true, qtyReceived: true } })
+        const ticks = ticksForReceived(lines)
+        if (ticks.length) await db.$transaction(ticks.map((t) => db.purchaseOrderLine.update({ where: { id: t.id }, data: { qtyReceived: String(t.received) } })))
+        linesTicked = ticks.length
+      }
+
       // Learn from this delivery the moment it lands — only the first time
       // receivedAt is actually set on this order, not on a later edit to the
       // same PO. See lib/lead-time-learning.ts.
@@ -2719,7 +2733,10 @@ export const TOOLS: Record<string, Tool> = {
         leadTimeQuestions = await checkLeadTimeDrift(updated.id).catch(() => [])
       }
 
-      return leadTimeQuestions.length ? { ...updated, leadTimeQuestions } : updated
+      const ticked = linesTicked
+        ? { linesTicked, linesNote: `${linesTicked} line${linesTicked === 1 ? '' : 's'} ticked as fully received. If part did not come, set PARTIALLY_RECEIVED or use close_purchase_order. Stock is not changed by this.` }
+        : {}
+      return leadTimeQuestions.length ? { ...updated, ...ticked, leadTimeQuestions } : { ...updated, ...ticked }
     },
   },
 

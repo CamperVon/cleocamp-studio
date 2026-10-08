@@ -128,3 +128,16 @@ test('shipped packages carry the variant name', () => {
   }, '2026-10-07')
   assert.equal(p[0].items[0].variant, 'Black / 2')
 })
+
+// ── An order marked received has its lines received (PO 2379, 8 Oct 2026) ──
+
+test('marking an order RECEIVED ticks every short line up to what was ordered, and no further', async () => {
+  const { ticksForReceived } = await import('../lib/po-receipts')
+  assert.deepEqual(ticksForReceived([
+    { id: 'a', qtyOrdered: '5', qtyReceived: '0' },
+    { id: 'b', qtyOrdered: '5', qtyReceived: '2' },
+    { id: 'c', qtyOrdered: '5', qtyReceived: '5' },
+    { id: 'd', qtyOrdered: '5', qtyReceived: '6' },
+  ]), [{ id: 'a', received: 5 }, { id: 'b', received: 5 }])
+  assert.deepEqual(ticksForReceived([]), [])
+})

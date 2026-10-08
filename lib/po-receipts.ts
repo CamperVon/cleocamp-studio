@@ -42,6 +42,19 @@ export function isChargeLine(l: { componentId?: string | null; productVariantId?
  * trimmed). The PO's status follows: some in → PARTIALLY_RECEIVED, all in →
  * RECEIVED. Never moves a DRAFT or CANCELLED order.
  */
+/**
+ * The lines to tick when an order is marked RECEIVED by hand: every one still
+ * short, up to what was ordered. RECEIVED means everything came (the tool
+ * says to use PARTIALLY_RECEIVED otherwise). Until 8 Oct 2026 marking an
+ * order received left its lines at 0: PO 2379, five black and five white
+ * belt samples, read "received" with nothing received on it. Pure.
+ */
+export function ticksForReceived(lines: Array<{ id: string; qtyOrdered: unknown; qtyReceived: unknown }>): Array<{ id: string; received: number }> {
+  return lines
+    .filter((l) => Number(l.qtyReceived) < Number(l.qtyOrdered))
+    .map((l) => ({ id: l.id, received: Number(l.qtyOrdered) }))
+}
+
 export async function receiveOnPo(
   poNumber: string,
   item: { productVariantId?: string | null; componentId?: string | null },
