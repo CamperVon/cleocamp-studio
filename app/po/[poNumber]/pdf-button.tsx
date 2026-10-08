@@ -20,7 +20,8 @@ import { useEffect, useRef, useState } from 'react'
  * 2026: "trying to download a pdf from desktop is a mess, i can't download it
  * from any browser". A touch screen is what marks the phone here.
  */
-export function PdfButton({ poNumber }: { poNumber: string }) {
+/** `path` is the PDF route; `name` the file's name without .pdf. */
+export function PdfButton({ path, name }: { path: string; name: string }) {
   const file = useRef<File | null>(null)
   const [canShare, setCanShare] = useState(false)
   const [state, setState] = useState<'idle' | 'working' | 'failed'>('idle')
@@ -29,10 +30,10 @@ export function PdfButton({ poNumber }: { poNumber: string }) {
     if (typeof navigator === 'undefined' || !navigator.canShare) return
     if (!window.matchMedia('(pointer: coarse)').matches) return
     let cancelled = false
-    fetch(`/po/${poNumber}/pdf?inline=1`)
+    fetch(`${path}?inline=1`)
       .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
       .then((b) => {
-        const f = new File([b], `PO-${poNumber}.pdf`, { type: 'application/pdf' })
+        const f = new File([b], `${name}.pdf`, { type: 'application/pdf' })
         if (!cancelled && navigator.canShare({ files: [f] })) {
           file.current = f
           setCanShare(true)
@@ -40,13 +41,13 @@ export function PdfButton({ poNumber }: { poNumber: string }) {
       })
       .catch(() => { /* the plain link below still works */ })
     return () => { cancelled = true }
-  }, [poNumber])
+  }, [path, name])
 
   async function share() {
     if (!file.current) return
     setState('working')
     try {
-      await navigator.share({ files: [file.current], title: `PO ${poNumber}` })
+      await navigator.share({ files: [file.current], title: name })
       setState('idle')
     } catch (e) {
       // Closing the sheet without picking anything is not a failure.
@@ -55,7 +56,7 @@ export function PdfButton({ poNumber }: { poNumber: string }) {
       // a share button of its own.
       // A PDF from a route handler, not a Next page — a full load is the point.
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-      window.location.assign(`${window.location.origin}/po/${poNumber}/pdf?inline=1`)
+      window.location.assign(`${window.location.origin}${path}?inline=1`)
     }
   }
 
@@ -66,7 +67,7 @@ export function PdfButton({ poNumber }: { poNumber: string }) {
       Save or send PDF
     </button>
   ) : (
-    <a href={`/po/${poNumber}/pdf`} className={cls}>
+    <a href={path} className={cls}>
       Download PDF
     </a>
   )

@@ -220,7 +220,7 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
     out.unshift({
       on: today, tag: 'STYLES',
       sentence: `Style numbers: ${styleLines.length} thing${styleLines.length === 1 ? '' : 's'} to settle. ${styleLines[0]}`,
-      href: `${APP}/styles`,
+      href: `${APP}/products`,
     })
   }
   if (looksDone) {

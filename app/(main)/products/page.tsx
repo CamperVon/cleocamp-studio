@@ -3,6 +3,7 @@ import { FileLinks } from '@/app/ui/file-links'
 import { AddFileTo } from '../files/file-controls'
 import { SkuModeToggle } from './sku-mode'
 import { kitsByProduct } from '@/lib/kits'
+import { styleReport } from '@/lib/style-report'
 import { asSkuDisplayMode, skuText } from '@/lib/po-snapshot'
 import { lineScopeLabel } from '@/lib/bom'
 import { db } from '@/lib/db'
@@ -21,7 +22,8 @@ const STATUS_TONE = {
 const stockTone = (n: number) => (n <= 0 ? 'font-bold text-urgent' : 'text-accent')
 
 export default async function Products() {
-  const [productFiles, kits] = await Promise.all([filesFor('product'), kitsByProduct()])
+  const [productFiles, kits, styleLines] = await Promise.all([filesFor('product'), kitsByProduct(), styleReport()])
+  const stylesClear = styleLines[0]?.startsWith('Style system: nothing')
   const [products, pos, runs, sales, defaults] = await Promise.all([
     db.product.findMany({
       include: {
@@ -114,6 +116,20 @@ export default async function Products() {
     <Page title="Products" lede="A to Z. Tap a product for what is on order, in production, and what Studio Mouse would flag.">
       <PageChat page="Products" placeholder="A note for Mouse…" />
       <SkuModeToggle mode={skuMode} />
+      {/* Style numbers still to settle (lib/style-report.ts), folded; the
+          partner reference is its own printable page, kept free of these. */}
+      <Card>
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center gap-2.5 px-4 py-3 text-sm hover:bg-sunk sm:px-5 [&::-webkit-details-marker]:hidden">
+            <span aria-hidden className="text-xs text-faint transition-transform group-open:rotate-90">▸</span>
+            <span className="flex-1">Style numbers{stylesClear ? <span className="text-muted">: nothing to settle</span> : <span className="text-warn">: {styleLines.length} thing{styleLines.length === 1 ? '' : 's'} to settle</span>}</span>
+            <a href="/styles" className="text-xs text-accent underline underline-offset-2">Partner reference</a>
+          </summary>
+          <ul className="flex flex-col gap-1.5 border-t border-line px-4 py-3 text-sm sm:px-5">
+            {styleLines.map((l, i) => <li key={i}>{l}</li>)}
+          </ul>
+        </details>
+      </Card>
       {groups.map((g) => (
         <Card key={g.title} title={`${g.title} (${g.items.length})`}>
           <ul className="divide-y divide-line">

@@ -229,7 +229,7 @@ export default async function PurchaseOrderDoc({
       </div>
 
       <div className="no-print mt-10 flex flex-wrap items-start gap-5 border-t border-[#DEDFDB] pt-4 text-[9pt] text-[#8B9491]">
-        <PdfButton poNumber={po.poNumber} />
+        <PdfButton path={`/po/${po.poNumber}/pdf`} name={`PO-${po.poNumber}`} />
         <span>or print this page from your browser.</span>
       </div>
     </main>

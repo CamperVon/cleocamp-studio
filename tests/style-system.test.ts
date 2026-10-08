@@ -114,3 +114,11 @@ test('the style report is one line when nothing is outstanding, and short when s
   assert.match(lines.join('\n'), /PO 2362 Dolce \/ M/)
   assert.match(lines.join('\n'), /Waiting on Brandon or Cleo: 1 proposed style \(TP103 Cleo Sweater\) and 1 proposed code \(color FLG\)/)
 })
+
+test('the partner reference explains a SKU from a real one, and says nothing internal', async () => {
+  const { howToRead } = await import('../lib/style-reference')
+  const lines = howToRead('BG105-CHP-PT').join(' ')
+  assert.match(lines, /BG105-CHP-PT is style BG105, colour CHP, size PT/)
+  assert.doesNotMatch(lines, /cost|price|stock|\$|on hand/i)
+  assert.match(howToRead(null)[0], /TP101-BLK-01/)
+})
