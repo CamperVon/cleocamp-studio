@@ -2,6 +2,7 @@ import path from 'node:path'
 import { Document, Page, Text, View, Image, Font, StyleSheet, renderToBuffer } from '@react-pdf/renderer'
 import { wordmark, WORDMARK_RATIO } from '@/lib/brand'
 import { howToRead, partnerReference } from '@/lib/style-reference'
+import { sheetPhoto } from '@/lib/line-sheet'
 
 /**
  * The style number reference (app/styles/page.tsx) as a PDF file a partner
@@ -30,10 +31,14 @@ const s = StyleSheet.create({
   style: { borderBottomWidth: 1, borderBottomColor: '#DEDFDB', paddingVertical: 5 },
   muted: { color: '#5C6663', fontSize: 9 },
   bullet: { marginBottom: 3 },
+  codes: { marginTop: 6, color: '#5C6663', fontSize: 9 },
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  photo: { width: 54, height: 54, objectFit: 'cover', borderRadius: 2 },
+  noPhoto: { width: 54, height: 54, backgroundColor: '#F1F1EE', borderRadius: 2 },
 })
 
 export async function renderStyleReferencePdf(): Promise<Buffer> {
-  const { categories, example } = await partnerReference()
+  const { categories, example, categoryCodes, sizeCodes } = await partnerReference()
   return renderToBuffer(
     <Document title="Cleo Camp style numbers">
       <Page size="LETTER" style={s.page}>
@@ -43,14 +48,20 @@ export async function renderStyleReferencePdf(): Promise<Buffer> {
         <View style={s.hr} />
         <Text style={s.h2}>HOW TO READ A SKU</Text>
         {howToRead(example).map((l, i) => <Text key={i} style={s.bullet}>{'• ' + l}</Text>)}
+        <Text style={s.codes}>{`Categories: ${categoryCodes.map((c) => `${c.code} ${c.name}`).join(' · ')}`}</Text>
+        <Text style={s.codes}>{`Sizes: ${sizeCodes.map((c) => c.code === c.name ? c.code : `${c.code} ${c.name}`).join(' · ')}`}</Text>
         {categories.map((c) => (
           <View key={c.code}>
-            <Text style={s.cat} minPresenceAhead={40}>{`${c.code} · ${c.name.toUpperCase()}`}</Text>
+            <Text style={s.cat} minPresenceAhead={80}>{`${c.code} · ${c.name.toUpperCase()}`}</Text>
             {c.styles.map((st) => (
-              <View key={st.number} style={s.style} wrap={false}>
-                <Text>{`${st.number}  ${st.name}`}</Text>
-                <Text style={s.muted}>{`Colours: ${st.colours.length ? st.colours.map((x) => `${x.code} ${x.name}`).join(' · ') : 'to be confirmed'}`}</Text>
-                <Text style={s.muted}>{`Sizes: ${st.sizes.length ? st.sizes.map((x) => `${x.code}${x.code === x.name ? '' : ` ${x.name}`}`).join(' · ') : 'to be confirmed'}`}</Text>
+              <View key={st.number} style={[s.style, s.row]} wrap={false}>
+                {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf's Image takes no alt */}
+                {st.photo ? <Image src={sheetPhoto(st.photo)!} style={s.photo} /> : <View style={s.noPhoto} />}
+                <View style={{ flex: 1 }}>
+                  <Text>{`${st.number}  ${st.name}${st.status === 'DEVELOPMENT' ? '  (in development)' : ''}`}</Text>
+                  <Text style={s.muted}>{`Colours: ${st.colours.length ? st.colours.map((x) => `${x.code} ${x.name}`).join(' · ') : 'to be confirmed'}`}</Text>
+                  <Text style={s.muted}>{`Sizes: ${st.sizes.length ? st.sizes.map((x) => `${x.code}${x.code === x.name ? '' : ` ${x.name}`}`).join(' · ') : 'to be confirmed'}`}</Text>
+                </View>
               </View>
             ))}
           </View>

@@ -5,7 +5,7 @@ import { lineSheetWorkbook, priceCells, sheetRow } from '../lib/line-sheet-xlsx'
 import type { LineSheetLine } from '../lib/line-sheet'
 
 const line = (o: Partial<LineSheetLine>): LineSheetLine => ({
-  id: 'r1', position: 0, productId: 'p1', colorway: null, item: 'Sardine', colorLabel: 'Naked', description: 'A small bag.',
+  id: 'r1', position: 0, productId: 'p1', colorway: null, item: 'Sardine', style: 'AC104', colorLabel: 'Naked', description: 'A small bag.',
   ownDescription: '', wholesaleCents: 4000, wholesaleMaxCents: null, retail: '$98', msrp: null, sizing: 'One size',
   minOrder: '6 units', availability: 'Ships now', photo: null, photoData: null, onHand: 3, hidden: false, ...o,
 })
@@ -19,8 +19,8 @@ test('prices are read back to cents, a range to both ends, typed text to nothing
 })
 
 test('a row carries prices as numbers in dollars, a range in the "up to" column', () => {
-  assert.deepEqual(sheetRow(line({ wholesaleCents: 4000, wholesaleMaxCents: 4400, retail: '$98 – $110' })).slice(3, 7), [40, 44, 98, 110])
-  assert.deepEqual(sheetRow(line({ retail: 'MSRP on request' })).slice(5, 7), ['MSRP on request', null])
+  assert.deepEqual(sheetRow(line({ wholesaleCents: 4000, wholesaleMaxCents: 4400, retail: '$98 – $110' })).slice(4, 8), [40, 44, 98, 110])
+  assert.deepEqual(sheetRow(line({ retail: 'MSRP on request' })).slice(6, 8), ['MSRP on request', null])
 })
 
 test('the workbook opens in Excel with the rows under the header, prices as numbers, and nothing for the team only', async () => {
@@ -31,8 +31,10 @@ test('the workbook opens in Excel with the rows under the header, prices as numb
   const ws = wb.getWorksheet('Line Sheet')!
   assert.equal(ws.getRow(6).getCell(1).value, 'Item')
   assert.equal(ws.getRow(7).getCell(1).value, 'Sardine')
-  assert.equal(ws.getRow(8).getCell(4).value, 184)
-  assert.equal(typeof ws.getRow(7).getCell(4).value, 'number')
+  assert.equal(ws.getRow(6).getCell(2).value, 'Style')
+  assert.equal(ws.getRow(7).getCell(2).value, 'AC104')
+  assert.equal(ws.getRow(8).getCell(5).value, 184)
+  assert.equal(typeof ws.getRow(7).getCell(5).value, 'number')
   assert.match(String(ws.getRow(5).getCell(1).value), /October 5, 2026/)
   const all = JSON.stringify(ws.getSheetValues())
   assert.ok(!all.includes('"onHand"') && !/\b3 on hand\b/.test(all)) // stock never goes to a store

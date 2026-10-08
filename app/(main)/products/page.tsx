@@ -115,6 +115,11 @@ export default async function Products() {
   return (
     <Page title="Products" lede="A to Z. Tap a product for what is on order, in production, and what Studio Mouse would flag.">
       <PageChat page="Products" placeholder="A note for Mouse…" />
+      {/* The style list with photos, as a PDF (Brandon, 8 Oct 2026). */}
+      <div className="flex flex-wrap items-center gap-2">
+        <a href="/styles/pdf" className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-bg">Styles PDF</a>
+        <a href="/styles" className="rounded-lg border border-line px-3 py-2 text-sm">Styles page</a>
+      </div>
       <SkuModeToggle mode={skuMode} />
       {/* Style numbers still to settle (lib/style-report.ts), folded; the
           partner reference is its own printable page, kept free of these. */}

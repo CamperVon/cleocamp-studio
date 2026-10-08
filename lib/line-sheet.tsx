@@ -58,6 +58,8 @@ export type LineSheetLine = {
   productId: string | null
   colorway: string | null
   item: string
+  /** The product's style number (TP101), printed under the item. Null: none yet. */
+  style: string | null
   colorLabel: string
   /** What prints: the row's own words, or else the product's Shopify description. */
   description: string
@@ -410,14 +412,17 @@ export async function loadLineSheet(opts: { includeHidden?: boolean } = {}): Pro
     where: { id: { in: ids } },
     select: {
       id: true, wholesalePriceCents: true, retailPriceCents: true, shopifyDescription: true,
+      style: { select: { number: true, status: true } },
       variants: { select: { wholesalePriceCents: true, retailPriceCents: true, imageUrl: true, onHandQty: true, colorway: { select: { customerName: true } } } },
     },
   })
   const byId = new Map(products.map((p) => [p.id, p]))
+  // A style number prints once it is confirmed (docs/style-system/).
+  const styleOf = (id: string | null) => { const st = id ? byId.get(id)?.style : null; return st && st.status !== 'PROPOSED' ? st.number : null }
   return {
     meta: meta ? { title: meta.title, tagline: meta.tagline, materials: meta.materials, press: meta.press, contact: meta.contact, footnote: meta.footnote } : null,
     lines: rows.map((r) => ({
-      id: r.id, position: r.position, productId: r.productId, colorway: r.colorway, item: r.item, colorLabel: r.colorLabel,
+      id: r.id, position: r.position, productId: r.productId, colorway: r.colorway, item: r.item, style: styleOf(r.productId), colorLabel: r.colorLabel,
       ownDescription: r.description, msrp: r.msrp, photoData: r.photoData ? Buffer.from(r.photoData) : null, sizing: r.sizing, minOrder: r.minOrder,
       availability: r.availability, hidden: r.hidden,
       ...resolveRow(r, r.productId ? byId.get(r.productId) ?? null : null),
@@ -490,7 +495,10 @@ export function LineSheetDoc({ meta, lines, asOf }: { meta: LineSheetMetaText; l
                 // eslint-disable-next-line jsx-a11y/alt-text
                 : l.photo ? <Image src={sheetPhoto(l.photo)!} style={styles.photo} /> : <View style={styles.noPhoto} />}
             </View>
-            <Text style={[styles.td, w('item'), styles.bold]}>{l.item}</Text>
+            <View style={[styles.td, w('item')]}>
+              <Text style={styles.bold}>{l.item}</Text>
+              {l.style ? <Text style={{ color: MUTED, marginTop: 1 }}>{l.style}</Text> : null}
+            </View>
             <Text style={[styles.td, w('color')]}>{l.colorLabel}</Text>
             <Text style={[styles.td, w('desc')]}>{ditto(lines[i - 1]?.description, l.description)}</Text>
             <Text style={[styles.td, w('ws'), styles.bold]}>{wholesaleText(l) ?? '—'}</Text>

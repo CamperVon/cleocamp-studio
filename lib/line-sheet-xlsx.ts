@@ -20,6 +20,7 @@ export function priceCells(text: string | null): [number, number | null] | null 
 
 const COLUMNS: Array<{ header: string; width: number; money?: boolean }> = [
   { header: 'Item', width: 22 },
+  { header: 'Style', width: 9 },
   { header: 'Color / Variant', width: 20 },
   { header: 'Description', width: 60 },
   { header: 'Wholesale', width: 12, money: true },
@@ -37,6 +38,7 @@ export function sheetRow(l: LineSheetLine): Array<string | number | null> {
   const retail = priceCells(l.retail)
   return [
     l.item,
+    l.style,
     l.colorLabel,
     l.description,
     usd(l.wholesaleCents),

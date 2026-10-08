@@ -296,7 +296,7 @@ export default async function Wholesale() {
                 }}>
                 <span className="flex items-baseline justify-between gap-3 text-sm">
                   <span className="min-w-0">
-                    <span className="font-medium">{l.item}</span> <span className="text-muted">{l.colorLabel}</span>
+                    <span className="font-medium">{l.item}</span>{l.style ? <span className="ml-1 font-mono text-xs text-faint">{l.style}</span> : null} <span className="text-muted">{l.colorLabel}</span>
                     <span className={`block text-xs ${warn ? 'text-warn' : 'text-faint'}`}>
                       {[stockWords(l.onHand), /^\s*in stock\s*$/i.test(l.availability) ? '' : l.availability].filter(Boolean).join(' · ') || '—'}
                     </span>
