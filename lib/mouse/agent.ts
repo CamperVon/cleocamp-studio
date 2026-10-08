@@ -5,7 +5,7 @@ import { db } from '@/lib/db'
 import { buildCatalogParts, catalogStats, type CatalogStats } from '@/lib/mouse/context'
 import { systemBlocks } from '@/lib/mouse/cache-blocks'
 import { SYSTEM_RULES } from '@/lib/mouse/prompt'
-import { TOOLS, TOOL_DEFS } from '@/lib/mouse/tools'
+import { TOOLS, TOOL_DEFS, type ToolContext } from '@/lib/mouse/tools'
 import { refreshForecastsAndAlerts } from '@/lib/forecast'
 import { recordUsage } from '@/lib/mouse/usage'
 import { withNotesOnWhatChanged } from '@/lib/mouse/stale-notes'
@@ -416,7 +416,7 @@ export async function runAgent(opts: {
       execute: async (name, input) => {
         readLaneGuard(opts.lane, name)
         return practiceStop(opts.practice === true, name, input) ??
-          withLineSheetQuestions(name, withNotesOnWhatChanged(name, input, await TOOLS[name].run(input, { threadId: opts.chatThreadId })))
+          withLineSheetQuestions(name, withNotesOnWhatChanged(name, input, await TOOLS[name].run(input, toolContextFor(opts))))
       },
       model: opts.model ?? CHAT_MODEL,
       effort: opts.effort ?? 'high', maxRequests: rounds,
@@ -553,6 +553,17 @@ export async function runAgent(opts: {
 export const CHAT_ONLY_TOOLS = new Set(['keep_file'])
 
 /** The tools a run may use. Pure. */
+/**
+ * The run context every tool call gets. catalogIndex only for a chat turn
+ * (it alone has a thread) whose catalogue is the phase 2B index; any other
+ * run, however MOUSE_CATALOG_INDEX is set, reads records as before. Pure.
+ */
+export function toolContextFor(opts: { chatThreadId?: string; catalog?: 'full' | 'index' }): ToolContext {
+  return opts.chatThreadId && opts.catalog === 'index'
+    ? { threadId: opts.chatThreadId, catalogIndex: true }
+    : { threadId: opts.chatThreadId }
+}
+
 export function toolsFor(allowedTools: string[] | undefined, chatThreadId: string | undefined, lane?: 'read'): string[] {
   const all = allowedTools ?? Object.keys(TOOLS)
   const allowed = chatThreadId ? all : all.filter((n) => !CHAT_ONLY_TOOLS.has(n))

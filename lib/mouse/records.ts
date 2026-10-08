@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { type NoteRow, type RecordRef, mentionedRecords, noteLine, prefetchBlock, resolveRecord } from '@/lib/mouse/notes'
-import { catalogIndexOn, catalogueEntries } from '@/lib/mouse/context'
+import { catalogueEntries } from '@/lib/mouse/context'
 
 /**
  * Reading one record and its notes, for open_record and for prefetch (phase
@@ -138,9 +138,11 @@ export async function openRecord(ref: string, opts: { catalogue?: boolean } = {}
   const rec = r.record
   const keys = await noteKeysFor(rec)
   const fileKind = rec.kind === 'product' || rec.kind === 'component' || rec.kind === 'vendor' ? rec.kind : null
-  // Phase 2B: with the chat index on, a product or component also comes with
-  // its full catalogue entry, everything the index leaves out.
-  const withCatalogue = (opts.catalogue ?? catalogIndexOn()) && (rec.kind === 'product' || rec.kind === 'component')
+  // Phase 2B: only a chat turn reading the products-and-components index asks
+  // for this (ToolContext.catalogIndex), so a product or component comes with
+  // its full catalogue entry, everything that index leaves out. Every other
+  // caller (background runs, Muse's answerer) gets exactly what it always did.
+  const withCatalogue = opts.catalogue === true && (rec.kind === 'product' || rec.kind === 'component')
   const [notes, detail, latest, files, entries] = await Promise.all([
     currentNotes(keys), detailFor(rec), latestCounts(),
     fileKind ? db.storedFileLink.findMany({ where: { kind: fileKind, recordId: rec.id }, select: { file: { select: { id: true, title: true } } } }) : [],
@@ -167,7 +169,8 @@ export async function prefetchForMessage(message: string, opts: { catalogue?: bo
     const dir = await recordDirectory()
     const matches = mentionedRecords(message, dir)
     if (!matches.found.length && !matches.ambiguous.length) return null
-    const withCatalogue = opts.catalogue ?? catalogIndexOn()
+    // Only chatTurn in index mode passes catalogue: true.
+    const withCatalogue = opts.catalogue === true
     const ids = (k: RecordRef['kind']) => matches.found.filter((r) => r.kind === k).map((r) => r.id)
     const notesBy = new Map<string, NoteRow[]>()
     const [, latest, entries] = await Promise.all([

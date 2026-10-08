@@ -15,8 +15,13 @@ type Tool = {
   run: (input: any, ctx?: ToolContext) => Promise<unknown>
 }
 
-/** What a run knows about where it came from. threadId: set only for an interactive chat turn. */
-export type ToolContext = { threadId?: string }
+/**
+ * What a run knows about where it came from. threadId: set only for an
+ * interactive chat turn. catalogIndex: set only by a chat turn reading the
+ * products-and-components index (phase 2B), so open_record returns what that
+ * index leaves out; every other run reads records exactly as before.
+ */
+export type ToolContext = { threadId?: string; catalogIndex?: boolean }
 
 const str = (description: string) => ({ type: 'string' as const, description })
 
@@ -5929,9 +5934,9 @@ export const TOOLS: Record<string, Tool> = {
         required: ['ref'],
       },
     },
-    run: async (i) => {
+    run: async (i, ctx) => {
       const { openRecord } = await import('@/lib/mouse/records')
-      return openRecord(String(i.ref ?? ''))
+      return openRecord(String(i.ref ?? ''), { catalogue: ctx?.catalogIndex === true })
     },
   },
 
