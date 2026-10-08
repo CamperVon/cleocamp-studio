@@ -12,8 +12,11 @@ import type { OrderSnapshot } from '@/lib/support/orders'
  * code has checked: who the customer is, their order number, how the case was
  * sorted, and our own records under their email. Never the customer's email,
  * and never a name that could carry an instruction: a name that is not plainly
- * a name is left out. Sending, refunds, cancellations, invoices, address
- * changes and exchanges stay with the card's taps; those tools are not given.
+ * a name is left out. Sending, refunds, cancellations, invoices and
+ * exchanges stay with the card's taps; those tools are not given. An address
+ * change is made only from an address the team member types in full in the
+ * box (Brandon, 8 Oct 2026); the customer's own request still needs the
+ * card's tap and the order's own email.
  */
 
 /** Words that ask for a change in the app's records, not the reply. */
@@ -23,6 +26,8 @@ const ACT = [
   /\bmark(ed)?\b/, /\bupdate(d)?\b/, /\bcount(ed)?\b/, /\bstock\b/, /\binventory\b/, /\bcalendar\b/,
   /\bfollow[ -]?up\b/, /\bflag(ged)?\b/, /\bcrew\b/, /\bfriends? of the brand\b/, /\bwholesale\b/,
   /\bsave\b/, /\bdropped off\b/, /\bpicked up\b/, /\bgift(ed)?\b/, /\bput (it|her|him|them)? ?(on|in|down)\b/,
+  // #2557, 8 Oct 2026: "change the address for them" only redrafted the reply.
+  /\baddress(es)?\b/, /\bships? to\b/, /\bship-to\b/,
 ]
 
 /** Does this instruction ask Mouse to change something in the app, beyond the reply? Pure. */
@@ -117,10 +122,17 @@ the customer, never the customer's own email: do not ask for it.
 Do what they asked that is a record in this app: a stylist pull or its return, a to-do,
 a note, stock, the calendar. Apply it as you would in chat, as them.
 
-The reply to the customer, and refunds, cancellations, invoices, address changes and
-exchanges, are done by taps on the support card after you finish, and the reply is
-redrafted from your answer. Do not attempt them and never email the customer. If part
-of the instruction is one of those, leave it to the card and do not say it is done.
+Where the order ships: change it with update_order_address ONLY when the team member's
+own words above give the whole new address (name, street with number, apartment if any,
+city, state, ZIP). You cannot see the customer's email, so never fill any part in
+yourself. If they did not type it all, change nothing and say: "Type the full new address
+here and I'll change it." Say exactly what Shopify now shows, and any part it saved
+differently.
+
+The reply to the customer, and refunds, cancellations, invoices and exchanges, are done
+by taps on the support card after you finish, and the reply is redrafted from your
+answer. Do not attempt them and never email the customer. If part of the instruction is
+one of those, leave it to the card and do not say it is done.
 
 End with one or two plain sentences saying exactly what you changed (old → new), or
 that nothing needed changing and why. No headings, no markdown.`

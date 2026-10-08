@@ -294,6 +294,101 @@ export function addressChangeProblems(order: OrderSnapshot | null, sender: strin
   return p
 }
 
+/**
+ * The note code writes on a case when it has changed the order's ship-to in
+ * Shopify (the card's tap, or Mouse at a team member's word). Only code writes
+ * it, signed by a person or by Studio Mouse, never from an email.
+ */
+export const SHIP_TO_NOTE = 'Ship-to on '
+/** Added to that note when Shopify saved something other than what was asked: it then proves nothing. */
+export const SHIP_TO_MISMATCH = 'NOT what was asked'
+
+/** One line for an address, as the team reads it. Pure. */
+export function shipToLine(a: Partial<DraftAddress> | null | undefined): string {
+  return a ? [a.name, a.address1, a.address2, [a.city, a.provinceCode, a.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') : 'unknown'
+}
+
+/** The ship-to changes code has made on this case, newest last. Pure. */
+export function shipToChanges(messages: Array<{ direction: string; fromAddress: string | null; body: string }>): string[] {
+  return messages
+    .filter((m) => m.direction === 'NOTE' && !!m.fromAddress && !m.fromAddress.includes('@') && m.body.startsWith(SHIP_TO_NOTE) && !m.body.includes(SHIP_TO_MISMATCH))
+    .map((m) => m.body.replace(/\s*\n\s*/g, ' · '))
+}
+
+/**
+ * A new address typed by a team member, checked before Mouse changes an
+ * order with it: every part there, a number on the street line, a two-letter
+ * state, a US ZIP. Shopify will take "Waverly Pl" with no house number and
+ * call it valid (#2557, 8 Oct 2026), so code refuses it first. Pure.
+ */
+export function typedAddressProblems(a: DraftAddress): string[] {
+  const p: string[] = []
+  const missing = (['name', 'address1', 'city', 'provinceCode', 'zip'] as const).filter((k) => !a[k]?.trim())
+  if (missing.length) p.push(`The address is missing: ${missing.join(', ')}.`)
+  if (a.address1?.trim() && !/\d/.test(a.address1)) p.push(`"${a.address1.trim()}" has no house or box number.`)
+  if (a.provinceCode?.trim() && !/^[A-Za-z]{2}$/.test(a.provinceCode.trim())) p.push(`"${a.provinceCode.trim()}" is not a two-letter state.`)
+  if (a.zip?.trim() && !/^\d{5}(-\d{4})?$/.test(a.zip.trim())) p.push(`"${a.zip.trim()}" is not a US ZIP code.`)
+  if (a.countryCode && a.countryCode.toUpperCase() !== 'US') p.push('The address is outside the US — a person should check shipping and change it in Shopify.')
+  return p
+}
+
+/**
+ * Does Shopify's ship-to now say what was asked? Shopify's address check can
+ * rewrite a typed address ("239 Waverly Place, Apt 3" came back as "Waverly
+ * Pl, Apt 4" on #2557, 8 Oct 2026). Street names may be abbreviated, so this
+ * compares what must not move: the numbers on both street lines, the city,
+ * the state and the ZIP. Returns what differs, empty when it matches. Pure.
+ */
+export function shipToDiffers(asked: DraftAddress, now: Partial<DraftAddress> | null | undefined): string[] {
+  if (!now) return ['Shopify shows no ship-to on the order.']
+  const nums = (s: string | null | undefined) => (s ?? '').match(/\d+/g)?.join(' ') ?? ''
+  const same = (x: string | null | undefined, y: string | null | undefined) => (x ?? '').trim().toLowerCase() === (y ?? '').trim().toLowerCase()
+  const d: string[] = []
+  if (nums(asked.address1) !== nums(now.address1)) d.push(`street number (asked "${asked.address1 ?? ''}", Shopify has "${now.address1 ?? ''}")`)
+  if (nums(asked.address2) !== nums(now.address2)) d.push(`apartment/unit (asked "${asked.address2 ?? ''}", Shopify has "${now.address2 ?? ''}")`)
+  if (!same(asked.city, now.city)) d.push(`city (asked "${asked.city ?? ''}", Shopify has "${now.city ?? ''}")`)
+  if (!same(asked.provinceCode, now.provinceCode)) d.push(`state (asked "${asked.provinceCode ?? ''}", Shopify has "${now.provinceCode ?? ''}")`)
+  if ((asked.zip ?? '').trim().slice(0, 5) !== (now.zip ?? '').trim().slice(0, 5)) d.push(`ZIP (asked "${asked.zip ?? ''}", Shopify has "${now.zip ?? ''}")`)
+  return d
+}
+
+/**
+ * The reply tells the customer their shipping address has been changed.
+ * "We've updated the shipping address to …" is a claim; "we'll update the
+ * shipping address once we can match it" is a promise, and is not. Pure.
+ */
+export function claimsAddressChanged(reply: string): boolean {
+  const text = reply.replace(/\s+/g, ' ')
+  const done = '(?:we(?:\'ve| have)|has been|have been|it(?:\'s| is)|is now|was|i(?:\'ve| have))\\s+(?:gone ahead and\\s+|now\\s+|also\\s+|already\\s+|just\\s+)?(?:updated|changed|corrected|fixed|amended|edited)'
+  return new RegExp(`\\b${done}\\b[^.!?]{0,60}\\baddress`, 'i').test(text) ||
+    /\baddress(?:es)?\b[^.!?]{0,40}\b(?:has been|have been|was|is now)\s+(?:updated|changed|corrected|fixed|amended)\b/i.test(text) ||
+    /\b(?:will now ship|now ships|is now (?:going|shipping)) to\b/i.test(text)
+}
+
+/**
+ * Send's check on a reply that claims an address change (#2557, 8 Oct 2026:
+ * a draft said "we've updated the shipping address" before anything had, and
+ * went). It must be true when it lands: code changed the ship-to from this
+ * case since the customer last wrote, or Shopify's ship-to now carries the
+ * ZIP and house number the reply gives. A ship-to with no house number never
+ * passes. Null when the reply may go. Pure.
+ */
+export function addressClaimProblem(reply: string, order: Pick<OrderSnapshot, 'name' | 'shipTo'> | null, changedHere: boolean): string | null {
+  if (!claimsAddressChanged(reply)) return null
+  if (changedHere) return null
+  const name = order?.name ?? 'the order'
+  const to = order?.shipTo
+  if (!to) return `The reply says the shipping address was changed, and Shopify's ship-to for ${name} could not be read.`
+  const text = reply.replace(/\s+/g, ' ')
+  const number = (to.address1 ?? '').match(/\d+/)?.[0] ?? null
+  const zip = (to.zip ?? '').trim().slice(0, 5)
+  if (!number) return `The reply says the shipping address was changed, but Shopify's ship-to for ${name} (${shipToLine(to)}) has no house number.`
+  if (!zip || !text.includes(zip) || !new RegExp(`\\b${number}\\b`).test(text)) {
+    return `The reply says the shipping address was changed, but Shopify's ship-to for ${name} is still ${shipToLine(to)}, and nothing changed it from this case.`
+  }
+  return null
+}
+
 /** Order facts for the drafter: what it may state, and nothing it may not. */
 export function orderFacts(order: OrderSnapshot | null): string {
   if (!order) return 'No order is matched to this customer.'

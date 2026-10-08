@@ -7,7 +7,7 @@ import { sendEmail } from '@/lib/email'
 import { grantedScopes, isConfigured, shopifyGraphQL } from '@/lib/integrations/shopify'
 import { draftForCase, refreshOrder, type DraftInvoice } from '@/lib/support/draft'
 import { cancelAndRefund, cancelUnshippedLines, freshOrder, removeUnshippedUnits, setShippingAddress, swapLineVariant } from '@/lib/support/orders'
-import { addressChangeProblems, claimsInvoice, claimsNotYetDone, INVOICE_NOTE, partlyShipped, refundIssued, SUPPORT_FROM, SUPPORT_REPLY_TO, swapClaims, swapNotDone, TOLD_MOUSE, unfilled, unshippedLines, type DraftAddress, type DraftSwap } from '@/lib/support/reply'
+import { addressChangeProblems, addressClaimProblem, claimsAddressChanged, claimsInvoice, claimsNotYetDone, INVOICE_NOTE, SHIP_TO_MISMATCH, SHIP_TO_NOTE, shipToDiffers, shipToLine, partlyShipped, refundIssued, SUPPORT_FROM, SUPPORT_REPLY_TO, swapClaims, swapNotDone, TOLD_MOUSE, unfilled, unshippedLines, type DraftAddress, type DraftSwap } from '@/lib/support/reply'
 import { namesMatch } from '@/lib/support/core'
 import { ACT_RULES, asksForAction, caseFactsForMouse, MOUSE_DID, senderRecords, senderRecordsText } from '@/lib/support/tell'
 import type { OrderSnapshot } from '@/lib/support/orders'
@@ -190,6 +190,24 @@ export async function sendReply(id: string, text: string): Promise<Result> {
     }
   }
 
+  // Same for an address (#2557, 8 Oct 2026: "we've updated the shipping
+  // address" went before anything had changed it). True when code changed the
+  // ship-to from this case since the customer last wrote, or Shopify's ship-to
+  // now has the ZIP and house number the reply gives. See addressClaimProblem.
+  if (claimsAddressChanged(body)) {
+    const since = c.messages[0]?.createdAt ?? new Date(0)
+    const changedHere = !!(await db.supportMessage.findFirst({
+      where: { caseId: id, direction: 'NOTE', body: { startsWith: SHIP_TO_NOTE }, createdAt: { gt: since }, NOT: [{ fromAddress: { contains: '@' } }, { body: { contains: SHIP_TO_MISMATCH } }] },
+      select: { id: true },
+    }))
+    const snap = (c.orderSnapshot as OrderSnapshot | null) ?? null
+    const now = changedHere || !snap?.id ? null : await freshOrder(snap.id).catch(() => null)
+    const problem = addressClaimProblem(body, now ?? (snap ? { name: snap.name, shipTo: null } : null), changedHere)
+    if (problem) {
+      return { ok: false, error: `${problem} Change it first (the card's address tap, Tell Mouse with the full new address, or in Shopify), or take it out of the reply. Nothing was sent.` }
+    }
+  }
+
   // Thread onto the customer's own last message when we know its id.
   const last = c.messages[0]?.inboundEmailId
     ? await db.inboundEmail.findUnique({ where: { id: c.messages[0].inboundEmailId }, select: { messageId: true, fromAddress: true } })
@@ -262,14 +280,20 @@ export async function applyAddressAndReply(id: string, text: string): Promise<Re
   }
   if (!changed.ok) return { ok: false, error: `Shopify refused the change: ${changed.error}. Nothing was sent.` }
 
-  const line = (a: DraftAddress | null | undefined) =>
-    a ? [a.name, a.address1, a.address2, [a.city, a.provinceCode, a.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') : 'unknown'
+  // Read it back: Shopify's address check can save something other than what
+  // was asked (#2557, 8 Oct 2026). The reply only goes if it matches.
+  const after = await freshOrder(c.shopifyOrderId).catch(() => null)
+  const differs = shipToDiffers(to, after?.shipTo)
   await db.supportMessage.create({
     data: {
       caseId: id, direction: 'NOTE', fromAddress: who.name,
-      body: `Ship-to on ${c.shopifyOrderName} changed in Shopify.\nWas: ${line(fresh?.shipTo)}\nNow: ${line(to)}`,
+      body: `${SHIP_TO_NOTE}${c.shopifyOrderName} changed in Shopify.\nWas: ${shipToLine(fresh?.shipTo)}\nNow: ${shipToLine(after?.shipTo ?? to)}` +
+        (differs.length ? `\n${SHIP_TO_MISMATCH} — ${differs.join('; ')}.` : ''),
     },
   })
+  if (differs.length) {
+    return { ok: false, error: `Shopify saved a different address: ${differs.join('; ')}. Fix it in Shopify, then send. Nothing was sent.` }
+  }
   return sendReply(id, text)
 }
 
@@ -523,7 +547,9 @@ async function actOnCase(id: string, who: { id: string; name: string }, said: st
       source: 'support-tell',
       instruction: `${who.name} typed this on a support case:\n\n${said}\n\nThe case (checked by code):\n${facts}`,
       extraRules: ACT_RULES,
-      allowedTools: Object.keys(TOOLS).filter((t) => !NOT_FROM_EMAIL.has(t)),
+      // An address change is allowed here though not from email: the address
+      // comes from the team member's own typed words (tell.ts ACT_RULES).
+      allowedTools: Object.keys(TOOLS).filter((t) => !NOT_FROM_EMAIL.has(t) || t === 'update_order_address'),
       model: CHAT_MODEL,
       effort: 'medium',
       maxRounds: 8,

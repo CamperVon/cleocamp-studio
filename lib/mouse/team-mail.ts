@@ -34,6 +34,9 @@ export const NOT_FROM_EMAIL = new Set([
   'keep_file',
   // Sends our information outside the company.
   'hand_to_muse', 'send_back_to_muse',
+  // Redirects a customer's parcel: only from an address typed in the app
+  // (chat, or a support case's Tell Mouse box), never from mail.
+  'update_order_address',
 ])
 
 /** Is Mouse's mailbox in the To line (not just copied)? Pure. */

@@ -161,6 +161,14 @@ export async function findOrder(email: string, quotedNames: string[], senderName
   }
 }
 
+/** The order with exactly this name ("#2557" or "2557"), as it is now, or null. */
+export async function orderByName(name: string): Promise<OrderSnapshot | null> {
+  const n = `#${String(name).trim().replace(/^#/, '')}`
+  if (!/^#\d{3,6}$/.test(n)) return null
+  const [hit] = await search(`name:${n}`, 1)
+  return hit && hit.name === n ? hit : null
+}
+
 /** The order as it is right now — re-read before anything is changed, never trusted from a snapshot. */
 export async function freshOrder(id: string): Promise<OrderSnapshot | null> {
   const d = await shopifyGraphQL<{ order: Node | null }>(`query($id: ID!) { order(id: $id) { ${ORDER_FIELDS} } }`, { id })
@@ -168,9 +176,10 @@ export async function freshOrder(id: string): Promise<OrderSnapshot | null> {
 }
 
 /**
- * Change where an order ships. Called only from a person's tap on the
- * support page, after the checks in lib/support/reply.ts have passed against
- * a fresh read of the order. Needs the app's write_orders access in Shopify.
+ * Change where an order ships. Called from a person's tap on the support page
+ * after the checks in lib/support/reply.ts have passed against a fresh read
+ * of the order, or by Mouse's update_order_address with an address a team
+ * member typed (never one read from email). Needs write_orders in Shopify.
  */
 export async function setShippingAddress(id: string, a: ShipTo): Promise<{ ok: true } | { ok: false; error: string }> {
   const [firstName, ...rest] = (a.name ?? '').trim().split(/\s+/)

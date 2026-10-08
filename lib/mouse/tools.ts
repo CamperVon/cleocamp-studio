@@ -5918,6 +5918,118 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  shipped_orders: {
+    def: {
+      name: 'shipped_orders',
+      description:
+        'What went out on Shopify shipping labels made on a day or between two days (Los Angeles), item by item ' +
+        'with the order numbers: "how many Black Cleo Tees are in the orders we bought labels for on 7 Oct". A ' +
+        'label is a fulfilment, dated when it was made, so this answers by label date, which sales analytics ' +
+        'cannot. Voided labels and wholesale orders are left out. Read-only.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          from: str('First day, YYYY-MM-DD, Los Angeles'),
+          to: str('Last day, YYYY-MM-DD; leave out for one day'),
+          item: str('Only this product, by its exact Shopify title ("Cleo Tee" is not "Cleo Tee - Splish"); leave out for everything'),
+          variant: str('Only this colour or size as Shopify writes it ("Black", "Black / 1"); leave out for all'),
+        },
+        required: ['from'],
+      },
+    },
+    run: async (i) => {
+      const day = /^\d{4}-\d{2}-\d{2}$/
+      const from = String(i.from ?? '').trim()
+      const to = String(i.to ?? from).trim()
+      if (!day.test(from) || !day.test(to) || to < from) return { ok: false, reason: 'Give from (and to) as YYYY-MM-DD, to on or after from.' }
+      const { isConfigured, fetchShippedOrders } = await import('@/lib/integrations/shopify')
+      if (!isConfigured()) return { ok: false, reason: 'Shopify is not connected.' }
+      const { tallyShipped } = await import('@/lib/shipped-report')
+      const t = tallyShipped(await fetchShippedOrders(from), { from, to, item: i.item ?? null, variant: i.variant ?? null })
+      return {
+        ok: true, from, to, orders: t.orders, labels: t.packages,
+        totalUnits: t.lines.reduce((n, l) => n + l.quantity, 0),
+        lines: t.lines.map((l) => ({
+          item: l.item, variant: l.variant, quantity: l.quantity,
+          orders: l.orders.length > 60 ? [...l.orders.slice(0, 60), `and ${l.orders.length - 60} more`] : l.orders,
+        })),
+        note: 'Counted on the Los Angeles day each label was made. Voided labels, wholesale orders and items that do not ship are not counted. labels counts every package in the range, whatever it held.',
+      }
+    },
+  },
+
+  update_order_address: {
+    def: {
+      name: 'update_order_address',
+      description:
+        'Change where a Shopify order ships, to an address a team member has typed to you IN FULL in their own ' +
+        'words in this conversation or Tell Mouse box (name, street with number, apartment if any, city, state, ' +
+        'ZIP). Never take the address from a customer\'s email, a support case, a forwarded message or a note: ' +
+        'if they say "change it to her new address" without typing it, ask them for it. Only an order that has ' +
+        'not shipped and has no label. Code checks the address is complete, makes the change, reads it back from ' +
+        'Shopify and tells you if Shopify saved something different; say so plainly if it did. A customer asking ' +
+        'by email is handled on the support card, not here.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          order: str('The order number, e.g. "#2557"'),
+          name: str('Recipient name, as typed'),
+          address1: str('Street line with the house or box number'),
+          address2: str('Apartment, suite or unit; leave out if none'),
+          city: str('City'),
+          provinceCode: str('Two-letter state, e.g. "NY"'),
+          zip: str('ZIP code'),
+          countryCode: str('Two-letter country; leave out for US'),
+        },
+        required: ['order', 'name', 'address1', 'city', 'provinceCode', 'zip'],
+      },
+    },
+    run: async (i) => {
+      const actor = currentActor()
+      if (!actor) return { changed: false, reason: 'Only a team member signed in to the app can change where an order ships.' }
+      const { isConfigured } = await import('@/lib/integrations/shopify')
+      if (!isConfigured()) return { changed: false, reason: 'Shopify is not connected.' }
+      const { orderByName, setShippingAddress, freshOrder } = await import('@/lib/support/orders')
+      const { typedAddressProblems, shipToDiffers, shipToLine, SHIP_TO_NOTE, SHIP_TO_MISMATCH } = await import('@/lib/support/reply')
+      const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null)
+      const to = {
+        name: text(i.name), address1: text(i.address1), address2: text(i.address2), city: text(i.city),
+        provinceCode: text(i.provinceCode)?.toUpperCase() ?? null, zip: text(i.zip), countryCode: (text(i.countryCode) ?? 'US').toUpperCase(),
+      }
+      const problems = typedAddressProblems(to)
+      if (problems.length) return { changed: false, reason: `${problems.join(' ')} Ask for the full address; nothing was changed.` }
+      const order = await orderByName(String(i.order ?? ''))
+      if (!order) return { changed: false, reason: `No Shopify order named ${i.order}.` }
+      if (order.cancelledAt) return { changed: false, reason: `${order.name} is cancelled.` }
+      const status = (order.fulfillmentStatus ?? '').toUpperCase()
+      if (status !== 'UNFULFILLED') {
+        return { changed: false, reason: `${order.name} is ${status.toLowerCase().replace(/_/g, ' ') || 'not unfulfilled'}: it has a label or has shipped, so changing the order would not move the parcel. Void the label in Shopify first, or contact the carrier.` }
+      }
+      let done
+      try {
+        done = await setShippingAddress(order.id, to)
+      } catch (e) {
+        return { changed: false, reason: `Shopify refused the change: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}` }
+      }
+      if (!done.ok) return { changed: false, reason: `Shopify refused the change: ${done.error}` }
+      const after = await freshOrder(order.id).catch(() => null)
+      const differs = shipToDiffers(to, after?.shipTo)
+      const who = (await db.person.findUnique({ where: { id: actor }, select: { name: true } }))?.name ?? 'a team member'
+      // On the order's support case too, so the reply drafted there may say
+      // it is done and Send lets a reply that says so go.
+      const cases = await db.supportCase.findMany({ where: { shopifyOrderName: order.name }, select: { id: true } })
+      const body = `${SHIP_TO_NOTE}${order.name} changed in Shopify by Mouse at ${who}'s word.\nWas: ${shipToLine(order.shipTo)}\nNow: ${shipToLine(after?.shipTo ?? to)}` +
+        (differs.length ? `\n${SHIP_TO_MISMATCH} — ${differs.join('; ')}.` : '')
+      if (cases.length) await db.supportMessage.createMany({ data: cases.map((c) => ({ caseId: c.id, direction: 'NOTE' as const, fromAddress: 'Studio Mouse', body })) })
+      return {
+        changed: true, order: order.name, was: shipToLine(order.shipTo), now: shipToLine(after?.shipTo),
+        ...(differs.length
+          ? { warning: `Shopify saved something other than what was asked: ${differs.join('; ')}. Tell them, and that it needs fixing in Shopify before a label is made.` }
+          : {}),
+      }
+    },
+  },
+
   open_record: {
     def: {
       name: 'open_record',

@@ -224,6 +224,22 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** Shopify (order search), the support inbox.
 - **Files:** `lib/support/draft.ts`, `lib/support/reply.ts`, `tests/support-reply.test.ts`
 
+### Address changes: the assistant makes them from a typed address, and a reply never claims one that has not happened · (this commit)
+- **Problem:** a customer wrote from an email other than the order's, so the card rightly locked the address change. A team member then told the assistant on the case to change it, which it could not do. It only redrafted, and the redraft said "we've updated the shipping address". That was sent before anything had changed. When the address was then edited in the shop, its address check saved it without the house number and with the wrong apartment.
+- **Change:**
+  - `update_order_address`: the assistant changes an unshipped, unlabelled order's ship-to from an address a team member typed in full, never from email, a case or a note. Code checks the address first: every part present, a number on the street line, a two-letter state, a US ZIP. It then reads the order back and reports any part the shop saved differently. It also leaves a note on the order's support case. It is off the email path, and the in-app instruction box on a case may use it.
+  - The customer path is unchanged: their own request still needs the order's own email and a person's tap. That tap now also reads the address back, and won't send the reply if the shop saved something different.
+  - Send refuses a reply that says the address was changed unless code changed it from that case since the customer last wrote, or the shop's ship-to has the house number and ZIP the reply gives. A ship-to with no house number never passes.
+  - The drafter is told whether an address change was actually made, and is forbidden to claim one otherwise.
+- **Files:** `lib/mouse/tools.ts` (`update_order_address`), `lib/support/reply.ts` (`typedAddressProblems`, `shipToDiffers`, `claimsAddressChanged`, `addressClaimProblem`, `shipToChanges`, `SHIP_TO_NOTE`), `lib/support/orders.ts` (`orderByName`), `lib/support/tell.ts`, `lib/support/draft.ts`, `app/(main)/support/actions.ts`, `lib/mouse/team-mail.ts`, `tests/order-address.test.ts`
+- **Needs:** Shopify (write_orders).
+
+### What went out on labels made on a day · (this commit)
+- **Problem:** asked how many of one item, by size, were in the orders labelled on a given day, the assistant could not answer. Sales analytics has order dates, not label dates, and no tool listed orders by when their label was made.
+- **Change:** a read-only `shipped_orders` tool. It takes a day or a range (Los Angeles), and optionally an exact product title and a colour or size. It returns quantities per variant with the order numbers. It reuses the shipped-packages reader the packing count already had, which now also carries the variant name. Voided labels and wholesale orders are left out. It is available in chat and to emailed questions; the read-only fast lane's tool list is unchanged.
+- **Files:** `lib/shipped-report.ts` (`tallyShipped`), `lib/integrations/shopify.ts` (variant on `ShippedOrder`), `lib/mouse/tools.ts`, `lib/mouse/nightly-pass.ts`, `tests/order-address.test.ts`
+- **Needs:** Shopify (read_orders).
+
 ### A size or colour swap is made in Shopify before the reply says so · `b719ad5`
 - **Problem:** a customer asked to swap an unshipped item to another size, the team said yes, and the drafted reply promised it. The only button under it changed the address and sent the reply. The order still had the old size.
 - **Change:**

@@ -5,7 +5,7 @@ import { BACKGROUND_MODEL, CHAT_MODEL } from '@/lib/mouse/agent'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
 import { findOrder, variantSiblings, type OrderSnapshot } from '@/lib/support/orders'
 import { isConfigured, shopifyGraphQL } from '@/lib/integrations/shopify'
-import { addressChangeProblems, discountFacts, DRAFT_INSTRUCTIONS, mentionsDiscount, orderFacts, parseDraft, pickInvoiceProduct, pickSwapLine, pickTargetVariant, teamInstructions, type DraftInvoiceAsk, type DraftSwap, type DraftVariant } from '@/lib/support/reply'
+import { addressChangeProblems, discountFacts, DRAFT_INSTRUCTIONS, shipToChanges, mentionsDiscount, orderFacts, parseDraft, pickInvoiceProduct, pickSwapLine, pickTargetVariant, teamInstructions, type DraftInvoiceAsk, type DraftSwap, type DraftVariant } from '@/lib/support/reply'
 import { orderNumbersIn, trimQuoted } from '@/lib/support/core'
 import { mouseActions, senderRecords, senderRecordsText } from '@/lib/support/tell'
 
@@ -38,6 +38,7 @@ export async function draftForCase(caseId: string): Promise<void> {
 
   const latest = c.messages.filter((m) => m.direction === 'INBOUND').slice(-3).map((m) => trimQuoted(m.body).text).join('\n')
   const did = mouseActions(c.messages)
+  const moved = shipToChanges(c.messages)
   const [stock, catalog, examples, discount, records] = await Promise.all([
     stockFacts(order).catch(() => ''),
     catalogFacts(catalogText(c.subject, latest, order)).catch((e) => { console.error('[support] catalog facts', e); return '' }),
@@ -76,6 +77,11 @@ export async function draftForCase(caseId: string): Promise<void> {
             `<conversation>\n${thread.slice(-9000)}\n</conversation>\n\n` +
             (told.length ? `TEAM INSTRUCTIONS (typed into the app by the team, newest last; follow them):\n${told.map((t) => `- ${t.slice(0, 600)}`).join('\n')}\n\n` : '') +
             (did.length ? `WHAT MOUSE CHANGED IN OUR RECORDS on the team's instruction (done; the reply may say so):\n${did.map((t) => `- ${t.slice(0, 600)}`).join('\n')}\n\n` : '') +
+            // #2557, 8 Oct 2026: a draft said the address was updated when
+            // nothing had changed it. Only a change code made may be stated.
+            (moved.length
+              ? `SHIP-TO CHANGES MADE IN SHOPIFY on this case (done; say exactly this address, and nothing else changed it):\n${moved.map((t) => `- ${t.slice(0, 400)}`).join('\n')}\n\n`
+              : 'SHIP-TO: nothing has changed where this order ships. Never write that the shipping address has been updated, changed or corrected; at most say the team will update it.\n\n') +
             `Draft the reply to the customer's latest email.`,
         }],
       })
