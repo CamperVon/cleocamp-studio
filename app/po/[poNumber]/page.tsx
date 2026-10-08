@@ -2,6 +2,7 @@ import { poAmounts, poLineAmount, poMoney, poUnitTotals } from '@/lib/po'
 import { notFound } from 'next/navigation'
 import { PdfButton } from './pdf-button'
 import { db } from '@/lib/db'
+import { asSkuDisplayMode, lineLabel, lineView } from '@/lib/po-snapshot'
 import { asDocLanguage, confirmSentence, formatDate, label, type DocLanguage } from '@/lib/po-strings'
 
 export const dynamic = 'force-dynamic'
@@ -48,6 +49,9 @@ export default async function PurchaseOrderDoc({
     it: defaults?.confirmLineIt,
   })
   const contactLines = (po.contactLines ?? defaults?.contactLines ?? '').split('\n').filter(Boolean)
+  // A sent order's variant lines read what they said when it was sent; a
+  // draft reads them live, in this display mode. See lib/po-snapshot.ts.
+  const skuMode = asSkuDisplayMode(defaults?.skuDisplayMode)
 
   // Brandon, 4 Sept 2026: "notes at the end of pdf should only be notes i
   // sent, not an endless list of things SM puts there." A generic per-line
@@ -162,27 +166,25 @@ export default async function PurchaseOrderDoc({
                       <div className="text-[#6A736F]">{pair(l.description, l.descriptionAlt)}</div>
                     ) : null}
                   </div>
-                ) : (
-                  <div className="flex items-start gap-2.5">
-                    {l.productVariant!.imageUrl ? (
-                      // Plain img, not next/image — this page is rendered to a
-                      // PDF (screenshot or print), where next/image's runtime
-                      // optimisation endpoint has nothing to serve from.
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={l.productVariant!.imageUrl}
-                        alt=""
-                        className="h-9 w-9 shrink-0 rounded object-cover"
-                      />
-                    ) : null}
-                    <div>
-                      {l.productVariant!.sku ? `${t('style')} ${l.productVariant!.sku} — ` : ''}
-                      {l.productVariant!.product.name}
-                      {l.productVariant!.colorway ? ` — ${l.productVariant!.colorway.customerName}` : ''}
-                      {l.productVariant!.size ? ` / ${l.productVariant!.size}` : ''}
+                ) : (() => {
+                  const view = lineView(l, skuMode)!
+                  return (
+                    <div className="flex items-start gap-2.5">
+                      {view.imageUrl ? (
+                        // Plain img, not next/image — this page is rendered to a
+                        // PDF (screenshot or print), where next/image's runtime
+                        // optimisation endpoint has nothing to serve from.
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={view.imageUrl}
+                          alt=""
+                          className="h-9 w-9 shrink-0 rounded object-cover"
+                        />
+                      ) : null}
+                      <div>{lineLabel(view, t('style'))}</div>
                     </div>
-                  </div>
-                )}
+                  )
+                })()}
               </td>
               <td className="py-2.5 pr-2 text-right tabular-nums">{Number(l.qtyOrdered).toLocaleString()}</td>
               <td className="py-2.5 pr-2 text-right">

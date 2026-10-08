@@ -2621,6 +2621,12 @@ export const TOOLS: Record<string, Tool> = {
         where: { id: po.id }, data,
         select: { id: true, poNumber: true, status: true, expectedAt: true, depositPaidAt: true, receivedAt: true },
       })
+      // Marked sent (or further) by hand: the document now says what it says
+      // for good, the same as a send through send_purchase_order.
+      if (po.status === 'DRAFT' && updated.status !== 'DRAFT' && updated.status !== 'CANCELLED') {
+        const { freezePoLines } = await import('@/lib/po-snapshot')
+        await freezePoLines(po.id)
+      }
 
       // Learn from this delivery the moment it lands — only the first time
       // receivedAt is actually set on this order, not on a later edit to the
@@ -2778,6 +2784,10 @@ export const TOOLS: Record<string, Tool> = {
           // text is gone, not kept alongside as a second opinion.
           data.productVariantId = v.id
           data.description = null
+          // A sent order's line keeps what it said when sent (lib/po-snapshot.ts).
+          // Pointing it at a different variant is a deliberate revision, so it
+          // is frozen afresh below, from the new variant.
+          if (revising) Object.assign(data, { snapshotAt: null, snapSku: null, snapStyleNumber: null, snapProductName: null, snapColorway: null, snapSize: null, snapImageUrl: null })
         }
         if (Object.keys(data).length === 0) continue
         if (revising) {
@@ -2793,6 +2803,11 @@ export const TOOLS: Record<string, Tool> = {
         }
         await db.purchaseOrderLine.update({ where: { id: existing.id }, data })
         results.push(`updated ${named}`)
+      }
+
+      if (revising) {
+        const { freezePoLines } = await import('@/lib/po-snapshot')
+        await freezePoLines(po.id)
       }
 
       // Internal only — Note with entityType PURCHASE_ORDER is never printed.
@@ -2899,9 +2914,16 @@ export const TOOLS: Record<string, Tool> = {
         }
       }
 
+      // The vendor's copy says what the document says now, and the app keeps
+      // saying it after any later SKU or name change (lib/po-snapshot.ts).
+      // Frozen before the PDF is drawn, so the two match; undone if the order
+      // does not actually go. An internal copy freezes nothing.
+      const { freezePoLines, unfreezePoLines } = await import('@/lib/po-snapshot')
+      const frozen = internal ? [] : await freezePoLines(po.id)
+
       const { renderPurchaseOrderPdf } = await import('@/lib/po-pdf')
       const pdf = await renderPurchaseOrderPdf(po.poNumber)
-      if (!pdf) return { sent: false, reason: 'could not generate the PDF' }
+      if (!pdf) { await unfreezePoLines(frozen); return { sent: false, reason: 'could not generate the PDF' } }
 
       // The covering email follows the document. Sending a Spanish purchase
       // order under an English email is half a job, and the half that arrives
@@ -2981,7 +3003,7 @@ export const TOOLS: Record<string, Tool> = {
         text: body,
         attachments: [{ filename: `PO-${po.poNumber}.pdf`, content: pdf }],
       })
-      if (!res.sent) return { sent: false, reason: res.reason }
+      if (!res.sent) { await unfreezePoLines(frozen); return { sent: false, reason: res.reason } }
 
       // EMAIL_DRY_RUN stubs the SEND, not the consequences. Exercising this
       // tool against a real order still moved it to SENT and stamped orderedAt,
@@ -2990,6 +3012,7 @@ export const TOOLS: Record<string, Tool> = {
       // testing against PO 2361, which happened to be SENT already and so came
       // to no harm. A dry run is dry all the way through now.
       if ((res as { dryRun?: boolean }).dryRun) {
+        await unfreezePoLines(frozen)
         return {
           sent: true, to, cc, dryRun: true, markedSent: false,
           tellTheUser: `EMAIL_DRY_RUN is set: nothing was sent and PO ${po.poNumber} was left as ${po.status.toLowerCase()}.`,

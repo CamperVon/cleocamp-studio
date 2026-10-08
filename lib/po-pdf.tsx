@@ -3,6 +3,7 @@ import path from 'node:path'
 import { Document, Page, Text, View, Image, Font, StyleSheet, renderToBuffer } from '@react-pdf/renderer'
 import { db } from '@/lib/db'
 import { asDocLanguage, confirmSentence, formatDate, label, type DocLanguage } from '@/lib/po-strings'
+import { asSkuDisplayMode, lineLabel as variantLabel, lineView } from '@/lib/po-snapshot'
 import { wordmark, WORDMARK_RATIO } from '@/lib/brand'
 
 /**
@@ -93,7 +94,7 @@ export async function loadPo(poNumber: string) {
   })
 }
 
-export type DocContent = { billTo: string[]; confirmLine: string; contactLines: string[] }
+export type DocContent = { billTo: string[]; confirmLine: string; contactLines: string[]; skuDisplayMode?: string | null }
 
 /**
  * The product the "For" line names, or null when the order is not for one
@@ -133,6 +134,10 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
   const pair = (main: string | null | undefined, alt: string | null | undefined) =>
     bilingual && alt && alt.trim() && alt.trim() !== (main ?? '').trim() ? alt.trim() : null
 
+  // A sent order's variant lines read what they said when it was sent; a
+  // draft reads them live. See lib/po-snapshot.ts.
+  const skuMode = asSkuDisplayMode(content.skuDisplayMode)
+  const viewOf = (l: (typeof po.lines)[number]) => (l.productVariant ? lineView(l, skuMode) : null)
   const lineLabel = (l: (typeof po.lines)[number]) => {
     if (l.component) {
       return `${l.component.vendorSku ? `${t('style')} ${l.component.vendorSku} — ` : ''}${l.component.vendorDescription || l.component.name}`
@@ -140,13 +145,9 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
     // A line describing something the catalogue does not hold yet — a new
     // colour, a sample size. Its text is the whole label; there is no sku or
     // colourway to dress it up with. See lib/po.ts:poLineLabel.
-    const v = l.productVariant
-    if (!v) return l.description ?? ''
-    return (
-      `${v.sku ? `${t('style')} ${v.sku} — ` : ''}${v.product.name}` +
-      `${v.colorway ? ` — ${v.colorway.customerName}` : ''}` +
-      `${v.size ? ` / ${v.size}` : ''}`
-    )
+    const view = viewOf(l)
+    if (!view) return l.description ?? ''
+    return variantLabel(view, t('style'))
   }
 
   return (
@@ -212,7 +213,7 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
           {po.lines.map((l) => (
             <View key={l.id} style={styles.tr}>
               <View style={styles.tdItem}>
-                {l.productVariant?.imageUrl ? <Image src={l.productVariant.imageUrl} style={styles.thumb} /> : null}
+                {viewOf(l)?.imageUrl ? <Image src={viewOf(l)!.imageUrl!} style={styles.thumb} /> : null}
                 <View>
                   <Text>{lineLabel(l)}</Text>
                   {/* Stacked, not slashed. A line description is a sentence,
@@ -292,7 +293,7 @@ export async function renderPurchaseOrderPdf(poNumber: string): Promise<Buffer |
 
 export async function renderPoSnapshot(
   po: PoForPdf,
-  defaults: { billToLines: string; confirmLine: string; confirmLineEs?: string | null; confirmLineIt?: string | null; contactLines: string } | null,
+  defaults: { billToLines: string; confirmLine: string; confirmLineEs?: string | null; confirmLineIt?: string | null; contactLines: string; skuDisplayMode?: string | null } | null,
 ): Promise<Buffer> {
   const content: DocContent = {
     billTo: (defaults?.billToLines ?? '').split('\n').filter(Boolean),
@@ -303,6 +304,7 @@ export async function renderPoSnapshot(
     }),
     // A per-order override wins; almost nothing sets one.
     contactLines: (po.contactLines ?? defaults?.contactLines ?? '').split('\n').filter(Boolean),
+    skuDisplayMode: defaults?.skuDisplayMode,
   }
   return renderToBuffer(<PurchaseOrderDoc po={po} content={content} />)
 }
