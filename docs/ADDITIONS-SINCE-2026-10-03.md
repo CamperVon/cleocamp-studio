@@ -224,6 +224,16 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** Shopify (order search), the support inbox.
 - **Files:** `lib/support/draft.ts`, `lib/support/reply.ts`, `tests/support-reply.test.ts`
 
+### A read-only cost-and-quality audit of the assistant's model use · (this commit)
+- **Problem:** there was no single way to see what the assistant costs, where the money goes, and whether a change helped. A cost figure was also easy to get wrong: Sonnet 5.5 and Opus 5.5 charge 0.05x input for cache reads, not the usual 0.1x. Stored tool results are cut for the record, so their length understates what the model actually read.
+- **Change:** `scripts/cost-quality-audit.ts` reads the usage records and chat replies, writes nothing and calls no model. It reports:
+  - cost and tokens by source and model, for a window against a baseline, and per Los Angeles day to set beside the provider's console;
+  - the fast lane's attempts and hand-overs, stop reasons, requests, latency and cost per reply;
+  - catalogue look-ups and prefetch hits;
+  - every request of every reply that used the email look-up. Each row gives the raw token counts and the prompt's growth since the previous request, and marks where a second pass started. The email result is rebuilt in full from the same query, bounded at the reply's time.
+- **Files:** `scripts/cost-quality-audit.ts`
+- **Needs:** nothing.
+
 ### A size or colour swap is made in Shopify before the reply says so · `b719ad5`
 - **Problem:** a customer asked to swap an unshipped item to another size, the team said yes, and the drafted reply promised it. The only button under it changed the address and sent the reply. The order still had the old size.
 - **Change:**
