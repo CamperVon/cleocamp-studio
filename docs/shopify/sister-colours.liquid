@@ -1,0 +1,44 @@
+{%- comment -%}
+  Sister colours (8 Oct 2026). Each colour of an item is its own Shopify
+  listing, so every colour shows as its own tile on Shop and Accessories.
+  This row puts the other colours on each product page as photo dots that
+  link to them. It reads two product metafields set from the admin:
+    custom.colour_name     this listing's colour ("Black")
+    custom.sister_colours  the other colour listings of the same item
+  A sister that is still a draft is not published to the store, so it
+  is left out until it goes live. Nothing shows on a product with no
+  sisters. Paste into a "Custom liquid" block on the product template.
+{%- endcomment -%}
+{%- liquid
+  assign sisters = product.metafields.custom.sister_colours.value
+  assign here = product.metafields.custom.colour_name.value | default: product.title
+-%}
+{%- if sisters != blank -%}
+  <div class="cc-colours">
+    <p class="cc-colours__label">Colour: <span>{{ here }}</span></p>
+    <div class="cc-colours__row">
+      <span class="cc-colours__dot is-current" aria-current="true" title="{{ here | escape }}">
+        {{- product.featured_image | image_url: width: 120 | image_tag: alt: here, loading: 'lazy' -}}
+        <small>{{ here }}</small>
+      </span>
+      {%- for p in sisters -%}
+        {%- if p.url != blank -%}
+          {%- assign name = p.metafields.custom.colour_name.value | default: p.title -%}
+          <a class="cc-colours__dot" href="{{ p.url }}" title="{{ name | escape }}">
+            {{- p.featured_image | image_url: width: 120 | image_tag: alt: name, loading: 'lazy' -}}
+            <small>{{ name }}</small>
+          </a>
+        {%- endif -%}
+      {%- endfor -%}
+    </div>
+  </div>
+  <style>
+    .cc-colours { margin: 16px 0; }
+    .cc-colours__label { margin: 0 0 8px; font-size: 14px; }
+    .cc-colours__row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .cc-colours__dot { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 64px; color: inherit; text-decoration: none; }
+    .cc-colours__dot img { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; border: 1px solid rgba(0, 0, 0, 0.15); }
+    .cc-colours__dot.is-current img { outline: 2px solid currentColor; outline-offset: 2px; }
+    .cc-colours__dot small { font-size: 12px; line-height: 1.2; text-align: center; }
+  </style>
+{%- endif -%}
