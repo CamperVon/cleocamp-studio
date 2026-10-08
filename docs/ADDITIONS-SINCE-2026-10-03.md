@@ -110,6 +110,16 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - The notes returned after a write were cut to 200 characters each; they now come whole within a size limit, with any more listed by id.
 - **Files:** `lib/mouse/notes.ts`, `lib/mouse/records.ts`, `lib/mouse/context.ts`, `lib/mouse/agent.ts` (`turnContent`, `chatTurn`), `lib/mouse/tools.ts` (`open_record`), `lib/mouse/outcomes.ts`, `lib/mouse/stale-notes.ts`, `lib/mouse/prompt.ts`, `tests/notes-index.test.ts`
 
+### Products and components as an index in chat, behind a switch · (this commit)
+- **Problem:** after notes, the chat catalogue's Products and Components were the next largest part of every live context write (about 11,000 estimated tokens), and most turns need only a few records' recipes, costs or notes fields.
+- **Change:** with `MOUSE_CATALOG_INDEX=1` (off by default, chat only; background runs unchanged):
+  - Chat's Products keep each product's heading (name, id, style, status, retail), every colourway with its dye-house name and id, every variant count line and the kit line. The notes field, recipe lines and a known lead time are replaced by markers ("notes field on file", "recipe: 11 lines, 2 UNKNOWN qty"; an unknown lead time still says UNKNOWN). Components keep name, id, supplier name, stock by place, incoming, "bought per run", lead time UNKNOWN and ON NO PRODUCT. Category, supplier style number, cost and a known lead time move out. Each section says what is not shown and to use `open_record`.
+  - `open_record` on a product or component adds its full catalogue entry, the same lines the full catalogue prints, plus for a component which products use it and how much.
+  - Prefetch keeps its bound (at most 3 records, 8,000 characters, whole records only; the first is always shown whole). A named product or component now arrives with its full entry and notes. Anything past the bound is listed by id with an `open_record` pointer and what it may hold. Nothing is cut or dropped silently.
+  - Product and component rendering moved into shared functions, so the catalogue, `open_record` and prefetch print identical lines. With the switch off, the catalogue, prefetch and `open_record` output are byte for byte what they were.
+- **Files:** `lib/mouse/context.ts` (`productFullLines`, `productIndexLines`, `componentFullLine`, `componentIndexLine`, `catalogueEntries`, `catalogIndexOn`), `lib/mouse/records.ts`, `lib/mouse/notes.ts` (`prefetchBlock`), `lib/mouse/agent.ts` (`chatTurn`), `tests/catalog-index.test.ts`
+- **Needs:** nothing new. Set `MOUSE_CATALOG_INDEX=1` to switch on; unset to roll back.
+
 ### Mouse asks instead of guessing quantities · `fa647db`
 - **Problem:** asked to add one item to an order, Mouse misread the request and changed quantities nobody had mentioned.
 - **Change:** the prompt rule on asking versus acting was tightened. A quantity nobody stated is a question, never a guess. A purchase order prints its "For" line only when the order is for a single product.

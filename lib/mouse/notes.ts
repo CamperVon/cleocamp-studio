@@ -241,9 +241,16 @@ export function mentionedRecords(message: string, directory: RecordRef[]): { fou
 
 /**
  * What goes with a message whose records were named exactly: each record's
- * notes in full, whole records only, within a character budget. A record
- * whose notes do not fit is listed as one to open, never cut. Records with
- * no current notes add nothing. Ambiguous names are said out loud. Pure.
+ * notes in full, whole records only, at most `maxRecords` of them within a
+ * character budget. The first record is always shown whole, however long, so
+ * a message naming one record exactly always gets all of it. A record past
+ * the bound is listed by id as one to open, never cut. Records with nothing
+ * to add are left out. Ambiguous names are said out loud. Pure.
+ *
+ * With `detailFor` (phase 2B, chat with MOUSE_CATALOG_INDEX on), a product or
+ * component also carries its full catalogue entry, since the chat index no
+ * longer does, and counts toward the same bound. Without it the block is
+ * exactly what it was in phase 2A.
  */
 export function prefetchBlock(
   matches: { found: RecordRef[]; ambiguous: Array<{ said: string; candidates: RecordRef[] }> },
@@ -251,6 +258,7 @@ export function prefetchBlock(
   latestCount: Map<string, Date>,
   budget = 8_000,
   maxRecords = 3,
+  detailFor?: (r: RecordRef) => string[] | null | undefined,
 ): string | null {
   const parts: string[] = []
   const notShown: RecordRef[] = []
@@ -258,19 +266,31 @@ export function prefetchBlock(
   let shown = 0
   for (const r of matches.found) {
     const ns = notesFor(r)
-    if (!ns.length) continue
-    const lines = ns.map((n) => `- ${noteLine(n, latestCount)}`)
+    const detail = detailFor?.(r) ?? []
+    if (!ns.length && !detail.length) continue
+    const noteLines = ns.map((n) => `- ${noteLine(n, latestCount)}`)
+    const lines = detailFor
+      ? [...detail, ...(ns.length ? [`notes (${ns.length} current, in full):`, ...noteLines] : ['notes: none current'])]
+      : noteLines
     const size = lines.reduce((s, l) => s + l.length + 1, 0)
     if (shown >= maxRecords || (used + size > budget && shown > 0)) { notShown.push(r); continue }
-    parts.push(`### ${r.name} [${r.id}] (${r.kind}): ${ns.length} current note${ns.length === 1 ? '' : 's'}, in full`, ...lines)
+    parts.push(detailFor
+      ? `### ${r.name} [${r.id}] (${r.kind}), complete`
+      : `### ${r.name} [${r.id}] (${r.kind}): ${ns.length} current note${ns.length === 1 ? '' : 's'}, in full`, ...lines)
     used += size
     shown++
   }
   const amb = matches.ambiguous.map((a) => `- "${a.said}" names more than one record, so none was looked up: ${a.candidates.map((c) => `${c.name} [${c.id}] (${c.kind})`).join('; ')}. Use open_record with the id you mean.`)
-  const more = notShown.map((r) => `- ${r.name} [${r.id}] (${r.kind}) also has notes: read them with open_record before relying on them.`)
+  const what = (k: RecordKind) => k === 'product' ? 'its recipe, notes field, lead time or notes'
+    : k === 'component' ? 'its cost, category, supplier style number, lead time, where it is used or notes' : 'its notes'
+  const more = notShown.map((r) => detailFor
+    ? `- ${r.name} [${r.id}] (${r.kind}) was not looked up here (at most ${maxRecords} records and ${budget.toLocaleString('en-US')} characters per message): read it with open_record before relying on ${what(r.kind)}.`
+    : `- ${r.name} [${r.id}] (${r.kind}) also has notes: read them with open_record before relying on them.`)
   if (!parts.length && !amb.length && !more.length) return null
   return [
-    '[The app looked up the records this message names exactly. Current notes, in full; read-only. This is not from the person.]',
+    detailFor
+      ? '[The app looked up the records this message names exactly. Each one shown is complete: its full catalogue entry, if it has one, and every current note; read-only. This is not from the person.]'
+      : '[The app looked up the records this message names exactly. Current notes, in full; read-only. This is not from the person.]',
     ...parts,
     ...(more.length ? ['', ...more] : []),
     ...(amb.length ? ['', ...amb] : []),
