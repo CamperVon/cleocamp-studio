@@ -314,6 +314,12 @@ export async function runAgent(opts: {
    */
   notes?: 'full' | 'index'
   /**
+   * How the catalogue shows products and components: 'full' (default) every
+   * line, 'index' the chat index with the rest via open_record or prefetch
+   * (phase 2B, chat only, behind MOUSE_CATALOG_INDEX).
+   */
+  catalog?: 'full' | 'index'
+  /**
    * Records the message names exactly, looked up by code, with their notes in
    * full (lib/mouse/records.ts prefetchForMessage). Sent as its own block
    * after the person's words; never part of `instruction`, so the correction
@@ -365,7 +371,7 @@ export async function runAgent(opts: {
   // defaults) sit under a one-hour mark; everything else, notes included,
   // under the five-minute one. Same sections, same text, stable ones first.
   // Layout and the API rules it depends on: lib/mouse/cache-blocks.ts.
-  const parts = opts.withCatalog !== false ? await buildCatalogParts({ notes: opts.notes ?? 'full' }) : null
+  const parts = opts.withCatalog !== false ? await buildCatalogParts({ notes: opts.notes ?? 'full', catalog: opts.catalog ?? 'full' }) : null
   const contextStats: CatalogStats | null = parts ? catalogStats(parts) : null
   const system: Anthropic.TextBlockParam[] = systemBlocks({
     rules: SYSTEM_RULES,
@@ -746,13 +752,18 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
   const withFiles = new Set(history.filter((m) => m.role === 'USER' && m.attachments.length).slice(-2).map((m) => m.id))
   // Phase 2A (6 Oct 2026): chat reads notes as an index, and the records
   // this message names exactly come with their notes already looked up.
+  // Phase 2B (8 Oct 2026, MOUSE_CATALOG_INDEX, off by default): products and
+  // components as an index too, and a named one prefetched whole.
   const { prefetchForMessage } = await import('@/lib/mouse/records')
-  const prefetch = await prefetchForMessage(message)
+  const { catalogIndexOn } = await import('@/lib/mouse/context')
+  const catalogIndex = catalogIndexOn()
+  const prefetch = await prefetchForMessage(message, { catalogue: catalogIndex })
   const base: Parameters<typeof runAgent>[0] = {
     instruction: message,
     source,
     attachments,
     notes: 'index',
+    catalog: catalogIndex ? 'index' : 'full',
     prefetch,
     // Chat is the only caller whose instruction is something a person typed,
     // so it is the only one whose instruction is read for corrections.

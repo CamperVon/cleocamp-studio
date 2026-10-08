@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { type NoteRow, type RecordRef, mentionedRecords, noteLine, prefetchBlock, resolveRecord } from '@/lib/mouse/notes'
+import { catalogIndexOn, catalogueEntries } from '@/lib/mouse/context'
 
 /**
  * Reading one record and its notes, for open_record and for prefetch (phase
@@ -121,7 +122,7 @@ async function detailFor(r: RecordRef): Promise<Record<string, unknown>> {
  * An ambiguous or unknown reference returns what it could be, and nothing is
  * chosen for the caller.
  */
-export async function openRecord(ref: string): Promise<Record<string, unknown>> {
+export async function openRecord(ref: string, opts: { catalogue?: boolean } = {}): Promise<Record<string, unknown>> {
   const want = String(ref ?? '').trim()
   if (!want) return { found: false, reason: 'Say which record: a PO number, an id from your context, or its exact name.' }
   if (/^general$/i.test(want)) {
@@ -137,14 +138,20 @@ export async function openRecord(ref: string): Promise<Record<string, unknown>> 
   const rec = r.record
   const keys = await noteKeysFor(rec)
   const fileKind = rec.kind === 'product' || rec.kind === 'component' || rec.kind === 'vendor' ? rec.kind : null
-  const [notes, detail, latest, files] = await Promise.all([
+  // Phase 2B: with the chat index on, a product or component also comes with
+  // its full catalogue entry, everything the index leaves out.
+  const withCatalogue = (opts.catalogue ?? catalogIndexOn()) && (rec.kind === 'product' || rec.kind === 'component')
+  const [notes, detail, latest, files, entries] = await Promise.all([
     currentNotes(keys), detailFor(rec), latestCounts(),
     fileKind ? db.storedFileLink.findMany({ where: { kind: fileKind, recordId: rec.id }, select: { file: { select: { id: true, title: true } } } }) : [],
+    withCatalogue ? catalogueEntries(rec.kind === 'product' ? [rec.id] : [], rec.kind === 'component' ? [rec.id] : []) : null,
   ])
+  const catalogue = entries?.get(rec.id)
   return {
     found: true,
     record: { kind: rec.kind, id: rec.id, name: rec.name },
     detail,
+    ...(catalogue ? { catalogue, catalogueNote: 'Its full catalogue entry, exactly as the full catalogue prints it: recipe, notes field, lead time, cost and the rest.' } : {}),
     ...(files.length ? { files: files.map((f) => f.file), filesNote: 'Kept files linked to this record. read_file gives you one.' } : {}),
     notes: notes.map((n) => noteLine(n, latest)),
     notesNote: notes.length ? 'Every current note on this record, in full. Each starts with the id add_note\'s supersedes and retire_note take.' : 'No current notes on this record.',
@@ -155,15 +162,23 @@ export async function openRecord(ref: string): Promise<Record<string, unknown>> 
  * The text that goes with a chat message naming records exactly, or null.
  * Never throws: a failed lookup leaves the message as it was.
  */
-export async function prefetchForMessage(message: string): Promise<string | null> {
+export async function prefetchForMessage(message: string, opts: { catalogue?: boolean } = {}): Promise<string | null> {
   try {
     const dir = await recordDirectory()
     const matches = mentionedRecords(message, dir)
     if (!matches.found.length && !matches.ambiguous.length) return null
+    const withCatalogue = opts.catalogue ?? catalogIndexOn()
+    const ids = (k: RecordRef['kind']) => matches.found.filter((r) => r.kind === k).map((r) => r.id)
     const notesBy = new Map<string, NoteRow[]>()
-    await Promise.all(matches.found.map(async (r) => notesBy.set(`${r.kind}:${r.id}`, await currentNotes(await noteKeysFor(r)))))
-    const latest = await latestCounts()
-    return prefetchBlock(matches, (r) => notesBy.get(`${r.kind}:${r.id}`) ?? [], latest)
+    const [, latest, entries] = await Promise.all([
+      Promise.all(matches.found.map(async (r) => notesBy.set(`${r.kind}:${r.id}`, await currentNotes(await noteKeysFor(r))))),
+      latestCounts(),
+      withCatalogue ? catalogueEntries(ids('product'), ids('component')) : null,
+    ])
+    const notesFor = (r: RecordRef) => notesBy.get(`${r.kind}:${r.id}`) ?? []
+    if (!entries) return prefetchBlock(matches, notesFor, latest)
+    return prefetchBlock(matches, notesFor, latest, undefined, undefined,
+      (r) => (r.kind === 'product' || r.kind === 'component' ? entries.get(r.id) : null))
   } catch (e) {
     console.error('[prefetch] lookup failed', e)
     return null

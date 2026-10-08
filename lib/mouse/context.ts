@@ -1,5 +1,7 @@
 import { lineScopeLabel, onNoProduct } from '@/lib/bom'
 import { createHash } from 'node:crypto'
+import type { Prisma } from '@/generated/prisma/client'
+import type { kitsByProduct } from '@/lib/kits'
 import { renderNotesFull, renderNotesIndex } from '@/lib/mouse/notes'
 import { db } from '@/lib/db'
 import { poLineLabel } from '@/lib/po'
@@ -17,23 +19,207 @@ import { inventoryWritesEnabled } from './tools'
  * This block is cached, so it costs a tenth of the input rate after the first
  * turn. Keep it deterministic: no timestamps, stable ordering.
  */
-/** notes: 'full' (default) prints every current note; 'index' prints one line per subject (chat). */
-export async function buildCatalog(opts: { notes?: 'full' | 'index' } = {}): Promise<string> {
+/**
+ * How a product or component is read, everywhere: the catalogue, open_record
+ * and prefetch all load it with these, so a record looked up on its own reads
+ * exactly as it does in the full catalogue.
+ */
+const PRODUCT_INCLUDE = {
+  style: { select: { number: true, status: true } },
+  colorways: { orderBy: { customerName: 'asc' } },
+  variants: { orderBy: [{ size: 'asc' }], include: { colorway: true } },
+  bomLines: { include: { component: true } },
+} satisfies Prisma.ProductInclude
+const COMPONENT_INCLUDE = {
+  vendor: true, locationStock: { include: { location: true, atVendor: true } }, _count: { select: { usedIn: true } },
+} satisfies Prisma.ComponentInclude
+type CatalogProduct = Prisma.ProductGetPayload<{ include: typeof PRODUCT_INCLUDE }>
+type CatalogComponent = Prisma.ComponentGetPayload<{ include: typeof COMPONENT_INCLUDE }>
+type Kit = Awaited<ReturnType<typeof kitsByProduct>> extends Map<string, infer K> ? K : never
+
+const money = (c: number | null) => (c === null ? 'unknown' : `$${(c / 100).toFixed(2)}`)
+
+/**
+ * The chat catalogue's Products and Components as an index (phase 2B, 8 Oct
+ * 2026, MOUSE_CATALOG_INDEX, off by default). These are the words that head
+ * each section in that mode, so Mouse knows what is not in front of it.
+ */
+export const PRODUCTS_INDEX_HEADER = [
+  'Index view. Every product, status, retail, colourway and variant count is',
+  'here. NOT shown: each product\'s notes field, its recipe (per-unit lines) and',
+  'a known lead time ("notes field on file" and "recipe: N lines" say there is',
+  'something to read). Before answering about or acting on any of those, open the',
+  'product with open_record (the id in brackets). When a message names a record',
+  'exactly, it may already be looked up in full with the message.',
+]
+export const COMPONENTS_INDEX_HEADER = [
+  'Index view: name, supplier and stock. NOT shown: category, the supplier\'s style',
+  'number, cost and a known lead time. Open the component with open_record before',
+  'answering about or acting on those, or on which products use it.',
+]
+
+/** One product exactly as the full catalogue prints it. Pure. */
+export function productFullLines(p: CatalogProduct, sold: Map<string, number>, kit: Kit | undefined): string[] {
+  const L: string[] = []
+  // The style number (docs/style-system/), "TP103 (PROPOSED)" when not confirmed.
+  const style = p.style ? ` — style ${p.style.number}${p.style.status === 'PROPOSED' ? ' (PROPOSED)' : ''}` : ' — no style number'
+  L.push(`\n### ${p.name} [${p.id}]${style} — ${p.status.toLowerCase()}, retail ${money(p.retailPriceCents)}`)
+  L.push(`production lead time: ${p.productionLeadTimeDays ?? 'UNKNOWN'}`)
+  if (p.notes) L.push(`note: ${p.notes}`)
+  L.push(...colourwayLines(p))
+  if (p.bomLines.length) {
+    L.push('per unit:')
+    for (const b of p.bomLines) {
+      const q = Number(b.qtyPerUnit)
+      L.push(`  - ${b.component.name}: ${q === 0 ? 'UNKNOWN' : q} ${b.component.unitOfMeasure}${lineScopeLabel(b)}`)
+    }
+  }
+  L.push(...variantLines(p, sold), ...kitLines(kit))
+  return L
+}
+
+/**
+ * One product in the chat index: everything decision-critical or needed to
+ * resolve a loose name stays (status, retail, every colourway with its dye
+ * name, every variant count, the kit line); the notes field, recipe lines and
+ * a known lead time are replaced by markers. Pure.
+ */
+export function productIndexLines(p: CatalogProduct, sold: Map<string, number>, kit: Kit | undefined): string[] {
+  const L: string[] = []
+  const style = p.style ? ` — style ${p.style.number}${p.style.status === 'PROPOSED' ? ' (PROPOSED)' : ''}` : ' — no style number'
+  L.push(`\n### ${p.name} [${p.id}]${style} — ${p.status.toLowerCase()}, retail ${money(p.retailPriceCents)}`)
+  const unknownQty = p.bomLines.filter((b) => Number(b.qtyPerUnit) === 0).length
+  const markers = [
+    p.productionLeadTimeDays === null ? 'production lead time: UNKNOWN' : null,
+    p.notes?.trim() ? 'notes field on file' : null,
+    p.bomLines.length ? `recipe: ${p.bomLines.length} line${p.bomLines.length === 1 ? '' : 's'}${unknownQty ? `, ${unknownQty} UNKNOWN qty` : ''}` : null,
+  ].filter(Boolean)
+  if (markers.length) L.push(markers.join(' · '))
+  L.push(...colourwayLines(p), ...variantLines(p, sold), ...kitLines(kit))
+  return L
+}
+
+function colourwayLines(p: CatalogProduct): string[] {
+  if (!p.colorways.length) return []
+  return [
+    'colourways (what customers see / what the dye house calls it):',
+    ...p.colorways.map((c) => `  - ${c.customerName}${c.dyeHouseName ? ` / ${c.dyeHouseName}` : c.inHouseMatch ? ' / IN-HOUSE MATCH, no dye house name' : ''}${c.active ? '' : ' (INACTIVE)'} [${c.id}]`),
+  ]
+}
+
+function variantLines(p: CatalogProduct, sold: Map<string, number>): string[] {
+  if (!p.variants.length) return []
+  const L = ['variants (on hand / sold last 8 weeks):']
+  // A product still in development can have ten variants that all read
+  // "UNKNOWN on hand, 0 sold" — the 5to7 Skirt did, on every request.
+  // Those are listed together on one line, ids kept so they can still be
+  // written to. Never-counted and counted-at-zero stay separate lines:
+  // they are different facts.
+  const idle = { uncounted: [] as string[], zero: [] as string[] }
+  for (const v of p.variants) {
+    const name = ([v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'default') + (v.newSku ? ` ${v.newSku}` : '')
+    const n = sold.get(v.id) ?? 0
+    if (n === 0 && (v.onHandQty === null || Number(v.onHandQty) === 0)) {
+      idle[v.onHandQty === null ? 'uncounted' : 'zero'].push(`${name} [${v.id}]`)
+      continue
+    }
+    const oh = v.onHandQty === null ? 'UNKNOWN' : String(v.onHandQty)
+    L.push(`  - ${name}: ${oh} on hand, ${n} sold [${v.id}]`)
+  }
+  if (idle.uncounted.length) L.push(`  - UNKNOWN on hand, 0 sold: ${idle.uncounted.join(', ')}`)
+  if (idle.zero.length) L.push(`  - 0 on hand, 0 sold: ${idle.zero.join(', ')}`)
+  return L
+}
+
+// A kit (KitPart, 8 Oct 2026): made up from other products, so only as
+// many can be made up as the scarcest part allows.
+function kitLines(kit: Kit | undefined): string[] {
+  if (!kit) return []
+  return [`kit: ${kit.parts.join(' + ')}. Can be made up now (lower of the parts): ` +
+    kit.lines.map((k) => `${k.colour ?? 'default'} ${k.available ?? 'UNKNOWN'} (${k.parts.map((x) => `${x.name} ${x.onHand ?? x.problem ?? 'UNKNOWN'}`).join(', ')})`).join('; ') +
+    (kit.shared.length ? `. Each colour's figure is "up to": ${kit.shared.join('; ')}.` : '')]
+}
+
+// Everything is counted wherever it sits (fabric too, since 2 Oct 2026), studio or a vendor (CLAUDE.md §3), and a count exists whether
+// or not stockedInStudio is set. Printing "not stocked" for anything that
+// wasn't a studio stash hid real numbers: on 25 Sept 2026 Mouse told
+// Brandon there were 2,100 Main labels and no Cosmo x Cleo labels, reading
+// a 16 Sept note, while the records held 4,010 and 2,000.
+function componentStock(c: CatalogComponent): string {
+  const places = c.locationStock
+    .filter((s) => Number(s.qty) !== 0)
+    .map((s) => `${s.qty} at ${s.location?.name ?? s.atVendor?.name ?? 'unknown place'}`)
+  return `${c.onHandQty} on hand${places.length ? ` (${places.join(', ')})` : ''}${c.stockedInStudio ? '' : ' · bought per run'}${Number(c.incomingQty) > 0 ? `, ${c.incomingQty} incoming` : ''}`
+}
+
+/** One component exactly as the full catalogue prints it. Pure. */
+export function componentFullLine(c: CatalogComponent): string {
+  return `- ${c.name} [${c.id}] · ${c.category} · ${c.vendor?.name ?? 'no vendor'}${c.vendorSku ? ` · style ${c.vendorSku}` : ''} · ${money(c.unitCostCents)}/${c.unitOfMeasure} · lead time ${c.leadTimeDays === null ? 'UNKNOWN' : c.leadTimeDays + 'd'} · ${componentStock(c)}${onNoProduct(c) ? ' · ON NO PRODUCT' : ''}`
+}
+
+/** One component in the chat index: name, id, supplier (kept, Brandon 8 Oct 2026), stock and its warnings. Pure. */
+export function componentIndexLine(c: CatalogComponent): string {
+  return `- ${c.name} [${c.id}] · ${c.vendor?.name ?? 'no vendor'}${c.leadTimeDays === null ? ' · lead time UNKNOWN' : ''} · ${componentStock(c)}${onNoProduct(c) ? ' · ON NO PRODUCT' : ''}`
+}
+
+/** Units sold per variant over the catalogue's eight weeks. */
+async function soldByVariant(variantIds?: string[]): Promise<Map<string, number>> {
+  const sales = await db.salesSnapshot.groupBy({
+    by: ['productVariantId'],
+    _sum: { unitsSold: true },
+    where: { date: { gte: new Date(Date.now() - 56 * 864e5) }, ...(variantIds ? { productVariantId: { in: variantIds } } : {}) },
+  })
+  return new Map(sales.map((s) => [s.productVariantId, s._sum.unitsSold ?? 0]))
+}
+
+/**
+ * Full catalogue entries for products and components, for open_record and
+ * prefetch: the same lines the full catalogue prints for each, read now, in
+ * one batch. A component also says which products use it and how much, since
+ * recipes are not in the chat index. Keyed by id; an id that is not an active
+ * record is absent.
+ */
+export async function catalogueEntries(productIds: string[], componentIds: string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>()
+  if (!productIds.length && !componentIds.length) return out
+  const { kitsByProduct } = await import('@/lib/kits')
+  const [products, components, uses, kits] = await Promise.all([
+    productIds.length ? db.product.findMany({ where: { id: { in: productIds } }, include: PRODUCT_INCLUDE }) : [],
+    componentIds.length ? db.component.findMany({ where: { id: { in: componentIds }, active: true }, include: COMPONENT_INCLUDE }) : [],
+    componentIds.length ? db.bomLine.findMany({ where: { componentId: { in: componentIds } }, include: { parentProduct: { select: { name: true } }, component: { select: { unitOfMeasure: true } } } }) : [],
+    productIds.length ? kitsByProduct() : new Map(),
+  ])
+  const sold = await soldByVariant(products.flatMap((p) => p.variants.map((v) => v.id)))
+  // The heading loses its "### ": the entry sits under the caller's own heading.
+  for (const p of products) out.set(p.id, productFullLines(p, sold, kits.get(p.id)).map((l) => l.replace(/^\n(### )?/, '')))
+  for (const c of components) {
+    const used = uses.filter((b) => b.componentId === c.id && b.parentProduct).map((b) => {
+      const q = Number(b.qtyPerUnit)
+      return `  - ${b.parentProduct!.name}: ${q === 0 ? 'UNKNOWN' : q} ${b.component.unitOfMeasure}${lineScopeLabel(b)}`
+    }).sort()
+    out.set(c.id, [componentFullLine(c), ...(used.length ? ['used per unit in:', ...used] : [])])
+  }
+  return out
+}
+
+/** MOUSE_CATALOG_INDEX: chat reads Products and Components as an index (phase 2B). Off unless exactly "1". */
+export function catalogIndexOn(): boolean {
+  return process.env.MOUSE_CATALOG_INDEX === '1'
+}
+
+/**
+ * notes: 'full' (default) prints every current note; 'index' prints one line per subject (chat).
+ * catalog: 'full' (default) prints every product and component in full; 'index' (chat, behind
+ * MOUSE_CATALOG_INDEX) prints them as an index, the rest on demand.
+ */
+export async function buildCatalog(opts: { notes?: 'full' | 'index'; catalog?: 'full' | 'index' } = {}): Promise<string> {
   const [products, components, vendors, locations, items, pos, runs, lastSale, notes, events, forecasts, alerts, people, finances, sales, wholesale, shopifySync, docDefaults, notify] = await Promise.all([
-    db.product.findMany({
-      orderBy: { name: 'asc' },
-      include: {
-        style: { select: { number: true, status: true } },
-        colorways: { orderBy: { customerName: 'asc' } },
-        variants: { orderBy: [{ size: 'asc' }], include: { colorway: true } },
-        bomLines: { include: { component: true } },
-      },
-    }),
+    db.product.findMany({ orderBy: { name: 'asc' }, include: PRODUCT_INCLUDE }),
     db.component.findMany({
       // A retired record (merged, split, discontinued) is history, not stock.
       where: { active: true },
       orderBy: { name: 'asc' },
-      include: { vendor: true, locationStock: { include: { location: true, atVendor: true } }, _count: { select: { usedIn: true } } },
+      include: COMPONENT_INCLUDE,
     }),
     db.vendor.findMany({ orderBy: { name: 'asc' } }),
     db.location.findMany({ orderBy: { name: 'asc' } }),
@@ -82,7 +268,6 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index' } = {}): Pro
   const sold = new Map(sales.map((s) => [s.productVariantId, s._sum.unitsSold ?? 0]))
   const { kitsByProduct } = await import('@/lib/kits')
   const kits = await kitsByProduct()
-  const money = (c: number | null) => (c === null ? 'unknown' : `$${(c / 100).toFixed(2)}`)
   const L: string[] = []
 
   // Without this it cannot reason about lead times, due dates or "as of today",
@@ -123,72 +308,16 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index' } = {}): Pro
   )
   L.push('')
 
+  const index = opts.catalog === 'index'
   L.push('## Products')
-  for (const p of products) {
-    // The style number (docs/style-system/), "TP103 (PROPOSED)" when not confirmed.
-    const style = p.style ? ` — style ${p.style.number}${p.style.status === 'PROPOSED' ? ' (PROPOSED)' : ''}` : ' — no style number'
-    L.push(`\n### ${p.name} [${p.id}]${style} — ${p.status.toLowerCase()}, retail ${money(p.retailPriceCents)}`)
-    L.push(`production lead time: ${p.productionLeadTimeDays ?? 'UNKNOWN'}`)
-    if (p.notes) L.push(`note: ${p.notes}`)
-    if (p.colorways.length) {
-      L.push('colourways (what customers see / what the dye house calls it):')
-      for (const c of p.colorways) {
-        L.push(`  - ${c.customerName}${c.dyeHouseName ? ` / ${c.dyeHouseName}` : c.inHouseMatch ? ' / IN-HOUSE MATCH, no dye house name' : ''}${c.active ? '' : ' (INACTIVE)'} [${c.id}]`)
-      }
-    }
-    if (p.bomLines.length) {
-      L.push('per unit:')
-      for (const b of p.bomLines) {
-        const q = Number(b.qtyPerUnit)
-        L.push(`  - ${b.component.name}: ${q === 0 ? 'UNKNOWN' : q} ${b.component.unitOfMeasure}${lineScopeLabel(b)}`)
-      }
-    }
-    if (p.variants.length) {
-      L.push('variants (on hand / sold last 8 weeks):')
-      // A product still in development can have ten variants that all read
-      // "UNKNOWN on hand, 0 sold" — the 5to7 Skirt did, on every request.
-      // Those are listed together on one line, ids kept so they can still be
-      // written to. Never-counted and counted-at-zero stay separate lines:
-      // they are different facts.
-      const idle = { uncounted: [] as string[], zero: [] as string[] }
-      for (const v of p.variants) {
-        const name = ([v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'default') + (v.newSku ? ` ${v.newSku}` : '')
-        const n = sold.get(v.id) ?? 0
-        if (n === 0 && (v.onHandQty === null || Number(v.onHandQty) === 0)) {
-          idle[v.onHandQty === null ? 'uncounted' : 'zero'].push(`${name} [${v.id}]`)
-          continue
-        }
-        const oh = v.onHandQty === null ? 'UNKNOWN' : String(v.onHandQty)
-        L.push(`  - ${name}: ${oh} on hand, ${n} sold [${v.id}]`)
-      }
-      if (idle.uncounted.length) L.push(`  - UNKNOWN on hand, 0 sold: ${idle.uncounted.join(', ')}`)
-      if (idle.zero.length) L.push(`  - 0 on hand, 0 sold: ${idle.zero.join(', ')}`)
-    }
-    // A kit (KitPart, 8 Oct 2026): made up from other products, so only as
-    // many can be made up as the scarcest part allows.
-    const kit = kits.get(p.id)
-    if (kit) {
-      L.push(`kit: ${kit.parts.join(' + ')}. Can be made up now (lower of the parts): ` +
-        kit.lines.map((k) => `${k.colour ?? 'default'} ${k.available ?? 'UNKNOWN'} (${k.parts.map((x) => `${x.name} ${x.onHand ?? x.problem ?? 'UNKNOWN'}`).join(', ')})`).join('; ') +
-        (kit.shared.length ? `. Each colour's figure is "up to": ${kit.shared.join('; ')}.` : ''))
-    }
-  }
+  if (index) L.push(...PRODUCTS_INDEX_HEADER)
+  for (const p of products) L.push(...(index ? productIndexLines : productFullLines)(p, sold, kits.get(p.id)))
 
   L.push('\n## Components')
   L.push('Every on-hand figure below is the current count from the ledger, wherever it')
   L.push('sits (studio or a vendor), fabric and leather included: it beats any note.')
-  for (const c of components) {
-    // Everything is counted wherever it sits (fabric too, since 2 Oct 2026), studio or a vendor (CLAUDE.md §3), and a count exists whether
-    // or not stockedInStudio is set. Printing "not stocked" for anything that
-    // wasn't a studio stash hid real numbers: on 25 Sept 2026 Mouse told
-    // Brandon there were 2,100 Main labels and no Cosmo x Cleo labels, reading
-    // a 16 Sept note, while the records held 4,010 and 2,000.
-    const places = c.locationStock
-      .filter((s) => Number(s.qty) !== 0)
-      .map((s) => `${s.qty} at ${s.location?.name ?? s.atVendor?.name ?? 'unknown place'}`)
-    const stock = `${c.onHandQty} on hand${places.length ? ` (${places.join(', ')})` : ''}${c.stockedInStudio ? '' : ' · bought per run'}`
-    L.push(`- ${c.name} [${c.id}] · ${c.category} · ${c.vendor?.name ?? 'no vendor'}${c.vendorSku ? ` · style ${c.vendorSku}` : ''} · ${money(c.unitCostCents)}/${c.unitOfMeasure} · lead time ${c.leadTimeDays === null ? 'UNKNOWN' : c.leadTimeDays + 'd'} · ${stock}${Number(c.incomingQty) > 0 ? `, ${c.incomingQty} incoming` : ''}${onNoProduct(c) ? ' · ON NO PRODUCT' : ''}`)
-  }
+  if (index) L.push(...COMPONENTS_INDEX_HEADER)
+  for (const c of components) L.push(index ? componentIndexLine(c) : componentFullLine(c))
   // Brandon, 7 Oct 2026, finding 16 leathers and silks on no product: "make
   // sure this never happens again." Said out loud every turn until fixed.
   const orphans = components.filter(onNoProduct)
@@ -540,7 +669,7 @@ export function splitCatalog(text: string): CatalogParts {
 }
 
 /** The catalogue, built as always, in its two blocks. */
-export async function buildCatalogParts(opts: { notes?: 'full' | 'index' } = {}): Promise<CatalogParts> {
+export async function buildCatalogParts(opts: { notes?: 'full' | 'index'; catalog?: 'full' | 'index' } = {}): Promise<CatalogParts> {
   return splitCatalog(await buildCatalog(opts))
 }
 
