@@ -50,6 +50,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - The catalogue is built exactly as before, then cut at its "## " headings. Sections that rarely change (places, vendors, wholesale stores, people, printed-document defaults) go in a block with a one-hour cache mark. Everything else, including notes, the date, stock, orders and to-dos, goes in the five-minute block. No section is reworded, shortened or dropped.
   - If a stable heading appears twice (a note line that looks like a heading), everything goes in the live block.
   - Each run records, alongside its token usage, the size and a short hash of each block and each section: sizes only, no text.
+- **Tests (`a9f9c90`):** every `## ` heading the catalogue builder can emit is read from its source, so a section added later is covered without editing the test. Each must land in a block with its text, notes must stay live, every stable heading must be one the builder really emits, and `### ` sub-headings never split a section.
 - **Files:** `lib/mouse/context.ts` (`splitCatalog`, `buildCatalogParts`, `catalogStats`), `lib/mouse/cache-blocks.ts`, `lib/mouse/agent.ts`, `lib/mouse/runner.ts`, `tests/catalog-split.test.ts`
 
 ### Support: one tap sends an invoice the team asked for, and Send refuses a false invoice claim · `872430a`
@@ -178,6 +179,11 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** email (the report notice). Set `MUSE_API_KEY`.
 - **Files:** `lib/muse.ts`, `app/api/muse/`, `app/(main)/muse/page.tsx`, `lib/mouse/tools.ts` (`hand_to_muse`, `muse_tasks`, `close_muse_task`), `lib/mouse/context.ts`, `lib/mouse/team-mail.ts`, `proxy.ts`, `prisma/schema.prisma` (`MuseTask`, `MuseQuestion`), `docs/MUSE-API.md`, `tests/muse.test.ts`
 
+### Outside agent's key: forgiving about format, clear about what's wrong · `93d327e`
+- **Problem:** the agent's first live call got a 401 with the key sent. A space or line break pasted into the hosting settings, "bearer" in lower case, or a key under 32 characters all gave the same 401, with no way to tell them apart.
+- **Change:** both keys are trimmed before comparing. `Authorization: Bearer` in any case, or `X-API-Key`, is accepted. A key configured under 32 characters answers 503 saying so; a wrong key is still a 401.
+- **Files:** `app/api/muse/_auth.ts`, `lib/muse.ts`, `docs/MUSE-API.md`, `tests/muse.test.ts`
+
 ---
 
 ## Selling and customers
@@ -253,6 +259,11 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Change:** `create_component` takes the product (and colour or size) it goes into and adds the recipe line in the same step, quantity unknown unless given; without one, it tells the assistant to ask. The assistant's context marks every non-packaging component on no product and lists them each turn, telling it to ask rather than guess. The daily email carries a line while any has sat on no product for over a day.
 - **Files:** `lib/mouse/tools.ts` (`create_component`), `lib/bom.ts` (`onNoProduct`), `lib/mouse/context.ts`, `lib/mouse/daily-cheese.ts`, `tests/on-no-product.test.ts`
 
+### A PO prints the supplier's own wording · `3e99c33`
+- **Problem:** a supplier wanted their own catalogue description and colour number on the order. The component tools had no field for it, so the assistant pushed the whole description into the supplier's style number, and the PO still printed our internal name beside it.
+- **Change:** `create_component` and `update_component` take `vendorDescription`, the supplier's words only, which the PO page and PDF print in place of our name. `vendorSku` holds the number alone. A blank description counts as none, so no empty line prints.
+- **Files:** `lib/mouse/tools.ts`, `app/po/[poNumber]/page.tsx`, `lib/po-pdf.tsx`
+
 ### Ping a teammate about an entry · `39b073d`
 - **Change:** stylist requests and pulls have Ping buttons for two teammates. Tapping one opens a one-line optional note; sending emails them what the entry is (who, what, dates, what is still out), the note, and a link that opens the page at that entry. Built on the same send-to-teammate function as the assistant's corner items, from the person who tapped to the teammate's address on file.
 - **Needs:** email.
@@ -269,9 +280,9 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** Shopify.
 - **Files:** `lib/packing.ts`, `lib/integrations/shopify.ts` (`fetchShippedOrders`, `packagesFrom`), `app/api/cron/nightly/route.ts`, `lib/forecast.ts`, `lib/mouse/tools.ts` (`writeEvent` exported, SYSTEM source), `lib/mouse/prompt.ts`, `tests/packing.test.ts`
 
-### A recipe line per size or colour · `f63e6e0`
+### A recipe line per size or colour · `f63e6e0`, `edccf09`
 - **Problem:** a product's recipe held one line per component, so a material used in different amounts by size (3.44 sq ft of leather in the small bag, 4.48 in the larger) could not be recorded: the second figure overwrote the first. The forecast also read only the first line it found.
-- **Change:** one line per component per size and colour (unique index `NULLS NOT DISTINCT`, so two all-variants lines still clash). The recipe tool finds a line by component and scope, turns an all-variants placeholder with no amount into the scoped line, and refuses to put an all-variants line with an amount beside a scoped one, since that would count those variants twice. The forecast adds every line for a component, each over the variants it fits. The assistant is told that leather "feet" means square feet and to use invoice square feet per skin as the estimate when converting.
+- **Change:** one line per component per size and colour (unique index `NULLS NOT DISTINCT`, so two all-variants lines still clash). The recipe tool finds a line by component and scope, turns an all-variants placeholder with no amount into the scoped line, and refuses to put an all-variants line with an amount beside a scoped one, since that would count those variants twice. The forecast adds every line for a component, each over the variants it fits. The assistant is told that leather "feet" means square feet and to use invoice square feet per skin as the estimate when converting. It never converts skins to finished bags without the square footage from the invoice, since skins vary in size; it asks instead (`edccf09`).
 - **Files:** `prisma/schema.prisma`, `prisma/migrations/20261007200000_bom_line_per_scope`, `lib/bom.ts` (`pickBomLine`), `lib/mouse/tools.ts` (`update_product_bom`), `lib/forecast.ts`, `lib/mouse/prompt.ts`, `tests/bom-lines.test.ts`
 
 ---
@@ -294,6 +305,11 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 ### Line sheet as Excel, beside the PDF · `2e219fb`
 - **Change:** the wholesale line sheet downloads as an Excel file with the same rows as the PDF. Prices are numbers, not text, with an "up to" column for price ranges, and stock counts never appear. Emailing the sheet to a store attaches both files.
 - **Files:** `lib/line-sheet-xlsx.ts`, `app/wholesale/line-sheet/xlsx/route.ts`, `lib/line-sheet.tsx`, `tests/line-sheet-xlsx.test.ts`. New dependency: `exceljs`.
+
+### Line sheet: no commission column; terms and fees before press · `aac7f59`, `6ebfc0e`
+- **Problem:** the line sheet printed a commission column, which never belongs on a sheet stores see. The footnote (minimum-order asterisk, shipping fees) printed last, under the contact and press lines.
+- **Change:** commission is gone from the PDF (its width goes to the description), the Excel copy, the row editor and the assistant's line sheet tool. The database column stays, unread, so nothing needs migrating. The footnote now sits straight under the table, before press, in both the PDF and Excel.
+- **Files:** `lib/line-sheet.tsx`, `lib/line-sheet-xlsx.ts`, `app/(main)/wholesale/` (actions, line-sheet-row, page), `lib/mouse/tools.ts`, `tests/line-sheet-xlsx.test.ts`
 
 ### New products join the line sheet, with a suggested wholesale price · `0e6f928`, `cf8532e`
 - **Change:** a product that goes on sale joins the wholesale line sheet straight away. If it has no wholesale price, Mouse asks for one and suggests a figure from what similar products sell at wholesale against retail.
@@ -364,6 +380,9 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - Partner reference: printable page and PDF of confirmed styles and codes only, and how to read a SKU; behind sign-in.
 - **Files:** `lib/po-snapshot.ts`, `lib/style-system.ts`, `lib/style-admin.ts`, `lib/style-report.ts`, `lib/style-reference.ts`, `lib/style-reference-pdf.tsx`, `lib/kits.ts`, `app/styles/`, `app/(main)/products/` (page, actions, sku-mode), `app/(main)/purchase-orders/page.tsx`, `app/po/[poNumber]/` (page, pdf-button), `lib/po-pdf.tsx`, `lib/search.ts`, `lib/mouse/tools.ts` (create_product pattern, style_numbers, create_colorway colour code, send/update PO freezing), `lib/mouse/context.ts`, `lib/mouse/records.ts`, `lib/mouse/prompt.ts`, `lib/mouse/daily-cheese.ts`, `lib/shopify-import.ts`, `lib/integrations/shopify-sync.ts`, `scripts/seed-style-system.ts`, `scripts/freeze-sent-pos.ts`, `scripts/po-render-capture.ts`, `prisma/migrations/20261008150000_style_system`, tests `style-system`, `po-snapshot`, `kits`.
 - **Needs:** Shopify only to read each variant's SKU in the nightly sync (read only). No email.
+- **Follow-ups:**
+  - `b8365b1`: the line sheet carries style numbers (under the item in the PDF, its own Style column in Excel, beside the item on the wholesale page; a PROPOSED style prints nothing). The partner reference PDF and page gain a product photo per style (the first image, preferring a live product), the category and size code lists, and "in development" marks; the Products page links both from the top. Files: `lib/line-sheet.tsx`, `lib/line-sheet-xlsx.ts`, `app/(main)/wholesale/page.tsx`, `lib/style-reference.ts`, `lib/style-reference-pdf.tsx`, `app/styles/page.tsx`, `app/(main)/products/page.tsx`, `tests/line-sheet-xlsx.test.ts`.
+  - `198eed5`: a rollback for switching the store's SKUs. Before the switch, every variant (product, handle, variant id, title, SKU, inventory item id) is backed up to CSV. `scripts/restore-shopify-skus.ts` puts the SKUs back from that file, the SKU field only, skips any already as backed up, and is a dry run unless told otherwise. The switch itself went through Shopify's `productVariantsBulkUpdate` per product with only `inventoryItem.sku` and `allowPartialUpdates: false`, then a re-read checked titles, prices, stock and SKU uniqueness against the backup. Needs Shopify (write products).
 
 ---
 
