@@ -12,7 +12,7 @@ const sonnet = (text: string, extra: Partial<AgentResult> = {}): AgentResult => 
 const opusReply: AgentResult = { text: 'The Opus answer.', writes: [], toolCalls: [{ name: 'query_status', status: 'succeeded' }], model: 'claude-opus-5-5', usage: usage('complete', 'claude-opus-5-5') }
 
 test('the read lane holds look-up tools only: no files, no notes, no writes', () => {
-  assert.deepEqual([...READ_LANE_TOOLS].sort(), ['check_sent_mail', 'find_contacts', 'find_customer', 'find_in_shopify', 'open_record', 'query_status', 'reorder_math', 'search_chat', 'shopify_analytics', 'unpaid_live_sales'])
+  assert.deepEqual([...READ_LANE_TOOLS].sort(), ['check_sent_mail', 'find_contacts', 'find_customer', 'find_in_shopify', 'open_record', 'query_status', 'reorder_math', 'search_chat', 'shipped_orders', 'shopify_analytics', 'unpaid_live_sales'])
   for (const n of ['read_file', 'note_problem', 'keep_file', 'draft_order_links', 'add_note', 'log_inventory_event', 'send_email', 'create_todo', 'update_component']) assert.ok(!READ_LANE_TOOLS.has(n), n)
   for (const n of READ_LANE_TOOLS) assert.ok(TOOLS[n], `${n} exists`)
   // What the model is offered, even from a list or a default set that holds more.
@@ -38,6 +38,11 @@ test('when an attempt is handed to Opus', () => {
   assert.equal(whyOpus(sonnet('x', { toolCalls: [{ name: 'log_inventory_event', status: 'failed' }] })), 'tool-failed')
   assert.equal(whyOpus(sonnet('  ')), 'empty')
   assert.equal(whyOpus(sonnet('There are 11 skirts at the studio.')), null)
+  // Never dumber (8 Oct 2026): an answer that says it can't goes to Opus.
+  assert.equal(whyOpus(sonnet("There is no tool here to list orders by when their label was bought.")), 'could-not-answer')
+  assert.equal(whyOpus(sonnet("I can't see label dates from here.")), 'could-not-answer')
+  assert.equal(whyOpus(sonnet('I don\u2019t have a way to check that.')), 'could-not-answer')
+  assert.equal(whyOpus(sonnet("We can't ship the tees until Friday, when the run lands.")), null, 'a fact about the business is an answer')
 })
 
 test('a handed-over attempt is never shown or saved: only the Opus answer, the attempt kept as cost', async () => {
@@ -68,4 +73,13 @@ test('an attempt that stands is the reply, and Opus is not called', async () => 
 test('the switch is off unless MOUSE_READ_LANE is exactly "1"', () => {
   const src = readFileSync(new URL('../lib/mouse/agent.ts', import.meta.url), 'utf8')
   assert.match(src, /enabled: process\.env\.MOUSE_READ_LANE === '1'/)
+})
+
+test('never dumber: every look-up tool is in the read lane or always goes to Opus', async () => {
+  const { PRACTICE_TOOLS, READ_LANE_LEAVES_TO_OPUS } = await import('../lib/mouse/agent')
+  // PRACTICE_TOOLS is the set of tools that look things up and change nothing.
+  for (const n of PRACTICE_TOOLS) {
+    assert.ok(READ_LANE_TOOLS.has(n) !== READ_LANE_LEAVES_TO_OPUS.has(n), `${n}: add it to READ_LANE_TOOLS, or to READ_LANE_LEAVES_TO_OPUS and the lane's rules`)
+  }
+  for (const n of READ_LANE_LEAVES_TO_OPUS) assert.ok(PRACTICE_TOOLS.has(n) && TOOLS[n], `${n} is a real look-up tool`)
 })

@@ -82,11 +82,11 @@ test('"change the address for them" in Tell Mouse now reaches a Mouse that can a
   assert.equal(asksForAction('make the reply shorter'), false)
 })
 
-test('the address tool never runs from email or the read lane; the read lane itself is unchanged', () => {
+test('the address tool never runs from email or the read lane; the label look-up is in both lanes', () => {
   assert.ok(TOOLS.update_order_address, 'tool exists')
   assert.ok(NOT_FROM_EMAIL.has('update_order_address'))
   assert.ok(!READ_LANE_TOOLS.has('update_order_address'))
-  assert.ok(TOOLS.shipped_orders && !READ_LANE_TOOLS.has('shipped_orders'), 'the approved read lane is not widened here')
+  assert.ok(TOOLS.shipped_orders && READ_LANE_TOOLS.has('shipped_orders'), 'a look-up the read lane lacks would make Mouse dumber')
 })
 
 test('the address tool refuses without a signed-in person and before touching anything', async () => {

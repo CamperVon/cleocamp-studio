@@ -234,9 +234,15 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/tools.ts` (`update_order_address`), `lib/support/reply.ts` (`typedAddressProblems`, `shipToDiffers`, `claimsAddressChanged`, `addressClaimProblem`, `shipToChanges`, `SHIP_TO_NOTE`), `lib/support/orders.ts` (`orderByName`), `lib/support/tell.ts`, `lib/support/draft.ts`, `app/(main)/support/actions.ts`, `lib/mouse/team-mail.ts`, `tests/order-address.test.ts`
 - **Needs:** Shopify (write_orders).
 
+### The fast look-up lane can never answer worse than the full assistant · (this commit)
+- **Problem:** plain look-up questions go to a cheaper model holding only look-up tools. A look-up tool added to the assistant but not to that lane meant the lane could answer "there is no tool for that" when the full assistant could have answered. Its rules handed over for changes, files and doubt, but not for a missing tool.
+- **Change:** every look-up tool is either in the lane or on a short list (`READ_LANE_LEAVES_TO_OPUS`) whose questions the lane's rules hand over; a test fails on any look-up tool in neither. The lane is told to hand over whenever it cannot fully answer, never to say it can't. As a backstop, code hands over any lane answer that says "I can't", "I don't have a way" or "there is no tool" (`whyOpus`, reason `could-not-answer`). Over-matching only costs a full-model turn.
+- **Files:** `lib/mouse/agent.ts` (`READ_LANE_TOOLS`, `READ_LANE_LEAVES_TO_OPUS`, `READ_LANE_RULES`, `whyOpus`, `PRACTICE_TOOLS`), `tests/read-lane.test.ts`
+- **Needs:** nothing.
+
 ### What went out on labels made on a day · (this commit)
 - **Problem:** asked how many of one item, by size, were in the orders labelled on a given day, the assistant could not answer. Sales analytics has order dates, not label dates, and no tool listed orders by when their label was made.
-- **Change:** a read-only `shipped_orders` tool. It takes a day or a range (Los Angeles), and optionally an exact product title and a colour or size. It returns quantities per variant with the order numbers. It reuses the shipped-packages reader the packing count already had, which now also carries the variant name. Voided labels and wholesale orders are left out. It is available in chat and to emailed questions; the read-only fast lane's tool list is unchanged.
+- **Change:** a read-only `shipped_orders` tool. It takes a day or a range (Los Angeles), and optionally an exact product title and a colour or size. It returns quantities per variant with the order numbers. It reuses the shipped-packages reader the packing count already had, which now also carries the variant name. Voided labels and wholesale orders are left out. It is available in chat, the read-only fast lane and emailed questions.
 - **Files:** `lib/shipped-report.ts` (`tallyShipped`), `lib/integrations/shopify.ts` (variant on `ShippedOrder`), `lib/mouse/tools.ts`, `lib/mouse/nightly-pass.ts`, `tests/order-address.test.ts`
 - **Needs:** Shopify (read_orders).
 
