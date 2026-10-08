@@ -54,6 +54,14 @@ const REQUEST_OR_CORRECTION = [
 /** Asking for judgement, which stays with Opus. */
 const JUDGEMENT = /\b(why|should|recommend\w*|suggest\w*|plan\w*|best|compare\w*|forecast\w*|decide\w*|ought|worth)\b/
 
+/**
+ * What only an Opus tool can answer (READ_LANE_LEAVES_TO_OPUS in agent.ts):
+ * a kept document or picture (read_file) or a draft order's link
+ * (draft_order_links). Decided here, by code, so the read lane is never left
+ * to notice it lacks the tool (8 Oct 2026). "file" is already an action word.
+ */
+export const NEEDS_OPUS_TOOL = /\b(pdfs?|photos?|pictures?|images?|attachments?|scans?|spec sheets?|colou?r cards?|tech packs?|draft orders?|payment links?|invoice links?|checkout links?)\b/
+
 /** "Think hard", "use Opus" and the like always get Opus. */
 const OVERRIDE = /\b(think(ing)? (hard|harder|carefully|deeply|it through)|really think|opus|careful(ly)?|deep(ly)?|deep dive|high effort|take your time)\b/
 
@@ -100,6 +108,7 @@ export function routeChat(message: string, ctx: RouteContext): Route {
   if (action) return opus(`verb:${action}`)
   if (REQUEST_OR_CORRECTION.some((r) => r.test(lower))) return opus('request-or-correction')
   if (JUDGEMENT.test(lower)) return opus('judgement')
+  if (NEEDS_OPUS_TOOL.test(lower)) return opus('needs-opus-tool')
   if (!QUESTION_WORDS.has(words[0])) return opus('not-a-question')
 
   return { lane: 'read', reason: 'read-eligible' }

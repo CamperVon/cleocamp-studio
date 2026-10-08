@@ -236,8 +236,8 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 
 ### The fast look-up lane can never answer worse than the full assistant · (this commit)
 - **Problem:** plain look-up questions go to a cheaper model holding only look-up tools. A look-up tool added to the assistant but not to that lane meant the lane could answer "there is no tool for that" when the full assistant could have answered. Its rules handed over for changes, files and doubt, but not for a missing tool.
-- **Change:** every look-up tool is either in the lane or on a short list (`READ_LANE_LEAVES_TO_OPUS`) whose questions the lane's rules hand over; a test fails on any look-up tool in neither. The lane is told to hand over whenever it cannot fully answer, never to say it can't. As a backstop, code hands over any lane answer that says "I can't", "I don't have a way" or "there is no tool" (`whyOpus`, reason `could-not-answer`). Over-matching only costs a full-model turn.
-- **Files:** `lib/mouse/agent.ts` (`READ_LANE_TOOLS`, `READ_LANE_LEAVES_TO_OPUS`, `READ_LANE_RULES`, `whyOpus`, `PRACTICE_TOOLS`), `tests/read-lane.test.ts`
+- **Change:** every look-up tool is either in the lane or on a short list (`READ_LANE_LEAVES_TO_OPUS`); a test fails on any look-up tool in neither. A question needing one of those (a kept file, photo, PDF, colour card, tech pack, draft order or payment link) goes to the full model by code in the router (`NEEDS_OPUS_TOOL`), not by the lane noticing. The lane is told to hand over whenever it cannot fully answer, never to say it can't. As a backstop, code hands over any lane answer that says "I can't", "I don't have a way" or "there is no tool" (`whyOpus`, reason `could-not-answer`). Over-matching only costs a full-model turn.
+- **Files:** `lib/mouse/agent.ts` (`READ_LANE_TOOLS`, `READ_LANE_LEAVES_TO_OPUS`, `READ_LANE_RULES`, `whyOpus`, `PRACTICE_TOOLS`), `lib/mouse/route.ts` (`NEEDS_OPUS_TOOL`), `tests/read-lane.test.ts`, `tests/route.test.ts`
 - **Needs:** nothing.
 
 ### What went out on labels made on a day · (this commit)

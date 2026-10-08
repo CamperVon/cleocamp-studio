@@ -84,3 +84,30 @@ test("the person's own words are read, not the author or page prefix", () => {
   assert.deepEqual(ownWords('[Jane, studio] (Typed in the box on the Vendors page.) Who sews it?'), { text: 'Who sews it?', fromPageBox: true })
   assert.deepEqual(ownWords('Who sews it?'), { text: 'Who sews it?', fromPageBox: false })
 })
+
+test('never dumber: a question needing a tool the read lane lacks goes to Opus by code', () => {
+  for (const m of [
+    'What does the Calamo colour card say?',
+    'Which pdf is the Bean Bag spec sheet?',
+    'Where is the draft order for Natasha?',
+    'Is there a payment link for the wholesale invoice?',
+    'What is in the photo of the belt?',
+    'Who has the tech pack for the tank?',
+  ]) assert.equal(routeChat(m, on).lane, 'opus', m)
+})
+
+test('never dumber: a label question either reaches Sonnet with the label tool or goes to Opus', async () => {
+  const { toolsFor } = await import('../lib/mouse/agent')
+  const readTools = toolsFor(undefined, 'thread_1', 'read')
+  for (const m of [
+    'How many black Cleo Tees went out on labels yesterday?',
+    'How many orders did Jane buy shipping labels for on 7 Oct?',
+    'Which orders got labels today?',
+    'How many white tees are on the labels from this morning?',
+    'What went out on yesterday\'s labels?',
+  ]) {
+    const r = routeChat(m, on)
+    assert.ok(r.lane === 'opus' || readTools.includes('shipped_orders'), `${m} → ${r.lane} without the label tool`)
+  }
+  assert.ok(readTools.includes('shipped_orders'))
+})
