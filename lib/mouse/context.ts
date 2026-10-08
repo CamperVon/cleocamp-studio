@@ -197,6 +197,11 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index' } = {}): Pro
       'When one comes up, or the person has a moment, ask which product it goes into and put it there with update_product_bom (quantity unknown is fine). Never guess the product.')
   }
 
+  // Style numbers (8 Oct 2026): what is still unsettled, one line when nothing is.
+  const { styleReport } = await import('@/lib/style-report')
+  L.push('\n## Style system')
+  L.push(...(await styleReport()).map((l) => `- ${l}`))
+
   // A purchase order line names a component, or a variant, or neither — the
   // last kind is free text, because an order is often how a new thing first
   // exists (a colour nobody has dyed, a label nobody has printed). Those lines

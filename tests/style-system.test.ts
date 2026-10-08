@@ -95,3 +95,22 @@ test('create_product cannot be called without saying new pattern or existing sty
   assert.ok(schema.required.includes('pattern'))
   assert.ok(TOOLS.style_numbers)
 })
+
+test('the style report is one line when nothing is outstanding, and short when something is', async () => {
+  const { styleReportLines } = await import('../lib/style-report')
+  const clean = { products: [{ name: 'Cleo Tee', status: 'ACTIVE', style: { number: 'TP101', status: 'ACTIVE' } }],
+    variants: [{ label: 'Cleo Tee / Black / 1', styleNumber: 'TP101', styleStatus: 'ACTIVE', newSku: 'TP101-BLK-01', colorCode: 'BLK', sizeCode: '01', shopifySku: 'TP101-BLK-01', linkedToShopify: true }],
+    poLines: [{ poNumber: '2400', label: 'Cleo Tee / Black / 1', styleNumber: 'TP101' }], proposed: { styles: [], codes: [] } }
+  assert.deepEqual(styleReportLines(clean), ['Style system: nothing outstanding.'])
+  const messy = { ...clean,
+    products: [...clean.products, { name: 'Dolce', status: 'DEVELOPMENT', style: null }, { name: 'Old Thing', status: 'SUNSETTED', style: null }],
+    variants: [...clean.variants, { label: 'Cleo Tee / White / 1', styleNumber: 'TP101', styleStatus: 'ACTIVE', newSku: 'TP101-BLK-01', colorCode: 'WHT', sizeCode: '01', shopifySku: 'CCSS25COT-WHT01', linkedToShopify: true }],
+    poLines: [{ poNumber: '2362', label: 'Dolce / M', styleNumber: null }], proposed: { styles: ['TP103 Cleo Sweater'], codes: ['color FLG'] } }
+  const lines = styleReportLines(messy)
+  assert.match(lines.join('\n'), /1 product has no style number: Dolce\./)
+  assert.doesNotMatch(lines.join('\n'), /Old Thing/)
+  assert.match(lines.join('\n'), /do not match the format or their style, colour and size: Cleo Tee \/ White \/ 1 TP101-BLK-01/)
+  assert.match(lines.join('\n'), /Shopify still has 1 old-format SKU \(expected/)
+  assert.match(lines.join('\n'), /PO 2362 Dolce \/ M/)
+  assert.match(lines.join('\n'), /Waiting on Brandon or Cleo: 1 proposed style \(TP103 Cleo Sweater\) and 1 proposed code \(color FLG\)/)
+})

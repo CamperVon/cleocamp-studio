@@ -3560,6 +3560,9 @@ export const TOOLS: Record<string, Tool> = {
         if (i.detail) L.push(`    ${i.detail.replace(/\s+/g, ' ').slice(0, 300)}`)
       }
 
+      const { styleReport } = await import('@/lib/style-report')
+      L.push('', '=== STYLE SYSTEM ===', ...(await styleReport()).map((l) => `- ${l}`))
+
       L.push('', `=== UNRESOLVED ALERTS (${alerts.length}) ===`)
       for (const a of alerts) L.push(`- [${a.severity}] ${a.message}`)
 

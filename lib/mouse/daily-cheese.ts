@@ -212,6 +212,17 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
       href: `${APP}/components`,
     })
   }
+  // The style system's loose ends (8 Oct 2026), as one line when there are
+  // any; the full list is on the Styles page and in Mouse's context.
+  const { styleReport } = await import('@/lib/style-report')
+  const styleLines = await styleReport().catch(() => [] as string[])
+  if (styleLines.length && !styleLines[0].startsWith('Style system: nothing')) {
+    out.unshift({
+      on: today, tag: 'STYLES',
+      sentence: `Style numbers: ${styleLines.length} thing${styleLines.length === 1 ? '' : 's'} to settle. ${styleLines[0]}`,
+      href: `${APP}/styles`,
+    })
+  }
   if (looksDone) {
     out.unshift({
       on: today, tag: 'TIDY',

@@ -111,6 +111,8 @@ export async function syncShopify(db: PrismaClient, sinceISO: string): Promise<S
         retailPriceCents: Math.round(parseFloat(v.price) * 100),
         imageUrl: v.image?.url ?? v.product.featuredImage?.url ?? null,
         shopifyInventoryItemId: v.inventoryItem.id,
+        // Shopify's SKU, kept to check against the style system. Read only.
+        shopifySku: v.sku || null,
       },
     })
     // Shopify not tracking a variant means unknown, not zero: no event.
