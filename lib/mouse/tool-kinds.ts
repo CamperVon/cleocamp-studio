@@ -19,9 +19,7 @@
 export type ToolKind = 'read-lane' | 'look-up, Opus' | 'answers, Opus' | 'changes'
 
 export const TOOL_KINDS: Record<string, ToolKind> = {
-  // Look-ups the read lane holds (the set approved 7 Oct 2026, plus shipped_orders 8 Oct
-  // and open_email 9 Oct: query_status "email" stopped returning whole emails, so the
-  // lane needs this to read one, as it could before).
+  // Look-ups the read lane holds (the set approved 7 Oct 2026, plus shipped_orders 8 Oct).
   open_record: 'read-lane',
   query_status: 'read-lane',
   check_sent_mail: 'read-lane',
@@ -33,11 +31,14 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
   shopify_analytics: 'read-lane',
   unpaid_live_sales: 'read-lane',
   shipped_orders: 'read-lane',
-  open_email: 'read-lane', // one email in full, by id; the search itself returns only a compact list (9 Oct)
 
   // Look-ups kept with Opus.
   read_file: 'look-up, Opus', // reading a PDF or photo stays with Opus (7 Oct 2026)
   draft_order_links: 'look-up, Opus', // kept with Opus since the lane was approved
+  // One email in full, by id (9 Oct 2026). With Opus so the turn's one full read is
+  // Opus's own: an email Sonnet opened would not travel with the hand-over, and the
+  // turn's budget would then keep Opus from opening it. The lane keeps the compact search.
+  open_email: 'look-up, Opus',
 
   // Change things, and also answer questions.
   muse_tasks: 'answers, Opus', // reading a task files the team's answers onto Muse's questions

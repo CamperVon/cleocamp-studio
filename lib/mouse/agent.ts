@@ -612,7 +612,8 @@ export const OPUS_ESCALATE = '[[OPUS]]'
 const READ_LANE_RULES =
   'THIS TURN: you can only look things up. If the person wants anything changed, recorded, sent, ordered ' +
   'or written down, if they are telling you a fact rather than asking, if a file needs reading, if a draft ' +
-  'order link is wanted, if you cannot fully answer with the tools you have here, or if you are unsure, reply ' +
+  'order link is wanted, if the answer needs an email\'s full text or exact wording (the email search gives ' +
+  'only a short preview), if you cannot fully answer with the tools you have here, or if you are unsure, reply ' +
   `with exactly ${OPUS_ESCALATE} and nothing else. Never tell the person you can't do something or have no way ` +
   'to: hand it over instead. Otherwise answer the question plainly from what you know and can look up.'
 

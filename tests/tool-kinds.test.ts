@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { TOOL_KINDS } from '../lib/mouse/tool-kinds'
 import { TOOLS } from '../lib/mouse/tools'
-import { PRACTICE_TOOLS, practiceStop, READ_LANE_LEAVES_TO_OPUS, READ_LANE_TOOLS, toolsFor } from '../lib/mouse/agent'
+import { PRACTICE_TOOLS, practiceStop, READ_LANE_LEAVES_TO_OPUS, READ_LANE_TOOLS, readLaneGuard, toolsFor } from '../lib/mouse/agent'
 import { classifyResult } from '../lib/mouse/outcomes'
 import { routeChat, type RouteContext } from '../lib/mouse/route'
 
@@ -23,8 +23,8 @@ test('every tool Mouse has is given a kind, and every kind names a real tool', (
 
 test('the look-ups are pinned: making a tool one runs it in practice and stops it counting as a write', () => {
   // Read the tool before adding it to either list: it must change nothing.
-  assert.deepEqual(of('read-lane').sort(), ['check_sent_mail', 'find_contacts', 'find_customer', 'find_in_shopify', 'open_email', 'open_record', 'query_status', 'reorder_math', 'search_chat', 'shipped_orders', 'shopify_analytics', 'unpaid_live_sales'])
-  assert.deepEqual(of('look-up, Opus').sort(), ['draft_order_links', 'read_file'])
+  assert.deepEqual(of('read-lane').sort(), ['check_sent_mail', 'find_contacts', 'find_customer', 'find_in_shopify', 'open_record', 'query_status', 'reorder_math', 'search_chat', 'shipped_orders', 'shopify_analytics', 'unpaid_live_sales'])
+  assert.deepEqual(of('look-up, Opus').sort(), ['draft_order_links', 'open_email', 'read_file'])
 })
 
 test('the read lane holds exactly the read-lane look-ups, and is offered nothing else', () => {
@@ -45,6 +45,16 @@ test('every tool a question may need is in the read lane or goes to Opus, never 
 // A tool added to "look-up, Opus" or "answers, Opus" without examples here
 // fails, and every example must go to Opus by code, not by Sonnet noticing.
 const NEEDS: Record<string, string[]> = {
+  // An email's whole text (9 Oct 2026). "email" is also an action word; the
+  // mail-and-what-it-says rule catches the rest.
+  open_email: [
+    "What does Jane's email say about the invoice?",
+    "What did Alessandra's mail say about the brown belts?",
+    'What exactly did the message from Lorena say?',
+    "What was the wording of Cosimo's reply?",
+    'What did Antonio write in his last mail?',
+    'Which reply mentions the Staples skirts?',
+  ],
   read_file: [
     'What does the Calamo colour card say?',
     'Which pdf is the Bean Bag spec sheet?',
@@ -105,4 +115,22 @@ test('look-ups run in practice and never count as a write; everything else is st
     // The troubleshooting log is not a record of the business (outcomes.ts).
     if (n !== 'note_problem') assert.equal(classifyResult(n, {}).isWrite, true, `${n} counts as a write`)
   }
+})
+
+test('a question the compact email list can answer stays with Sonnet', () => {
+  for (const m of [
+    'Any mail from Alessandra this week?',
+    "When did Antonio's last reply come in?",
+    'Who was the last message about hangtags from?',
+    'Did Lorena write to us this week?',
+  ]) assert.equal(routeChat(m, on).lane, 'read', m)
+  assert.equal(routeChat("What does Jane's email say about the invoice?", on).lane, 'opus')
+  assert.equal(routeChat("What did Alessandra's mail say about the brown belts?", on).reason, 'email-body')
+})
+
+test('Sonnet never holds open_email; Opus does', () => {
+  assert.ok(!toolsFor(undefined, 'thread_1', 'read').includes('open_email'))
+  assert.ok(!READ_LANE_TOOLS.has('open_email') && READ_LANE_LEAVES_TO_OPUS.has('open_email'))
+  assert.ok(toolsFor(undefined, 'thread_1').includes('open_email'), 'the full Mouse has it')
+  assert.throws(() => readLaneGuard('read', 'open_email'), /not available in the read lane/)
 })

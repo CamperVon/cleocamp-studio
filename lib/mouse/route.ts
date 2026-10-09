@@ -60,9 +60,20 @@ const JUDGEMENT = /\b(why|should|recommend\w*|suggest\w*|plan\w*|best|compare\w*
  * order's link (draft_order_links), Muse's research (muse_tasks), the stylist
  * inventory (stylist_inventory) or the line sheet's words (update_line_sheet).
  * Decided here, by code, so the read lane is never left to notice it lacks
- * the tool (8 Oct 2026). "file" is already an action word.
+ * the tool (8 Oct 2026). "file" is already an action word. An email's
+ * whole text (open_email) is ASKS_EMAIL_BODY below.
  */
 export const NEEDS_OPUS_TOOL = /\b(pdfs?|photos?|pictures?|images?|attachments?|scans?|spec sheets?|colou?r cards?|tech packs?|draft orders?|payment links?|invoice links?|checkout links?|muse|stylist (?:inventory|stock)|line ?sheets?)\b/
+
+/**
+ * Asking what an email says: its wording, not whether it came (9 Oct 2026).
+ * Only Opus can open a whole email (open_email); the read lane has the
+ * compact search, which answers "any mail from Lorena this week?" but holds
+ * only a preview. A mention of mail AND of what it says goes to Opus by code.
+ */
+const MAIL_WORDS = /\b(e-?mails?|mail|inbox|messages?|repl(?:y|ies)|thread)\b/
+const BODY_WORDS = /\b(say|says|said|saying|wording|worded|word for word|exact(?:ly)?|quote|full text|read|wrote|write|written|mention(?:s|ed)?|tell|tells|told|ask(?:s|ed)?|details?)\b/
+export const ASKS_EMAIL_BODY = (lower: string) => MAIL_WORDS.test(lower) && BODY_WORDS.test(lower)
 
 /** "Think hard", "use Opus" and the like always get Opus. */
 const OVERRIDE = /\b(think(ing)? (hard|harder|carefully|deeply|it through)|really think|opus|careful(ly)?|deep(ly)?|deep dive|high effort|take your time)\b/
@@ -111,6 +122,7 @@ export function routeChat(message: string, ctx: RouteContext): Route {
   if (REQUEST_OR_CORRECTION.some((r) => r.test(lower))) return opus('request-or-correction')
   if (JUDGEMENT.test(lower)) return opus('judgement')
   if (NEEDS_OPUS_TOOL.test(lower)) return opus('needs-opus-tool')
+  if (ASKS_EMAIL_BODY(lower)) return opus('email-body')
   if (!QUESTION_WORDS.has(words[0])) return opus('not-a-question')
 
   return { lane: 'read', reason: 'read-eligible' }

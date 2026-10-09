@@ -116,8 +116,9 @@ test('the real tool: an id that does not exist is refused, and nothing is change
   assert.equal(r.found, false)
 })
 
-test('open_email is a read-only look-up everywhere query_status is offered', () => {
-  assert.equal(TOOL_KINDS.open_email, 'read-lane')
+test('open_email is a read-only look-up kept with Opus; the search stays in the read lane', () => {
+  assert.equal(TOOL_KINDS.open_email, 'look-up, Opus')
+  assert.equal(TOOL_KINDS.query_status, 'read-lane')
   assert.ok(PROPOSAL_TOOLS.includes('open_email'))
 })
 
@@ -273,7 +274,10 @@ test('two loops of one turn sharing its budget read one email between them', asy
   assert.equal(second.toolCalls[0].error, ONE_EMAIL_PER_TURN)
 })
 
-test('the read lane hands over to Opus: Opus cannot open a second email in the same turn', async () => {
+// The budget is shared across a hand-over whatever opened first. In use the
+// read lane cannot open an email (open_email is Opus's), so this is the
+// budget's own guarantee, kept as a property of the turn.
+test('the budget is shared across a hand-over: once any loop of the turn has read an email, the next cannot', async () => {
   const m = mailbox()
   const budget = newEmailOpenBudget() // what chatTurn makes for the person's message
   let opusCalls: string[] = []
@@ -320,4 +324,43 @@ test('chatTurn gives each message one budget, shared by both lanes, and runAgent
   const run = src.slice(src.indexOf('export async function runAgent'), src.indexOf('export async function chatTurn'))
   assert.match(run, /const emailOpenBudget = opts\.emailOpenBudget \?\? newEmailOpenBudget\(\)/)
   assert.match(run.slice(run.indexOf('const loop = '), run.indexOf('let result = await loop')), /emailOpenBudget,/, 'every loop of the turn gets it')
+})
+
+test('the real hand-over: Sonnet searches and hands over; Opus opens the one email and answers from its exact text', async () => {
+  const m = mailbox()
+  const budget = newEmailOpenBudget() // chatTurn's, for the person's message
+  const sonnetTools = tools.filter((t) => t.name !== 'open_email') // the read lane is never offered it
+  let opusSaw = ''
+  let sonnetTurn = 0, opusTurn = 0
+  const r = await readLaneTurn('read-eligible',
+    async () => ({ ...(await runLoop({ ...loopBase, tools: sonnetTools, execute: m.execute, emailOpenBudget: budget,
+      create: async () => (sonnetTurn++ === 0 ? reply([call('query_status', { what: 'email', subject: 'invoice' }, 's1')]) : done(OPUS_ESCALATE)),
+    })), model: 'claude-sonnet-5-5' }) as never,
+    async () => ({ ...(await runLoop({ ...loopBase, execute: m.execute, emailOpenBudget: budget,
+      create: async (req) => {
+        opusTurn++
+        if (opusTurn === 1) return reply([call('query_status', { what: 'email', subject: 'invoice' }, 's2')])
+        if (opusTurn === 2) {
+          const list = JSON.parse(String(results(req)[0].content)) as { emails: Array<{ id: string; subject: string }> }
+          return reply([call('open_email', { id: list.emails.find((e) => e.subject === 'Re: Invoice 1042')!.id }, 'o1')])
+        }
+        opusSaw = String(results(req)[0].content)
+        return done('Jane\'s email says: "Please invoice 6 Bean Bags, Petite, Red."')
+      },
+    })), model: 'claude-opus-5-5' }) as never)
+  assert.equal(budget.opened, true)
+  assert.deepEqual(m.reads, [m.a.id], 'one full read, and it was Opus\'s')
+  assert.match(opusSaw, /Please invoice 6 Bean Bags, Petite, Red\./)
+  assert.match(r.text, /"Please invoice 6 Bean Bags, Petite, Red\."/)
+})
+
+test('if the read lane is somehow asked to open an email, it cannot: not offered, and refused if called', async () => {
+  const m = mailbox()
+  let turn = 0
+  const r = await runLoop({ ...loopBase, tools: tools.filter((t) => t.name !== 'open_email'), execute: m.execute,
+    create: async () => (turn++ === 0 ? reply([call('open_email', { id: m.a.id }, 'x')]) : done('ok')),
+  })
+  assert.deepEqual(m.reads, [])
+  assert.equal(r.toolCalls[0].status, 'failed')
+  assert.match(String(r.toolCalls[0].error), /not available/)
 })
