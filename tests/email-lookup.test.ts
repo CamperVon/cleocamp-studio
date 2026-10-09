@@ -1,8 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import type Anthropic from '@anthropic-ai/sdk'
 import {
-  EMAIL_INDEX_MAX_CHARS, EMAIL_PREVIEW_CHARS, emailIdProblem, emailIndex, emailSearchWhere, openEmail, previewOf, type InboundRow,
+  EMAIL_INDEX_MAX_CHARS, EMAIL_PREVIEW_CHARS, emailIdProblem, emailIndex, emailSearchWhere, ONE_EMAIL_PER_TURN, openEmail, previewOf, type InboundRow,
 } from '../lib/email-lookup'
+import { runLoop } from '../lib/mouse/runner'
 import { resultChars, storedResult } from '../lib/mouse/outcomes'
 import { TOOLS } from '../lib/mouse/tools'
 import { TOOL_KINDS } from '../lib/mouse/tool-kinds'
@@ -148,4 +150,104 @@ test('a normal invoice look-up: search narrows to it, its id opens it, and the l
   const opened = await openEmail(list.emails[0].id, async (id) => store.get(id) ?? null)
   assert.ok(opened.found)
   if (opened.found) assert.match(opened.body, /6 Bean Bag Petite Red at wholesale, ship to Savannah/)
+})
+
+// ── One whole email per turn, kept by the tool loop (Codex, 9 Oct 2026) ──────
+
+const usage = { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } as Anthropic.Usage
+const call = (name: string, input: Record<string, unknown>, id: string): Anthropic.ToolUseBlock => ({ type: 'tool_use', caller: { type: 'direct' }, name, id, input })
+const reply = (content: Anthropic.ContentBlock[], stop_reason: Anthropic.StopReason = 'tool_use') => ({ content, stop_reason, usage })
+const done = (text: string) => reply([{ type: 'text', text, citations: null }], 'end_turn')
+const tools: Anthropic.Tool[] = ['query_status', 'open_email'].map((name) => ({ name, input_schema: { type: 'object' } }))
+const loopBase = { system: [], messages: [{ role: 'user' as const, content: 'What did the buyer order?' }], tools, model: 'normal' }
+
+/** The mail, and the email tools as the loop runs them, with every database read counted. */
+function mailbox() {
+  const a = row({ subject: 'Re: Invoice 1042', fromAddress: 'Buyer <buyer@example-shop.com>', text: 'Please invoice 6 Bean Bags, Petite, Red.' })
+  const b = row({ subject: 'Invoice 1042 (old)', text: 'Different invoice.' })
+  const store = new Map([a, b].map((r) => [r.id, r]))
+  const reads: string[] = []
+  const execute = async (name: string, input: unknown) => {
+    const i = input as Record<string, unknown>
+    if (name === 'query_status') return emailIndex([a, b], { since: '2026-10-01', subject: 'invoice' })
+    if (name === 'open_email') return openEmail(i.id, async (id) => { reads.push(id); return store.get(id) ?? null })
+    throw new Error(`unexpected ${name}`)
+  }
+  return { a, b, reads, execute }
+}
+const results = (req: { messages: Anthropic.MessageParam[] }) => req.messages.at(-1)!.content as Anthropic.ToolResultBlockParam[]
+
+test('two open_email calls in one response: one database read, the second refused', async () => {
+  const m = mailbox()
+  let turn = 0
+  let seen: Anthropic.ToolResultBlockParam[] = []
+  const r = await runLoop({ ...loopBase, execute: m.execute,
+    create: async (req) => {
+      if (turn++ === 0) return reply([call('open_email', { id: m.a.id }, 't1'), call('open_email', { id: m.b.id }, 't2')])
+      seen = results(req)
+      return done('6 Petite Red Bean Bags.')
+    },
+  })
+  assert.deepEqual(m.reads, [m.a.id], 'exactly one read, of the first email')
+  assert.equal(seen[0].is_error, false)
+  assert.match(String(seen[0].content), /Please invoice 6 Bean Bags, Petite, Red\./, 'the first email reaches the model in full')
+  assert.equal(seen[1].is_error, true)
+  assert.equal(seen[1].content, ONE_EMAIL_PER_TURN)
+  assert.equal(r.toolCalls[1].status, 'failed')
+  assert.equal(r.text, '6 Petite Red Bean Bags.')
+})
+
+test('a second open_email in a later round is refused too, without a read', async () => {
+  const m = mailbox()
+  let turn = 0
+  let second: Anthropic.ToolResultBlockParam[] = []
+  await runLoop({ ...loopBase, execute: m.execute,
+    create: async (req) => {
+      turn++
+      if (turn === 1) return reply([call('open_email', { id: m.a.id }, 't1')])
+      if (turn === 2) return reply([call('open_email', { id: m.b.id }, 't2')])
+      second = results(req)
+      return done('From the first email: 6 Petite Red.')
+    },
+  })
+  assert.deepEqual(m.reads, [m.a.id])
+  assert.equal(second[0].is_error, true)
+  assert.match(String(second[0].content), /already been opened this turn/)
+})
+
+test('search, then one open, then the answer: the normal flow is untouched, and searches stay free', async () => {
+  const m = mailbox()
+  let turn = 0
+  let afterSearch = '', afterOpen = ''
+  const r = await runLoop({ ...loopBase, execute: m.execute,
+    create: async (req) => {
+      turn++
+      if (turn === 1) return reply([call('query_status', { what: 'email', subject: 'invoice' }, 's1')])
+      if (turn === 2) {
+        afterSearch = String(results(req)[0].content)
+        const id = (JSON.parse(afterSearch) as { emails: Array<{ id: string; subject: string }> }).emails.find((e) => e.subject === 'Re: Invoice 1042')!.id
+        return reply([call('open_email', { id }, 'o1')])
+      }
+      if (turn === 3) { afterOpen = String(results(req)[0].content); return reply([call('query_status', { what: 'email', subject: 'invoice' }, 's2')]) }
+      return done('They ordered 6 Petite Red Bean Bags.')
+    },
+  })
+  assert.ok(!afterSearch.includes('Please invoice 6 Bean Bags, Petite, Red.') || afterSearch.length < 2_000, 'the search is the compact list')
+  assert.match(afterOpen, /Please invoice 6 Bean Bags, Petite, Red\./)
+  assert.deepEqual(m.reads, [m.a.id], 'one read; the search after it is still allowed')
+  assert.deepEqual(r.toolCalls.map((c) => [c.name, c.status]), [['query_status', 'succeeded'], ['open_email', 'succeeded'], ['query_status', 'succeeded']])
+  assert.equal(r.text, 'They ordered 6 Petite Red Bean Bags.')
+})
+
+test('a malformed id never reaches the database, so it does not use up the one open', async () => {
+  const m = mailbox()
+  let turn = 0
+  await runLoop({ ...loopBase, execute: m.execute,
+    create: async () => {
+      turn++
+      if (turn === 1) return reply([call('open_email', { id: 'latest' }, 'x1'), call('open_email', { id: m.a.id }, 'x2'), call('open_email', { id: m.b.id }, 'x3')])
+      return done('ok')
+    },
+  })
+  assert.deepEqual(m.reads, [m.a.id])
 })

@@ -155,19 +155,31 @@ export function emailIdProblem(id: unknown): string | null {
 }
 
 /**
+ * Said to the model when it asks for a second email in one turn. The limit is
+ * kept by code in the tool loop (lib/mouse/runner.ts), not left to the
+ * description: one open_email per run reaches the database (Codex, 9 Oct 2026).
+ */
+export const ONE_EMAIL_PER_TURN =
+  'One email has already been opened this turn, and only one may be. Nothing was read. Answer from that ' +
+  'email and the search list, or ask the person to say which email they mean so the next turn can open it.'
+
+/**
  * One email in full, by its exact id: the complete body (its HTML read as
  * text when it has no text part), and its attachments' names. Read-only.
  * `find` is the database read, passed in so this can be tested.
  */
 export async function openEmail(id: unknown, find: (id: string) => Promise<InboundRow | null>) {
+  // lookedUp says whether the database was read: the tool loop counts those
+  // against the one-email-per-turn limit; a malformed id does not use it up.
   const problem = emailIdProblem(id)
-  if (problem) return { found: false as const, reason: problem }
+  if (problem) return { found: false as const, lookedUp: false, reason: problem }
   const row = await find((id as string).trim())
-  if (!row) return { found: false as const, reason: `No email has the id ${(id as string).trim()}. Search again with query_status "email".` }
-  if (isCustomerMail(row.toAddress)) return { found: false as const, reason: 'That is customer mail to support@, which is read only on the Support page.' }
+  if (!row) return { found: false as const, lookedUp: true, reason: `No email has the id ${(id as string).trim()}. Search again with query_status "email".` }
+  if (isCustomerMail(row.toAddress)) return { found: false as const, lookedUp: true, reason: 'That is customer mail to support@, which is read only on the Support page.' }
   const b = bodyOf(row)
   return {
     found: true as const,
+    lookedUp: true,
     id: row.id,
     received: row.receivedAt.toISOString(),
     receivedLA: laWhen(row.receivedAt),
