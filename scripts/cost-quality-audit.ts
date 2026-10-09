@@ -119,7 +119,7 @@ async function main() {
   console.log(`- Latency per reply: median ${(median(lat) / 1000).toFixed(1)} s, p90 ${(pct(lat, 0.9) / 1000).toFixed(1)} s`)
   console.log(`- Cost per reply: median ${usd(median(cost))}, mean ${usd(cost.reduce((a, b) => a + b, 0) / Math.max(1, cost.length))}, total ${usd(cost.reduce((a, b) => a + b, 0))}`)
   const withOpen = opens.filter((n) => n > 0).length
-  console.log(`- open_record: ${opens.reduce((a, b) => a + b, 0)} calls in ${withOpen} of ${replies.length} replies (each call costs at least one more round); replies with one: median ${median(reqs.filter((_, i) => opens[i] > 0))} requests vs ${median(reqs.filter((_, i) => opens[i] === 0))} without`)
+  console.log(`- open_record: ${opens.reduce((a, b) => a + b, 0)} calls in ${withOpen} of ${replies.length} replies; replies with one: median ${median(reqs.filter((_, i) => opens[i] > 0))} requests vs ${median(reqs.filter((_, i) => opens[i] === 0))} without (it can share a round with other tool calls, so this is a comparison, not a cost per call)`)
   console.log(`- Top routing reasons: ${[...reasons.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => `${k} ${v}`).join(', ')}`)
 
   // Prefetch: not stored per reply, so reconstructed from the person's messages against today's records.
