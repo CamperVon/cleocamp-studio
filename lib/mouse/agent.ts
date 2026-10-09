@@ -10,6 +10,7 @@ import { refreshForecastsAndAlerts } from '@/lib/forecast'
 import { recordUsage } from '@/lib/mouse/usage'
 import { withNotesOnWhatChanged } from '@/lib/mouse/stale-notes'
 import { LOOK_UP_KIND, OPUS_ONLY_ANSWERS, READ_LANE_KIND } from '@/lib/mouse/tool-kinds'
+import { newEmailOpenBudget, type EmailOpenBudget } from '@/lib/email-lookup'
 
 /**
  * One brain.
@@ -342,11 +343,19 @@ export async function runAgent(opts: {
   chatThreadId?: string
   /** "read": the read lane (lib/mouse/route.ts). Look-up tools only, enforced three times over. */
   lane?: 'read'
+  /**
+   * The turn's one-whole-email allowance (lib/email-lookup.ts). chatTurn
+   * passes one for the person's message, shared with the Opus turn the read
+   * lane hands over to; any other run gets its own.
+   */
+  emailOpenBudget?: EmailOpenBudget
 }): Promise<AgentResult> {
   const client = new Anthropic({ maxRetries: 0 })
   const maxRounds = opts.maxRounds ?? (Number(process.env.MOUSE_MAX_REQUESTS) || 6)
   const allowed = toolsFor(opts.allowedTools, opts.chatThreadId, opts.lane)
   const tools = TOOL_DEFS.filter((t) => allowed.includes(t.name))
+  // One for the whole turn: the first loop, the record-it pass and the stock check share it.
+  const emailOpenBudget = opts.emailOpenBudget ?? newEmailOpenBudget()
 
   // ── Two caches, not one ──────────────────────────────────────────────────
   //
@@ -423,6 +432,7 @@ export async function runAgent(opts: {
       model: opts.model ?? CHAT_MODEL,
       effort: opts.effort ?? 'high', maxRequests: rounds,
       maxOutputTokens: Number(process.env.MOUSE_MAX_OUTPUT_TOKENS) || 24000,
+      emailOpenBudget,
     })
 
   let result = await loop(messages, maxRounds)
@@ -800,6 +810,9 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
     fromAPerson: true,
     practice,
     chatThreadId: threadId,
+    // One whole email for this message, whichever lane answers it: the read
+    // lane's attempt and the Opus turn it hands over to share it.
+    emailOpenBudget: newEmailOpenBudget(),
     // Consecutive user messages are joined by the API, so the record of a
     // reply's actions reads as the opening of the next person's message.
     history: history.flatMap((m): Anthropic.MessageParam[] => {

@@ -1,7 +1,7 @@
 import { isOutOfCredit, OUT_OF_CREDIT_TEXT } from './credit-text'
 import type Anthropic from '@anthropic-ai/sdk'
 import { classifyResult, completedWrites, diagnosticValue, resultChars, storedResult, type ToolOutcome } from './outcomes'
-import { ONE_EMAIL_PER_TURN } from '../email-lookup'
+import { newEmailOpenBudget, ONE_EMAIL_PER_TURN, type EmailOpenBudget } from '../email-lookup'
 
 export type RequestUsage = {
   model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number
@@ -55,6 +55,8 @@ export async function runLoop(opts: {
   maxOutputTokens?: number
   /** For tests: how to wait before retrying a request the server briefly refused. */
   sleep?: (ms: number) => Promise<void>
+  /** The turn's one-whole-email allowance, shared by every loop of the turn. Fresh if none is given. */
+  emailOpenBudget?: EmailOpenBudget
 }): Promise<LoopResult> {
   const started = Date.now()
   const maxRequests = Math.max(1, Math.min(12, Math.trunc(opts.maxRequests ?? 6)))
@@ -73,8 +75,8 @@ export async function runLoop(opts: {
   // with no answer above it. Asked again, it answered from memory and was
   // wrong. Everything said to the person is kept now, in order.
   const said: string[] = []
-  // Set once an open_email has read the database in this run (lib/email-lookup.ts).
-  let emailOpened = false
+  // Spent once an open_email has read the database this turn (lib/email-lookup.ts).
+  const emailBudget = opts.emailOpenBudget ?? newEmailOpenBudget()
   let stopReason: AgentUsage['stopReason'] = 'budget'
   let attemptedRequests = 0
   let providerError: string | null = null
@@ -175,12 +177,13 @@ export async function runLoop(opts: {
       let error: string | undefined
       try {
         if (!allowed.has(u.name)) throw new Error('That tool is not available in this context.')
-        // One whole email per run, kept here rather than trusted to the tool's
-        // description: a second open_email, in the same response or a later
-        // round, is refused before it runs (Codex, 9 Oct 2026).
-        if (u.name === 'open_email' && emailOpened) throw new Error(ONE_EMAIL_PER_TURN)
+        // One whole email per Mouse turn, kept here rather than trusted to the
+        // tool's description: a second open_email, in the same response, a
+        // later round, or another loop of the same turn, is refused before it
+        // runs (Codex, 9 Oct 2026).
+        if (u.name === 'open_email' && emailBudget.opened) throw new Error(ONE_EMAIL_PER_TURN)
         result = await opts.execute(u.name, u.input)
-        if (u.name === 'open_email' && (result as { lookedUp?: unknown } | null)?.lookedUp === true) emailOpened = true
+        if (u.name === 'open_email' && (result as { lookedUp?: unknown } | null)?.lookedUp === true) emailBudget.opened = true
       } catch (e) { error = String(diagnosticValue((e as Error).message)) }
       const classification = error ? { status: 'failed' as const, isWrite: false } : classifyResult(u.name, result)
       const content = error ?? toolResultContent(result)

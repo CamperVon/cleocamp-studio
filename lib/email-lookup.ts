@@ -155,6 +155,16 @@ export function emailIdProblem(id: unknown): string | null {
 }
 
 /**
+ * How many whole emails a turn may still open: one per complete Mouse turn
+ * (Codex, 9 Oct 2026). One object for the person's message, shared by every
+ * loop that answers it: the read lane's attempt and the Opus turn it hands
+ * over to, and the record-it and stock-check passes. A later message, and
+ * every scheduled or background run, gets a fresh one.
+ */
+export type EmailOpenBudget = { opened: boolean }
+export const newEmailOpenBudget = (): EmailOpenBudget => ({ opened: false })
+
+/**
  * Said to the model when it asks for a second email in one turn. The limit is
  * kept by code in the tool loop (lib/mouse/runner.ts), not left to the
  * description: one open_email per run reaches the database (Codex, 9 Oct 2026).

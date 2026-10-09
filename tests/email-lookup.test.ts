@@ -2,13 +2,13 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type Anthropic from '@anthropic-ai/sdk'
 import {
-  EMAIL_INDEX_MAX_CHARS, EMAIL_PREVIEW_CHARS, emailIdProblem, emailIndex, emailSearchWhere, ONE_EMAIL_PER_TURN, openEmail, previewOf, type InboundRow,
+  EMAIL_INDEX_MAX_CHARS, EMAIL_PREVIEW_CHARS, emailIdProblem, emailIndex, emailSearchWhere, newEmailOpenBudget, ONE_EMAIL_PER_TURN, openEmail, previewOf, type InboundRow,
 } from '../lib/email-lookup'
 import { runLoop } from '../lib/mouse/runner'
 import { resultChars, storedResult } from '../lib/mouse/outcomes'
 import { TOOLS } from '../lib/mouse/tools'
 import { TOOL_KINDS } from '../lib/mouse/tool-kinds'
-import { PROPOSAL_TOOLS } from '../lib/mouse/agent'
+import { OPUS_ESCALATE, PROPOSAL_TOOLS, readLaneTurn } from '../lib/mouse/agent'
 
 // Codex review, 9 Oct 2026: query_status "email" handed Mouse the 20 newest
 // emails in full, 110,000 to 159,000 characters a time, replayed every round.
@@ -250,4 +250,74 @@ test('a malformed id never reaches the database, so it does not use up the one o
     },
   })
   assert.deepEqual(m.reads, [m.a.id])
+})
+
+// ── One whole email per complete Mouse turn (Codex, 9 Oct 2026) ─────────────
+
+/** A loop that opens the given email and then answers, as one pass of a turn. */
+const passOpening = (m: ReturnType<typeof mailbox>, id: string, budget: ReturnType<typeof newEmailOpenBudget>, answer = 'ok') => {
+  let turn = 0
+  return runLoop({ ...loopBase, execute: m.execute, emailOpenBudget: budget,
+    create: async () => (turn++ === 0 ? reply([call('open_email', { id }, `o-${id}`)]) : done(answer)),
+  })
+}
+
+test('two loops of one turn sharing its budget read one email between them', async () => {
+  const m = mailbox()
+  const budget = newEmailOpenBudget()
+  const first = await passOpening(m, m.a.id, budget) // the turn's first loop
+  const second = await passOpening(m, m.b.id, budget) // its record-it or stock-check pass
+  assert.deepEqual(m.reads, [m.a.id])
+  assert.equal(first.toolCalls[0].status, 'succeeded')
+  assert.equal(second.toolCalls[0].status, 'failed')
+  assert.equal(second.toolCalls[0].error, ONE_EMAIL_PER_TURN)
+})
+
+test('the read lane hands over to Opus: Opus cannot open a second email in the same turn', async () => {
+  const m = mailbox()
+  const budget = newEmailOpenBudget() // what chatTurn makes for the person's message
+  let opusCalls: string[] = []
+  const r = await readLaneTurn('read-eligible',
+    async () => ({ ...(await passOpening(m, m.a.id, budget, OPUS_ESCALATE)), model: 'claude-sonnet-5-5' }) as never,
+    async () => {
+      const o = await passOpening(m, m.b.id, budget, 'Answered from the list.')
+      opusCalls = o.toolCalls.map((c) => `${c.name}:${c.status}`)
+      return { ...o, model: 'claude-opus-5-5' } as never
+    })
+  assert.deepEqual(m.reads, [m.a.id], 'the Sonnet attempt read one; the Opus turn read none')
+  assert.deepEqual(opusCalls, ['open_email:failed'])
+  assert.equal(r.text, 'Answered from the list.')
+})
+
+test('a later, separate turn gets a fresh allowance', async () => {
+  const m = mailbox()
+  await passOpening(m, m.a.id, newEmailOpenBudget())
+  await passOpening(m, m.b.id, newEmailOpenBudget())
+  assert.deepEqual(m.reads, [m.a.id, m.b.id])
+  // A loop given no budget (a scheduled run's) starts fresh too.
+  let turn = 0
+  await runLoop({ ...loopBase, execute: m.execute, create: async () => (turn++ === 0 ? reply([call('open_email', { id: m.a.id }, 'z')]) : done('ok')) })
+  assert.deepEqual(m.reads, [m.a.id, m.b.id, m.a.id])
+})
+
+test('a malformed id still never spends the turn\'s allowance', async () => {
+  const m = mailbox()
+  const budget = newEmailOpenBudget()
+  await passOpening(m, 'latest', budget)
+  assert.equal(budget.opened, false)
+  await passOpening(m, m.a.id, budget)
+  assert.deepEqual(m.reads, [m.a.id])
+  assert.equal(budget.opened, true)
+})
+
+test('chatTurn gives each message one budget, shared by both lanes, and runAgent shares it across its loops', async () => {
+  const { readFileSync } = await import('node:fs')
+  const src = readFileSync(new URL('../lib/mouse/agent.ts', import.meta.url), 'utf8')
+  const turn = src.slice(src.indexOf('export async function chatTurn'))
+  assert.match(turn.slice(0, turn.indexOf('const opus')), /const base[\s\S]*emailOpenBudget: newEmailOpenBudget\(\)/, 'made once per message, in base')
+  assert.match(turn, /const opus = \(\) => runAgent\(base\)/)
+  assert.match(turn, /runAgent\(\{ \.\.\.base, model: READ_LANE_MODEL/, 'the read lane spreads the same base')
+  const run = src.slice(src.indexOf('export async function runAgent'), src.indexOf('export async function chatTurn'))
+  assert.match(run, /const emailOpenBudget = opts\.emailOpenBudget \?\? newEmailOpenBudget\(\)/)
+  assert.match(run.slice(run.indexOf('const loop = '), run.indexOf('let result = await loop')), /emailOpenBudget,/, 'every loop of the turn gets it')
 })
