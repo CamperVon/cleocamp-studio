@@ -34,16 +34,17 @@ export const APP = 'https://admin.cleocamp.com'
 type Item = { on: Date; tag: string; sentence: string; href?: string }
 
 /**
- * A one-off line at the top of a given morning's edition, to say something
- * changed. Fixed text, keyed by the LA date it runs; it never repeats.
+ * The "New" block at the top of an edition: changes to the app no earlier
+ * edition announced (lib/whats-new.ts), then what came in from Shopify since
+ * the last edition went out (lib/shopify-catchup.ts). Brandon, 8 Oct 2026:
+ * "alert the team of this (and all new updates continually) in the daily
+ * cheese". Fixed sentences, like everything here. Pure.
  */
-const NEWS: Array<{ on: string; text: string }> = [
-  { on: '2026-10-08', text: 'New: every line below is now a link. Tap one to open it in the app and update it there.' },
-]
-
-/** The news line for a morning's edition, if any. `day` is the LA date, YYYY-MM-DD. Pure. */
-export function newsFor(day: string): string | null {
-  return NEWS.find((n) => n.on === day)?.text ?? null
+export function newLines(app: Array<{ text: string; path?: string }>, fromShopify: string[]): Array<{ text: string; href?: string }> {
+  return [
+    ...app.map((u) => ({ text: u.text, ...(u.path ? { href: `${APP}${u.path}` } : {}) })),
+    ...fromShopify.map((t) => ({ text: `From Shopify: ${t}`, href: `${APP}/products` })),
+  ]
 }
 
 // Cleo, 17 Sept 2026: "Overdue is so harsh. Let's only make something
@@ -253,7 +254,15 @@ export function sentenceHtml(i: Item): string {
 
 export async function composeDailyCheese(): Promise<{ subject: string; text: string; html: string }> {
   const today = laMidnight(0)
-  const news = newsFor(today.toISOString().slice(0, 10))
+  // Earlier editions, to announce each change once and to say what is new since the last.
+  const earlier = await db.sentEmail.findMany({
+    where: { sentBy: 'daily-cheese cron', createdAt: { lt: today } },
+    orderBy: { createdAt: 'desc' }, take: 30, select: { body: true, createdAt: true },
+  })
+  const { WHATS_NEW, unannounced } = await import('@/lib/whats-new')
+  const sinceLast = earlier[0]?.createdAt ?? new Date(Date.now() - 3 * DAY)
+  const arrived = await import('@/lib/shopify-catchup').then((m) => m.arrivedFromShopify(sinceLast)).catch(() => [] as string[])
+  const news = newLines(unannounced(WHATS_NEW, earlier.map((e) => e.body)), arrived)
   const items = await buildDailyCheeseItems()
   // Who ordered since the last Cheese and is notable, a repeat buyer or a big
   // one (Brandon, 30 Sept 2026). Fixed sentences, like everything here. A
@@ -275,7 +284,7 @@ export async function composeDailyCheese(): Promise<{ subject: string; text: str
     '',
     `"${quote.text}" — ${quote.who}`,
     '',
-    ...(news ? [news, ''] : []),
+    ...(news.length ? ['New:', ...news.map((n) => `- ${n.text}${n.href ? `\n  ${n.href}` : ''}`), ''] : []),
     // Customers first, above everything else. Brandon, 5 Oct 2026: "put the
     // customers alert at top of daily cheese from now on."
     ...(customers.length ? ['Customers:', ...customers.map((c) => `- ${c}`), ''] : []),
@@ -331,7 +340,8 @@ export async function composeDailyCheese(): Promise<{ subject: string; text: str
       <div class="name">The Daily Cheese</div>
       <div class="quote">&ldquo;${escapeHtml(quote.text)}&rdquo;<cite>${escapeHtml(quote.who)}</cite></div>
     </div>
-    ${news ? `<div style="border-radius:10px;background:#EAF1EC;border:1px solid #C9DCCF;margin-bottom:20px;padding:12px 14px;color:#2F4A39;font-size:13.5px;line-height:1.5;">${escapeHtml(news)}</div>` : ''}
+    ${news.length ? `<div class="eyebrow">New</div>${news.map((n) => `
+        <div style="border-radius:10px;background:#EAF1EC;border:1px solid #C9DCCF;margin-top:8px;padding:12px 14px;color:#2F4A39;font-size:13.5px;line-height:1.5;">${n.href ? `<a href="${escapeHtml(n.href).replace(/"/g, '&quot;')}" style="color:#2F4A39;text-decoration:underline;">${escapeHtml(n.text)}</a>` : escapeHtml(n.text)}</div>`).join('')}<div style="height:20px;"></div>` : ''}
     ${customers.length ? `<div class="eyebrow">Customers</div>${customers.map((c) => `
         <div style="border-radius:10px;background:#F4F1EA;border:1px solid #E2DCCC;margin-top:8px;padding:12px 14px;color:#3A342A;font-size:13.5px;line-height:1.5;">${escapeHtml(c)}</div>`).join('')}` : ''}
     <div class="eyebrow"${customers.length ? ' style="margin-top:22px;"' : ''}>${items.length ? 'Needs attention today' : 'All clear'}</div>

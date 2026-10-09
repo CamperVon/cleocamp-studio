@@ -35,6 +35,13 @@ changes, and features only this brand would use (stylist pulls, its own
 emails). Say what problem it solves, the commits and files, and whether it
 needs Shopify or email.
 
+**Tell the team what changed, in `lib/whats-new.ts`,** in the same commit,
+whenever you ship something Brandon, Cleo or Jane will see or use (Brandon,
+8 Oct 2026: "alert the team of this (and all new updates continually) in the
+daily cheese"). One or two plain sentences in their words, with the page it
+is on. The Daily Cheese carries each line once, on the first morning after it
+is live. Code-only changes nobody sees do not go there.
+
 **If `HANDOFF.md` exists in this repo, read it now, before doing anything
 else.** It is written by whoever worked here last: where things stand, what is
 in flight, what has already been settled so it is not argued again, and the

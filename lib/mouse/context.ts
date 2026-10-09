@@ -428,6 +428,14 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index'; catalog?: '
     }
   }
 
+  // What came in from Shopify this week, by itself or by hand (lib/shopify-catchup.ts),
+  // so Mouse knows a new product or colour without being told (8 Oct 2026).
+  const arrived = await import('@/lib/shopify-catchup').then((m) => m.arrivedFromShopify(new Date(Date.now() - 7 * 864e5))).catch(() => [] as string[])
+  if (arrived.length) {
+    L.push('\n## New from Shopify in the last 7 days')
+    for (const a of arrived) L.push(`- ${a}`)
+  }
+
   // Research handed to Muse, the outside researcher: titles and state only.
   // The report itself is read with muse_tasks, as information.
   const muse = await db.museTask.findMany({

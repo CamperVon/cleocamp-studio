@@ -1,6 +1,7 @@
 'use client'
 import { useState, useTransition, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import { Thumb } from '@/app/ui/primitives'
 import { addPull, addRequest, addStylist, addStylistNote, changeStylistStock, closePull, editStylistNote, pingAbout, removeStylist, removeStylistNote, returnPieces, sendRequest, setRequestStatus, updateStylist, takeShortFromSales } from './actions'
 
 type Res = { ok: true; message?: string } | { ok: false; error: string }
@@ -359,14 +360,14 @@ export function PullCloseButtons({ pullId, closedAs }: { pullId: string; closedA
 }
 
 /** One piece in the stylist inventory: its number, editable, with Remove for none left. */
-export function StylistStockRow({ id, label, n }: { id: string; label: string; n: number }) {
+export function StylistStockRow({ id, label, n, image }: { id: string; label: string; n: number; image?: string | null }) {
   const [qty, setQty] = useState(String(n))
   const { pending, go, note } = useAction()
   const changed = qty.trim() !== '' && Number(qty) !== n
   return (
     <li className="flex flex-col gap-1 px-4 py-2 text-sm sm:px-5">
       <span className="flex items-center justify-between gap-3">
-        <span className="min-w-0">{label}</span>
+        <span className="flex min-w-0 items-center gap-2"><Thumb src={image} />{label}</span>
         <span className="flex shrink-0 items-center gap-1.5">
           <input type="number" min={0} value={qty} onChange={(e) => setQty(e.target.value)} className={`${input} w-16 py-1`} aria-label={`How many ${label}`} />
           {changed ? <button type="button" disabled={pending} className={small} onClick={() => go(() => changeStylistStock({ productVariantId: id, qty: Number(qty), action: 'count' }))}>{pending ? '…' : 'Save'}</button> : null}

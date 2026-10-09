@@ -224,7 +224,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** Shopify (order search), the support inbox.
 - **Files:** `lib/support/draft.ts`, `lib/support/reply.ts`, `tests/support-reply.test.ts`
 
-### The fast look-up lane can never answer worse than the full assistant · (this commit)
+### The fast look-up lane can never answer worse than the full assistant · `5e4bf85`
 - **Problem:** plain look-up questions go to a cheaper model that holds only look-up tools. If a look-up tool was added to the assistant but not to that lane, the lane could answer "there is no tool for that" when the full assistant could have answered. The lane's rules handed over for changes, files and doubt, but not for a missing tool. The lists of which tools look things up (the lane's, practice mode's, and the one that says a call was not a write) were kept by hand in three places and had already drifted.
 - **Change:**
   - `lib/mouse/tool-kinds.ts` gives every tool one kind: in the lane; a look-up only the full model holds; a tool that changes things but also answers questions (a "list" action, or it settles records as it reads); or changes only. The lane's tool set, practice mode's set and the write check are all read from it.
@@ -234,11 +234,28 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/tool-kinds.ts`, `lib/mouse/agent.ts` (`READ_LANE_TOOLS`, `READ_LANE_LEAVES_TO_OPUS`, `READ_LANE_RULES`, `whyOpus`, `PRACTICE_TOOLS`), `lib/mouse/outcomes.ts`, `lib/mouse/route.ts` (`NEEDS_OPUS_TOOL`), `tests/tool-kinds.test.ts`, `tests/read-lane.test.ts`
 - **Needs:** nothing.
 
-### What went out on labels made on a day · (this commit)
+### What went out on labels made on a day · `5e4bf85`, `5c55947`, `0451448`
 - **Problem:** asked how many of one item, by size, were in the orders labelled on a given day, the assistant could not answer. Sales analytics has order dates, not label dates, and no tool listed orders by when their label was made.
 - **Change:** a read-only `shipped_orders` tool. It takes a day or a range (Los Angeles), and optionally an exact product title and a colour or size. It returns quantities per variant with the order numbers. It reuses the shipped-packages reader the packing count already had, which now also carries the variant name. Voided labels and wholesale orders are left out. Each look-up reads every order updated since its first day, so two limits are checked before anything reaches the shop. A look-up covers at most 31 days, and a longer range is refused with the parts to ask in. It also starts no more than 90 days back. That second limit is temporary: older label history needs fulfilments kept in the app by a sync or webhook. It is deliberately not done with an upper `updated_at` bound, which would drop an order edited after its label was made. It is available in chat and in the read-only fast lane.
 - **Files:** `lib/shipped-report.ts` (`tallyShipped`), `lib/integrations/shopify.ts` (variant on `ShippedOrder`), `lib/mouse/tools.ts`, `tests/shipped-orders.test.ts`
 - **Needs:** Shopify (read_orders).
+### New products and colours on the shop come into the app by themselves · `c7085de`
+- **Problem:** two new colours of an existing item went on sale in the shop as their own listings. The app never heard of them, so when a team member asked the assistant to move one to a separate stock list, it had nothing to move and asked a question instead. The nightly sync had seen the listings, but it only counted them.
+- **Change:** each night, after the sync, every listing that is for sale in the shop and not in the app is brought in (`catchUpShopify`):
+  - A new size or colour on a listing already in the app joins its product.
+  - A listing whose sister colour is in the app comes in as its own product on the sister's style. Sisters are read from the shop's `custom.sister_colours` product metafield.
+  - Anything else comes in as a new product, unless the app has something with a similar name. In that case a question is raised, once, naming the lookalikes. The assistant never guesses.
+  - Drafts wait until they go on sale, and archived listings are left alone.
+  - It only reads the shop.
+- What arrived in the last 7 days is in the assistant's context (`arrivedFromShopify`), and the daily email lists what arrived since the last one.
+- **Files:** `lib/shopify-catchup.ts`, `lib/integrations/shopify-sync.ts` (`unknownListings`), `app/api/cron/nightly/route.ts`, `lib/mouse/context.ts`, `tests/shopify-catchup.test.ts`
+- **Needs:** Shopify (read_products); the `custom.sister_colours` metafield is optional.
+
+### The daily email announces every app update once · `c7085de`
+- **Problem:** changes the team would see went unannounced, or ran as a one-off line keyed to a date. If the email did not go out that day, or the change went live later than planned, the line was lost or came too early.
+- **Change:** `lib/whats-new.ts` holds the team-facing updates, a sentence or two each, with the page they are on. Each edition of the daily email carries every line that no earlier edition's stored text contains, so an update is announced once, on the first morning after it is live. Below that it lists what came in from the shop since the last edition. A working rule in CLAUDE.md asks whoever ships a visible change to add its line in the same commit.
+- **Files:** `lib/whats-new.ts` (`unannounced`), `lib/mouse/daily-cheese.ts` (`newLines`), `tests/daily-cheese-links.test.ts`, `CLAUDE.md`
+- **Needs:** email.
 
 ### A size or colour swap is made in Shopify before the reply says so · `b719ad5`
 - **Problem:** a customer asked to swap an unshipped item to another size, the team said yes, and the drafted reply promised it. The only button under it changed the address and sent the reply. The order still had the old size.
