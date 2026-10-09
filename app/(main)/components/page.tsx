@@ -1,6 +1,7 @@
 import { filesFor } from '@/lib/files'
 import { db } from '@/lib/db'
 import { Page } from '@/app/ui/primitives'
+import { PageChat } from '@/app/ui/page-chat'
 import { CollapsibleCard } from '@/app/ui/collapsible-card'
 import { ComponentRow, RetiredComponentRow, type StockDisplay } from '@/app/ui/component-row'
 import { ProductSection } from '@/app/ui/product-section'
@@ -189,6 +190,8 @@ export default async function Components() {
       title="Components"
       lede="Everything that goes into a product, plus the packaging that goes out with it. Open a row to fill in what's missing, rename it, or say which products it belongs to."
     >
+      {/* At the top, as on Products (Brandon, 9 Oct 2026). */}
+      <PageChat page="Components" placeholder="A note for Mouse…" />
       <AddComponentForm vendors={vendors} products={products} />
 
       {/* Folds closed like the other lists (Brandon, 1 Oct 2026). */}

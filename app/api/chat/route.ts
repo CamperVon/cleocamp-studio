@@ -17,7 +17,7 @@ type InAttachment = { filename: string; mediaType: string; base64: string }
 const ALLOWED_TYPES = /^(application\/pdf|image\/(jpeg|png|webp))$/
 const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024
 const MAX_ATTACHMENTS = 3
-const PAGES = new Set(['Products', 'ToDo', 'Stylists', 'Wholesale'])
+const PAGES = new Set(['Products', 'Components', 'ToDo', 'Stylists', 'Wholesale'])
 
 // Lets the client pick a conversation back up after navigating away or
 // refreshing — every turn is already persisted, the UI just never reloaded

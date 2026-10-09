@@ -5,7 +5,7 @@ import { awaitReply, renderMouseText } from './chat'
 import { MouseFace } from './mouse-face'
 
 /** The pages that carry a box, as the server knows them (app/api/chat/route.ts). */
-export type ChatPage = 'Products' | 'ToDo' | 'Stylists' | 'Wholesale'
+export type ChatPage = 'Products' | 'Components' | 'ToDo' | 'Stylists' | 'Wholesale'
 
 type Reply = { text: string; writes?: Array<{ summary: string }> }
 

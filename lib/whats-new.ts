@@ -18,6 +18,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-09',
     text: 'Anything new on Shopify now comes into the app by itself overnight: a new size or colour joins its product, and a new colour listing joins its style (as the Black and White Boy Belts do). If it looks like something already here, Mouse asks once instead of guessing. The Daily Cheese lists what came in.',
   },
+  {
+    on: '2026-10-09', path: '/components',
+    text: 'Components page: a box at the top to tell Mouse something, the same as on Products.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */
