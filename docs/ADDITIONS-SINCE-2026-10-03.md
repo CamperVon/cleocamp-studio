@@ -224,7 +224,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** Shopify (order search), the support inbox.
 - **Files:** `lib/support/draft.ts`, `lib/support/reply.ts`, `tests/support-reply.test.ts`
 
-### A read-only cost-and-quality audit of the assistant's model use · (this commit)
+### A read-only cost-and-quality audit of the assistant's model use · `87e9460`, `02e72e8`
 - **Problem:** there was no single way to see what the assistant costs, where the money goes, and whether a change helped. A cost figure was also easy to get wrong: Sonnet 5.5 and Opus 5.5 charge 0.05x input for cache reads, not the usual 0.1x. Stored tool results are cut for the record, so their length understates what the model actually read.
 - **Change:** `scripts/cost-quality-audit.ts` reads the usage records and chat replies, writes nothing and calls no model. It reports:
   - cost and tokens by source and model, for a window against a baseline, and per Los Angeles day to set beside the provider's console;
@@ -233,6 +233,23 @@ It holds code changes only: no customer, order or stock data, and nothing that o
   - every request of every reply that used the email look-up. Each row gives the raw token counts and the prompt's growth since the previous request, and marks where a second pass started. The email result is rebuilt in full from the same query, bounded at the reply's time.
 - **Files:** `scripts/cost-quality-audit.ts`
 - **Needs:** nothing.
+### New products and colours on the shop come into the app by themselves · `c7085de`
+- **Problem:** two new colours of an existing item went on sale in the shop as their own listings. The app never heard of them, so when a team member asked the assistant to move one to a separate stock list, it had nothing to move and asked a question instead. The nightly sync had seen the listings, but it only counted them.
+- **Change:** each night, after the sync, every listing that is for sale in the shop and not in the app is brought in (`catchUpShopify`):
+  - A new size or colour on a listing already in the app joins its product.
+  - A listing whose sister colour is in the app comes in as its own product on the sister's style. Sisters are read from the shop's `custom.sister_colours` product metafield.
+  - Anything else comes in as a new product, unless the app has something with a similar name. In that case a question is raised, once, naming the lookalikes. The assistant never guesses.
+  - Drafts wait until they go on sale, and archived listings are left alone.
+  - It only reads the shop.
+- What arrived in the last 7 days is in the assistant's context (`arrivedFromShopify`), and the daily email lists what arrived since the last one.
+- **Files:** `lib/shopify-catchup.ts`, `lib/integrations/shopify-sync.ts` (`unknownListings`), `app/api/cron/nightly/route.ts`, `lib/mouse/context.ts`, `tests/shopify-catchup.test.ts`
+- **Needs:** Shopify (read_products); the `custom.sister_colours` metafield is optional.
+
+### The daily email announces every app update once · `c7085de`
+- **Problem:** changes the team would see went unannounced, or ran as a one-off line keyed to a date. If the email did not go out that day, or the change went live later than planned, the line was lost or came too early.
+- **Change:** `lib/whats-new.ts` holds the team-facing updates, a sentence or two each, with the page they are on. Each edition of the daily email carries every line that no earlier edition's stored text contains, so an update is announced once, on the first morning after it is live. Below that it lists what came in from the shop since the last edition. A working rule in CLAUDE.md asks whoever ships a visible change to add its line in the same commit.
+- **Files:** `lib/whats-new.ts` (`unannounced`), `lib/mouse/daily-cheese.ts` (`newLines`), `tests/daily-cheese-links.test.ts`, `CLAUDE.md`
+- **Needs:** email.
 
 ### A size or colour swap is made in Shopify before the reply says so · `b719ad5`
 - **Problem:** a customer asked to swap an unshipped item to another size, the team said yes, and the drafted reply promised it. The only button under it changed the address and sent the reply. The order still had the old size.

@@ -38,6 +38,8 @@ export type ShopifySyncResult = {
   location: string | null
   variantsUpdated: number
   variantsUnknown: string[]
+  /** The Shopify listings behind variantsUnknown, one each, for lib/shopify-catchup.ts. */
+  unknownListings: Array<{ shopifyProductId: string; title: string; status: string }>
   salesWritten: number
   salesSkipped: number
   unitsSold: number
@@ -68,6 +70,7 @@ export async function syncShopify(db: PrismaClient, sinceISO: string): Promise<S
   const variants = await fetchAllVariants()
   let variantsUpdated = 0
   const variantsUnknown: string[] = []
+  const unknownListings = new Map<string, { shopifyProductId: string; title: string; status: string }>()
 
   // onHandQty must add up from the ledger (CLAUDE.md §3). Until 25 Sept 2026
   // this sync overwrote it with Shopify's number and wrote no event, so every
@@ -102,6 +105,8 @@ export async function syncShopify(db: PrismaClient, sinceISO: string): Promise<S
       const why = v.product.status === 'DRAFT' ? ' [draft — ignored]'
         : v.product.status === 'ARCHIVED' ? ' [archived — ignored]' : ''
       variantsUnknown.push(`${v.product.title} / ${v.title}${why}`)
+      const pid = v.product.id.split('/').pop()!
+      if (!unknownListings.has(pid)) unknownListings.set(pid, { shopifyProductId: pid, title: v.product.title, status: v.product.status })
       continue
     }
     const update = db.productVariant.update({
@@ -192,7 +197,7 @@ export async function syncShopify(db: PrismaClient, sinceISO: string): Promise<S
   })
 
   return {
-    location, variantsUpdated, variantsUnknown,
+    location, variantsUpdated, variantsUnknown, unknownListings: [...unknownListings.values()],
     salesWritten, salesSkipped, unitsSold,
     onHandCounted, onHandTotal,
   }

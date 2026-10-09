@@ -87,10 +87,12 @@ export async function GET(req: NextRequest) {
   // that would keep growing and this needs to stay well inside the Hobby
   // cron's 300s ceiling. A day with no rows here reads as unknown downstream,
   // never as zero sold — a gap is not the same fact as a quiet day.
+  let unknownListings: Array<{ shopifyProductId: string; title: string; status: string }> = []
   await step('shopify', async () => {
     if (!shopifyConfigured()) return { skipped: 'not connected' }
     const since = new Date(Date.now() - 21 * 864e5).toISOString().slice(0, 10)
     const r = await syncShopify(db, since)
+    unknownListings = r.unknownListings
     return {
       variantsUpdated: r.variantsUpdated, variantsUnknown: r.variantsUnknown.length,
       salesWritten: r.salesWritten, unitsSold: r.unitsSold,
@@ -106,6 +108,17 @@ export async function GET(req: NextRequest) {
     const { deductPacking } = await import('@/lib/packing')
     const r = await deductPacking({ dryRun })
     return { days: r.days.length ? `${r.days[0]}..${r.days.at(-1)}` : 'none', packages: r.orders, entries: r.written.length, ...(r.skipped ? { skipped: r.skipped } : {}) }
+  })
+
+  // Anything for sale on Shopify that the app does not have comes in by
+  // itself: a new size or colour joins its product, a new colour listing
+  // joins its sister's style, a lookalike is asked about once (Brandon,
+  // 8 Oct 2026: "mouse should always know when new products / variants are
+  // added or in shopify"). Before the line sheet, so it joins the same night.
+  await step('shopifyCatchUp', async () => {
+    if (!shopifyConfigured() || !unknownListings.length) return { skipped: unknownListings.length ? 'not connected' : 'nothing new' }
+    const { catchUpShopify } = await import('@/lib/shopify-catchup')
+    return catchUpShopify(unknownListings, { dryRun })
   })
 
   // Anything that went on sale in Shopify joins the wholesale line sheet,
