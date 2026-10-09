@@ -61,7 +61,13 @@ export default async function Stylists() {
   const inv = await stylistStock()
   const labels = await variantLabels([...new Set([...inv.keys(), ...asked.flatMap(({ r }) => piecesOf(r.pieces).map((p) => p.productVariantId))])])
   const statusOf = (r: { pieces: unknown }) => pieceStatus(piecesOf(r.pieces), inv, labels)
-  const invRows = [...inv.entries()].map(([id, n]) => ({ id, n, label: labels.get(id)?.label ?? id })).sort((a, b) => a.label.localeCompare(b.label))
+  // Ready to pull: what the stylist inventory holds now. A piece out on a
+  // pull has already left it, so nothing here is promised elsewhere.
+  const invRows = [...inv.entries()].filter(([, n]) => n > 0)
+    .map(([id, n]) => ({ id, n, label: labels.get(id)?.label ?? id, image: labels.get(id)?.image ?? null }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+  const readyCount = invRows.reduce((n, x) => n + x.n, 0)
+  const readyLine = invRows.map((x) => `${x.n > 1 ? `${x.n} × ` : ''}${x.label}`).join(' · ')
   const piecesOut = withPulls.reduce((n, s) => n + s.out, 0)
 
   const row = (s: (typeof all)[number]) => {
@@ -232,12 +238,21 @@ export default async function Stylists() {
         ) : null}
         {!waiting.length && !asked.length ? <Empty>No requests open. Forward a stylist&apos;s email to mouse@send.cleocamp.com, or tell Mouse above.</Empty> : null}
       </Card>
-      <Card title={`Out on pulls${withPulls.length ? ` (${piecesOut} piece${piecesOut === 1 ? '' : 's'})` : ''}`}>
-        {withPulls.length ? <ul className="divide-y divide-line">{withPulls.map(row)}</ul> : <Empty>Nothing out with a stylist.</Empty>}
-      </Card>
-      {/* The stylist inventory, apart from sales stock (Brandon, 5 Oct 2026). Folded, like every list. */}
+      {/* The stylist inventory, apart from sales stock (Brandon, 5 Oct 2026),
+          as what is ready to pull, right under Requests so it is the next thing
+          seen (Brandon, 8 Oct 2026: "have a Stylist Inventory section where one
+          can see everything ready to be pulled"). Folded like every list, with
+          the pieces themselves on the closed line. */}
       <Card>
-        <Fold summary={<span className="flex items-center justify-between gap-3"><span className="font-serif text-[17px] italic text-accent">Stylist inventory</span><span className="text-xs text-muted">{invRows.length ? `${invRows.reduce((n, x) => n + x.n, 0)} pieces` : 'empty: add pieces, or tell Mouse'}</span></span>}>
+        <Fold summary={
+          <span className="flex flex-col gap-0.5">
+            <span className="flex items-center justify-between gap-3">
+              <span className="font-serif text-[17px] italic text-accent">Stylist inventory: ready to pull</span>
+              <span className="shrink-0 text-xs text-muted">{readyCount ? `${readyCount} piece${readyCount === 1 ? '' : 's'}` : 'empty'}</span>
+            </span>
+            {readyCount ? <span className="line-clamp-2 text-xs text-muted">{readyLine}</span> : null}
+          </span>
+        }>
           {/* By hand as well as through Mouse (Brandon, 5 Oct 2026). */}
           <div className="border-t border-line">
             <Fold summary={<span className="text-sm font-medium">+ Add pieces</span>}>
@@ -246,10 +261,13 @@ export default async function Stylists() {
           </div>
           {invRows.length ? (
             <ul className="divide-y divide-line border-t border-line">
-              {invRows.map((x) => <StylistStockRow key={x.id} id={x.id} label={x.label} n={x.n} />)}
+              {invRows.map((x) => <StylistStockRow key={x.id} id={x.id} label={x.label} n={x.n} image={x.image} />)}
             </ul>
           ) : <p className="border-t border-line px-4 py-3 text-xs text-muted sm:px-5">Pieces kept for stylists, apart from sales stock and not in Shopify. Add pieces above, or tell Mouse in the box at the top, e.g. &ldquo;the stylist inventory has 2 Cleo Tee, Black, Size 1&rdquo;. A pull takes from here first, and Mouse asks before taking anything from sales stock.</p>}
         </Fold>
+      </Card>
+      <Card title={`Out on pulls${withPulls.length ? ` (${piecesOut} piece${piecesOut === 1 ? '' : 's'})` : ''}`}>
+        {withPulls.length ? <ul className="divide-y divide-line">{withPulls.map(row)}</ul> : <Empty>Nothing out with a stylist.</Empty>}
       </Card>
       {/* Folded by default, like every list here (Brandon, 30 Sept 2026). */}
       <Card>

@@ -224,6 +224,24 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Needs:** Shopify (order search), the support inbox.
 - **Files:** `lib/support/draft.ts`, `lib/support/reply.ts`, `tests/support-reply.test.ts`
 
+### New products and colours on the shop come into the app by themselves · (this commit)
+- **Problem:** two new colours of an existing item went on sale in the shop as their own listings. The app never heard of them, so when a team member asked the assistant to move one to a separate stock list, it had nothing to move and asked a question instead. The nightly sync had seen the listings, but it only counted them.
+- **Change:** each night, after the sync, every listing that is for sale in the shop and not in the app is brought in (`catchUpShopify`):
+  - A new size or colour on a listing already in the app joins its product.
+  - A listing whose sister colour is in the app comes in as its own product on the sister's style. Sisters are read from the shop's `custom.sister_colours` product metafield.
+  - Anything else comes in as a new product, unless the app has something with a similar name. In that case a question is raised, once, naming the lookalikes. The assistant never guesses.
+  - Drafts wait until they go on sale, and archived listings are left alone.
+  - It only reads the shop.
+- What arrived in the last 7 days is in the assistant's context (`arrivedFromShopify`), and the daily email lists what arrived since the last one.
+- **Files:** `lib/shopify-catchup.ts`, `lib/integrations/shopify-sync.ts` (`unknownListings`), `app/api/cron/nightly/route.ts`, `lib/mouse/context.ts`, `tests/shopify-catchup.test.ts`
+- **Needs:** Shopify (read_products); the `custom.sister_colours` metafield is optional.
+
+### The daily email announces every app update once · (this commit)
+- **Problem:** changes the team would see went unannounced, or ran as a one-off line keyed to a date. If the email did not go out that day, or the change went live later than planned, the line was lost or came too early.
+- **Change:** `lib/whats-new.ts` holds the team-facing updates, a sentence or two each, with the page they are on. Each edition of the daily email carries every line that no earlier edition's stored text contains, so an update is announced once, on the first morning after it is live. Below that it lists what came in from the shop since the last edition. A working rule in CLAUDE.md asks whoever ships a visible change to add its line in the same commit.
+- **Files:** `lib/whats-new.ts` (`unannounced`), `lib/mouse/daily-cheese.ts` (`newLines`), `tests/daily-cheese-links.test.ts`, `CLAUDE.md`
+- **Needs:** email.
+
 ### A size or colour swap is made in Shopify before the reply says so · `b719ad5`
 - **Problem:** a customer asked to swap an unshipped item to another size, the team said yes, and the drafted reply promised it. The only button under it changed the address and sent the reply. The order still had the old size.
 - **Change:**
