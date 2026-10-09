@@ -239,6 +239,15 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Change:** a read-only `shipped_orders` tool. It takes a day or a range (Los Angeles), and optionally an exact product title and a colour or size. It returns quantities per variant with the order numbers. It reuses the shipped-packages reader the packing count already had, which now also carries the variant name. Voided labels and wholesale orders are left out. Each look-up reads every order updated since its first day, so two limits are checked before anything reaches the shop. A look-up covers at most 31 days, and a longer range is refused with the parts to ask in. It also starts no more than 90 days back. That second limit is temporary: older label history needs fulfilments kept in the app by a sync or webhook. It is deliberately not done with an upper `updated_at` bound, which would drop an order edited after its label was made. It is available in chat and in the read-only fast lane.
 - **Files:** `lib/shipped-report.ts` (`tallyShipped`), `lib/integrations/shopify.ts` (variant on `ShippedOrder`), `lib/mouse/tools.ts`, `tests/shipped-orders.test.ts`
 - **Needs:** Shopify (read_orders).
+### A read-only cost-and-quality audit of the assistant's model use · `87e9460`, `02e72e8`
+- **Problem:** there was no single way to see what the assistant costs, where the money goes, and whether a change helped. A cost figure was also easy to get wrong: Sonnet 5.5 and Opus 5.5 charge 0.05x input for cache reads, not the usual 0.1x. Stored tool results are cut for the record, so their length understates what the model actually read.
+- **Change:** `scripts/cost-quality-audit.ts` reads the usage records and chat replies, writes nothing and calls no model. It reports:
+  - cost and tokens by source and model, for a window against a baseline, and per Los Angeles day to set beside the provider's console;
+  - the fast lane's attempts and hand-overs, stop reasons, requests, latency and cost per reply;
+  - catalogue look-ups and prefetch hits;
+  - every request of every reply that used the email look-up. Each row gives the raw token counts and the prompt's growth since the previous request, and marks where a second pass started. The email result is rebuilt in full from the same query, bounded at the reply's time.
+- **Files:** `scripts/cost-quality-audit.ts`
+- **Needs:** nothing.
 ### New products and colours on the shop come into the app by themselves · `c7085de`
 - **Problem:** two new colours of an existing item went on sale in the shop as their own listings. The app never heard of them, so when a team member asked the assistant to move one to a separate stock list, it had nothing to move and asked a question instead. The nightly sync had seen the listings, but it only counted them.
 - **Change:** each night, after the sync, every listing that is for sale in the shop and not in the app is brought in (`catchUpShopify`):
