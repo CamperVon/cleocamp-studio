@@ -71,6 +71,7 @@ export type AgentResult = {
  */
 export const PROPOSAL_TOOLS = [
   'query_status',
+  'open_email',
   'check_sent_mail',
   'shopify_analytics',
   'raise_question',
@@ -448,7 +449,7 @@ export async function runAgent(opts: {
     !opts.practice && opts.lane !== 'read' &&
     owedTheRecordSomething({
       wroteSomething: result.toolCalls.some((c) => c.status === 'succeeded' && c.isWrite),
-      canWrite: allowed.some((n) => n !== 'query_status' && n !== 'check_sent_mail'),
+      canWrite: allowed.some((n) => n !== 'query_status' && n !== 'open_email' && n !== 'check_sent_mail'),
       complete: result.usage.stopReason === 'complete',
       reply: result.text,
       instruction: opts.instruction,

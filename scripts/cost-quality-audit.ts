@@ -135,6 +135,7 @@ async function main() {
   }
   console.log(`- Prefetch (reconstructed against today's records, not stored at the time): ${hits} of ${asked.length} messages named a record exactly; ${full} records sent whole, ${held} held back past the limit`)
   await emailLookups(Number(arg('--email-days') ?? 7))
+  await emailCompactVsFull(Number(arg('--email-days') ?? 7))
   console.log(`\nConsole: the Anthropic Console's daily total is the billing truth; set it beside the app-recorded per-day figures above.`)
 }
 
@@ -201,6 +202,56 @@ async function emailLookups(days: number) {
     all += turnCost; replayed += (after * inRate) / 1e6
   }
   console.log(`\n${n} replies; ${usd(all)} in all, of which ${usd(replayed)} was uncached input carried after a large result arrived.`)
+}
+
+/**
+ * The compact email search against the old full one (9 Oct 2026), sizes only:
+ * no email text is printed or kept. For each email search Mouse made, the
+ * same query is rebuilt at the reply's time three ways: the old result (the
+ * 20 emails in full), the compact list it returns now, and what opening one
+ * of those emails with open_email costs. Calls recorded since the change
+ * carry their real size (resultChars) and are reported too.
+ */
+async function emailCompactVsFull(days: number) {
+  const { emailIndex, emailSearchWhere, openEmail, EMAIL_SEARCH_TAKE, EMAIL_INDEX_MAX_CHARS } = await import('@/lib/email-lookup')
+  const from = new Date(Date.now() - days * 864e5)
+  const replies = await db.chatMessage.findMany({
+    where: { role: 'ASSISTANT', createdAt: { gte: from } },
+    orderBy: { createdAt: 'asc' }, select: { createdAt: true, toolCallsJson: true },
+  })
+  type Call = { name?: string; input?: { what?: string; days?: number; since?: string; from?: string; subject?: string }; resultChars?: number }
+  const select = { id: true, fromAddress: true, toAddress: true, subject: true, text: true, html: true, raw: true, receivedAt: true } as const
+  const rowsOut: string[] = []
+  const recorded: Record<string, number[]> = { search: [], open: [] }
+  for (const r of replies) {
+    const calls = Array.isArray(r.toolCallsJson) ? (r.toolCallsJson as Call[]) : []
+    for (const c of calls) {
+      if (c.name === 'open_email' && typeof c.resultChars === 'number') recorded.open.push(c.resultChars)
+      if (c.name !== 'query_status' || c.input?.what !== 'email') continue
+      if (typeof c.resultChars === 'number') recorded.search.push(c.resultChars)
+      const since = c.input.since && /^\d{4}-\d{2}-\d{2}$/.test(c.input.since) ? new Date(`${c.input.since}T00:00:00Z`) : new Date(r.createdAt.getTime() - (c.input.days ?? 56) * 864e5)
+      const rows = await db.inboundEmail.findMany({
+        where: { ...emailSearchWhere({ since, from: c.input.from, subject: c.input.subject }), receivedAt: { gte: since, lte: r.createdAt } },
+        orderBy: { receivedAt: 'desc' }, take: EMAIL_SEARCH_TAKE + 1, select,
+      })
+      const old = JSON.stringify(rows.slice(0, EMAIL_SEARCH_TAKE).map((m) => ({ id: m.id, fromAddress: m.fromAddress, toAddress: m.toAddress, subject: m.subject, text: m.text, receivedAt: m.receivedAt }))).length
+      const compact = JSON.stringify(emailIndex(rows, { since: since.toISOString().slice(0, 10), from: c.input.from, subject: c.input.subject })).length
+      const opens: number[] = []
+      for (const m of rows.slice(0, EMAIL_SEARCH_TAKE)) opens.push(JSON.stringify(await openEmail(m.id, async () => m)).length)
+      opens.sort((a, b) => a - b)
+      const window = c.input.since ? `since ${c.input.since}` : `${c.input.days ?? 56} days`
+      rowsOut.push(`| ${r.createdAt.toISOString().slice(0, 16)}Z | ${window} | ${rows.slice(0, EMAIL_SEARCH_TAKE).length} | ${old.toLocaleString()} | ${compact.toLocaleString()} | ${(100 - (compact / old) * 100).toFixed(0)}% | ${Math.round(median(opens)).toLocaleString()} | ${Math.max(0, ...opens).toLocaleString()} |`)
+    }
+  }
+  console.log(`\n## Email search: old full result vs compact list, and opening one (sizes in characters; no email text) — last ${days} days`)
+  console.log(`Compact list limit: ${EMAIL_INDEX_MAX_CHARS.toLocaleString()} characters as a whole.`)
+  if (rowsOut.length) {
+    console.log('| reply | window | emails | old full result | compact list now | smaller by | open one: median | open one: largest |')
+    console.log('|---|---|---|---|---|---|---|---|')
+    for (const l of rowsOut) console.log(l)
+  } else console.log('No email searches in the window.')
+  const rec = (xs: number[]) => xs.length ? `${xs.length} calls, median ${Math.round(median(xs)).toLocaleString()}, largest ${Math.max(...xs).toLocaleString()}` : 'none recorded yet'
+  console.log(`Recorded since the change (resultChars): search ${rec(recorded.search)}; open_email ${rec(recorded.open)}.`)
 }
 
 // Run only when invoked directly, so costOf can be imported by other scripts.

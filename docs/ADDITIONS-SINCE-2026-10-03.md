@@ -266,6 +266,18 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/whats-new.ts` (`unannounced`), `lib/mouse/daily-cheese.ts` (`newLines`), `tests/daily-cheese-links.test.ts`, `CLAUDE.md`
 - **Needs:** email.
 
+### Email search returns a compact list; one email is opened by id · (this commit)
+- **Problem:** the assistant's email search returned the 20 newest emails in full: 110,000 to 159,000 characters, or 81,000 to 124,000 tokens, each time. Every later step of the same reply sent all of it again. This was the largest avoidable cost in the audit. One reply searched twice, got the same 20 emails both times, and cost about five times a normal reply.
+- **Change:**
+  - The search (`query_status` "email") now returns a compact list. Each entry has the email's id, when it came, sender, recipient, subject, attachment names and count, a preview of its own new text (240 characters, quoted thread and forwarded history left out), and the length of the body. The whole result is capped at 12,000 characters, however long the emails are. If it would run over, the oldest entries are dropped and the result says so.
+  - The search can be narrowed by sender and subject as well as by date.
+  - A new read-only tool, `open_email`, opens exactly one email by its exact id and returns its complete text. An email with only HTML is read as text, which also fixes replies that used to come through empty. It refuses an empty, partial, multiple or unknown id before touching the database.
+  - Both leave customer mail out, as before.
+  - Both tool descriptions tell the assistant to search first, answer from the list, open one email only for exact wording, and never open several in turn.
+- **Measurement:** every tool call now records the size of the result the model was given (`resultChars`). For the two email tools, the stored copy keeps only email ids and sizes, never the text. The audit script rebuilds each past search to compare the old full result, the compact list and the cost of opening one. On real searches the list was 76–94% smaller.
+- **Files:** `lib/email-lookup.ts`, `lib/mouse/tools.ts` (`query_status`, `open_email`), `lib/mouse/tool-kinds.ts`, `lib/mouse/agent.ts`, `lib/mouse/nightly-pass.ts`, `lib/mouse/stale-notes.ts`, `lib/mouse/outcomes.ts` (`storedResult`, `resultChars`), `lib/mouse/runner.ts`, `scripts/cost-quality-audit.ts`, `tests/email-lookup.test.ts`
+- **Needs:** email (inbound mail stored by the webhook).
+
 ### A size or colour swap is made in Shopify before the reply says so · `b719ad5`
 - **Problem:** a customer asked to swap an unshipped item to another size, the team said yes, and the drafted reply promised it. The only button under it changed the address and sent the reply. The order still had the old size.
 - **Change:**

@@ -19,7 +19,9 @@
 export type ToolKind = 'read-lane' | 'look-up, Opus' | 'answers, Opus' | 'changes'
 
 export const TOOL_KINDS: Record<string, ToolKind> = {
-  // Look-ups the read lane holds (the set approved 7 Oct 2026, plus shipped_orders 8 Oct).
+  // Look-ups the read lane holds (the set approved 7 Oct 2026, plus shipped_orders 8 Oct
+  // and open_email 9 Oct: query_status "email" stopped returning whole emails, so the
+  // lane needs this to read one, as it could before).
   open_record: 'read-lane',
   query_status: 'read-lane',
   check_sent_mail: 'read-lane',
@@ -31,6 +33,7 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
   shopify_analytics: 'read-lane',
   unpaid_live_sales: 'read-lane',
   shipped_orders: 'read-lane',
+  open_email: 'read-lane', // one email in full, by id; the search itself returns only a compact list (9 Oct)
 
   // Look-ups kept with Opus.
   read_file: 'look-up, Opus', // reading a PDF or photo stays with Opus (7 Oct 2026)

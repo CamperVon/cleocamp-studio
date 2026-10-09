@@ -8,6 +8,30 @@ export type ToolOutcome = {
   error?: string
   durationMs: number
   isWrite: boolean
+  /** Characters of the result as Mouse was given it: the size only (scripts/cost-quality-audit.ts). */
+  resultChars?: number
+}
+
+/**
+ * What is kept of a tool's result with the turn. An email's own text is not:
+ * for the email search and open_email only the ids and sizes are kept, which
+ * is all the cost audit needs (9 Oct 2026). Everything else as before. Pure.
+ */
+export function storedResult(name: string, input: unknown, result: unknown): unknown {
+  const r = result && typeof result === 'object' ? result as Record<string, unknown> : null
+  if (name === 'query_status' && (input as { what?: unknown } | null)?.what === 'email' && r && Array.isArray(r.emails)) {
+    return { emailIds: (r.emails as Array<{ id?: unknown }>).map((e) => e.id), shown: r.shown, textNotKept: true }
+  }
+  if (name === 'open_email' && r) {
+    return r.found ? { found: true, id: r.id, bodyChars: r.bodyChars, textNotKept: true } : { found: false, reason: r.reason }
+  }
+  return diagnosticValue(result)
+}
+
+/** The size of what a tool handed the model: text in characters, a file by its encoded length. Pure. */
+export function resultChars(content: string | Array<{ type: string; text?: string; source?: { data?: string } }>): number {
+  if (typeof content === 'string') return content.length
+  return content.reduce((n, b) => n + (b.text?.length ?? b.source?.data?.length ?? 0), 0)
 }
 
 // Look-ups: a call to one is never a write, so it cannot count as having

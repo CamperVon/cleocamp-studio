@@ -12,7 +12,7 @@ const sonnet = (text: string, extra: Partial<AgentResult> = {}): AgentResult => 
 const opusReply: AgentResult = { text: 'The Opus answer.', writes: [], toolCalls: [{ name: 'query_status', status: 'succeeded' }], model: 'claude-opus-5-5', usage: usage('complete', 'claude-opus-5-5') }
 
 test('the read lane holds look-up tools only: no files, no notes, no writes', () => {
-  assert.deepEqual([...READ_LANE_TOOLS].sort(), ['check_sent_mail', 'find_contacts', 'find_customer', 'find_in_shopify', 'open_record', 'query_status', 'reorder_math', 'search_chat', 'shipped_orders', 'shopify_analytics', 'unpaid_live_sales'])
+  assert.deepEqual([...READ_LANE_TOOLS].sort(), ['check_sent_mail', 'find_contacts', 'find_customer', 'find_in_shopify', 'open_email', 'open_record', 'query_status', 'reorder_math', 'search_chat', 'shipped_orders', 'shopify_analytics', 'unpaid_live_sales'])
   for (const n of ['read_file', 'note_problem', 'keep_file', 'draft_order_links', 'add_note', 'log_inventory_event', 'send_email', 'create_todo', 'update_component']) assert.ok(!READ_LANE_TOOLS.has(n), n)
   for (const n of READ_LANE_TOOLS) assert.ok(TOOLS[n], `${n} exists`)
   // What the model is offered, even from a list or a default set that holds more.

@@ -23,7 +23,7 @@ test('every tool Mouse has is given a kind, and every kind names a real tool', (
 
 test('the look-ups are pinned: making a tool one runs it in practice and stops it counting as a write', () => {
   // Read the tool before adding it to either list: it must change nothing.
-  assert.deepEqual(of('read-lane').sort(), ['check_sent_mail', 'find_contacts', 'find_customer', 'find_in_shopify', 'open_record', 'query_status', 'reorder_math', 'search_chat', 'shipped_orders', 'shopify_analytics', 'unpaid_live_sales'])
+  assert.deepEqual(of('read-lane').sort(), ['check_sent_mail', 'find_contacts', 'find_customer', 'find_in_shopify', 'open_email', 'open_record', 'query_status', 'reorder_math', 'search_chat', 'shipped_orders', 'shopify_analytics', 'unpaid_live_sales'])
   assert.deepEqual(of('look-up, Opus').sort(), ['draft_order_links', 'read_file'])
 })
 

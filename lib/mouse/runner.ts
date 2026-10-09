@@ -1,6 +1,6 @@
 import { isOutOfCredit, OUT_OF_CREDIT_TEXT } from './credit-text'
 import type Anthropic from '@anthropic-ai/sdk'
-import { classifyResult, completedWrites, diagnosticValue, type ToolOutcome } from './outcomes'
+import { classifyResult, completedWrites, diagnosticValue, resultChars, storedResult, type ToolOutcome } from './outcomes'
 
 export type RequestUsage = {
   model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number
@@ -175,10 +175,11 @@ export async function runLoop(opts: {
         result = await opts.execute(u.name, u.input)
       } catch (e) { error = String(diagnosticValue((e as Error).message)) }
       const classification = error ? { status: 'failed' as const, isWrite: false } : classifyResult(u.name, result)
+      const content = error ?? toolResultContent(result)
       calls.push({ name: u.name, input: diagnosticValue(u.input), ...classification,
-        result: diagnosticValue(result), ...(error ? { error } : {}), durationMs: Date.now() - atTool })
-      results.push({ type: 'tool_result', tool_use_id: u.id, is_error: classification.status === 'failed',
-        content: error ?? toolResultContent(result) })
+        result: storedResult(u.name, u.input, result), ...(error ? { error } : {}), durationMs: Date.now() - atTool,
+        resultChars: resultChars(content as Parameters<typeof resultChars>[0]) })
+      results.push({ type: 'tool_result', tool_use_id: u.id, is_error: classification.status === 'failed', content })
     }
     messages.push({ role: 'user', content: results })
   }
