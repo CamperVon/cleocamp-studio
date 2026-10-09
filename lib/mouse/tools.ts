@@ -5925,8 +5925,8 @@ export const TOOLS: Record<string, Tool> = {
         'What went out on Shopify shipping labels made on a day or between two days (Los Angeles), item by item ' +
         'with the order numbers: "how many Black Cleo Tees are in the orders we bought labels for on 7 Oct". A ' +
         'label is a fulfilment, dated when it was made, so this answers by label date, which sales analytics ' +
-        'cannot. Voided labels and wholesale orders are left out. At most 31 days per look-up: ask a longer range in ' +
-        'parts and add them up. Read-only.',
+        'cannot. Voided labels and wholesale orders are left out. At most 31 days per look-up (ask a longer range in ' +
+        'parts and add them up), starting no more than 90 days ago for now. Read-only.',
       input_schema: {
         type: 'object',
         properties: {
@@ -5943,7 +5943,8 @@ export const TOOLS: Record<string, Tool> = {
       const to = String(i.to ?? from).trim()
       // Before anything reaches Shopify: a long range is a long scan of orders.
       const { labelRangeProblem, tallyShipped } = await import('@/lib/shipped-report')
-      const problem = labelRangeProblem(from, to)
+      const { laMidnight } = await import('@/lib/dates')
+      const problem = labelRangeProblem(from, to, laMidnight(0).toISOString().slice(0, 10))
       if (problem) return { ok: false, reason: problem }
       const { isConfigured, fetchShippedOrders } = await import('@/lib/integrations/shopify')
       if (!isConfigured()) return { ok: false, reason: 'Shopify is not connected.' }

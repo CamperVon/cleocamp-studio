@@ -46,16 +46,36 @@ export function tallyShipped(
  */
 export const MAX_LABEL_DAYS = 31
 
+/**
+ * How far back a look-up may start, for now. A short range far in the past
+ * still reads every order updated since its first day, so a one-day question
+ * from March would read seven months of orders. Temporary: the lasting answer
+ * is to keep label facts in the app (a sync or webhook on fulfilments) and
+ * read any period from there. Never "fixed" with an upper updated_at bound:
+ * updated_at is an order's LATEST change, so an order edited after its label
+ * was made would drop out of the count (Codex review, 8 Oct 2026).
+ */
+export const MAX_LABEL_LOOKBACK_DAYS = 90
+
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 const dayMs = (d: string) => Date.parse(`${d}T00:00:00Z`)
 const dayStr = (ms: number) => new Date(ms).toISOString().slice(0, 10)
 
-/** Why a from/to range cannot be looked up as asked, or null. Checked before anything reaches Shopify. Pure. */
-export function labelRangeProblem(from: string, to: string): string | null {
+/**
+ * Why a from/to range cannot be looked up as asked, or null. `today` is the
+ * Los Angeles date. Checked before anything reaches Shopify. Pure.
+ */
+export function labelRangeProblem(from: string, to: string, today: string): string | null {
   // A real day round-trips; "2026-02-30" parses as 2 March and does not.
   const real = (d: string) => DAY_RE.test(d) && !Number.isNaN(dayMs(d)) && dayStr(dayMs(d)) === d
   if (!real(from) || !real(to) || to < from) {
     return 'Give from (and to) as YYYY-MM-DD, to on or after from.'
+  }
+  const earliest = dayStr(dayMs(today) - MAX_LABEL_LOOKBACK_DAYS * 864e5)
+  if (from < earliest) {
+    return `Label look-ups reach back ${MAX_LABEL_LOOKBACK_DAYS} days for now, to ${earliest}: each one reads every ` +
+      'order changed since its first day, so an older start is too slow. Labels before then cannot be counted yet; ' +
+      'that needs label history kept in the app, which is not built.'
   }
   const days = Math.round((dayMs(to) - dayMs(from)) / 864e5) + 1
   if (days <= MAX_LABEL_DAYS) return null
