@@ -5925,7 +5925,8 @@ export const TOOLS: Record<string, Tool> = {
         'What went out on Shopify shipping labels made on a day or between two days (Los Angeles), item by item ' +
         'with the order numbers: "how many Black Cleo Tees are in the orders we bought labels for on 7 Oct". A ' +
         'label is a fulfilment, dated when it was made, so this answers by label date, which sales analytics ' +
-        'cannot. Voided labels and wholesale orders are left out. Read-only.',
+        'cannot. Voided labels and wholesale orders are left out. At most 31 days per look-up: ask a longer range in ' +
+        'parts and add them up. Read-only.',
       input_schema: {
         type: 'object',
         properties: {
@@ -5938,13 +5939,14 @@ export const TOOLS: Record<string, Tool> = {
       },
     },
     run: async (i) => {
-      const day = /^\d{4}-\d{2}-\d{2}$/
       const from = String(i.from ?? '').trim()
       const to = String(i.to ?? from).trim()
-      if (!day.test(from) || !day.test(to) || to < from) return { ok: false, reason: 'Give from (and to) as YYYY-MM-DD, to on or after from.' }
+      // Before anything reaches Shopify: a long range is a long scan of orders.
+      const { labelRangeProblem, tallyShipped } = await import('@/lib/shipped-report')
+      const problem = labelRangeProblem(from, to)
+      if (problem) return { ok: false, reason: problem }
       const { isConfigured, fetchShippedOrders } = await import('@/lib/integrations/shopify')
       if (!isConfigured()) return { ok: false, reason: 'Shopify is not connected.' }
-      const { tallyShipped } = await import('@/lib/shipped-report')
       const t = tallyShipped(await fetchShippedOrders(from), { from, to, item: i.item ?? null, variant: i.variant ?? null })
       return {
         ok: true, from, to, orders: t.orders, labels: t.packages,

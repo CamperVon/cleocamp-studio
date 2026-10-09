@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { tallyShipped } from '../lib/shipped-report'
+import { labelRangeProblem, MAX_LABEL_DAYS, tallyShipped } from '../lib/shipped-report'
 import { packagesFrom, type ShippedOrder } from '../lib/integrations/shopify'
 import { TOOLS } from '../lib/mouse/tools'
 
@@ -44,4 +44,28 @@ test('the label tool refuses a bad date before reaching Shopify', async () => {
   assert.equal(r.ok, false)
   assert.match(String(r.reason), /YYYY-MM-DD/)
   assert.equal((await TOOLS.shipped_orders.run({ from: '2026-10-08', to: '2026-10-07' }) as Record<string, unknown>).ok, false)
+})
+
+// Codex review, 8 Oct 2026: each look-up reads every order updated since its
+// first day, so the range is capped before anything reaches Shopify.
+test('one look-up covers at most 31 days; a longer range is refused with the parts to ask in', () => {
+  assert.equal(MAX_LABEL_DAYS, 31)
+  assert.equal(labelRangeProblem('2026-10-07', '2026-10-07'), null)
+  assert.equal(labelRangeProblem('2026-09-01', '2026-10-01'), null, '31 days, both ends counted')
+  const p = labelRangeProblem('2026-09-01', '2026-10-02')
+  assert.match(p!, /That is 32 days; one look-up covers at most 31/)
+  assert.match(p!, /2 parts.*2026-09-01 to 2026-10-01; 2026-10-02 to 2026-10-02/)
+  const year = labelRangeProblem('2026-01-01', '2026-10-08')!
+  assert.match(year, /That is 281 days/)
+  assert.match(year, /10 parts/)
+  assert.match(labelRangeProblem('2026-02-30', '2026-03-01') ?? '', /YYYY-MM-DD/, 'a day that does not exist')
+})
+
+test('the label tool refuses a long range itself, before it would reach Shopify', async () => {
+  const r = await TOOLS.shipped_orders.run({ from: '2026-01-01', to: '2026-10-08' }) as Record<string, unknown>
+  assert.equal(r.ok, false)
+  assert.match(String(r.reason), /at most 31/)
+  // Within the cap it gets past the check (here, to Shopify not being connected).
+  const ok = await TOOLS.shipped_orders.run({ from: '2026-09-08', to: '2026-10-08' }) as Record<string, unknown>
+  assert.doesNotMatch(String(ok.reason ?? ''), /at most 31|YYYY-MM-DD/)
 })

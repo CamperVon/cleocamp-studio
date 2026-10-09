@@ -236,7 +236,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 
 ### What went out on labels made on a day · (this commit)
 - **Problem:** asked how many of one item, by size, were in the orders labelled on a given day, the assistant could not answer. Sales analytics has order dates, not label dates, and no tool listed orders by when their label was made.
-- **Change:** a read-only `shipped_orders` tool. It takes a day or a range (Los Angeles), and optionally an exact product title and a colour or size. It returns quantities per variant with the order numbers. It reuses the shipped-packages reader the packing count already had, which now also carries the variant name. Voided labels and wholesale orders are left out. It is available in chat and in the read-only fast lane.
+- **Change:** a read-only `shipped_orders` tool. It takes a day or a range (Los Angeles), and optionally an exact product title and a colour or size. It returns quantities per variant with the order numbers. It reuses the shipped-packages reader the packing count already had, which now also carries the variant name. Voided labels and wholesale orders are left out. One look-up covers at most 31 days, checked before anything reaches the shop, because each look-up reads every order updated since its first day; a longer range is refused with the parts to ask in. It is available in chat and in the read-only fast lane.
 - **Files:** `lib/shipped-report.ts` (`tallyShipped`), `lib/integrations/shopify.ts` (variant on `ShippedOrder`), `lib/mouse/tools.ts`, `tests/shipped-orders.test.ts`
 - **Needs:** Shopify (read_orders).
 
