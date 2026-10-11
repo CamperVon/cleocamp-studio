@@ -2,7 +2,7 @@ import { isOutOfCredit, OUT_OF_CREDIT_TEXT } from './credit-text'
 import type Anthropic from '@anthropic-ai/sdk'
 import { classifyResult, completedWrites, diagnosticValue, resultChars, storedResult, type ToolOutcome } from './outcomes'
 import { newEmailOpenBudget, ONE_EMAIL_PER_TURN, type EmailOpenBudget } from '../email-lookup'
-import { diagnosisOf, type CacheDiagnosis, type DiagnosticsThread, type PrefixHashes } from './cache-diagnostics'
+import { chainKey, diagnosisOf, type CacheDiagnosis, type DiagnosticsChains, type PrefixHashes } from './cache-diagnostics'
 
 export type RequestUsage = {
   model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number
@@ -11,8 +11,7 @@ export type RequestUsage = {
   durationMs: number
   /** The effort this request ran at; the overthinking retry lowers it mid-turn. */
   effort?: 'low' | 'medium' | 'high'
-  /** Set only while MOUSE_CACHE_DIAGNOSTICS is on (lib/mouse/cache-diagnostics.ts). */
-  lane?: 'full' | 'read'
+  /** Set only while MOUSE_CACHE_DIAGNOSTICS is on, in interactive chat (lib/mouse/cache-diagnostics.ts). */
   cacheDiagnosis?: CacheDiagnosis
 }
 export type AgentUsage = {
@@ -40,7 +39,7 @@ export type TurnRoute = {
   effort: 'low' | 'medium' | 'high'
   escalated?: boolean
   escalatedBecause?: string
-  attempt?: { model: string; stopReason: AgentUsage['stopReason']; requests: RequestUsage[]; durationMs: number; tools: string[] }
+  attempt?: { model: string; stopReason: AgentUsage['stopReason']; requests: RequestUsage[]; durationMs: number; tools: string[]; prefix?: PrefixHashes }
 }
 export type LoopResult = {
   text: string; writes: Array<{ tool: string; summary: string }>; toolCalls: ToolOutcome[]
@@ -70,10 +69,10 @@ export async function runLoop(opts: {
   emailOpenBudget?: EmailOpenBudget
   /**
    * Ask Anthropic why each request missed the cache (MOUSE_CACHE_DIAGNOSTICS).
-   * The thread carries the last response id across every loop of the run.
-   * Changes nothing about the request but the `diagnostics` field itself.
+   * The chains carry the last response id per effort across every loop of
+   * the run. Changes nothing about the request but the `diagnostics` field.
    */
-  cacheDiagnostics?: { thread: DiagnosticsThread; lane: 'full' | 'read' }
+  cacheDiagnostics?: DiagnosticsChains
 }): Promise<LoopResult> {
   const started = Date.now()
   const maxRequests = Math.max(1, Math.min(12, Math.trunc(opts.maxRequests ?? 6)))
@@ -105,6 +104,8 @@ export async function runLoop(opts: {
 
   for (let round = 0; round < maxRequests && spent < maxOutputTokens; round++) {
     const at = Date.now()
+    // The chain this request belongs to; it follows the effort it runs at.
+    const chain = diag ? chainKey(diag.scope, effort ?? 'medium') : null
     let res: Response
     try {
       attemptedRequests++
@@ -117,7 +118,7 @@ export async function runLoop(opts: {
         system: opts.system, tools: opts.tools, messages,
         thinking: { type: 'adaptive' },
         output_config: { effort: effort ?? 'medium' },
-        ...(diag ? { diagnostics: { previous_message_id: diag.thread.previousId } } : {}),
+        ...(chain ? { diagnostics: { previous_message_id: diag!.last[chain] ?? null } } : {}),
       })
     } catch (e) {
       // The model's servers briefly unavailable (a 503 or "overloaded"): the
@@ -141,8 +142,8 @@ export async function runLoop(opts: {
       cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0,
       cacheWrite1hTokens: res.usage.cache_creation?.ephemeral_1h_input_tokens ?? 0, durationMs: Date.now() - at,
       effort: effort ?? 'medium',
-      ...(diag && res.id ? { lane: diag.lane, cacheDiagnosis: diagnosisOf(res.id, diag.thread.previousId, res.diagnostics) } : {}) })
-    if (diag && res.id) diag.thread.previousId = res.id
+      ...(chain && res.id ? { cacheDiagnosis: diagnosisOf(chain, res.id, diag!.last[chain] ?? null, res.diagnostics) } : {}) })
+    if (chain && res.id) diag!.last[chain] = res.id
     spent += res.usage.output_tokens
 
     // Ran out of room while still thinking, before doing anything at all.

@@ -1,24 +1,28 @@
 /**
- * What Anthropic's cache diagnostics said about Mouse's chat turns
+ * What Anthropic's cache diagnostics said about Mouse's interactive chat
  * (MOUSE_CACHE_DIAGNOSTICS, lib/mouse/cache-diagnostics.ts). Read-only.
  *
  *   npx tsx scripts/cache-diagnostics.ts [hours=24]
  *
- * Splits each turn's first request (compared with the previous turn) from the
- * rest (compared within the turn), counts each reason with what those
- * requests cost and the cache writes among them, and for a system_changed
- * first request names which prefix blocks changed since the previous turn.
+ * Each request was compared with the previous response in its own chain
+ * (same thread, source, model, lane and effort). The report splits each
+ * run's first request (compared with the previous turn) from the rest
+ * (compared within the run), counts each reason with what those requests
+ * cost and the cache writes among them, and for each compared first request
+ * names the prefix blocks that differ from the run that produced exactly the
+ * response it was compared with. Read-lane attempts are runs of their own.
  */
 import { db } from '@/lib/db'
 import { costOf } from './cost-quality-audit'
-import type { AgentUsage, RequestUsage } from '@/lib/mouse/runner'
+import { prefixAttribution, runsOf, type SavedUsage } from '@/lib/mouse/cache-diagnostics'
+import type { RequestUsage } from '@/lib/mouse/runner'
 
 async function main() {
   const hours = Number(process.argv[2]) || 24
   const rows = await db.chatMessage.findMany({
     where: { role: 'ASSISTANT', createdAt: { gte: new Date(Date.now() - hours * 3600_000) } },
     orderBy: { createdAt: 'asc' },
-    select: { createdAt: true, agentUsageJson: true },
+    select: { agentUsageJson: true },
   })
   type Tally = { n: number; cost: number; writes: number; missed: number }
   const tally = { first: new Map<string, Tally>(), later: new Map<string, Tally>() }
@@ -27,31 +31,16 @@ async function main() {
     t.n++; t.cost += costOf(r) ?? 0; t.writes += r.cacheWriteTokens; t.missed += r.cacheDiagnosis?.missedTokens ?? 0
     m.set(k, t)
   }
-  const blocksMoved = new Map<string, number>()
-  const lastPrefix = new Map<string, AgentUsage['prefix']>()
-  let turns = 0
 
-  for (const row of rows) {
-    const u = row.agentUsageJson as AgentUsage | null
-    if (!u) continue
-    const runs: Array<{ reqs: RequestUsage[]; prefix?: AgentUsage['prefix'] }> = [
-      ...(u.route?.attempt ? [{ reqs: u.route.attempt.requests }] : []),
-      { reqs: u.requests ?? [], prefix: u.prefix },
-    ]
-    for (const { reqs, prefix } of runs) {
-      if (!reqs.some((r) => r.cacheDiagnosis)) continue
-      turns++
-      reqs.forEach((r, i) => add(i === 0 ? tally.first : tally.later, r.cacheDiagnosis?.result ?? '(not recorded)', r))
-      const head = reqs[0]
-      const key = `${head.model}|${head.lane ?? 'full'}`
-      const before = lastPrefix.get(key)
-      if (prefix && before && head.cacheDiagnosis?.result === 'system_changed') {
-        const moved = (Object.keys(prefix) as Array<keyof typeof prefix>).filter((k) => prefix[k] !== before[k])
-        const label = moved.length ? moved.join('+') : '(no block hash moved)'
-        blocksMoved.set(label, (blocksMoved.get(label) ?? 0) + 1)
-      }
-      if (prefix) lastPrefix.set(key, prefix)
-    }
+  const runs = rows.flatMap((row) => runsOf(row.agentUsageJson as SavedUsage))
+    .map((r) => ({ requests: (r.requests ?? []) as RequestUsage[], prefix: r.prefix }))
+    .filter((r) => r.requests.some((q) => q.cacheDiagnosis))
+  for (const r of runs) r.requests.forEach((q, i) => add(i === 0 ? tally.first : tally.later, q.cacheDiagnosis?.result ?? '(not recorded)', q))
+
+  const moved = new Map<string, number>()
+  for (const a of prefixAttribution(runs)) {
+    const label = `${a.result}: ${a.moved === 'unlinked' ? 'previous response not in this window' : a.moved.length ? a.moved.join('+') : 'no prefix block moved'}`
+    moved.set(label, (moved.get(label) ?? 0) + 1)
   }
 
   const show = (title: string, m: Map<string, Tally>) => {
@@ -60,12 +49,12 @@ async function main() {
       console.log(`  ${k.padEnd(28)} ${String(t.n).padStart(4)} req  $${t.cost.toFixed(2).padStart(7)}  cache writes ${t.writes.toLocaleString().padStart(10)}  est. missed ${t.missed.toLocaleString()}`)
     }
   }
-  console.log(`Chat runs with diagnostics in the last ${hours}h: ${turns}`)
-  show('First request of a run (compared with the previous run on the same model and lane):', tally.first)
+  console.log(`Chat runs with diagnostics in the last ${hours}h: ${runs.length}`)
+  show('First request of a run (compared with the previous turn in its chain):', tally.first)
   show('Later requests (compared within the run):', tally.later)
-  if (blocksMoved.size) {
-    console.log('\nsystem_changed on a first request: which prefix blocks moved since the previous run')
-    for (const [k, n] of blocksMoved) console.log(`  ${k}: ${n}`)
+  if (moved.size) {
+    console.log('\nFirst requests: prefix blocks that differ from the exact response compared with')
+    for (const [k, n] of [...moved].sort((a, b) => b[1] - a[1])) console.log(`  ${k}  (${n})`)
   }
 }
 

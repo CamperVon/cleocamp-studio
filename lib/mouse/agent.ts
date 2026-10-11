@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { buildCatalogParts, catalogStats, type CatalogStats } from '@/lib/mouse/context'
 import { systemBlocks } from '@/lib/mouse/cache-blocks'
-import { cacheDiagnosticsOn, lastResponseId, prefixHashes } from '@/lib/mouse/cache-diagnostics'
+import { cacheDiagnosticsOn, chainKey, lastResponseId, prefixHashes } from '@/lib/mouse/cache-diagnostics'
 import { SYSTEM_RULES } from '@/lib/mouse/prompt'
 import { TOOLS, TOOL_DEFS, type ToolContext } from '@/lib/mouse/tools'
 import { refreshForecastsAndAlerts } from '@/lib/forecast'
@@ -383,15 +383,19 @@ export async function runAgent(opts: {
   // defaults) sit under a one-hour mark; everything else, notes included,
   // under the five-minute one. Same sections, same text, stable ones first.
   // Layout and the API rules it depends on: lib/mouse/cache-blocks.ts.
-  // Cache diagnostics (MOUSE_CACHE_DIAGNOSTICS, 11 Oct 2026): a chat run is
-  // compared with the last chat request on the same model and lane; the
-  // lookup runs alongside the catalogue. lib/mouse/cache-diagnostics.ts.
+  // Cache diagnostics (MOUSE_CACHE_DIAGNOSTICS, 11 Oct 2026), interactive
+  // chat only: a run is compared with the last response in the same thread,
+  // source, model, lane and effort. The lookup runs alongside the catalogue.
+  // lib/mouse/cache-diagnostics.ts.
   const model = opts.model ?? CHAT_MODEL
-  const lane: 'full' | 'read' = opts.lane ?? 'full'
-  const diagnose = cacheDiagnosticsOn()
+  const effort = opts.effort ?? 'high'
+  const scope = cacheDiagnosticsOn() && opts.chatThreadId
+    ? { threadId: opts.chatThreadId, source: opts.source, model, lane: opts.lane ?? 'full' as const }
+    : null
+  const firstChain = scope ? chainKey(scope, effort) : null
   const [parts, previousId] = await Promise.all([
     opts.withCatalog !== false ? buildCatalogParts({ notes: opts.notes ?? 'full', catalog: opts.catalog ?? 'full' }) : null,
-    diagnose && opts.chatThreadId ? lastResponseId({ model, lane }) : null,
+    scope && firstChain ? lastResponseId(scope.threadId, firstChain) : null,
   ])
   const contextStats: CatalogStats | null = parts ? catalogStats(parts) : null
   const system: Anthropic.TextBlockParam[] = systemBlocks({
@@ -400,8 +404,8 @@ export async function runAgent(opts: {
     practiceRules: opts.practice ? PRACTICE_RULES : null,
     catalog: parts,
   })
-  const cacheDiagnostics = diagnose ? { thread: { previousId }, lane } : undefined
-  const prefix = diagnose
+  const cacheDiagnostics = scope && firstChain ? { scope, last: { [firstChain]: previousId } } : undefined
+  const prefix = scope
     ? prefixHashes({ tools, rules: SYSTEM_RULES, extraRules: opts.extraRules, practiceRules: opts.practice ? PRACTICE_RULES : null, stable: parts?.stable, live: parts?.live })
     : null
 
@@ -460,7 +464,7 @@ export async function runAgent(opts: {
           withLineSheetQuestions(name, withNotesOnWhatChanged(name, input, await TOOLS[name].run(input, toolContextFor(opts))))
       },
       model,
-      effort: opts.effort ?? 'high', maxRequests: rounds,
+      effort, maxRequests: rounds,
       maxOutputTokens: Number(process.env.MOUSE_MAX_OUTPUT_TOKENS) || 24000,
       emailOpenBudget,
       cacheDiagnostics,
@@ -690,6 +694,8 @@ export async function readLaneTurn(reason: string, read: () => Promise<AgentResu
     attempt: {
       model: attempt.model, stopReason: attempt.usage.stopReason, requests: attempt.usage.requests, durationMs: attempt.usage.durationMs,
       tools: (attempt.toolCalls as Array<{ name?: string }>).map((c) => String(c.name)),
+      // Cache diagnostics: the attempt's own prefix hashes, so its requests can be attributed too.
+      ...(attempt.usage.prefix ? { prefix: attempt.usage.prefix } : {}),
     },
   }
   return { ...r, usage: { ...r.usage, route } }
