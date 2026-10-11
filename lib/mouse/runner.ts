@@ -2,12 +2,18 @@ import { isOutOfCredit, OUT_OF_CREDIT_TEXT } from './credit-text'
 import type Anthropic from '@anthropic-ai/sdk'
 import { classifyResult, completedWrites, diagnosticValue, resultChars, storedResult, type ToolOutcome } from './outcomes'
 import { newEmailOpenBudget, ONE_EMAIL_PER_TURN, type EmailOpenBudget } from '../email-lookup'
+import { diagnosisOf, type CacheDiagnosis, type DiagnosticsThread, type PrefixHashes } from './cache-diagnostics'
 
 export type RequestUsage = {
   model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number
   /** The part of cacheWriteTokens written with the one-hour lifetime (billed 2x input, not 1.25x). */
   cacheWrite1hTokens: number
   durationMs: number
+  /** The effort this request ran at; the overthinking retry lowers it mid-turn. */
+  effort?: 'low' | 'medium' | 'high'
+  /** Set only while MOUSE_CACHE_DIAGNOSTICS is on (lib/mouse/cache-diagnostics.ts). */
+  lane?: 'full' | 'read'
+  cacheDiagnosis?: CacheDiagnosis
 }
 export type AgentUsage = {
   requests: RequestUsage[]
@@ -19,6 +25,8 @@ export type AgentUsage = {
   context?: import('./context').CatalogStats
   /** Which lane a chat turn took and why, set by chatTurn (lib/mouse/agent.ts, lib/mouse/route.ts). */
   route?: TurnRoute
+  /** Short hashes of each prefix block, set by runAgent while MOUSE_CACHE_DIAGNOSTICS is on. */
+  prefix?: PrefixHashes
 }
 
 /**
@@ -39,8 +47,11 @@ export type LoopResult = {
   model: string; usage: AgentUsage
 }
 
-type Request = Anthropic.MessageCreateParamsNonStreaming
-type Response = Pick<Anthropic.Message, 'content' | 'stop_reason' | 'usage'>
+type Request = Anthropic.MessageCreateParamsNonStreaming & { diagnostics?: { previous_message_id: string | null } }
+type Response = Pick<Anthropic.Message, 'content' | 'stop_reason' | 'usage'> & {
+  id?: string
+  diagnostics?: { cache_miss_reason: { type: string; cache_missed_input_tokens?: number } | null } | null
+}
 
 /** Pure orchestration: production supplies SDK/tools; tests supply scripted responses. */
 export async function runLoop(opts: {
@@ -57,6 +68,12 @@ export async function runLoop(opts: {
   sleep?: (ms: number) => Promise<void>
   /** The turn's one-whole-email allowance, shared by every loop of the turn. Fresh if none is given. */
   emailOpenBudget?: EmailOpenBudget
+  /**
+   * Ask Anthropic why each request missed the cache (MOUSE_CACHE_DIAGNOSTICS).
+   * The thread carries the last response id across every loop of the run.
+   * Changes nothing about the request but the `diagnostics` field itself.
+   */
+  cacheDiagnostics?: { thread: DiagnosticsThread; lane: 'full' | 'read' }
 }): Promise<LoopResult> {
   const started = Date.now()
   const maxRequests = Math.max(1, Math.min(12, Math.trunc(opts.maxRequests ?? 6)))
@@ -83,6 +100,7 @@ export async function runLoop(opts: {
   let effort = opts.effort
   let retriedOverthinking = false
   let retriedProvider = false
+  const diag = opts.cacheDiagnostics
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
 
   for (let round = 0; round < maxRequests && spent < maxOutputTokens; round++) {
@@ -99,6 +117,7 @@ export async function runLoop(opts: {
         system: opts.system, tools: opts.tools, messages,
         thinking: { type: 'adaptive' },
         output_config: { effort: effort ?? 'medium' },
+        ...(diag ? { diagnostics: { previous_message_id: diag.thread.previousId } } : {}),
       })
     } catch (e) {
       // The model's servers briefly unavailable (a 503 or "overloaded"): the
@@ -120,7 +139,10 @@ export async function runLoop(opts: {
     requests.push({ model, inputTokens: res.usage.input_tokens, outputTokens: res.usage.output_tokens,
       cacheReadTokens: res.usage.cache_read_input_tokens ?? 0,
       cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0,
-      cacheWrite1hTokens: res.usage.cache_creation?.ephemeral_1h_input_tokens ?? 0, durationMs: Date.now() - at })
+      cacheWrite1hTokens: res.usage.cache_creation?.ephemeral_1h_input_tokens ?? 0, durationMs: Date.now() - at,
+      effort: effort ?? 'medium',
+      ...(diag && res.id ? { lane: diag.lane, cacheDiagnosis: diagnosisOf(res.id, diag.thread.previousId, res.diagnostics) } : {}) })
+    if (diag && res.id) diag.thread.previousId = res.id
     spent += res.usage.output_tokens
 
     // Ran out of room while still thinking, before doing anything at all.

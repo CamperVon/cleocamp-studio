@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { buildCatalogParts, catalogStats, type CatalogStats } from '@/lib/mouse/context'
 import { systemBlocks } from '@/lib/mouse/cache-blocks'
+import { cacheDiagnosticsOn, lastResponseId, prefixHashes } from '@/lib/mouse/cache-diagnostics'
 import { SYSTEM_RULES } from '@/lib/mouse/prompt'
 import { TOOLS, TOOL_DEFS, type ToolContext } from '@/lib/mouse/tools'
 import { refreshForecastsAndAlerts } from '@/lib/forecast'
@@ -382,7 +383,16 @@ export async function runAgent(opts: {
   // defaults) sit under a one-hour mark; everything else, notes included,
   // under the five-minute one. Same sections, same text, stable ones first.
   // Layout and the API rules it depends on: lib/mouse/cache-blocks.ts.
-  const parts = opts.withCatalog !== false ? await buildCatalogParts({ notes: opts.notes ?? 'full', catalog: opts.catalog ?? 'full' }) : null
+  // Cache diagnostics (MOUSE_CACHE_DIAGNOSTICS, 11 Oct 2026): a chat run is
+  // compared with the last chat request on the same model and lane; the
+  // lookup runs alongside the catalogue. lib/mouse/cache-diagnostics.ts.
+  const model = opts.model ?? CHAT_MODEL
+  const lane: 'full' | 'read' = opts.lane ?? 'full'
+  const diagnose = cacheDiagnosticsOn()
+  const [parts, previousId] = await Promise.all([
+    opts.withCatalog !== false ? buildCatalogParts({ notes: opts.notes ?? 'full', catalog: opts.catalog ?? 'full' }) : null,
+    diagnose && opts.chatThreadId ? lastResponseId({ model, lane }) : null,
+  ])
   const contextStats: CatalogStats | null = parts ? catalogStats(parts) : null
   const system: Anthropic.TextBlockParam[] = systemBlocks({
     rules: SYSTEM_RULES,
@@ -390,6 +400,10 @@ export async function runAgent(opts: {
     practiceRules: opts.practice ? PRACTICE_RULES : null,
     catalog: parts,
   })
+  const cacheDiagnostics = diagnose ? { thread: { previousId }, lane } : undefined
+  const prefix = diagnose
+    ? prefixHashes({ tools, rules: SYSTEM_RULES, extraRules: opts.extraRules, practiceRules: opts.practice ? PRACTICE_RULES : null, stable: parts?.stable, live: parts?.live })
+    : null
 
   // Attachments ride along on the turn they were sent. Chat also replays the
   // files from its last two file-bearing messages (see chatTurn), so a
@@ -409,16 +423,32 @@ export async function runAgent(opts: {
       // the option itself, the request goes again without it: a lost
       // fallback must never cost the whole reply.
       create: async request => {
+        const send = async (req: typeof request) => {
+          try {
+            return await client.beta.messages.create({
+              ...(req as Anthropic.Beta.MessageCreateParamsNonStreaming),
+              betas: ['server-side-fallback-2026-07-01'],
+              fallbacks: 'default',
+            }) as unknown as Anthropic.Message
+          } catch (e) {
+            if (e instanceof Anthropic.BadRequestError && /fallback/i.test(e.message)) {
+              console.error('fallbacks refused; sending without', e.message)
+              return client.messages.create(req)
+            }
+            throw e
+          }
+        }
         try {
-          return await client.beta.messages.create({
-            ...(request as Anthropic.Beta.MessageCreateParamsNonStreaming),
-            betas: ['server-side-fallback-2026-07-01'],
-            fallbacks: 'default',
-          }) as unknown as Anthropic.Message
+          return await send(request)
         } catch (e) {
-          if (e instanceof Anthropic.BadRequestError && /fallback/i.test(e.message)) {
-            console.error('fallbacks refused; sending without', e.message)
-            return client.messages.create(request)
+          // Diagnostics must never cost a reply: if the API refuses the
+          // field, the same request goes again without it, and the record
+          // says so rather than reading as "no divergence".
+          if (request.diagnostics && e instanceof Anthropic.BadRequestError && /diagnostic/i.test(e.message)) {
+            console.error('cache diagnostics refused; sending without', e.message)
+            const { diagnostics: _d, ...rest } = request
+            void _d
+            return { ...(await send(rest)), diagnostics: { cache_miss_reason: { type: 'request-refused' } } }
           }
           throw e
         }
@@ -429,10 +459,11 @@ export async function runAgent(opts: {
         return practiceStop(opts.practice === true, name, input) ??
           withLineSheetQuestions(name, withNotesOnWhatChanged(name, input, await TOOLS[name].run(input, toolContextFor(opts))))
       },
-      model: opts.model ?? CHAT_MODEL,
+      model,
       effort: opts.effort ?? 'high', maxRequests: rounds,
       maxOutputTokens: Number(process.env.MOUSE_MAX_OUTPUT_TOKENS) || 24000,
       emailOpenBudget,
+      cacheDiagnostics,
     })
 
   let result = await loop(messages, maxRounds)
@@ -525,6 +556,7 @@ export async function runAgent(opts: {
   // Section sizes and block hashes ride on the usage record (saved with a
   // chat reply as agentUsageJson). Sizes only: no business text.
   if (contextStats) result = { ...result, usage: { ...result.usage, context: contextStats } }
+  if (prefix) result = { ...result, usage: { ...result.usage, prefix } }
 
   // The troubleshooting log: every failed or refused tool call and every
   // unfinished turn, written by code whatever the reply says (Brandon,
