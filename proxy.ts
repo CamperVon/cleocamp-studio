@@ -27,6 +27,9 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith('/login') ||
     pathname.startsWith('/api/cron') ||
     pathname.startsWith('/api/inbound') ||
+    // Telnyx's webhook: it only stores messages, and checks Telnyx's signature
+    // once TELNYX_PUBLIC_KEY is set (app/api/telnyx/route.ts).
+    pathname === '/api/telnyx' ||
     pathname.startsWith('/api/finances') ||
     // Muse, the team's outside researcher: its own key, checked in each
     // route (app/api/muse/_auth.ts). Off entirely until MUSE_API_KEY is set.

@@ -1923,3 +1923,20 @@ model KitPart {
 
   @@unique([parentId, partId])
 }
+
+/// Texts and WhatsApp messages Telnyx delivered to our number (12 Oct 2026).
+/// Stored only: nothing here runs Mouse or changes anything. First use: the
+/// one-time code Meta sends to Mouse's new WhatsApp number. `signed` is true
+/// when Telnyx's ed25519 signature checked out (TELNYX_PUBLIC_KEY set).
+model TelnyxMessage {
+  id         String   @id @default(cuid())
+  providerId String   @unique
+  fromNumber String
+  toNumber   String?
+  text       String
+  channel    String?
+  signed     Boolean
+  receivedAt DateTime @default(now())
+
+  @@index([receivedAt])
+}

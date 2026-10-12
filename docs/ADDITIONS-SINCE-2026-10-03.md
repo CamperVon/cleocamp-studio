@@ -473,6 +473,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/tools.ts` (`wholesaleOnlyProblem`, create_product_variants), `tests/wholesale-only-variants.test.ts`.
 - **Needs:** nothing beyond the app.
 
+### Receive texts on a Telnyx number (first step toward WhatsApp)
+- **Problem:** connecting a new number to WhatsApp needs a one-time code sent to that number, and a number bought from Telnyx has nowhere to show an incoming text unless something receives Telnyx's webhook.
+- **Change:** `/api/telnyx` receives Telnyx `message.received` webhooks and stores the message (sender, recipient, text, channel) in `TelnyxMessage`. Nothing else happens: it never runs the assistant or changes data. With `TELNYX_PUBLIC_KEY` set, only requests with a valid, fresh ed25519 signature are kept; before that, messages are kept and marked unsigned. Other events are acknowledged and dropped.
+- **Files:** `lib/telnyx.ts`, `app/api/telnyx/route.ts`, `proxy.ts` (public path), `prisma/schema.prisma` + migration `20261012190000_telnyx_message`, `tests/telnyx.test.ts`.
+- **Needs:** a Telnyx number on a messaging profile whose inbound webhook points at `/api/telnyx`. No email.
+
 ---
 
 ## Setup notes for a new install
