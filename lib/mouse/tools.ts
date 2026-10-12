@@ -1686,8 +1686,11 @@ export const TOOLS: Record<string, Tool> = {
         'that is a colour or version of an existing style); colour_code (put a colour code on a colourway; a new ' +
         'code is proposed, with name saying what it is); propose_code (a new size or category code); confirm ' +
         '(ONLY when Brandon or Cleo, in this conversation, confirm a proposed styleNumber or codeType+code; code ' +
-        'refuses anyone else); assign_skus (give a product\'s variants their SKUs where every part is confirmed; ' +
-        'it says what is still missing). Sent purchase orders keep the SKUs they were sent with.',
+        'refuses anyone else); assign_skus (give a product\'s variants their SKUs where every part is confirmed, ' +
+        'and rebuild them after a colourway\'s code is changed with colour_code and the new code confirmed; ' +
+        'it says what is still missing, and in shopifyStillReads which SKUs the Shopify listing must be changed ' +
+        'to match). A style\'s status (draft, development, ...) is its stage, not its approval: only proposed ' +
+        'is unconfirmed. Sent purchase orders keep the SKUs they were sent with.',
       input_schema: {
         type: 'object',
         properties: {

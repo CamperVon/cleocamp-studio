@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { SKU_RE, colourKey, matchVariants, nextStyleNumber, parseCsv, sizeCodeFor, skuProblem, styleStatus, type AppVariant, type SkuRow } from '../lib/style-system'
+import { SKU_RE, colourKey, matchVariants, nextStyleNumber, parseCsv, planSkus, sizeCodeFor, skuProblem, styleStatus, type AppVariant, type SkuRow, type SkuVariant } from '../lib/style-system'
 
 const rows = parseCsv(readFileSync('docs/style-system/skus.csv', 'utf8'))
 
@@ -121,4 +121,44 @@ test('the partner reference explains a SKU from a real one, and says nothing int
   assert.match(lines, /BG105-CHP-PT is style BG105, colour CHP, size PT/)
   assert.doesNotMatch(lines, /cost|price|stock|\$|on hand/i)
   assert.match(howToRead(null)[0], /TP101-BLK-01/)
+})
+
+// assign_skus after a colourway is recoded (12 Oct 2026: the Cosmo Tee went
+// from RST to CST and kept TP102-RST-0x while reporting nothing).
+const codes: Record<string, string> = { 'COLOR:RST': 'CONFIRMED', 'COLOR:CST': 'CONFIRMED', 'COLOR:NEW': 'PROPOSED', 'SIZE:01': 'CONFIRMED', 'SIZE:02': 'CONFIRMED' }
+const codeStatus = (t: 'COLOR' | 'SIZE', c: string) => codes[`${t}:${c}`] ?? null
+const sizeFor = (s: string | null) => (s ? `0${s}` : null)
+const cosmo = (size: string, over: Partial<SkuVariant> = {}): SkuVariant => ({
+  id: `v${size}`, label: `Red Stripe / ${size}`, newSku: `TP102-RST-0${size}`, colorCode: 'RST', sizeCode: `0${size}`, size,
+  colorwayCode: 'CST', shopifySku: `TP102-RST-0${size}`, ...over,
+})
+
+test('a recoded colourway rebuilds its variants\' SKUs once the new code is confirmed, and says Shopify still differs', () => {
+  const steps = planSkus('TP102', [cosmo('1'), cosmo('2')], codeStatus, new Set(), sizeFor)
+  assert.deepEqual(steps.map((s) => s.kind === 'set' ? [s.from, s.sku, s.shopifySku] : s.kind), [
+    ['TP102-RST-01', 'TP102-CST-01', 'TP102-RST-01'],
+    ['TP102-RST-02', 'TP102-CST-02', 'TP102-RST-02'],
+  ])
+})
+
+test('a recode waiting on an unconfirmed code is reported with the SKU it still reads, never skipped silently', () => {
+  const [s] = planSkus('TP102', [cosmo('1', { colorwayCode: 'NEW' })], codeStatus, new Set(), sizeFor)
+  assert.equal(s.kind, 'wait')
+  assert.match((s as { why: string }).why, /NEW is not confirmed yet\. It still reads TP102-RST-01\./)
+})
+
+test('SKUs that match their colourway are kept; missing ones are filled; a taken SKU is refused', () => {
+  const steps = planSkus('TP101', [
+    { id: 'a', label: 'Black / 1', newSku: 'TP101-RST-01', colorCode: 'RST', sizeCode: '01', size: '1', colorwayCode: 'RST', shopifySku: null },
+    { id: 'b', label: 'Black / 2', newSku: null, colorCode: null, sizeCode: null, size: '2', colorwayCode: 'RST', shopifySku: null },
+    { id: 'c', label: 'Black / 1 again', newSku: null, colorCode: null, sizeCode: null, size: '1', colorwayCode: 'RST', shopifySku: null },
+  ], codeStatus, new Set(), sizeFor)
+  assert.deepEqual(steps.map((s) => s.kind), ['keep', 'set', 'wait'])
+  assert.equal((steps[1] as { sku: string }).sku, 'TP101-RST-02')
+  assert.match((steps[2] as { why: string }).why, /already used/)
+})
+
+test('a variant with no colourway code is never recoded', () => {
+  const [s] = planSkus('TP102', [cosmo('1', { colorwayCode: null })], codeStatus, new Set(), sizeFor)
+  assert.deepEqual(s, { kind: 'keep', sku: 'TP102-RST-01' })
 })

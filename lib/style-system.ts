@@ -27,6 +27,56 @@ export function skuProblem(sku: string, parts: { style: string; color: string; s
 }
 
 /**
+ * What assign_skus does to each variant of one product. Pure.
+ *
+ * A variant without a SKU gets one where every part is confirmed. A variant
+ * that has one keeps it, unless its colourway's colour code has since been
+ * changed (12 Oct 2026: the Cosmo Tee's colourway went from RST to CST and
+ * the three variants kept TP102-RST-0x, with assign_skus reporting nothing
+ * either way). Then, once the new code is confirmed, the SKU is rebuilt from
+ * it; until then it is reported as waiting, never left silently. Any new SKU
+ * that differs from what Shopify last showed is listed, so the listing gets
+ * changed to match.
+ */
+export type SkuVariant = {
+  id: string
+  label: string
+  newSku: string | null
+  colorCode: string | null
+  sizeCode: string | null
+  size: string | null
+  colorwayCode: string | null
+  shopifySku: string | null
+}
+export type SkuStep =
+  | { kind: 'set'; id: string; label: string; sku: string; color: string; size: string; from: string | null; shopifySku: string | null }
+  | { kind: 'wait'; label: string; why: string }
+  | { kind: 'keep'; sku: string }
+
+export function planSkus(style: string, variants: SkuVariant[], codeStatus: (type: 'COLOR' | 'SIZE', code: string) => string | null, taken: Set<string>, sizeCodeFor: (size: string | null) => string | null): SkuStep[] {
+  const used = new Set(taken)
+  // Kept SKUs are claimed first, so a rebuilt one cannot take another variant's.
+  const recode = (v: SkuVariant) => !!v.newSku && !!v.colorwayCode && v.colorCode !== v.colorwayCode
+  for (const v of variants) if (v.newSku && !recode(v)) used.add(v.newSku)
+  return variants.map((v): SkuStep => {
+    if (v.newSku && !recode(v)) return { kind: 'keep', sku: v.newSku }
+    const color = recode(v) ? v.colorwayCode! : v.colorCode ?? v.colorwayCode
+    const size = v.sizeCode ?? sizeCodeFor(v.size)
+    const still = v.newSku ? ` It still reads ${v.newSku}.` : ''
+    if (!color) return { kind: 'wait', label: v.label, why: 'no colour code (set one on the colourway)' }
+    if (!size) return { kind: 'wait', label: v.label, why: `size "${v.size}" has no code` }
+    const cs = codeStatus('COLOR', color)
+    if (cs !== 'CONFIRMED') return { kind: 'wait', label: v.label, why: `colour ${color} is ${cs ? 'not confirmed yet' : 'not a code'}.${still}` }
+    if (codeStatus('SIZE', size) !== 'CONFIRMED') return { kind: 'wait', label: v.label, why: `size ${size} is not confirmed.${still}` }
+    const sku = `${style}-${color}-${size}`
+    const problem = skuProblem(sku, { style, color, size }, used)
+    if (problem) return { kind: 'wait', label: v.label, why: `${problem}${still}` }
+    used.add(sku)
+    return { kind: 'set', id: v.id, label: v.label, sku, color, size, from: v.newSku, shopifySku: v.shopifySku }
+  })
+}
+
+/**
  * The next style number in a category: the highest ever used, plus one.
  * Retired and proposed numbers count, so no number is ever handed out twice.
  * Starts at 101. Pure.

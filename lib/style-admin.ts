@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { STYLE_RE, nextStyleNumber, sizeCodeFor, skuProblem } from '@/lib/style-system'
+import { STYLE_RE, nextStyleNumber, planSkus, sizeCodeFor } from '@/lib/style-system'
 
 /**
  * Giving things style numbers and codes (8 Oct 2026, docs/style-system/).
@@ -95,7 +95,10 @@ export async function confirm(what: { styleNumber?: string; codeType?: CodeType;
     const n = what.styleNumber.trim().toUpperCase()
     const s = await db.style.findUnique({ where: { number: n } })
     if (!s) return { ok: false as const, error: `No style ${n}.` }
-    if (s.status !== 'PROPOSED') return { ok: true as const, confirmed: n, note: `${n} was already ${s.status.toLowerCase()}.` }
+    // Only PROPOSED is unconfirmed. DRAFT, DEVELOPMENT and the rest are where the
+    // product stands, not approval: on 12 Oct 2026 "TP102 was already draft"
+    // read to Mouse as "still unapproved", and it flagged a failure that wasn't one.
+    if (s.status !== 'PROPOSED') return { ok: true as const, confirmed: n, note: `${n} is already confirmed. Its status, ${s.status.toLowerCase().replace('_', ' ')}, is the product's stage, not its approval; only "proposed" means unconfirmed.` }
     await db.style.update({ where: { number: n }, data: { status: 'DEVELOPMENT', notes: `${s.notes ? s.notes + ' ' : ''}Confirmed ${new Date().toISOString().slice(0, 10)}.` } })
     return { ok: true as const, confirmed: n }
   }
@@ -111,9 +114,10 @@ export async function confirm(what: { styleNumber?: string; codeType?: CodeType;
 /**
  * Give a product's variants their new SKUs where every part is settled: the
  * style is not proposed, and the colour (from the variant, else its
- * colourway) and size codes are confirmed.
- * A variant that already has one keeps it. Returns what could not be done,
- * and why, rather than guessing.
+ * colourway) and size codes are confirmed. A variant that already has one
+ * keeps it, unless its colourway's code has been changed since (planSkus in
+ * lib/style-system.ts). Returns what could not be done, and why, rather
+ * than guessing, and any SKU Shopify still shows differently.
  */
 export async function assignSkus(productId: string) {
   const p = await db.product.findUnique({
@@ -127,27 +131,27 @@ export async function assignSkus(productId: string) {
     db.styleCode.findMany({ select: { type: true, code: true, status: true } }),
     db.productVariant.findMany({ where: { newSku: { not: null }, productId: { not: p.id } }, select: { newSku: true } }),
   ])
-  const status = (t: string, c: string) => codes.find((x) => x.type === t && x.code === c)?.status ?? null
-  const used = new Set(taken.map((t) => t.newSku!))
-  const assigned: string[] = []
-  const notYet: string[] = []
-  for (const v of p.variants) {
-    if (v.newSku) { used.add(v.newSku); continue }
-    const label = [v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'the one variant'
-    const color = v.colorCode ?? v.colorway?.colorCode ?? null
-    const size = v.sizeCode ?? sizeCodeFor(v.size)
-    if (!color) { notYet.push(`${label}: no colour code (set one on the colourway)`); continue }
-    if (!size) { notYet.push(`${label}: size "${v.size}" has no code`); continue }
-    if (status('COLOR', color) !== 'CONFIRMED') { notYet.push(`${label}: colour ${color} is ${status('COLOR', color) ? 'not confirmed' : 'not a code'}`); continue }
-    if (status('SIZE', size) !== 'CONFIRMED') { notYet.push(`${label}: size ${size} is not confirmed`); continue }
-    const sku = `${p.style.number}-${color}-${size}`
-    const problem = skuProblem(sku, { style: p.style.number, color, size }, used)
-    if (problem) { notYet.push(`${label}: ${problem}`); continue }
-    await db.productVariant.update({ where: { id: v.id }, data: { newSku: sku, colorCode: color, sizeCode: size } })
-    used.add(sku)
-    assigned.push(`${label} → ${sku}`)
+  const steps = planSkus(
+    p.style.number,
+    p.variants.map((v) => ({
+      id: v.id, label: [v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'the one variant',
+      newSku: v.newSku, colorCode: v.colorCode, sizeCode: v.sizeCode, size: v.size,
+      colorwayCode: v.colorway?.colorCode ?? null, shopifySku: v.shopifySku,
+    })),
+    (t, c) => codes.find((x) => x.type === t && x.code === c)?.status ?? null,
+    new Set(taken.map((t) => t.newSku!)),
+    sizeCodeFor,
+  )
+  const sets = steps.filter((x) => x.kind === 'set')
+  if (sets.length) await db.$transaction(sets.map((x) => db.productVariant.update({ where: { id: x.id }, data: { newSku: x.sku, colorCode: x.color, sizeCode: x.size } })))
+  return {
+    ok: true as const, style: p.style.number,
+    assigned: sets.filter((x) => !x.from).map((x) => `${x.label} → ${x.sku}`),
+    recoded: sets.filter((x) => x.from).map((x) => `${x.label}: ${x.from} → ${x.sku}`),
+    notYet: steps.flatMap((x) => (x.kind === 'wait' ? [`${x.label}: ${x.why}`] : [])),
+    // The app does not write SKUs to Shopify: say these need changing on the listing.
+    shopifyStillReads: sets.filter((x) => x.shopifySku && x.shopifySku !== x.sku).map((x) => `${x.label}: Shopify shows ${x.shopifySku}, the app now ${x.sku}`),
   }
-  return { ok: true as const, style: p.style.number, assigned, notYet }
 }
 
 /** Put a colour code on a colourway: an existing code, or a new one proposed. */
