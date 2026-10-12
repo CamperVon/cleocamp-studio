@@ -105,7 +105,7 @@ export function orderNumbersIn(text: string): string[] {
   return [...found]
 }
 
-export type Verdict = { category: Category; urgency: Urgency; summary: string | null; customerName: string | null }
+export type Verdict = { category: Category; urgency: Urgency; summary: string | null; customerName: string | null; fullName?: string | null }
 
 /**
  * The model's reply, checked. It is asked for JSON; anything that is not one
@@ -122,7 +122,9 @@ export function parseVerdict(raw: string): Verdict {
     const urgency = URGENCIES.includes(o.urgency as Urgency) ? (o.urgency as Urgency) : 'TODAY'
     const summary = typeof o.summary === 'string' && o.summary.trim() ? o.summary.trim().slice(0, 400) : null
     const customerName = typeof o.customerName === 'string' && o.customerName.trim() ? o.customerName.trim().slice(0, 80) : null
-    return { category, urgency, summary, customerName }
+    // The full name as signed, used only to look an order up (findOrderByName).
+    const fullName = typeof o.fullName === 'string' && o.fullName.trim().split(/\s+/).length >= 2 ? o.fullName.trim().slice(0, 80) : null
+    return { category, urgency, summary, customerName, ...(fullName ? { fullName } : {}) }
   } catch {
     return fallback
   }
@@ -277,6 +279,40 @@ export function namesMatch(senderName: string | null | undefined, senderEmail: s
     const last = w[w.length - 1]
     return w.length > 1 && last.length >= 4 && local.includes(last)
   })
+}
+
+/** The words of a name, lowercased and without accents or punctuation. Pure. */
+export function nameWords(s: string | null | undefined): string[] {
+  return (s ?? '').toLowerCase().normalize('NFKD').replace(/[^a-z\s'-]/g, ' ').split(/\s+/).filter((w) => w.length > 1)
+}
+
+/**
+ * Is this order under the name the customer gave, when their email found
+ * nothing (12 Oct 2026: Tracy Dong wrote from tdtracydong@gmail.com about
+ * #2725, placed with no email at all, and was told twice there was no order)?
+ * A full name must match the order's first and last name. A first name alone
+ * is too common to go on (four Tracys have ordered), so it also needs the
+ * order's last name inside the sender's email address, as namesMatch allows.
+ * Pure.
+ */
+export function orderUnderName(hint: { fullName?: string | null; firstName?: string | null; email: string }, orderNames: Array<string | null | undefined>): boolean {
+  const full = nameWords(hint.fullName)
+  const local = hint.email.toLowerCase().split('@')[0].replace(/[^a-z]/g, '')
+  const first = full[0] ?? nameWords(hint.firstName)[0]
+  if (!first) return false
+  return orderNames.some((n) => {
+    const w = nameWords(n)
+    if (w.length < 2 || w[0] !== first) return false
+    const last = w[w.length - 1]
+    if (full.length >= 2) return full[full.length - 1] === last
+    return last.length >= 4 && local.includes(last)
+  })
+}
+
+/** Email addresses written in a message, other than the sender's and our own. Pure. */
+export function mentionedEmails(text: string, sender: string): string[] {
+  const found = (text.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) ?? []).map((e) => e.toLowerCase())
+  return [...new Set(found)].filter((e) => e !== sender.toLowerCase() && !/@(send\.)?cleocamp\.com$/.test(e)).slice(0, 3)
 }
 
 /**

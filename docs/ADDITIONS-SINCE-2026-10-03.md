@@ -461,6 +461,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/shopify-email.ts`, `lib/mouse/tools.ts`, `lib/mouse/tool-kinds.ts`, `lib/mouse/team-mail.ts` (comment), `tests/shopify-email.test.ts`.
 - **Needs:** Shopify with write access to orders and customers. No email sent.
 
+### Support finds an order by the customer's name or another address they give
+- **Problem:** a customer writing from an address the order was not placed under (or about an order placed with no email at all, phone only) was told there was no order, even after giving their name and the other address.
+- **Change:** when the sender's address and any quoted order number find nothing, the support lookup (read-only) tries any other email address written in the message, then the customer's name: a full name as signed must match the order's first and last name; a first name alone also needs the order's last name inside the sender's address. One match becomes the case's order, marked as found by name or other address, with a note; several are listed for the team and none is picked. Changes to the order still check the sender at the tap. The toolless sorter now also returns the full name as signed. Note: the platform's order search finds nothing for a quoted name, so the name is searched as plain words.
+- **Files:** `lib/support/core.ts` (`orderUnderName`, `mentionedEmails`, `nameWords`, `fullName` in the verdict), `lib/support/orders.ts` (`findOrderByName`), `lib/support/pass.ts`, `tests/support-core.test.ts`.
+- **Needs:** Shopify (read orders). No email sent.
+
 ---
 
 ## Setup notes for a new install

@@ -7,7 +7,7 @@ import {
   CATEGORIES, CATEGORY_LABEL, customerAddress, finalUrgency, forwardedOrigin, isSupportMail, normalizeSubject, orderNumbersIn, trimQuoted, unansweredCount, isJustThanks,
   parseVerdict, stripGroupFooter, type Verdict,
 } from '@/lib/support/core'
-import { findOrder, type OrderSnapshot } from '@/lib/support/orders'
+import { findOrder, findOrderByName, type OrderSnapshot } from '@/lib/support/orders'
 import { recordUsage, usageOf } from '@/lib/mouse/usage'
 import { draftForCase } from '@/lib/support/draft'
 import { autoAckText, isMachineSender, shapeOfName, SUPPORT_FROM, SUPPORT_REPLY_TO } from '@/lib/support/reply'
@@ -37,7 +37,8 @@ Reply with ONLY a JSON object:
   "category": one of ${CATEGORIES.map((c) => `"${c}"`).join(', ')},
   "urgency": "NOW" | "TODAY" | "DIGEST",
   "summary": one or two plain sentences for the team — what happened and what the customer wants. Name the item and size if given. No advice.
-  "customerName": the customer's first name if they signed it, else null
+  "customerName": the customer's first name if they signed it, else null,
+  "fullName": their first and last name exactly as they signed it, else null
 }
 
 Urgency: NOW = the team should know within the hour (angry, repeated, a dispute
@@ -256,7 +257,7 @@ export async function supportPass() {
     let c = unknownSender ? null : await findCase(email, subject)
     const isNew = !c
     const quoted = orderNumbersIn(`${subject ?? ''}\n${body}`)
-    const lookup = c?.shopifyOrderName && !quoted.length
+    let lookup: { order: OrderSnapshot | null; note: string | null } = c?.shopifyOrderName && !quoted.length
       ? { order: (c.orderSnapshot as OrderSnapshot | null) ?? null, note: null }
       : await findOrder(email, quoted, name ?? c?.customerName)
 
@@ -276,6 +277,17 @@ export async function supportPass() {
         })
       : []
     const verdict = await classify(trimQuoted(body).text, subject, lookup.order, earlier)
+    // Nothing under their address or a quoted number: try another address they
+    // gave, then their name (12 Oct 2026, #2725). See findOrderByName.
+    let foundAnotherWay = false
+    if (!lookup.order) {
+      const byName = await findOrderByName(email, {
+        fullName: verdict.fullName, firstName: verdict.customerName ?? name ?? c?.customerName,
+        text: [trimQuoted(body).text, ...earlier].join('\n'),
+      })
+      if (byName.order) { lookup = byName; foundAnotherWay = true }
+      else if (byName.note) lookup = { ...lookup, note: byName.note }
+    }
     // A thank-you straight after our reply, asking nothing: filed closed, not
     // pressing, no alert, no draft. See isJustThanks. The last message before
     // this one must be a person's reply, not the auto-reply.
@@ -330,7 +342,7 @@ export async function supportPass() {
     }
     // A mismatched order is on the case, so the name alone no longer means
     // "nothing to explain": its note says why changes to it are locked.
-    if (lookup.note && (!c.shopifyOrderName || lookup.order?.emailMismatch)) {
+    if (lookup.note && (!c.shopifyOrderName || lookup.order?.emailMismatch || foundAnotherWay)) {
       const said = await db.supportMessage.findFirst({ where: { caseId: c.id, direction: 'NOTE', body: lookup.note }, select: { id: true } })
       if (!said) await db.supportMessage.create({ data: { caseId: c.id, direction: 'NOTE', body: lookup.note } })
     }

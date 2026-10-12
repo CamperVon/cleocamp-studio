@@ -157,3 +157,24 @@ test('a thank-you after our reply is told apart from a follow-up (25 Sept 2026, 
   ]
   for (const t of notThanks) assert.equal(isJustThanks(t), false, t.slice(0, 40))
 })
+
+// #2725, 12 Oct 2026: Tracy Dong wrote from tdtracydong@gmail.com about an
+// order placed with no email at all; the case said twice that none existed.
+test('an order is found under the customer\'s name only when the name really matches', async () => {
+  const { orderUnderName, mentionedEmails, parseVerdict } = await import('../lib/support/core')
+  const tracy = { email: 'tdtracydong@gmail.com' }
+  // Full name as signed: first and last must both match.
+  assert.equal(orderUnderName({ ...tracy, fullName: 'Tracy Dong' }, ['Tracy Dong', null]), true)
+  assert.equal(orderUnderName({ ...tracy, fullName: 'Tracy Dong' }, ['Tracy Doan']), false)
+  assert.equal(orderUnderName({ ...tracy, fullName: 'Tracy Dong' }, ['Tracy Min', 'Tracy Hayes']), false)
+  // First name alone needs the order's last name inside the sender's address.
+  assert.equal(orderUnderName({ ...tracy, firstName: 'Tracy' }, ['Tracy Dong']), true)
+  assert.equal(orderUnderName({ ...tracy, firstName: 'Tracy' }, ['Tracy Hayes']), false)
+  assert.equal(orderUnderName({ email: 'tracy@gmail.com', firstName: 'Tracy' }, ['Tracy Dong']), false)
+  assert.equal(orderUnderName({ email: 'x@y.com' }, ['Tracy Dong']), false)
+  // Other addresses the customer gave, never our own or theirs.
+  assert.deepEqual(mentionedEmails('Could it have gone to Tracie.dong@Hotmail.com ? (support@send.cleocamp.com)', 'tdtracydong@gmail.com'), ['tracie.dong@hotmail.com'])
+  // The sorter's full name is kept only when it is a first and a last name.
+  assert.equal(parseVerdict('{"category":"WHERE_IS_MY_ORDER","urgency":"TODAY","customerName":"Tracy","fullName":"Tracy Dong"}').fullName, 'Tracy Dong')
+  assert.equal(parseVerdict('{"category":"WHERE_IS_MY_ORDER","urgency":"TODAY","fullName":"Tracy"}').fullName, undefined)
+})

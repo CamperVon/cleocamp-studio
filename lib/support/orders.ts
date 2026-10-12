@@ -1,4 +1,4 @@
-import { namesMatch } from '@/lib/support/core'
+import { mentionedEmails, nameWords, namesMatch, orderUnderName } from '@/lib/support/core'
 import { refundIssued } from '@/lib/support/reply'
 import { isConfigured, shopifyGraphQL } from '@/lib/integrations/shopify'
 
@@ -158,6 +158,39 @@ export async function findOrder(email: string, quotedNames: string[], senderName
     }
   } catch (e) {
     return { order: null, recent: [], note: `Order lookup failed: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}` }
+  }
+}
+
+/**
+ * When the sender's own address and any order number found nothing: look
+ * under another address the customer gave ("could it have gone to
+ * Tracie.dong@Hotmail.com?") and under their name. On 12 Oct 2026 Tracy
+ * Dong wrote twice about #2725, placed with no email at all, and the case
+ * said both times that no order existed; Brandon found it by name in a
+ * minute. Read-only. An order found this way is marked with how it was
+ * found, and anything that changes it still checks the sender at the tap.
+ * One match is the order; several are shown for the team, none picked.
+ */
+export async function findOrderByName(email: string, hints: { fullName?: string | null; firstName?: string | null; text?: string }): Promise<
+  { order: OrderSnapshot | null; recent: OrderSnapshot[]; note: string | null }
+> {
+  if (!isConfigured()) return { order: null, recent: [], note: null }
+  try {
+    for (const other of mentionedEmails(hints.text ?? '', email)) {
+      const [hit] = await search(`email:${other}`, 1)
+      if (hit) return { order: { ...hit, emailMismatch: hit.email, sameName: namesMatch(hints.firstName ?? hints.fullName, email, [hit.shipTo?.name, hit.billName]) }, recent: [], note: `${hit.name} was found under ${other}, an address the customer gave, not ${email}. An address change still needs a message from the order's email.` }
+    }
+    // Plain words: Shopify finds nothing for a quoted "Tracy Dong", but #2725 for Tracy Dong.
+    const term = nameWords(hints.fullName).length >= 2 ? nameWords(hints.fullName).join(' ') : nameWords(hints.firstName)[0]
+    if (!term) return { order: null, recent: [], note: null }
+    const found = (await search(term, 25)).filter((o) => orderUnderName({ ...hints, email }, [o.shipTo?.name, o.billName]))
+    const mark = (o: OrderSnapshot) => ({ ...o, emailMismatch: o.email, sameName: true })
+    const how = (o: OrderSnapshot) => `${o.name} (${o.createdAt.slice(0, 10)}, ${o.shipTo?.name ?? o.billName}, ${o.email ?? 'no email on the order'})`
+    if (found.length === 1) return { order: mark(found[0]), recent: [], note: `Found by name, not email: ${how(found[0])}. An address change still needs a message from the order's email.` }
+    if (found.length > 1) return { order: null, recent: found.slice(0, 5).map(mark), note: `No order under ${email}. ${found.length} orders under that name, none picked: ${found.slice(0, 5).map(how).join('; ')}.` }
+    return { order: null, recent: [], note: null }
+  } catch (e) {
+    return { order: null, recent: [], note: `Name lookup failed: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}` }
   }
 }
 
