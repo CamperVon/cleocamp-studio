@@ -34,6 +34,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-12', path: '/support',
     text: 'Support now finds a customer\'s order by their name, or by another email they mention, when they write from a different address. Tracy Dong\'s #2725 is the one it missed.',
   },
+  {
+    on: '2026-10-12',
+    text: 'Mouse can now set up a wholesale-only colour on a product that is also on Shopify, like the Cannellini and Espresso Petite Bean Bags, with its own SKU.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

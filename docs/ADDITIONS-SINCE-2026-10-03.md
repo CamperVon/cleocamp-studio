@@ -467,6 +467,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/support/core.ts` (`orderUnderName`, `mentionedEmails`, `nameWords`, `fullName` in the verdict), `lib/support/orders.ts` (`findOrderByName`), `lib/support/pass.ts`, `tests/support-core.test.ts`.
 - **Needs:** Shopify (read orders). No email sent.
 
+### Wholesale-only variants on a product that is also sold online
+- **Problem:** a product listed on the e-commerce platform could only get new variants there, so a colour sold only wholesale (never online) could not be set up at all, and could not carry a SKU or a wholesale price.
+- **Change:** `create_product_variants` takes `wholesaleOnly: true` with the colourways named. It is allowed only when none of those colourways already has a platform variant on the product (a colour sold online is still made on the platform). The variant lives in the app alone, so nothing can drift. SKUs are assigned as for any variant.
+- **Files:** `lib/mouse/tools.ts` (`wholesaleOnlyProblem`, create_product_variants), `tests/wholesale-only-variants.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

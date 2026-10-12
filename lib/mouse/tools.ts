@@ -313,6 +313,23 @@ function isListedOnShopify(product: { variants: { shopifyVariantId: string | nul
 }
 
 /**
+ * Why wholesale-only variants cannot be made here on a product that is on
+ * Shopify, or null when they can (12 Oct 2026). A colour sold only wholesale
+ * (the Red, Cannellini and Espresso Petite Bean Bags) is never on Shopify, so
+ * its variant lives in the app alone and nothing can drift. Every colour asked
+ * for must be named, and none may already have a Shopify variant on this
+ * product: a colour Shopify sells is made in Shopify. Pure.
+ */
+export function wholesaleOnlyProblem(
+  product: { variants: { colorwayId: string | null; shopifyVariantId: string | null }[] },
+  colorwayIds: string[] | undefined,
+): string | null {
+  if (!colorwayIds?.length) return 'Wholesale-only variants need the colourways named: a product with no colours that is on Shopify is made in Shopify.'
+  const onShopify = colorwayIds.filter((c) => product.variants.some((v) => v.colorwayId === c && v.shopifyVariantId !== null))
+  return onShopify.length ? 'Some of those colours are already sold on Shopify, so they are not wholesale only; make them in Shopify.' : null
+}
+
+/**
  * A wholesale store by id or by name (both checked when both are given).
  * Brandon, 5 Oct 2026: Mouse made Waymo Commercial and could not invoice it
  * a message later, because the tools took only an id it could no longer see.
@@ -1931,7 +1948,10 @@ export const TOOLS: Record<string, Tool> = {
         'twice is safe. Use it for a product still in development, before it reaches ' +
         'Shopify: without variants there is nothing to order against. For a product already ' +
         'listed on Shopify, do NOT use this — the variant has to be made in Shopify first ' +
-        'and pulled in with sync_shopify, or it can never write its count back.',
+        'and pulled in with sync_shopify, or it can never write its count back. The one ' +
+        'exception: a colour a person says is wholesale only, never on Shopify (like the Red ' +
+        'Petite Bean Bag). Then pass wholesaleOnly: true with its colorwayIds, and the variant ' +
+        'lives in the app alone; set its wholesale price after.',
       input_schema: {
         type: 'object',
         properties: {
@@ -1946,6 +1966,7 @@ export const TOOLS: Record<string, Tool> = {
             description: 'Colourway ids to make each size in. Omit for a product with no colours.',
             items: { type: 'string' as const },
           },
+          wholesaleOnly: { type: 'boolean' as const, description: 'Only when a person said these colours are wholesale only and never go on Shopify' },
         },
         required: ['productId'],
       },
@@ -1956,7 +1977,10 @@ export const TOOLS: Record<string, Tool> = {
         include: { variants: true, colorways: true },
       })
       if (!product) return { error: `No product ${i.productId}` }
-      if (isListedOnShopify(product)) {
+      const wholesaleOnly = i.wholesaleOnly === true
+      const wsProblem = wholesaleOnly ? wholesaleOnlyProblem(product, i.colorwayIds as string[] | undefined) : null
+      if (wsProblem) return { created: 0, error: wsProblem }
+      if (isListedOnShopify(product) && !wholesaleOnly) {
         return {
           created: 0,
           error:
