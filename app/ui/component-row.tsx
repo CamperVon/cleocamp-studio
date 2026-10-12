@@ -68,7 +68,7 @@ export function RetiredComponentRow({
  * boundary is drawn there and not here.
  */
 export function ComponentRow({
-  id, name, vendorId, vendorSku, unitCostCents, unitOfMeasure, leadTimeDays,
+  id, name, vendorId, vendorSku, unitCostCents, unitOfMeasure, leadTimeDays, buyPrice,
   stockedInStudio, stock, vendors, bomUsage, products, inProductId, files,
 }: {
   id: string
@@ -77,6 +77,8 @@ export function ComponentRow({
   vendorSku: string | null
   unitCostCents: number | null
   unitOfMeasure: string
+  /** The price in the unit it is bought in, when that differs (lib/po-units.ts purchaseUnitPrice). */
+  buyPrice?: { cents: number; unit: string } | null
   leadTimeDays: number | null
   stockedInStudio: boolean
   stock: StockDisplay
@@ -177,10 +179,20 @@ export function ComponentRow({
         <td className="px-3 py-2.5 font-mono text-xs text-muted">{vendorSku || '—'}</td>
         <td className="px-3 py-2.5 text-right">
           {unitCostCents !== null ? (
-            <>
-              <span className="tnum">${money(unitCostCents)}</span>
-              <span className="text-faint">/{unitOfMeasure}</span>
-            </>
+            buyPrice ? (
+              // Bought in one unit, counted in another: the buying price first,
+              // the counting unit beside it ($12.24/metre · $11.19/yard).
+              <span className="whitespace-nowrap">
+                <span className="tnum">${money(buyPrice.cents)}</span>
+                <span className="text-faint">/{buyPrice.unit}</span>
+                <span className="ml-1.5 text-xs text-faint tnum">${money(unitCostCents)}/{unitOfMeasure}</span>
+              </span>
+            ) : (
+              <>
+                <span className="tnum">${money(unitCostCents)}</span>
+                <span className="text-faint">/{unitOfMeasure}</span>
+              </>
+            )
           ) : '—'}
         </td>
         <td className="px-3 py-2.5 text-right">

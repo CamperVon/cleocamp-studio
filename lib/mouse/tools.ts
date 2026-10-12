@@ -308,6 +308,14 @@ export async function writeEvent(args: {
  * worked because Studio Mouse declined the test case on its own reasoning —
  * the code behind it would have happily made the orphan variant.
  */
+/** Why a component's counting unit cannot change, or null. Pure. */
+export function unitChangeProblem(c: { from: string; to: string; events: number; poLines: number; onHand: number }): string | null {
+  if (!c.to.trim()) return 'Give the unit.'
+  if (c.to.trim() === c.from) return null
+  if (c.events || c.poLines || c.onHand) return `Counts or orders are already recorded in ${c.from}s, and they would silently read as ${c.to}s. Keep ${c.from} as the counting unit; if it is bought in ${c.to}s, set purchaseUnit and unitsPerPurchaseUnit instead.`
+  return null
+}
+
 function isListedOnShopify(product: { variants: { shopifyVariantId: string | null }[] }) {
   return product.variants.some((v) => v.shopifyVariantId !== null)
 }
@@ -1256,6 +1264,12 @@ export const TOOLS: Record<string, Tool> = {
               'is a fact about how a specific thing is actually bought, not something the ' +
               'category decides — do not default it from MATERIAL/TRIM/HARDWARE.',
           },
+          unitOfMeasure: str(
+            'The unit it is counted and used in (yard, metre, piece). Only while nothing has been counted or ' +
+            'ordered in the old one: a count or order already in yards would silently become metres, so then it is refused. ' +
+            'Recipe amounts are NOT converted: change them with update_product_bom in the same turn. When it is bought ' +
+            'in a different unit (by the metre, counted in yards), keep this as the counting unit and set purchaseUnit and unitsPerPurchaseUnit instead.',
+          ),
           purchaseUnit: str('How it is bought, e.g. roll or hide'),
           unitsPerPurchaseUnit: num('How many consumption units per purchase unit'),
           notes: str('Replaces the existing note'),
@@ -1279,7 +1293,26 @@ export const TOOLS: Record<string, Tool> = {
       if (data.unitsPerPurchaseUnit !== undefined) data.unitsPerPurchaseUnit = String(data.unitsPerPurchaseUnit)
       // "" clears: an empty supplier wording would print a blank PO line.
       for (const k of ['vendorSku', 'vendorDescription']) if (typeof data[k] === 'string' && !data[k].trim()) data[k] = null
-      return db.component.update({ where: { id }, data, select: { id: true, name: true } })
+      // A new counting unit (12 Oct 2026). Refused once anything is recorded
+      // in the old one, and the recipes that now read in the new unit are named.
+      let recipes: string[] = []
+      if (typeof data.unitOfMeasure === 'string') {
+        const unit = data.unitOfMeasure.trim()
+        const c = await db.component.findUnique({
+          where: { id },
+          select: { unitOfMeasure: true, onHandQty: true, _count: { select: { events: true, poLines: true } }, usedIn: { select: { qtyPerUnit: true, parentProduct: { select: { name: true } }, parentComponent: { select: { name: true } } } } },
+        })
+        if (!c) return { error: `No component ${id}` }
+        const problem = unitChangeProblem({ from: c.unitOfMeasure, to: unit, events: c._count.events, poLines: c._count.poLines, onHand: Number(c.onHandQty) })
+        if (problem) return { error: problem }
+        if (unit === c.unitOfMeasure) delete data.unitOfMeasure
+        else {
+          data.unitOfMeasure = unit
+          recipes = c.usedIn.map((b) => `${b.parentProduct?.name ?? b.parentComponent?.name}: ${Number(b.qtyPerUnit)} (was ${c.unitOfMeasure}, now reads ${unit})`)
+        }
+      }
+      const r = await db.component.update({ where: { id }, data, select: { id: true, name: true } })
+      return recipes.length ? { ...r, recipesToConvert: recipes, tellTheUser: 'Say these recipe amounts now read in the new unit and change them with update_product_bom.' } : r
     },
   },
 

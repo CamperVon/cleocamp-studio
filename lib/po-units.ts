@@ -34,3 +34,16 @@ export function unitsPerLineUnit(lineUnit: string | null | undefined, comp: Comp
   if (comp.purchaseUnit && sameUnit(base, comp.purchaseUnit) && per > 0) return per
   return 1
 }
+
+/**
+ * The price per purchase unit, when a component is bought in a different unit
+ * from the one it is counted in: the 5to7 shell is counted in yards (Staples'
+ * yardage per skirt) and bought by the metre at $12.24, stored as $11.19 a
+ * yard (Brandon, 12 Oct 2026: "metre price, and US beside it"). Null when
+ * there is no other unit or no conversion. Pure.
+ */
+export function purchaseUnitPrice(c: { unitCostCents: number | null; unitOfMeasure: string; purchaseUnit?: string | null; unitsPerPurchaseUnit?: unknown }): { cents: number; unit: string } | null {
+  const per = Number(c.unitsPerPurchaseUnit)
+  if (c.unitCostCents === null || !c.purchaseUnit || !(per > 0) || sameUnit(c.purchaseUnit, c.unitOfMeasure)) return null
+  return { cents: Math.round(c.unitCostCents * per), unit: c.purchaseUnit }
+}

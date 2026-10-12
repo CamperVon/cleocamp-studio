@@ -46,6 +46,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-12', path: '/purchase-orders',
     text: 'Purchase orders now show a photo for colours that are not on Shopify, like the Cannellini and Espresso Bean Bags. Send Mouse a photo in chat and say which colour it is.',
   },
+  {
+    on: '2026-10-12', path: '/components',
+    text: 'Components page: fabric bought by the metre but measured in yards now shows both prices, metre first, like the 5to7 Skirt shell: $12.24/metre, $11.19/yard.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

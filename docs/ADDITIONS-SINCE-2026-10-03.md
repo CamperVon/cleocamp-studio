@@ -499,6 +499,11 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Problem:** a product added as its own listing in a new colour (a belt in Black) was placed at the end of the line sheet, far from the rest of its style.
 - **Change:** a new row goes after its own product's rows, else after another product of the same style, else at the end; when there is no gap, the rows below move down to make one. File: `lib/line-sheet.tsx`. Needs nothing.
 
+### Price in the buying unit, with the counting unit beside it; changing a counting unit safely
+- **Problem:** a material bought in one unit and counted in another (fabric sold by the metre, cut in yards per garment) showed only the price per counting unit, and the assistant could not change a component's counting unit at all.
+- **Change:** the Components page shows the price per purchase unit with the per-counting-unit price beside it (`$12.24/metre · $11.19/yard`), from `purchaseUnitPrice` in `lib/po-units.ts`. `update_component` takes `unitOfMeasure`, refused once any count, event or order line is recorded in the old unit (they would silently change meaning); on success it names the recipe amounts that now read in the new unit so they get converted.
+- **Files:** `lib/po-units.ts`, `app/ui/component-row.tsx`, `app/(main)/components/page.tsx`, `lib/mouse/tools.ts` (`unitChangeProblem`), `tests/component-units.test.ts`. Needs nothing.
+
 ---
 
 ## Setup notes for a new install

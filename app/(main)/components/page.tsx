@@ -1,5 +1,6 @@
 import { filesFor } from '@/lib/files'
 import { db } from '@/lib/db'
+import { purchaseUnitPrice } from '@/lib/po-units'
 import { Page } from '@/app/ui/primitives'
 import { PageChat } from '@/app/ui/page-chat'
 import { CollapsibleCard } from '@/app/ui/collapsible-card'
@@ -127,6 +128,7 @@ function Table({ rows, stockOf, stockHeader, vendors, products, inProductId, fil
               stockedInStudio={c.stockedInStudio}
               unitCostCents={c.unitCostCents}
               unitOfMeasure={c.unitOfMeasure}
+              buyPrice={purchaseUnitPrice(c)}
               leadTimeDays={c.leadTimeDays}
               stock={stockOf(c)}
               vendors={vendors}
