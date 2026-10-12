@@ -25,6 +25,9 @@
  * 8 Oct 2026, after Cleo emailed a replacement Bean Bag and Mouse could not
  * make it: a gift only makes a $0 order that waits in Shopify for a person to
  * make the shipping label, so nothing leaves without someone's hand on it.
+ * set_order_email is allowed too (Brandon, 12 Oct 2026: "as long as its from
+ * us"): it puts an email on a Shopify order, and on its customer only when
+ * that has none, never replacing one (lib/shopify-email.ts).
  */
 export const NOT_FROM_EMAIL = new Set([
   'send_purchase_order', 'send_email', 'send_context_snapshot', 'send_wholesale_draft', 'send_line_sheet',

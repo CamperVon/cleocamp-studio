@@ -455,6 +455,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/cache-diagnostics.ts`, `lib/mouse/runner.ts`, `lib/mouse/agent.ts`, `scripts/cache-diagnostics.ts`, `tests/cache-diagnostics.test.ts`.
 - **Needs:** nothing beyond the Anthropic API (first-party only; not on Bedrock or Vertex). No Shopify, no email.
 
+### Put an email on an order made without one · set_order_email
+- **Problem:** an order made by hand (a gift, a phone order) can be created with no customer email, so the person gets no shipping notification, and the assistant had no way to add one afterwards.
+- **Change:** a `set_order_email` tool sets the email on an e-commerce order by its number, and on the order's customer record only when that has none. It never replaces an email a customer record already has (that moves their account and future mail), and says so instead. Allowed from chat and from a verified team email (it is not in `NOT_FROM_EMAIL`); never from untrusted mail, which only proposes. The address is checked for shape first; "already taken" by another customer is reported, not forced.
+- **Files:** `lib/shopify-email.ts`, `lib/mouse/tools.ts`, `lib/mouse/tool-kinds.ts`, `lib/mouse/team-mail.ts` (comment), `tests/shopify-email.test.ts`.
+- **Needs:** Shopify with write access to orders and customers. No email sent.
+
 ---
 
 ## Setup notes for a new install

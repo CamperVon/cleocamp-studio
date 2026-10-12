@@ -26,6 +26,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-12',
     text: 'Mouse can now change a colour\'s code after SKUs are made (like RST to CST on the Cosmo Tee) and rebuild the SKUs, and it tells you which ones the Shopify listing still needs changed to match.',
   },
+  {
+    on: '2026-10-12',
+    text: 'Mouse can now add an email to a Shopify order made without one, like a gift, so the person gets their shipping emails. Ask in chat, or email Mouse yourself.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

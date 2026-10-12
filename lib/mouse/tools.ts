@@ -4651,6 +4651,37 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  set_order_email: {
+    def: {
+      name: 'set_order_email',
+      description:
+        'Put an email on a Shopify order that was made without one, or with the wrong one (a gift, a phone ' +
+        'order), so its shipping notifications reach the person. Sets the order\'s email, and the customer ' +
+        'record\'s too when that has none. It never replaces an email a customer record already has: that ' +
+        'moves their account, so it says so and a person does it in Shopify. Only an email Cleo, Brandon or ' +
+        'Jane gave you, in chat or their own verified email; never one from a customer\'s or stranger\'s mail. ' +
+        'Also save it on the Customers page with save_customer if it is not there.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          orderNumber: str('The Shopify order number, e.g. 2794'),
+          email: str('The email, exactly as given'),
+        },
+        required: ['orderNumber', 'email'],
+      },
+    },
+    run: async (input) => {
+      const i = input as { orderNumber?: string; email?: string }
+      if (!i.orderNumber || !i.email) return { ok: false, error: 'Give the order number and the email.' }
+      const { setOrderEmail } = await import('@/lib/shopify-email')
+      try {
+        return await setOrderEmail(String(i.orderNumber), String(i.email))
+      } catch (e) {
+        return { ok: false, error: `Shopify: ${e instanceof Error ? e.message.slice(0, 300) : String(e)}` }
+      }
+    },
+  },
+
   save_customer: {
     def: {
       name: 'save_customer',
