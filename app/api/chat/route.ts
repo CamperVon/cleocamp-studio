@@ -23,6 +23,16 @@ const PAGES = new Set(['Products', 'Components', 'ToDo', 'Stylists', 'Wholesale'
 // refreshing — every turn is already persisted, the UI just never reloaded
 // it. Returns messages in the same shape the client renders, oldest first.
 export async function GET(req: NextRequest) {
+  // Your latest conversation, from whichever device you last used (12 Oct 2026).
+  // Only with a personal sign-in: the shared password stays per-device.
+  if (req.nextUrl.searchParams.get('latest') === '1') {
+    const personId = await currentPersonId()
+    if (!personId) return NextResponse.json({ threadId: null, lastAt: null })
+    const last = await db.chatMessage.findFirst({
+      where: { thread: { personId } }, orderBy: { createdAt: 'desc' }, select: { threadId: true, createdAt: true },
+    })
+    return NextResponse.json({ threadId: last?.threadId ?? null, lastAt: last?.createdAt.toISOString() ?? null })
+  }
   const threadId = req.nextUrl.searchParams.get('threadId')
   if (!threadId) return NextResponse.json({ error: 'threadId required' }, { status: 400 })
 
@@ -103,6 +113,10 @@ export async function POST(req: NextRequest) {
     : await db.chatThread.create({ data: { title } })
   if (!thread) return NextResponse.json({ error: 'no such thread' }, { status: 404 })
   const practice = thread.title === PRACTICE_TITLE
+  // The main chat's conversation is the sender's, to open on any of their
+  // devices. A page box keeps its own thread and is not tagged.
+  const owner = body.page ? null : await currentPersonId()
+  if (owner && !thread.personId) await db.chatThread.update({ where: { id: thread.id }, data: { personId: owner } })
 
   // A photo of an invoice with no caption still needs an instruction — tell
   // Studio Mouse to look at it rather than sending it an empty message.

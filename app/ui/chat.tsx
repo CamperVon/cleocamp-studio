@@ -150,6 +150,28 @@ async function shrinkImage(file: File): Promise<PendingFile> {
 // belongs to this browser so leaving the page (or refreshing it) doesn't
 // throw the conversation away — a resume, not a second copy of the data.
 const THREAD_KEY = 'studio-mouse:thread-id'
+// When "New conversation" was last pressed on this device: a latest
+// conversation from before then is not reopened.
+const NEW_KEY = 'studio-mouse:new-since'
+
+/**
+ * Your latest main-chat conversation from any device (12 Oct 2026), or null:
+ * none yet, signed in with the shared password, or older than the last time
+ * "New conversation" was pressed here.
+ */
+async function latestThread(): Promise<{ threadId: string; lastAt: string } | null> {
+  try {
+    const res = await fetch('/api/chat?latest=1')
+    if (!res.ok) return null
+    const d = (await res.json()) as { threadId: string | null; lastAt: string | null }
+    if (!d.threadId || !d.lastAt) return null
+    let since = 0
+    try { since = Number(localStorage.getItem(NEW_KEY)) || 0 } catch { /* ignore */ }
+    return Date.parse(d.lastAt) > since ? { threadId: d.threadId, lastAt: d.lastAt } : null
+  } catch {
+    return null
+  }
+}
 
 /**
  * Wait for a reply the phone stopped listening for.
@@ -406,7 +428,13 @@ export function Chat() {
       }
       let saved: string | null = null
       try { saved = localStorage.getItem(THREAD_KEY) } catch { /* private window, etc. */ }
+      // Your latest conversation wins over what this device last showed, so a
+      // chat started on the phone carries on at the desk.
+      const latest = await latestThread()
+      if (cancelled) return
+      if (latest) saved = latest.threadId
       if (!saved) { setRestoring(false); return }
+      try { localStorage.setItem(THREAD_KEY, saved) } catch { /* ignore */ }
       try {
         const res = await fetch(`/api/chat?threadId=${encodeURIComponent(saved)}`)
         if (!res.ok) throw new Error('gone')
@@ -452,7 +480,34 @@ export function Chat() {
     setPractice(false)
     threadRef.current = undefined
     try { localStorage.removeItem(THREAD_KEY) } catch { /* ignore */ }
+    try { localStorage.setItem(NEW_KEY, String(Date.now())) } catch { /* ignore */ }
   }
+
+  // Coming back to the app (another tab, the phone unlocked): pick up anything
+  // said since on another device. Never while a message is on its way.
+  const busy = useRef(false)
+  const messagesRef = useRef(0)
+  messagesRef.current = messages.length
+  busy.current = pending !== null || queue.length > 0 || restoring
+  useEffect(() => {
+    async function sync() {
+      if (document.visibilityState !== 'visible' || busy.current) return
+      const latest = await latestThread()
+      if (!latest || busy.current) return
+      try {
+        const res = await fetch(`/api/chat?threadId=${encodeURIComponent(latest.threadId)}`)
+        if (!res.ok || busy.current) return
+        const d = await res.json()
+        if (latest.threadId === threadRef.current && d.messages.length === messagesRef.current) return
+        setMessages(d.messages)
+        setPractice(d.practice === true)
+        rememberThread(d.threadId)
+      } catch { /* offline: try again next time */ }
+    }
+    document.addEventListener('visibilitychange', sync)
+    window.addEventListener('focus', sync)
+    return () => { document.removeEventListener('visibilitychange', sync); window.removeEventListener('focus', sync) }
+  }, [])
 
   async function onFilesChosen(e: React.ChangeEvent<HTMLInputElement>) {
     const chosen = Array.from(e.target.files ?? [])

@@ -483,6 +483,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Problem:** `update_line_sheet` "list" returned prices and availability but not each row's description, sizing or minimum, so asked to "use the same description as the Petite", the assistant had nothing to copy and the new rows were never added.
 - **Change:** the list includes `description`, `sizing` and `minOrder`. File: `lib/mouse/tools.ts`. Needs nothing.
 
+### Your conversation follows you between phone and desktop
+- **Problem:** each device remembered its own last chat with the assistant, so a conversation started on the phone was not there at the desk.
+- **Change:** a main-chat conversation is tagged with the person who writes in it (personal sign-in only; page boxes are not tagged). The chat opens on that person's most recent conversation from any device, and picks up anything newer when the app comes back into view. "New conversation" on a device hides older ones there until something newer is said. Shared-password sign-ins keep the old per-device behaviour.
+- **Files:** `prisma/schema.prisma` (ChatThread.personId) + migration `20261012210000_chat_thread_person`, `app/api/chat/route.ts` (`?latest=1`, tagging), `app/ui/chat.tsx`.
+- **Needs:** personal sign-in links. Nothing else.
+
 ---
 
 ## Setup notes for a new install

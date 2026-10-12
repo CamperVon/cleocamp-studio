@@ -849,8 +849,13 @@ enum ChatRole {
 model ChatThread {
   id        String        @id @default(cuid())
   title     String?
+  /// Who the conversation is (12 Oct 2026), so it opens on whichever device
+  /// they use next. Main chat only; page boxes keep their own threads.
+  personId  String?
   createdAt DateTime      @default(now())
   messages  ChatMessage[]
+
+  @@index([personId])
 }
 
 model ChatMessage {

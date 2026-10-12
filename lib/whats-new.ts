@@ -38,6 +38,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-12',
     text: 'Mouse can now set up a wholesale-only colour on a product that is also on Shopify, like the Cannellini and Espresso Petite Bean Bags, with its own SKU.',
   },
+  {
+    on: '2026-10-12', path: '/',
+    text: 'Your chat with Mouse now follows you: start it on your phone and it is there on your computer, and the other way round. It starts with your next message.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */
