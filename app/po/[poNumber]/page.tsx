@@ -30,6 +30,8 @@ export default async function PurchaseOrderDoc({
     },
   })
   if (!po) notFound()
+  // A colour not on Shopify still shows a photo (lib/variant-photos.ts).
+  await (await import('@/lib/variant-photos')).fillPhotos(db, po.lines)
 
   const lang: DocLanguage = asDocLanguage(po.language)
   const t = (k: Parameters<typeof label>[1]) => label(lang, k)

@@ -42,6 +42,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-12', path: '/',
     text: 'Your chat with Mouse now follows you: start it on your phone and it is there on your computer, and the other way round. It starts with your next message.',
   },
+  {
+    on: '2026-10-12', path: '/purchase-orders',
+    text: 'Purchase orders now show a photo for colours that are not on Shopify, like the Cannellini and Espresso Bean Bags. Send Mouse a photo in chat and say which colour it is.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

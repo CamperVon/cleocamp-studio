@@ -34,7 +34,7 @@ export const NOT_FROM_EMAIL = new Set([
   'email_invoice_copy', 'invoice_live_sale', 'invoice_wholesale', 'refund_friends_family',
   'cancel_live_sale', 'update_person_email', 'update_notification_settings', 'record_financials',
   // Takes the newest chat attachment: from an email it would keep the wrong file.
-  'keep_file',
+  'keep_file', 'set_colour_photo',
   // Sends our information outside the company.
   'hand_to_muse', 'send_back_to_muse',
 ])

@@ -4706,6 +4706,30 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  set_colour_photo: {
+    def: {
+      name: 'set_colour_photo',
+      description:
+        'Give a colour that is not on Shopify (a wholesale-only colour, a product still in development) a ' +
+        'photo, from the photo just attached in chat. It is kept in Files and shows on that colour\'s ' +
+        'variants, purchase orders included. A colour Shopify sells takes its photo from Shopify; this ' +
+        'refuses it. Only when a person sends the photo and says which colour it is.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          productId: str('Product id'),
+          colorwayId: str('Colourway id'),
+          filename: str('Only when several photos were sent: the file name of the one meant'),
+        },
+        required: ['productId', 'colorwayId'],
+      },
+    },
+    run: async (i, ctx) => {
+      const { setColourPhoto } = await import('@/lib/variant-photos')
+      return setColourPhoto(ctx?.threadId, i)
+    },
+  },
+
   save_customer: {
     def: {
       name: 'save_customer',

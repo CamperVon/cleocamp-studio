@@ -489,6 +489,16 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `prisma/schema.prisma` (ChatThread.personId) + migration `20261012210000_chat_thread_person`, `app/api/chat/route.ts` (`?latest=1`, tagging), `app/ui/chat.tsx`.
 - **Needs:** personal sign-in links. Nothing else.
 
+### Photos for colours that are not on the online store
+- **Problem:** a purchase order line showed a photo only when the variant had one from the e-commerce platform, so wholesale-only and in-development colours went to the supplier as text beside photo lines.
+- **Change:** a variant without a photo shows the best one the app has: another size of the same colour, then the line sheet's photo of that colour; never another colour's. The assistant's `set_colour_photo` keeps a photo sent in chat in Files and sets it on that colour's app-only variants (refused for a colour sold online, and not from email). App photos are served at `/api/photo/<id>` behind sign-in and inlined into the PO PDF, which is drawn on the server. Sent orders freeze the photo with the line as before.
+- **Files:** `lib/variant-photos.ts`, `app/api/photo/[id]/route.ts`, `lib/po-pdf.tsx`, `lib/po-snapshot.ts`, `app/po/[poNumber]/page.tsx`, `lib/files.ts`, `lib/mouse/tools.ts`, `lib/mouse/tool-kinds.ts`, `lib/mouse/team-mail.ts`, `tests/variant-photos.test.ts`.
+- **Needs:** nothing beyond the app.
+
+### New line sheet rows go beside their style
+- **Problem:** a product added as its own listing in a new colour (a belt in Black) was placed at the end of the line sheet, far from the rest of its style.
+- **Change:** a new row goes after its own product's rows, else after another product of the same style, else at the end; when there is no gap, the rows below move down to make one. File: `lib/line-sheet.tsx`. Needs nothing.
+
 ---
 
 ## Setup notes for a new install

@@ -166,6 +166,31 @@ export function missingRows(products: SheetCandidate[], rows: Array<{ productId:
  * same row. The words a store reads (description, availability, minimum)
  * start blank rather than guessed; the Wholesale page flags them.
  */
+/**
+ * Where a new row goes: after the last row of its own product, else of
+ * another product of the same style, else at the end. When there is no gap,
+ * the rows after it move down to make one. Keeps `now` and `taken` current.
+ */
+async function placeBeside(
+  tx: Pick<typeof db, 'lineSheetRow'>,
+  now: Array<{ productId: string | null; colorway: string | null; position: number }>,
+  taken: number[],
+  productId: string | null,
+  styleOf: Map<string, string | null>,
+): Promise<number> {
+  const style = productId ? styleOf.get(productId) ?? null : null
+  const last = [...now].reverse().find((x) => x.productId === productId) ??
+    (style ? [...now].reverse().find((x) => x.productId && styleOf.get(x.productId) === style) : undefined)
+  if (!last) return Math.max(0, ...taken) + 10
+  const next = taken.filter((t) => t > last.position).sort((a, b) => a - b)[0]
+  if (next == null) return last.position + 10
+  if (next - last.position > 1) return Math.floor((last.position + next) / 2)
+  await tx.lineSheetRow.updateMany({ where: { position: { gt: last.position } }, data: { position: { increment: 10 } } })
+  for (const x of now) if (x.position > last.position) x.position += 10
+  for (let k = 0; k < taken.length; k++) if (taken[k] > last.position) taken[k] += 10
+  return last.position + 5
+}
+
 export async function addNewToLineSheet(): Promise<NewRow[]> {
   const products = await db.product.findMany({
     where: { status: 'ACTIVE' },
@@ -177,18 +202,16 @@ export async function addNewToLineSheet(): Promise<NewRow[]> {
   })
   const rows = await db.lineSheetRow.findMany({ select: { productId: true, colorway: true } })
   if (!missingRows(products, rows).length) return []
+  // Which style each product is, so a new colour listing (Boy Belt - Black)
+  // lands beside its style's rows, not at the end (Brandon, 12 Oct 2026).
+  const styleOf = new Map((await db.product.findMany({ select: { id: true, styleId: true } })).map((p) => [p.id, p.styleId]))
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(740301)`
     const now = await tx.lineSheetRow.findMany({ orderBy: { position: 'asc' }, select: { productId: true, colorway: true, position: true } })
     const add = missingRows(products, now)
     const taken = now.map((r) => r.position)
     for (const r of add) {
-      // Beside its own product's rows when there is room, else at the end.
-      const last = [...now].reverse().find((x) => x.productId === r.productId)
-      const next = last ? taken.filter((t) => t > last.position).sort((a, b) => a - b)[0] : undefined
-      const position = last && next != null && next - last.position > 1
-        ? Math.floor((last.position + next) / 2)
-        : Math.max(0, ...taken) + 10
+      const position = await placeBeside(tx, now, taken, r.productId, styleOf)
       taken.push(position)
       now.push({ productId: r.productId, colorway: r.colorway, position })
       await tx.lineSheetRow.create({

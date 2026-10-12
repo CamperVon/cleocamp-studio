@@ -130,7 +130,7 @@ export function chooseChatAttachment(threadId: string, candidates: ChatFile[], f
 }
 
 /** This thread's recent attachments; the query is limited to the thread as well. */
-async function threadAttachments(threadId: string): Promise<ChatFile[]> {
+export async function threadAttachments(threadId: string): Promise<ChatFile[]> {
   const rows = await db.chatAttachment.findMany({
     where: { message: { threadId }, createdAt: { gte: new Date(Date.now() - KEEP_WINDOW_MS) }, data: { not: null } },
     orderBy: { createdAt: 'desc' },

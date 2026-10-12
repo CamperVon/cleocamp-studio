@@ -97,6 +97,7 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
   send_purchase_order: 'changes',
   send_wholesale_draft: 'changes',
   set_request_pieces: 'changes',
+  set_colour_photo: 'changes',
   set_order_email: 'changes',
   set_wholesale_price: 'changes',
   style_numbers: 'changes',

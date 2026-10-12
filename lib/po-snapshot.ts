@@ -69,6 +69,8 @@ export async function freezePoLines(poId: string, opts: { legacy?: boolean } = {
     db.documentDefaults.findUnique({ where: { id: 'singleton' }, select: { skuDisplayMode: true } }),
   ])
   if (!lines.length) return []
+  // The photo it is sent with includes one the app holds for a colour not on Shopify.
+  await (await import('@/lib/variant-photos')).fillPhotos(db, lines)
   const mode = asSkuDisplayMode(defaults?.skuDisplayMode)
   const now = new Date()
   await db.$transaction(lines.map((l) => {

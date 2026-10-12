@@ -85,13 +85,23 @@ const styles = StyleSheet.create({
 export type PoForPdf = NonNullable<Awaited<ReturnType<typeof loadPo>>>
 
 export async function loadPo(poNumber: string) {
-  return db.purchaseOrder.findFirst({
+  const po = await db.purchaseOrder.findFirst({
     where: { poNumber },
     include: {
       vendor: true, forProduct: true,
       lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } },
     },
   })
+  if (!po) return po
+  // A colour not on Shopify still prints with a photo (lib/variant-photos.ts);
+  // the PDF is drawn here on the server, so the app's own photos go in as images.
+  const { fillPhotos, inlinePhoto } = await import('@/lib/variant-photos')
+  await fillPhotos(db, po.lines)
+  for (const l of po.lines) {
+    if (l.productVariant) l.productVariant.imageUrl = await inlinePhoto(db, l.productVariant.imageUrl)
+    l.snapImageUrl = await inlinePhoto(db, l.snapImageUrl)
+  }
+  return po
 }
 
 export type DocContent = { billTo: string[]; confirmLine: string; contactLines: string[]; skuDisplayMode?: string | null }
