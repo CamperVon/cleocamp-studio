@@ -28,7 +28,7 @@ export function telnyxSignatureValid(o: { body: string; signature: string | null
   }
 }
 
-export type InboundMessage = { providerId: string; fromNumber: string; toNumber: string | null; text: string; channel: string | null }
+export type InboundMessage = { providerId: string; fromNumber: string; toNumber: string | null; text: string; channel: string | null; media: number }
 
 /** A Telnyx message.received webhook, read into what is kept; null for anything else. Pure. */
 export function inboundFrom(body: unknown): InboundMessage | null {
@@ -36,14 +36,17 @@ export function inboundFrom(body: unknown): InboundMessage | null {
   if (!d || d.event_type !== 'message.received' || !d.payload) return null
   const p = d.payload
   const id = typeof p.id === 'string' ? p.id : null
-  const from = (p.from as { phone_number?: unknown } | undefined)?.phone_number
+  // SMS sends from/to as objects; accept a bare number too.
+  const num = (x: unknown) => (typeof x === 'string' ? x : (x as { phone_number?: unknown } | undefined)?.phone_number)
+  const from = num(p.from)
   if (!id || typeof from !== 'string') return null
-  const to = Array.isArray(p.to) ? (p.to[0] as { phone_number?: unknown } | undefined)?.phone_number : null
+  const to = num(Array.isArray(p.to) ? p.to[0] : p.to)
   return {
     providerId: id.slice(0, 100),
     fromNumber: from.slice(0, 40),
     toNumber: typeof to === 'string' ? to.slice(0, 40) : null,
     text: typeof p.text === 'string' ? p.text.slice(0, 4000) : '',
     channel: typeof p.type === 'string' ? p.type.slice(0, 20) : null,
+    media: Array.isArray(p.media) ? p.media.length : 0,
   }
 }

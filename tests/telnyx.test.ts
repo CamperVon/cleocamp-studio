@@ -21,7 +21,7 @@ test('only a fresh request Telnyx signed is accepted', () => {
 })
 
 test('a received message is read; other events are not', () => {
-  assert.deepEqual(inboundFrom(JSON.parse(body)), { providerId: 'm1', fromNumber: '+15551234567', toNumber: '+13235550100', text: 'Your WhatsApp code is 123-456', channel: 'SMS' })
+  assert.deepEqual(inboundFrom(JSON.parse(body)), { providerId: 'm1', fromNumber: '+15551234567', toNumber: '+13235550100', text: 'Your WhatsApp code is 123-456', channel: 'SMS', media: 0 })
   assert.equal(inboundFrom({ data: { event_type: 'message.finalized', payload: { id: 'x' } } }), null)
   assert.equal(inboundFrom({ nonsense: true }), null)
   assert.equal(inboundFrom(null), null)

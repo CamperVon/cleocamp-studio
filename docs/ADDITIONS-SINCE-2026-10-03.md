@@ -504,6 +504,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Change:** the Components page shows the price per purchase unit with the per-counting-unit price beside it (`$12.24/metre · $11.19/yard`), from `purchaseUnitPrice` in `lib/po-units.ts`. `update_component` takes `unitOfMeasure`, refused once any count, event or order line is recorded in the old unit (they would silently change meaning); on success it names the recipe amounts that now read in the new unit so they get converted.
 - **Files:** `lib/po-units.ts`, `app/ui/component-row.tsx`, `app/(main)/components/page.tsx`, `lib/mouse/tools.ts` (`unitChangeProblem`), `tests/component-units.test.ts`. Needs nothing.
 
+### The assistant on WhatsApp, for the team only
+- **Problem:** the team wanted to reach the assistant from WhatsApp, cheaply, without opening the app.
+- **Change:** `/api/telnyx` answers a WhatsApp message (via Telnyx) when Telnyx signed it (`TELNYX_PUBLIC_KEY`) and it comes from a team member's phone on file. The message goes into that person's latest app conversation (never a practice one), the assistant's turn runs as in the app chat under that person, the reply is saved there and sent back on WhatsApp (markdown adapted, long replies split under WhatsApp's limit). It runs after the webhook is acknowledged (`after()`), once per message even if Telnyx retries. Anyone else's message is stored and nothing more; photos are not handled yet. Sending respects `EMAIL_DRY_RUN`.
+- **Files:** `lib/whatsapp.ts`, `lib/telnyx.ts`, `app/api/telnyx/route.ts`, `tests/whatsapp.test.ts`, `tests/telnyx.test.ts`.
+- **Needs:** a Telnyx number connected to WhatsApp, its messaging profile webhook at `/api/telnyx`, and `TELNYX_API_KEY`, `TELNYX_PUBLIC_KEY` (and optionally `WHATSAPP_FROM`) set by hand. Phone numbers on the team's person records.
+
 ---
 
 ## Setup notes for a new install
