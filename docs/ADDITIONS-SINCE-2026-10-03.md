@@ -479,6 +479,10 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/telnyx.ts`, `app/api/telnyx/route.ts`, `proxy.ts` (public path), `prisma/schema.prisma` + migration `20261012190000_telnyx_message`, `tests/telnyx.test.ts`.
 - **Needs:** a Telnyx number on a messaging profile whose inbound webhook points at `/api/telnyx`. No email.
 
+### The assistant sees line sheet descriptions when it lists the sheet
+- **Problem:** `update_line_sheet` "list" returned prices and availability but not each row's description, sizing or minimum, so asked to "use the same description as the Petite", the assistant had nothing to copy and the new rows were never added.
+- **Change:** the list includes `description`, `sizing` and `minOrder`. File: `lib/mouse/tools.ts`. Needs nothing.
+
 ---
 
 ## Setup notes for a new install

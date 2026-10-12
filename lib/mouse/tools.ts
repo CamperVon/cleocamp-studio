@@ -5317,6 +5317,10 @@ export const TOOLS: Record<string, Tool> = {
       const link = '/wholesale/line-sheet/pdf'
       const listed = async () => (await loadLineSheet({ includeHidden: true })).lines.map((l) => ({
         id: l.id, item: l.item, color: l.colorLabel, hidden: l.hidden || undefined,
+        // The words as printed, so a new row can copy a sibling's. Until 12 Oct 2026
+        // the list left them out, and "use the Petite description" left Mouse with
+        // nothing to copy: two Bean Bag rows were never added.
+        description: l.description, sizing: l.sizing, minOrder: l.minOrder,
         wholesale: wholesaleText(l) ?? 'NOT SET', retail: l.retail ?? 'not set',
         availability: l.availability, onHand: l.onHand, productId: l.productId, colorway: l.colorway,
         ...(!l.hidden && heldBackFor(l).length ? { offThePdfUntilItHas: heldBackFor(l) } : {}),
