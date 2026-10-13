@@ -218,7 +218,48 @@ export async function runLoop(opts: {
     messages.push({ role: 'user', content: results })
   }
 
-  if (stopReason !== 'complete') {
+  // Out of rounds in the middle of work (13 Oct 2026). Jane asked Mouse to
+  // add a stylist and a past pull; it spent four rounds looking for an email
+  // that had not arrived, saved the stylist, the two tees and the pull in
+  // the last two, and had no round left to say so. She got "I reached this
+  // turn's reasoning limit... please continue from here", which reads as a
+  // failure when everything she asked for was done. Now one more short
+  // request, with tools switched off, asks Mouse to say what it did and
+  // what is left. tool_choice "none" keeps the tool list in the request, so
+  // the cached tools and system prompt are read, not written again. The turn
+  // still counts as unfinished: stopReason stays 'budget', so it is logged
+  // and background callers still refuse it. Only the reply changes, and the
+  // stock sentence is the fallback if this request fails or says nothing.
+  let wrapUp = ''
+  const last = messages[messages.length - 1]
+  const midWork = stopReason === 'budget' && !text && calls.length > 0 && last?.role === 'user' &&
+    Array.isArray(last.content) && last.content.some((b) => (b as { type?: string }).type === 'tool_result')
+  if (midWork && maxOutputTokens - spent >= 1024) {
+    const at = Date.now()
+    const chain = diag ? chainKey(diag.scope, 'low') : null
+    try {
+      attemptedRequests++
+      const res = await opts.create({
+        model, max_tokens: Math.min(4000, maxOutputTokens - spent),
+        system: opts.system, tools: opts.tools, tool_choice: { type: 'none' },
+        messages: [...messages.slice(0, -1), { ...last, content: [...(last.content as Anthropic.ContentBlockParam[]), { type: 'text', text: WRAP_UP }] }],
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'low' },
+        ...(chain ? { diagnostics: { previous_message_id: diag!.last[chain] ?? null } } : {}),
+      })
+      requests.push({ model, inputTokens: res.usage.input_tokens, outputTokens: res.usage.output_tokens,
+        cacheReadTokens: res.usage.cache_read_input_tokens ?? 0,
+        cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0,
+        cacheWrite1hTokens: res.usage.cache_creation?.ephemeral_1h_input_tokens ?? 0, durationMs: Date.now() - at,
+        effort: 'low',
+        ...(chain && res.id ? { cacheDiagnosis: diagnosisOf(chain, res.id, diag!.last[chain] ?? null, res.diagnostics) } : {}) })
+      if (chain && res.id) diag!.last[chain] = res.id
+      wrapUp = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim()
+    } catch { /* the stock sentence below says what it can */ }
+  }
+  if (wrapUp) text = [...said, wrapUp].filter(Boolean).join('\n\n')
+
+  if (stopReason !== 'complete' && !wrapUp) {
     const reason = stopReason === 'provider_error' ? 'The model connection failed'
       : stopReason === 'refusal' ? 'The model’s safety check declined this request'
       : 'I reached this turn’s reasoning limit'
@@ -235,6 +276,12 @@ export async function runLoop(opts: {
   return { text, writes: completedWrites(calls), toolCalls: calls, model,
     usage: { requests, attemptedRequests, providerError, durationMs: Date.now() - started, stopReason } }
 }
+
+/** Added to the last message when a turn runs out of rounds mid-work: say what was done, call nothing. */
+export const WRAP_UP =
+  '(This turn has used all its steps, so no more tools can run. In two to four plain sentences, tell the ' +
+  'person what you actually did this turn, going only by the tool results above, and what is still left ' +
+  'or what you need from them. Do not say anything was done that the results do not show.)'
 
 /** A failure on the model provider's side that is worth one more try. Pure. */
 export function isTransient(e: unknown): boolean {

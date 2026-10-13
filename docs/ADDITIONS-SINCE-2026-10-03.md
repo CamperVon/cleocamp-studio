@@ -539,6 +539,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/packing.ts` (`coveredDays`, `dayBefore`, `packingRates`), `tests/packing.test.ts`.
 - **Needs:** nothing new (the deduction already reads shipped orders from Shopify).
 
+### Out of rounds mid-work: a short reply saying what was done, not a stock sentence
+- **Problem:** each assistant turn has a cap on model rounds. When a turn used its last round on tool calls, the loop stopped and the person got only a stock line ("I reached this turn's reasoning limit... please continue from here"), even when everything they asked for had been saved in those rounds. Finished work read as a failure, and nothing said what was done or what was still needed.
+- **Change:** when the rounds run out with tool results pending, the loop makes one more short request with `tool_choice: none` and a note asking for two to four sentences on what the tool results show was done and what is left. Keeping the same tool list (rather than dropping tools) leaves the cached tools and system prompt readable, so the request is cheap. The turn still ends as `budget`, so it is still logged as unfinished and background callers that require a complete run still refuse it. If that request fails, says nothing, or tries a tool anyway (never run), the stock sentence is used as before. A finished turn or a failed connection makes no extra request.
+- **Files:** `lib/mouse/runner.ts` (`WRAP_UP`), `tests/runner.test.ts`.
+- **Needs:** nothing beyond the model API.
+
 ---
 
 ## Setup notes for a new install

@@ -239,3 +239,66 @@ test('out of Anthropic credit says so, not "connection failed"', async () => {
   assert.match(r.text, /console\.anthropic\.com/)
   assert.doesNotMatch(r.text, /connection failed/)
 })
+
+// Out of rounds mid-work (13 Oct 2026): Jane's stylist and pull were all
+// saved in the last two rounds, and she was told only "I reached this
+// turn's reasoning limit... please continue from here".
+test('out of rounds mid-work: one tools-off request says what was done, instead of the stock sentence', async () => {
+  const seen: Array<Record<string, unknown>> = []
+  let writes = 0
+  const r = await runLoop({ ...base, maxRequests: 2,
+    create: async (req) => {
+      seen.push(req as never)
+      if (seen.length <= 2) return response([{ type: 'text', text: 'Saving the stylist.', citations: null }, toolUse('update_purchase_order', `t${seen.length}`)])
+      return response([{ type: 'text', text: 'I added Morgan Lipsen and recorded her pull. I still need the date it comes back.', citations: null }], 'end_turn')
+    },
+    execute: async () => { writes++; return { updated: true } },
+  })
+  assert.equal(seen.length, 3, 'the two rounds, then the wrap-up')
+  const wrap = seen[2] as { tool_choice?: unknown; tools?: unknown; messages: Anthropic.MessageParam[]; output_config?: { effort?: string } }
+  assert.deepEqual(wrap.tool_choice, { type: 'none' })
+  assert.equal(wrap.tools, seen[0].tools, 'the same tool list, so the cached prefix is read')
+  assert.equal(wrap.output_config?.effort, 'low')
+  const lastBlocks = wrap.messages.at(-1)!.content as Array<{ type: string; text?: string }>
+  assert.equal(lastBlocks[0].type, 'tool_result')
+  assert.match(lastBlocks.at(-1)!.text ?? '', /used all its steps/)
+  assert.equal(writes, 2)
+  assert.equal(r.writes.length, 2)
+  assert.match(r.text, /I added Morgan Lipsen/)
+  assert.doesNotMatch(r.text, /reasoning limit|continue from here/)
+  assert.equal(r.usage.stopReason, 'budget', 'still an unfinished turn: logged, and refused by background callers')
+  assert.throws(() => requireComplete(r))
+  assert.equal(r.usage.requests.length, 3)
+  assert.equal(r.usage.requests[2].effort, 'low')
+})
+
+test('out of rounds: if the wrap-up fails or calls a tool anyway, the stock sentence stands and nothing more runs', async () => {
+  let executed = 0
+  const failing = await runLoop({ ...base, maxRequests: 1,
+    create: (() => { let n = 0; return async () => { if (n++ === 0) return response([toolUse('update_purchase_order')]); throw new Error('offline') } })(),
+    execute: async () => { executed++; return { updated: true } },
+  })
+  assert.match(failing.text, /1 action completed/)
+  assert.equal(failing.usage.attemptedRequests, 2)
+  executed = 0
+  const ignoring = await runLoop({ ...base, maxRequests: 1,
+    create: async () => response([toolUse('update_purchase_order')]),
+    execute: async () => { executed++; return { updated: true } },
+  })
+  assert.equal(executed, 1, 'the tool call in the wrap-up is never run')
+  assert.match(ignoring.text, /1 action completed/)
+})
+
+test('no wrap-up when the turn finished, or when nothing was attempted', async () => {
+  let n = 0
+  const done = await runLoop({ ...base, maxRequests: 2,
+    create: async () => n++ === 0 ? response([toolUse('query_status')]) : answer,
+    execute: async () => ({ found: [] }),
+  })
+  assert.equal(n, 2)
+  assert.equal(done.text, 'Done.')
+  let m = 0
+  const offline = await runLoop({ ...base, create: async () => { m++; throw new Error('offline') }, execute: async () => ({}) })
+  assert.equal(m, 1, 'a failed connection gets no extra request')
+  assert.match(offline.text, /connection failed/)
+})

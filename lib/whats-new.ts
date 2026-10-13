@@ -62,6 +62,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-13', path: '/components',
     text: 'Shipping supplies now run down at their true pace in the forecast. Recently counted supplies were reading far too slow: mailers now show about 9 weeks left instead of 14, so reorders get flagged sooner. Labels join them after their first night.',
   },
+  {
+    on: '2026-10-13',
+    text: 'When Mouse runs out of steps on a long request, it now tells you what it did and what is left, instead of "I reached this turn\'s reasoning limit… please continue from here", which made finished work look like a failure.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */
