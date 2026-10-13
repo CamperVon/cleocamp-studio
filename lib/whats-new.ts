@@ -54,6 +54,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-13', path: '/components',
     text: 'Thermal shipping labels now come off studio stock by themselves, one per package shipped, in the same nightly count as mailers and postcards. Jane\'s count of 80 is where it starts.',
   },
+  {
+    on: '2026-10-13', path: '/components',
+    text: 'Orders written in packs, like "2 packs of 2,000" on PO 2407, now count as what is inside: 4,000 thermal labels show as on the way, and logging the delivery ticks the order off.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

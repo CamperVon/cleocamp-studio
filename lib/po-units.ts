@@ -8,9 +8,15 @@
  * stickers the receipt was refused as more than the order owed. Mouse could
  * not log a delivery that plainly happened.
  *
- * Read from the line's own unit when it states a size ("500/roll"), else
- * from the component's purchase unit and units per purchase unit, else 1:
- * the same unit, or one nothing says how to convert (as before). Pure.
+ * 13 Oct 2026: PO 2407 ordered thermal labels as "2 packs of 2,000" with the
+ * component's purchase unit "pack of 2,000", and incoming read 2 labels, not
+ * 4,000: neither the "of 2,000" wording nor a purchase unit longer than one
+ * word was understood.
+ *
+ * Read from the line's own unit when it states a size ("500/roll", "packs
+ * of 2,000"), else from the component's purchase unit and units per
+ * purchase unit, else 1: the same unit, or one nothing says how to convert
+ * (as before). Pure.
  */
 type Comp = { unitOfMeasure: string; purchaseUnit?: string | null; unitsPerPurchaseUnit?: unknown } | null | undefined
 
@@ -30,8 +36,18 @@ export function unitsPerLineUnit(lineUnit: string | null | undefined, comp: Comp
     const n = Number(stated[1].replace(/,/g, ''))
     if (n > 0) return n
   }
+  // "packs of 2,000" (13 Oct 2026, PO 2407): the size written after "of".
+  // A unit after the number must be the one the stock counts in, so "case
+  // of 12 boxes" for something counted in pieces is not read as 12.
+  const of = /^[a-z]+\s+of\s+([\d][\d,]*(?:\.\d+)?)(?:\s+([a-z]+))?/.exec(u)
+  if (of && (!of[2] || sameUnit(of[2], comp.unitOfMeasure))) {
+    const n = Number(of[1].replace(/,/g, ''))
+    if (n > 0) return n
+  }
+  // The purchase unit by its first word, so "packs" matches "pack of 2,000".
   const per = Number(comp.unitsPerPurchaseUnit)
-  if (comp.purchaseUnit && sameUnit(base, comp.purchaseUnit) && per > 0) return per
+  const bought = comp.purchaseUnit?.trim().toLowerCase().split(/[\s(,]/)[0]
+  if (bought && sameUnit(base, bought) && per > 0) return per
   return 1
 }
 

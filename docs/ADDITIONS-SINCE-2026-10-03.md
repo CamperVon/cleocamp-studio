@@ -527,6 +527,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/packing.ts`, `lib/mouse/prompt.ts`, `tests/packing.test.ts`.
 - **Needs:** Shopify (shipped orders), as the deduction already did. No email.
 
+### Purchase-order lines "in packs of 2,000" convert to what the stock counts
+- **Problem:** a purchase-order line written as "2 packs of 2,000" for an item counted singly read as 2 on order instead of 4,000. The forecast saw it short, and the delivery would have been refused as more than the order owed. The conversion only understood a size written as "2,000/pack", and compared the line's unit with the item's whole purchase unit ("pack of 2,000"), so "packs" never matched.
+- **Change:** `unitsPerLineUnit` also reads a size written after "of" ("pack of 2,000", "roll of 50 yards"), taking it only when any unit after the number is the one the item is counted in ("case of 12 boxes" for something counted in pieces is left alone). It compares the line's unit with the first word of the purchase unit. Incoming figures, receipts, undoing a receipt and "still owed" all use this one function, so all of them follow.
+- **Files:** `lib/po-units.ts`, `tests/po-units.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install
