@@ -50,6 +50,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-12', path: '/components',
     text: 'Components page: fabric bought by the metre but measured in yards now shows both prices, metre first, like the 5to7 Skirt shell: $12.24/metre, $11.19/yard.',
   },
+  {
+    on: '2026-10-13', path: '/components',
+    text: 'Thermal shipping labels now come off studio stock by themselves, one per package shipped, in the same nightly count as mailers and postcards. Jane\'s count of 80 is where it starts.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

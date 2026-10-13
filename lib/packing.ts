@@ -13,7 +13,10 @@ import { db } from '@/lib/db'
  *   - each Bean Bag: one Kraft mailer and one sheet of newsprint;
  *   - everything else in the order, together: 1-3 items in one Kraft mailer,
  *     4-5 in one large envelope, 6 or more in one shipping box;
- *   - one Moo postcard, and a 25th of a roll of tape.
+ *   - one Moo postcard, one 4x6 thermal shipping label, and a 25th of a
+ *     roll of tape.
+ * The label was added on 13 Oct 2026 (Jane, after counting 80): until then
+ * its count never moved between hand counts.
  * Tees are already in glassine from Antonio's, packed there, so glassine is
  * never deducted here; nor is newsprint for tees (it is not used with them).
  *
@@ -22,7 +25,7 @@ import { db } from '@/lib/db'
  * after the latest count of that supply.
  */
 
-export type PackKey = 'mailer' | 'envelope' | 'box' | 'newsprint' | 'postcard' | 'tape'
+export type PackKey = 'mailer' | 'envelope' | 'box' | 'newsprint' | 'postcard' | 'label' | 'tape'
 
 /** Which component each supply is (ids are stable; names can change). */
 export const PACK_COMPONENTS: Record<PackKey, string> = {
@@ -31,6 +34,7 @@ export const PACK_COMPONENTS: Record<PackKey, string> = {
   box: 'cmtxa0ot5000s04idk6zv9n3a', // Shipping boxes (The Boxery)
   newsprint: 'cmtxmev64000s04l3zi7kyg75', // Newsprint (kraft paper) sheets
   postcard: 'cmux15jnk00001k7duttd5c9z', // Postcards (Moo)
+  label: 'cmv706uyr000206l5r8x7y1bf', // Thermal shipping labels 4x6
   tape: 'cmug8pfko00000c7dvyf9nino', // Shipping tape, in rolls
 }
 
@@ -39,7 +43,7 @@ export const RULES = { mailerMaxItems: 3, envelopeMaxItems: 5, ordersPerTapeRoll
 export type PackItem = { product: string; quantity: number }
 export type PackUse = Record<PackKey, number>
 
-const none = (): PackUse => ({ mailer: 0, envelope: 0, box: 0, newsprint: 0, postcard: 0, tape: 0 })
+const none = (): PackUse => ({ mailer: 0, envelope: 0, box: 0, newsprint: 0, postcard: 0, label: 0, tape: 0 })
 
 /** What one order uses. Pure. */
 export function packingFor(items: PackItem[]): PackUse {
@@ -58,6 +62,7 @@ export function packingFor(items: PackItem[]): PackUse {
   }
   if (items.some((i) => i.quantity > 0)) {
     use.postcard += 1
+    use.label += 1
     use.tape += 1 / RULES.ordersPerTapeRoll
   }
   return use
