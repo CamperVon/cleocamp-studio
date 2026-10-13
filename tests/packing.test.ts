@@ -25,20 +25,20 @@ test('bags pack their own way; tees never take newsprint', () => {
   assert.equal(packingFor([one('Cleo Tee', 2)]).newsprint, 0)
 })
 
-test('every package gets a postcard, a shipping label and a 25th of a roll of tape', () => {
+test('every package gets a postcard, two shipping labels and a 25th of a roll of tape', () => {
   const t = packingForOrders(Array.from({ length: 25 }, () => ({ items: [one('Cleo Tee')] })))
   assert.equal(t.postcard, 25)
-  assert.equal(t.label, 25)
+  assert.equal(t.label, 50)
   assert.ok(Math.abs(t.tape - 1) < 1e-9)
   assert.equal(packingFor([]).postcard, 0)
   assert.equal(packingFor([]).label, 0)
 })
 
-test('one shipping label per package, however much is in it', () => {
-  // A Cleo Bag, a Bean Bag and six tees ship as one package: one label.
-  assert.equal(packingFor([one('Cleo Bag — Black'), one('Bean Bag'), one('Cleo Tee', 6)]).label, 1)
-  // The same items as three packages (three fulfilments): three labels.
-  assert.equal(packingForOrders([{ items: [one('Cleo Bag — Black')] }, { items: [one('Bean Bag')] }, { items: [one('Cleo Tee', 6)] }]).label, 3)
+test('two shipping labels per package, however much is in it', () => {
+  // A Cleo Bag, a Bean Bag and six tees ship as one package: two labels.
+  assert.equal(packingFor([one('Cleo Bag — Black'), one('Bean Bag'), one('Cleo Tee', 6)]).label, 2)
+  // The same items as three packages (three fulfilments): six labels.
+  assert.equal(packingForOrders([{ items: [one('Cleo Bag — Black')] }, { items: [one('Bean Bag')] }, { items: [one('Cleo Tee', 6)] }]).label, 6)
 })
 
 test('a shipped package is one successful fulfilment; cancelled ones and wholesale do not count', () => {

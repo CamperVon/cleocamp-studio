@@ -13,10 +13,11 @@ import { db } from '@/lib/db'
  *   - each Bean Bag: one Kraft mailer and one sheet of newsprint;
  *   - everything else in the order, together: 1-3 items in one Kraft mailer,
  *     4-5 in one large envelope, 6 or more in one shipping box;
- *   - one Moo postcard, one 4x6 thermal shipping label, and a 25th of a
+ *   - one Moo postcard, two 4x6 thermal shipping labels, and a 25th of a
  *     roll of tape.
- * The label was added on 13 Oct 2026 (Jane, after counting 80): until then
- * its count never moved between hand counts.
+ * Labels were added on 13 Oct 2026 (Jane, after counting 80): until then
+ * their count never moved between hand counts. Two a package, not one
+ * (Brandon, 13 Oct 2026: "she is using two labels per package").
  * Tees are already in glassine from Antonio's, packed there, so glassine is
  * never deducted here; nor is newsprint for tees (it is not used with them).
  *
@@ -38,7 +39,7 @@ export const PACK_COMPONENTS: Record<PackKey, string> = {
   tape: 'cmug8pfko00000c7dvyf9nino', // Shipping tape, in rolls
 }
 
-export const RULES = { mailerMaxItems: 3, envelopeMaxItems: 5, ordersPerTapeRoll: 25 }
+export const RULES = { mailerMaxItems: 3, envelopeMaxItems: 5, ordersPerTapeRoll: 25, labelsPerPackage: 2 }
 
 export type PackItem = { product: string; quantity: number }
 export type PackUse = Record<PackKey, number>
@@ -62,7 +63,7 @@ export function packingFor(items: PackItem[]): PackUse {
   }
   if (items.some((i) => i.quantity > 0)) {
     use.postcard += 1
-    use.label += 1
+    use.label += RULES.labelsPerPackage
     use.tape += 1 / RULES.ordersPerTapeRoll
   }
   return use

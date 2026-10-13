@@ -521,9 +521,9 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/context.ts`, `lib/mouse/cache-blocks.ts`, `lib/mouse/cache-diagnostics.ts`, `lib/mouse/agent.ts`, `scripts/live-tail-replay.ts`, `scripts/live-tail-checks.ts`, `tests/live-tail.test.ts`, `tests/live-tail-replay.test.ts`, `tests/catalog-split.test.ts`.
 - **Needs:** nothing beyond the Anthropic API (the validator needs an API key). No Shopify, no email.
 
-### A shipping label per package in the nightly packing deduction
+### Shipping labels per package in the nightly packing deduction
 - **Problem:** the nightly shipping-supplies deduction (entry above, "Shipping supplies come off as orders ship") took mailers, envelopes, boxes, wrapping, insert cards and tape off stock, but not the printed shipping label, so the label count never moved between hand counts and could not warn before running out.
-- **Change:** one shipping label per package (per successful fulfilment), alongside the insert card. It is a new key in the packing rules (`PackKey`, `PACK_COMPONENTS`, `packingFor`), so the deduction, its "last count is the last word" rule and the forecast's supply rates all pick it up with no other change. The assistant's description of the packing rules says so too.
+- **Change:** a set number of shipping labels per package (per successful fulfilment), alongside the insert card, held in one setting (`RULES.labelsPerPackage`) since some teams print more than one label a package. It is a new key in the packing rules (`PackKey`, `PACK_COMPONENTS`, `packingFor`), so the deduction, its "last count is the last word" rule and the forecast's supply rates all pick it up with no other change. The assistant's description of the packing rules says so too.
 - **Files:** `lib/packing.ts`, `lib/mouse/prompt.ts`, `tests/packing.test.ts`.
 - **Needs:** Shopify (shipped orders), as the deduction already did. No email.
 

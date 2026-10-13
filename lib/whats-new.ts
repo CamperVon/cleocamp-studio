@@ -52,7 +52,7 @@ export const WHATS_NEW: Update[] = [
   },
   {
     on: '2026-10-13', path: '/components',
-    text: 'Thermal shipping labels now come off studio stock by themselves, one per package shipped, in the same nightly count as mailers and postcards. Jane\'s count of 80 is where it starts.',
+    text: 'Thermal shipping labels now come off studio stock by themselves, two per package shipped (Jane uses two a package), in the same nightly count as mailers and postcards. Jane\'s count of 80 is where it starts.',
   },
   {
     on: '2026-10-13', path: '/components',
