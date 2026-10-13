@@ -545,6 +545,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/runner.ts` (`WRAP_UP`), `tests/runner.test.ts`.
 - **Needs:** nothing beyond the model API.
 
+### A repeat supplier is never called a "first order"
+- **Problem:** after drafting a purchase order, the tool said "nothing — this is a first order for this vendor" whenever it had carried nothing over from earlier orders. A repeat supplier whose address and notes were given directly, and whose last order had no payment terms to copy, was called new, and the person was told its terms were "not on file yet" as if it had never been ordered from.
+- **Change:** the claim now rests on whether an earlier order to that vendor exists (`carriedOver`, `nothingCarriedOver`, pure). A repeat vendor with something still blank is told so plainly, "not on file for X, here or on earlier orders".
+- **Files:** `lib/mouse/tools.ts`, `tests/po-carry-over.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

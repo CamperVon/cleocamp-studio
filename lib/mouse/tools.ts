@@ -349,6 +349,30 @@ async function findStore(id: unknown, name: unknown) {
   return 'reason' in r ? r : r.picked
 }
 
+/**
+ * What a new purchase order says it carried over from earlier ones. "First
+ * order" is said only when there truly is no earlier order to the vendor.
+ * Until 13 Oct 2026 it was said whenever nothing was carried over, so PO
+ * 2409 to Calamo, whose address and notes were given directly and whose
+ * last order (PO 2398) had no terms to copy, was called a first order. Pure.
+ */
+export function carriedOver(inherited: string[], hadEarlierOrder: boolean): string[] | string {
+  if (inherited.length) return inherited
+  return hadEarlierOrder ? 'nothing needed carrying over from the last order' : 'nothing — this is a first order for this vendor'
+}
+
+/** The line for the person when nothing was carried over. Pure. */
+export function nothingCarriedOver(vendor: string, hadEarlierOrder: boolean, stillBlank: string[]): string {
+  if (!hadEarlierOrder) {
+    return stillBlank.length
+      ? `First order for ${vendor} — ${stillBlank.join(' and ')} not on file yet. Tell me and I will remember them for next time.`
+      : `First order for ${vendor}.`
+  }
+  return stillBlank.length
+    ? `${stillBlank.join(' and ')} not on file for ${vendor}, here or on earlier orders. Tell me and I will remember them for next time.`.replace(/^./, (c) => c.toUpperCase())
+    : ''
+}
+
 export const TOOLS: Record<string, Tool> = {
   log_inventory_event: {
     def: {
@@ -2652,7 +2676,7 @@ export const TOOLS: Record<string, Tool> = {
         document: `/po/${po.poNumber}`,
         supersededAndCancelled: superseded.length ? superseded : undefined,
         supersedesNotFound: notFound.length ? notFound : undefined,
-        carriedOverFromLastOrder: inherited.length ? inherited : 'nothing — this is a first order for this vendor',
+        carriedOverFromLastOrder: carriedOver(inherited, !!previous),
         tellTheUser:
           `Drafted as PO ${po.poNumber}. Not sent — open /po/${po.poNumber} to review and print. ` +
           (superseded.length ? `PO ${superseded.join(' and ')} cancelled, replaced by this one. ` : '') +
@@ -2664,19 +2688,14 @@ export const TOOLS: Record<string, Tool> = {
               : '') +
           (inherited.length
             ? `Carried over from the last ${po.vendor.name} order: ${inherited.join(', ')}. Say if any of that has changed.`
-            : (() => {
-                // First order for this vendor. Only claim something is blank
-                // if it actually still is — this call may well have supplied
-                // it directly, and saying it's missing when it isn't sends
-                // Cleo looking for information she already gave.
-                const stillBlank = [
-                  !po.deliverTo && 'delivery address',
-                  !po.paymentTerms && 'payment terms',
-                ].filter((s): s is string => !!s)
-                return stillBlank.length
-                  ? `First order for ${po.vendor.name} — ${stillBlank.join(' and ')} not on file yet. Tell me and I will remember them for next time.`
-                  : `First order for ${po.vendor.name}.`
-              })()),
+            : nothingCarriedOver(po.vendor.name, !!previous, [
+                // Only claim something is blank if it actually still is —
+                // this call may well have supplied it directly, and saying
+                // it's missing when it isn't sends Cleo looking for
+                // information she already gave.
+                !po.deliverTo && 'delivery address',
+                !po.paymentTerms && 'payment terms',
+              ].filter((s): s is string => !!s))),
       }
     },
   },
