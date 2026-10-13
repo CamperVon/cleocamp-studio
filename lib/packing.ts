@@ -160,22 +160,60 @@ export async function deductPacking(opts: { dryRun?: boolean; maxDays?: number }
   return { days, written, orders: counted }
 }
 
+/** The day before a YYYY-MM-DD day. Pure. */
+export function dayBefore(day: string): string {
+  const d = new Date(day + 'T12:00:00Z')
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
+/**
+ * How many days of a window the deductions actually cover: from the day
+ * after the supply was first counted (deductions only ever start after a
+ * count) or the window's first day, whichever is later, through yesterday,
+ * the last day deducted. A later recount does not break the run: the days
+ * before it were already deducted. Zero when the supply was never counted.
+ * Pure.
+ */
+export function coveredDays(from: string, yesterday: string, firstCounted: string | null): number {
+  if (!firstCounted) return 0
+  return daysBetween(firstCounted >= from ? firstCounted : dayBefore(from), yesterday).length
+}
+
 /**
  * Supplies used a day, from the last 28 days of deductions, for the forecast.
  * Taken from the day each deduction is FOR, not when it was written, since a
  * catch-up writes several days at once.
+ *
+ * Divided by the days the deductions cover, not always by 28 (13 Oct 2026).
+ * A supply first counted a week ago has a week of use, and dividing that by
+ * 28 read its rate four times too low, so a reorder warning came weeks late.
+ * Thermal labels, counted on 13 Oct, would have read a 28th of their real
+ * rate on their first day. A short history is noisier, but it errs toward
+ * warning early, which is the point of the forecast.
  */
 export async function packingRates(days = 28): Promise<Map<string, number>> {
   const from = laDay(new Date(Date.now() - days * 864e5))
-  const evs = await db.inventoryEvent.findMany({
-    where: { type: 'USED', note: { startsWith: PACKING_NOTE }, componentId: { in: Object.values(PACK_COMPONENTS) } },
-    select: { componentId: true, deltaQty: true, note: true },
-  })
+  const yesterday = laDay(new Date(Date.now() - 864e5))
+  const ids = Object.values(PACK_COMPONENTS)
+  const [evs, firsts] = await Promise.all([
+    db.inventoryEvent.findMany({
+      where: { type: 'USED', note: { startsWith: PACKING_NOTE }, componentId: { in: ids } },
+      select: { componentId: true, deltaQty: true, note: true },
+    }),
+    db.inventoryEvent.groupBy({ by: ['componentId'], where: { type: 'COUNTED', componentId: { in: ids } }, _min: { createdAt: true } }),
+  ])
+  const firstCounted = new Map(firsts.map((f) => [f.componentId, f._min.createdAt ? laDay(f._min.createdAt) : null]))
   const used = new Map<string, number>()
   for (const e of evs) {
     const d = packingDay(e.note)
-    if (!d || d < from || !e.componentId) continue
+    if (!d || d < from || d > yesterday || !e.componentId) continue
     used.set(e.componentId, (used.get(e.componentId) ?? 0) + Math.abs(Number(e.deltaQty)))
   }
-  return new Map([...used].map(([id, n]) => [id, n / days]))
+  const out = new Map<string, number>()
+  for (const [id, n] of used) {
+    const covered = coveredDays(from, yesterday, firstCounted.get(id) ?? null)
+    if (covered > 0) out.set(id, n / covered)
+  }
+  return out
 }

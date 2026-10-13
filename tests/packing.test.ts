@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { daysBetween, packingDay, packingFor, packingForOrders, PACKING_NOTE } from '../lib/packing'
+import { coveredDays, dayBefore, daysBetween, packingDay, packingFor, packingForOrders, PACKING_NOTE } from '../lib/packing'
 import { packagesFrom } from '../lib/integrations/shopify'
 
 const one = (product: string, quantity = 1) => ({ product, quantity })
@@ -65,4 +65,16 @@ test('deductions are dated by the day they are for, and only after the last coun
   assert.equal(packingDay('Jane counted 1,500'), null)
   assert.deepEqual(daysBetween('2026-09-28', '2026-10-01'), ['2026-09-29', '2026-09-30', '2026-10-01'])
   assert.deepEqual(daysBetween('2026-10-01', '2026-10-01'), [])
+})
+
+test('the daily rate of a supply is over the days its deductions cover, not always 28', () => {
+  const from = '2026-09-15', yesterday = '2026-10-12'
+  assert.equal(coveredDays(from, yesterday, '2026-09-01'), 28, 'counted before the window: the whole window')
+  assert.equal(coveredDays(from, yesterday, '2026-10-05'), 7, 'counted a week ago: the 7 days after the count')
+  assert.equal(coveredDays(from, '2026-10-13', '2026-10-13'), 0, 'counted yesterday: nothing deducted yet')
+  assert.equal(coveredDays(from, '2026-10-14', '2026-10-13'), 1, 'labels, counted 13 Oct: one day on the 15th')
+  assert.equal(coveredDays(from, yesterday, null), 0, 'never counted')
+  assert.equal(coveredDays(from, yesterday, '2026-09-14'), 28, 'counted the day before the window')
+  assert.equal(dayBefore('2026-10-01'), '2026-09-30')
+  assert.equal(dayBefore('2026-01-01'), '2025-12-31')
 })

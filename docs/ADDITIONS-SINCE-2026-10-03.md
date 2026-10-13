@@ -533,6 +533,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/po-units.ts`, `tests/po-units.test.ts`.
 - **Needs:** nothing beyond the app.
 
+### Shipping-supply rates over the days actually covered
+- **Problem:** the forecast's daily rate for each shipping supply was the last 28 days of nightly deductions divided by 28, even when the supply had been counted, and so deducted, for only a few of those days. A supply counted a week ago read about a quarter of its real rate, so its "runs out" date and any reorder warning came weeks late. A newly tracked supply read a 28th of its rate on its first day.
+- **Change:** `packingRates` divides by the days its deductions cover: from the day after the supply was first counted (deductions only ever start after a count), or the window's first day if later, through yesterday. A later recount does not break the run. The rule is the pure `coveredDays`. A short history is noisier, but it errs toward warning early. On real data, an insert card that goes in every package read 3 a day before and 14 after, matching the packages shipped.
+- **Files:** `lib/packing.ts` (`coveredDays`, `dayBefore`, `packingRates`), `tests/packing.test.ts`.
+- **Needs:** nothing new (the deduction already reads shipped orders from Shopify).
+
 ---
 
 ## Setup notes for a new install

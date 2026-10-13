@@ -58,6 +58,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-13', path: '/components',
     text: 'Orders written in packs, like "2 packs of 2,000" on PO 2407, now count as what is inside: 4,000 thermal labels show as on the way, and logging the delivery ticks the order off.',
   },
+  {
+    on: '2026-10-13', path: '/components',
+    text: 'Shipping supplies now run down at their true pace in the forecast. Recently counted supplies were reading far too slow: mailers now show about 9 weeks left instead of 14, so reorders get flagged sooner. Labels join them after their first night.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */
