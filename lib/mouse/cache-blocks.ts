@@ -8,7 +8,7 @@ import type Anthropic from '@anthropic-ai/sdk'
  *   2. per-caller extra rules, practice   no mark (they vary by caller)
  *   3. stable catalogue                   mark, 1 hour
  *   4. live catalogue                     mark, 5 minutes
- *   5. live tail                          mark, 5 minutes (MOUSE_CACHE_LIVE_TAIL=1 only)
+ *   5. live tail                          mark, 5 minutes (MOUSE_CACHE_LIVE_TAIL=1, chat turns only)
  *
  * Anthropic API facts this relies on (prompt caching, GA, no beta header):
  * the prefix renders tools, then system, then messages; at most 4

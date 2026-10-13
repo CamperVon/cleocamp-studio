@@ -195,3 +195,30 @@ test('open POs and production runs have a fixed order in the catalogue', () => {
   assert.match(query('purchaseOrder'), /orderBy: CATALOG_PO_ORDER/)
   assert.match(query('productionRun'), /orderBy: CATALOG_RUN_ORDER/)
 })
+
+test('first rollout: only interactive chat (chatTurn) turns the tail on; every other caller keeps three blocks', () => {
+  const agent = src('../lib/mouse/agent.ts')
+  // runAgent splits only when told to, never from the flag itself.
+  assert.match(agent, /buildCatalogParts\(\{[^}]*tail: opts\.liveTail === true \}\)/)
+  const chatTurnBody = agent.slice(agent.indexOf('export async function chatTurn('))
+  const runAgentBody = agent.slice(agent.indexOf('export async function runAgent('), agent.indexOf('export async function chatTurn('))
+  assert.ok(!runAgentBody.includes('liveTailOn()'), 'runAgent does not read the flag')
+  assert.match(chatTurnBody.slice(0, chatTurnBody.indexOf('const opus = ')), /liveTail: liveTailOn\(\),/)
+  // Nowhere else in the app reads the flag or sets the option.
+  const hits: string[] = []
+  const walk = (dir: string) => {
+    for (const e of readdirSync(new URL(dir, import.meta.url), { withFileTypes: true })) {
+      const rel = `${dir}/${e.name}`
+      if (e.isDirectory()) walk(rel)
+      else if (/\.(ts|tsx)$/.test(e.name)) {
+        const t = src(rel)
+        const n = (t.match(/liveTailOn\(\)/g) ?? []).length + (t.match(/\bliveTail:/g) ?? []).length
+        if (n) hits.push(`${rel}:${n}`)
+      }
+    }
+  }
+  walk('../lib'); walk('../app')
+  // agent.ts: the one `liveTail: liveTailOn()` in chatTurn (counted twice: the call and the key).
+  // context.ts: only the definition `export const liveTailOn = () =>`, which this pattern does not match.
+  assert.deepEqual(hits, ['../lib/mouse/agent.ts:2'])
+})

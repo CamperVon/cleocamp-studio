@@ -342,6 +342,13 @@ export async function runAgent(opts: {
   practice?: boolean
   /** The chat thread, set by chatTurn only. Chat-only tools need it. */
   chatThreadId?: string
+  /**
+   * Put the fastest-changing catalogue sections last, behind a fourth cache
+   * mark (lib/mouse/context.ts TAIL_SECTIONS). Off unless set. chatTurn sets
+   * it from MOUSE_CACHE_LIVE_TAIL; no background, nightly or email caller
+   * does, so they keep the three-block layout until chat is measured.
+   */
+  liveTail?: boolean
   /** "read": the read lane (lib/mouse/route.ts). Look-up tools only, enforced three times over. */
   lane?: 'read'
   /**
@@ -383,9 +390,10 @@ export async function runAgent(opts: {
   // defaults) sit under a one-hour mark; everything else, notes included,
   // under the five-minute one. Same sections, same text, stable ones first.
   // Layout and the API rules it depends on: lib/mouse/cache-blocks.ts.
-  // With MOUSE_CACHE_LIVE_TAIL=1 (12 Oct 2026, review build) the sections
-  // that change most go last behind a fourth mark; that uses every cache
-  // slot, so it cannot run alongside automatic conversation caching.
+  // With opts.liveTail (12 Oct 2026, review build; chatTurn only, from
+  // MOUSE_CACHE_LIVE_TAIL) the sections that change most go last behind a
+  // fourth mark; that uses every cache slot, so it cannot run alongside
+  // automatic conversation caching.
   // Cache diagnostics (MOUSE_CACHE_DIAGNOSTICS, 11 Oct 2026), interactive
   // chat only: a run is compared with the last response in the same thread,
   // source, model, lane and effort. The lookup runs alongside the catalogue.
@@ -397,7 +405,7 @@ export async function runAgent(opts: {
     : null
   const firstChain = scope ? chainKey(scope, effort) : null
   const [parts, previousId] = await Promise.all([
-    opts.withCatalog !== false ? buildCatalogParts({ notes: opts.notes ?? 'full', catalog: opts.catalog ?? 'full', tail: liveTailOn() }) : null,
+    opts.withCatalog !== false ? buildCatalogParts({ notes: opts.notes ?? 'full', catalog: opts.catalog ?? 'full', tail: opts.liveTail === true }) : null,
     scope && firstChain ? lastResponseId(scope.threadId, firstChain) : null,
   ])
   const contextStats: CatalogStats | null = parts ? catalogStats(parts) : null
@@ -852,6 +860,9 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
     fromAPerson: true,
     practice,
     chatThreadId: threadId,
+    // The live tail's first rollout is interactive chat only (12 Oct 2026):
+    // the app chat, the say box and WhatsApp all come through here.
+    liveTail: liveTailOn(),
     // One whole email for this message, whichever lane answers it: the read
     // lane's attempt and the Opus turn it hands over to share it.
     emailOpenBudget: newEmailOpenBudget(),

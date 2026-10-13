@@ -659,7 +659,9 @@ export const STABLE_SECTIONS: readonly string[] = [
 
 /**
  * The live tail (12 Oct 2026, behind MOUSE_CACHE_LIVE_TAIL=1, off by
- * default; a review build to be measured, not yet a decision).
+ * default; a review build to be measured, not yet a decision). First
+ * rollout is interactive chat only: chatTurn passes runAgent `liveTail`,
+ * and no background, nightly or email caller does.
  *
  * Cache diagnostics on 12 Oct showed the live block, about 42,000 tokens
  * under one five-minute mark, written again on 22 of 31 compared chat

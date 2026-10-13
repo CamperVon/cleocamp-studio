@@ -1,25 +1,34 @@
 /**
- * Practice and wire replay for the live tail (MOUSE_CACHE_LIVE_TAIL, review
- * build, 12 Oct 2026). SPENDS REAL MONEY on the Anthropic API (a few dollars)
- * and needs ANTHROPIC_API_KEY. Writes nothing: the practice turns stop every
- * tool that would change something, nothing is saved to a chat thread, and
- * EMAIL_DRY_RUN is forced on.
+ * Validator for the live tail (MOUSE_CACHE_LIVE_TAIL, review build, 12 Oct
+ * 2026). Exits nonzero if any claim fails; the claims and their tolerances
+ * are in scripts/live-tail-checks.ts, tested in tests/live-tail-replay.test.ts.
  *
  *   npx tsx scripts/live-tail-replay.ts [practice|wire|both=both]
  *
- * Practice: the same five practice turns (a stock write, a PO receipt, a
- * to-do, a support lookup, a plain inventory lookup), one conversation per
- * layout, tail off then tail on, through runAgent as chat runs it. Prints
- * each reply's opening, the tools it called (and what a stopped write would
- * have done) and each request's cache reads and writes, so the two layouts'
- * answers can be read side by side.
+ * SPENDS REAL MONEY on the Anthropic API (a few dollars) and needs
+ * ANTHROPIC_API_KEY; it refuses to start without it.
+ *
+ * What it changes: operational data (stock, orders, to-dos, notes, support
+ * cases, Shopify) and chat history are left untouched. The practice turns
+ * stop every tool that would change something and look-ups only read;
+ * nothing is saved to a chat thread; EMAIL_DRY_RUN is forced on. Usage
+ * accounting IS recorded: every paid request writes a ModelUsage row with
+ * source "live-tail-replay", so the spend is visible and never mistaken for
+ * chat or practice.
+ *
+ * Practice: five practice turns (a stock write, a PO receipt, a to-do, a
+ * support lookup, a plain inventory lookup), one conversation per layout,
+ * tail off then tail on, through runAgent as chatTurn calls it. Checked:
+ * each finished with a reply, changed nothing, and ran the layout asked
+ * for. The two layouts' replies are printed side by side for a person to
+ * compare; that judgement is not automated.
  *
  * Wire: the real catalogue sent straight to the API with the chat tool set
- * and rules, to show the cache doing what the layout claims: the same prefix
- * again reads everything; a tail-only change writes only the tail; a head
- * change writes head and tail; and, as the control, the same tail-only
- * change with the tail off writes the whole live block. The edits are made
- * to the text in memory, never to the database.
+ * and rules; edits are made to the text in memory, never to the database.
+ * Checked: an identical request writes nothing and reads the prefix back; a
+ * tail-only change writes less, and costs less, than the same change with
+ * the tail off; a head change writes more than a tail-only one; and with
+ * the tail off, a one-line change rewrites the whole live block.
  */
 process.env.EMAIL_DRY_RUN = '1'
 import Anthropic from '@anthropic-ai/sdk'
@@ -29,11 +38,14 @@ import { buildCatalogParts, catalogIndexOn } from '@/lib/mouse/context'
 import { systemBlocks } from '@/lib/mouse/cache-blocks'
 import { SYSTEM_RULES } from '@/lib/mouse/prompt'
 import { TOOL_DEFS } from '@/lib/mouse/tools'
+import { recordUsage, usageOf } from '@/lib/mouse/usage'
+import type { RequestUsage } from '@/lib/mouse/runner'
 import { costOf } from './cost-quality-audit'
+import { checkPractice, checkWire, type Claim, type Measured, type PracticeTurn, type WireRun } from './live-tail-checks'
 
-type Req = { model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; cacheWrite1hTokens: number }
-const usd = (n: number) => `$${n.toFixed(3)}`
-const reqLine = (q: Req) => `in ${q.inputTokens} · read ${q.cacheReadTokens} · write ${q.cacheWriteTokens} (1h ${q.cacheWrite1hTokens}) · out ${q.outputTokens} · ${usd(costOf(q) ?? 0)}`
+const SOURCE = 'live-tail-replay'
+const usd = (n: number) => `$${n.toFixed(4)}`
+const reqLine = (q: RequestUsage) => `in ${q.inputTokens} · read ${q.cacheReadTokens} · write ${q.cacheWriteTokens} (1h ${q.cacheWrite1hTokens}) · out ${q.outputTokens} · ${usd(costOf(q) ?? 0)}`
 
 async function prompts() {
   // Real records, so the turns read like the team's; picked, never changed.
@@ -49,79 +61,117 @@ async function prompts() {
   ]
 }
 
-async function practice() {
+type Call = { name?: string; status?: string; isWrite?: boolean; result?: { skipped?: string; wouldHave?: { input?: unknown } } }
+
+async function practice(): Promise<Claim[]> {
   const turns = await prompts()
-  const totals: Record<string, number> = {}
+  const done: PracticeTurn[] = []
+  const replies = new Map<string, Record<'off' | 'tail', string>>()
   for (const layout of ['off', 'tail'] as const) {
-    process.env.MOUSE_CACHE_LIVE_TAIL = layout === 'tail' ? '1' : ''
     console.log(`\n=== Practice, tail ${layout} ===`)
     const history: Anthropic.MessageParam[] = []
-    totals[layout] = 0
+    let total = 0
     for (const t of turns) {
       const r = await runAgent({
-        instruction: t.text, source: 'chat-practice', practice: true, fromAPerson: true,
+        instruction: t.text, source: SOURCE, practice: true, fromAPerson: true,
         notes: 'index', catalog: catalogIndexOn() ? 'index' : 'full',
         chatThreadId: `replay_live_tail_${layout}`, history: [...history],
+        liveTail: layout === 'tail',
       })
       history.push({ role: 'user', content: t.text }, { role: 'assistant', content: r.text || '(no reply)' })
-      const reqs = (r.usage.requests ?? []) as unknown as Req[]
+      const reqs = r.usage.requests ?? []
       const cost = reqs.reduce((n, q) => n + (costOf(q) ?? 0), 0)
-      totals[layout] += cost
-      const ctx = (r.usage as unknown as { context?: { live: { hash: string }; tail: { hash: string; estTokens: number } } }).context
-      console.log(`\n-- ${t.kind}: "${t.text}"`)
-      console.log(`   stop: ${r.usage.stopReason} · ${reqs.length} requests · ${usd(cost)} · live ${ctx?.live.hash} tail ${ctx?.tail.hash ?? '-'} (${ctx?.tail.estTokens ?? 0} est)`)
+      total += cost
+      const calls = r.toolCalls as Call[]
+      const ctx = (r.usage as { context?: { blocks?: { tail?: boolean } } }).context
+      done.push({
+        layout, kind: t.kind, stopReason: r.usage.stopReason, reply: r.text,
+        tailApplied: ctx?.blocks?.tail === true,
+        writesRun: calls.filter((c) => c.status === 'succeeded' && c.isWrite && c.result?.skipped !== 'practice').map((c) => c.name ?? '?'),
+      })
+      const pair = replies.get(t.kind) ?? { off: '', tail: '' }
+      pair[layout] = r.text
+      replies.set(t.kind, pair)
+      console.log(`\n-- ${t.kind}: "${t.text}"  (${reqs.length} requests, ${usd(cost)})`)
       for (const q of reqs) console.log(`   ${reqLine(q)}`)
-      for (const c of r.toolCalls as Array<{ name?: string; status?: string; result?: { skipped?: string; wouldHave?: { input?: unknown } } }>) {
-        console.log(`   tool ${c.name} · ${c.status}${c.result?.skipped === 'practice' ? ` · STOPPED, would have: ${JSON.stringify(c.result.wouldHave?.input).slice(0, 160)}` : ''}`)
-      }
-      console.log(`   reply: ${r.text.replace(/\s+/g, ' ').slice(0, 400)}`)
+      for (const c of calls) console.log(`   tool ${c.name} · ${c.status}${c.result?.skipped === 'practice' ? ` · stopped, would have: ${JSON.stringify(c.result.wouldHave?.input).slice(0, 160)}` : ''}`)
     }
+    console.log(`\nPractice, tail ${layout}: ${usd(total)}`)
   }
-  console.log(`\nPractice totals: tail off ${usd(totals.off)}, tail on ${usd(totals.tail)}`)
+  console.log('\n=== Replies side by side (for a person to compare) ===')
+  for (const [kind, p] of replies) {
+    console.log(`\n-- ${kind}\n   off:  ${p.off.replace(/\s+/g, ' ').slice(0, 500)}\n   tail: ${p.tail.replace(/\s+/g, ' ').slice(0, 500)}`)
+  }
+  return checkPractice(done, turns.map((t) => t.kind))
 }
 
-async function wire() {
+async function wire(): Promise<Claim[]> {
   const client = new Anthropic({ maxRetries: 2 })
   const allowed = toolsFor(undefined, 'replay_live_tail')
   const tools = TOOL_DEFS.filter((t) => allowed.includes(t.name))
   const catalog = catalogIndexOn() ? 'index' as const : 'full' as const
-  const parts = await buildCatalogParts({ notes: 'index', catalog, tail: true })
-  if (!parts.tail) throw new Error('no tail sections in the catalogue: nothing to measure')
-  // In-memory edits only: one line at the end of a block.
-  const tailEdit = { ...parts, tail: parts.tail.replace(/\n*$/, '\n- (replay) a synthetic to-do line\n') }
-  const headEdit = { ...parts, live: parts.live.replace(/\n*$/, '\n- (replay) a synthetic head line\n') }
-  // The control is the real tail-off layout. Its live block ends with the
-  // catalogue's last section (customer support, a tail section), so the same
-  // one-line edit at its end is the same tail-only change.
+  // A line naming this run opens each live block, so no earlier run's cache
+  // can make a write look smaller than it is. Tools, rules and stable are
+  // left as chat sends them.
+  const mark = `Replay run ${new Date().toISOString()}.\n`
+  const on = await buildCatalogParts({ notes: 'index', catalog, tail: true })
   const off = await buildCatalogParts({ notes: 'index', catalog, tail: false })
-  const offTailEdit = { ...off, live: off.live.replace(/\n*$/, '\n- (replay) a synthetic to-do line\n') }
+  if (!on.tail) throw new Error('no tail sections in the catalogue: nothing to measure')
+  const add = (text: string, line: string) => text.replace(/\n*$/, `\n- (replay) ${line}\n`)
+  const tailOn = { ...on, live: mark + on.live }
+  const tailEdit = { ...tailOn, tail: add(on.tail, 'a synthetic to-do line') }
+  const headEdit = { ...tailOn, live: add(tailOn.live, 'a synthetic head line') }
+  // The tail-off live block ends with the catalogue's last section (customer
+  // support, a tail section), so the same line at its end is the same change.
+  const tailOff = { ...off, live: mark + off.live }
+  const offTailEdit = { ...tailOff, live: add(tailOff.live, 'a synthetic to-do line') }
 
-  const send = async (label: string, catalogue: { stable: string; live: string; tail?: string }, expect: string) => {
+  // Token counts are free; measured as the difference one block makes.
+  const count = async (texts: string[]) => (await client.messages.countTokens({
+    model: CHAT_MODEL, system: texts.map((text) => ({ type: 'text' as const, text })), messages: [{ role: 'user', content: 'x' }],
+  })).input_tokens
+  const base = await count(['.'])
+  const tokensOf = async (text: string) => (await count(['.', text])) - base
+  const tokens = { head: await tokensOf(tailOn.live), tail: await tokensOf(on.tail), live: await tokensOf(tailOff.live) }
+
+  const send = async (label: string, catalogue: { stable: string; live: string; tail?: string }): Promise<Measured> => {
+    const startedAt = Date.now()
     const res = await client.messages.create({
       model: CHAT_MODEL, max_tokens: 32, tools,
       system: systemBlocks({ rules: SYSTEM_RULES, catalog: catalogue }),
       messages: [{ role: 'user', content: 'Reply with the single word OK.' }],
     })
-    const u = res.usage as Anthropic.Usage & { cache_creation?: { ephemeral_1h_input_tokens?: number } }
-    const q: Req = { model: CHAT_MODEL, inputTokens: u.input_tokens, outputTokens: u.output_tokens, cacheReadTokens: u.cache_read_input_tokens ?? 0, cacheWriteTokens: u.cache_creation_input_tokens ?? 0, cacheWrite1hTokens: u.cache_creation?.ephemeral_1h_input_tokens ?? 0 }
-    console.log(`${label.padEnd(34)} ${reqLine(q)}\n${''.padEnd(34)} expected: ${expect}`)
-    return q
+    const q = usageOf(CHAT_MODEL, res.usage, startedAt)
+    await recordUsage(SOURCE, [q])
+    console.log(`${label.padEnd(28)} ${reqLine(q)}`)
+    return { read: q.cacheReadTokens, write: q.cacheWriteTokens, cost: costOf(q) ?? 0 }
   }
-  console.log('\n=== Wire replay (in-memory edits, nothing written) ===')
-  console.log(`catalogue blocks, est tokens: stable ${Math.ceil(parts.stable.length / 4)} · head ${Math.ceil(parts.live.length / 4)} · tail ${Math.ceil(parts.tail.length / 4)}`)
-  await send('1. tail on, warm', parts, 'writes whatever is not cached yet')
-  await send('2. same again', parts, 'reads everything, writes 0')
-  await send('3. tail-only change', tailEdit, 'reads through the head, writes about the tail only')
-  await send('4. head change', headEdit, 'reads through stable, writes head and tail')
-  await send('5. control: tail off, warm', off, 'writes the whole live block (a different layout)')
-  await send('6. control: tail off, tail change', offTailEdit, 'writes the whole live block again')
+  console.log('\n=== Wire replay (in-memory edits) ===')
+  console.log(`measured tokens: head ${tokens.head} · tail ${tokens.tail} · tail-off live block ${tokens.live}`)
+  const run: WireRun = {
+    warm: await send('tail on, warm', tailOn),
+    same: await send('tail on, identical again', tailOn),
+    tailEdit: await send('tail-only edit', tailEdit),
+    headEdit: await send('head edit', headEdit),
+    offWarm: await send('control: tail off, warm', tailOff),
+    offTailEdit: await send('control: tail off, edit', offTailEdit),
+    tokens,
+  }
+  return checkWire(run)
 }
 
 async function main() {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set: this replay calls the API. Nothing was run.')
   const which = process.argv[2] ?? 'both'
-  if (which === 'practice' || which === 'both') await practice()
-  if (which === 'wire' || which === 'both') await wire()
+  if (!['practice', 'wire', 'both'].includes(which)) throw new Error(`unknown part "${which}": practice, wire or both`)
+  const claims: Claim[] = []
+  if (which === 'practice' || which === 'both') claims.push(...await practice())
+  if (which === 'wire' || which === 'both') claims.push(...await wire())
+  console.log('\n=== Claims ===')
+  for (const c of claims) console.log(`${c.ok ? 'PASS' : 'FAIL'}  ${c.claim}\n      ${c.detail}`)
+  const failed = claims.filter((c) => !c.ok).length
+  console.log(`\n${claims.length - failed} of ${claims.length} claims held.`)
+  return failed
 }
 
-main().then(() => process.exit(0), (e) => { console.error(e instanceof Error ? e.message : e); process.exit(1) })
+main().then((failed) => process.exit(failed ? 1 : 0), (e) => { console.error(e instanceof Error ? e.message : e); process.exit(2) })
