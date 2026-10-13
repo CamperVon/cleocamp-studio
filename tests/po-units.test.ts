@@ -31,3 +31,15 @@ test('an "of" size in a different unit from the stock is not taken', () => {
   assert.equal(unitsPerLineUnit('case of 12 boxes', { unitOfMeasure: 'pcs' }), 1)
   assert.equal(unitsPerLineUnit('labels', { unitOfMeasure: 'label', purchaseUnit: 'pack of 2,000', unitsPerPurchaseUnit: '2000' }), 1)
 })
+
+test('a price that is a fraction of a cent is refused, not rounded (PO 2397, PO 2407)', async () => {
+  const { centsProblem } = await import('../lib/po-units')
+  assert.equal(centsProblem(2395), null)
+  assert.equal(centsProblem(0), null)
+  assert.equal(centsProblem(undefined), null)
+  assert.equal(centsProblem(null), null)
+  assert.match(centsProblem(0.409) ?? '', /fraction of a cent[\s\S]*saved as 0[\s\S]*pack of 1,000/)
+  assert.match(centsProblem(1.883) ?? '', /saved as 2/)
+  assert.match(centsProblem(-5) ?? '', /not a price/)
+  assert.match(centsProblem('abc') ?? '', /not a price/)
+})

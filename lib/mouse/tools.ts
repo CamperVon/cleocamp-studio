@@ -1313,6 +1313,11 @@ export const TOOLS: Record<string, Tool> = {
     run: async ({ id, ...rest }) => {
       const data: any = {}
       for (const [k, v] of Object.entries(rest)) if (v !== undefined && v !== null) data[k] = v
+      {
+        const { centsProblem } = await import('@/lib/po-units')
+        const bad = centsProblem(data.unitCostCents)
+        if (bad) return { error: bad }
+      }
       if (data.reorderThreshold !== undefined) data.reorderThreshold = String(data.reorderThreshold)
       if (data.unitsPerPurchaseUnit !== undefined) data.unitsPerPurchaseUnit = String(data.unitsPerPurchaseUnit)
       // "" clears: an empty supplier wording would print a blank PO line.
@@ -1686,6 +1691,11 @@ export const TOOLS: Record<string, Tool> = {
         if (fp.colorway?.trim() && !matchColorway(fp.colorway, p.colorways)) {
           return { error: `${p.name} has no colour "${fp.colorway}". Its colours: ${p.colorways.map((c) => c.customerName).join(', ') || 'none recorded'}. Nothing was added.` }
         }
+      }
+      {
+        const { centsProblem } = await import('@/lib/po-units')
+        const bad = centsProblem(i.unitCostCents)
+        if (bad) return { error: bad }
       }
       const c = await db.component.create({
         data: { ...i, stockedInStudio: i.stockedInStudio ?? i.category === 'PACKAGING' },
@@ -2489,6 +2499,10 @@ export const TOOLS: Record<string, Tool> = {
     },
     run: async (i) => {
       const rawLines = i.lines as any[]
+      {
+        const { centsProblem } = await import('@/lib/po-units')
+        for (const l of rawLines) { const bad = centsProblem(l?.unitCostCents); if (bad) return { error: bad } }
+      }
       // A line names one thing. It can be a component, a catalogue variant,
       // or — for something that does not exist yet — its own description.
       // The third case is not a loophole: ordering a colour nobody has dyed
@@ -2908,6 +2922,10 @@ export const TOOLS: Record<string, Tool> = {
       const was: string[] = []
 
       const results: string[] = []
+      {
+        const { centsProblem } = await import('@/lib/po-units')
+        for (const l of i.lines as Array<{ unitCostCents?: unknown } | null>) { const bad = centsProblem(l?.unitCostCents); if (bad) return { error: bad } }
+      }
       for (const l of i.lines as any[]) {
         // Line number first. Matching a line by its exact free text failed three
         // times in a row on PO 2370 — Studio Mouse could not see the document

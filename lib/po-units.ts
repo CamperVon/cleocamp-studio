@@ -63,3 +63,22 @@ export function purchaseUnitPrice(c: { unitCostCents: number | null; unitOfMeasu
   if (c.unitCostCents === null || !c.purchaseUnit || !(per > 0) || sameUnit(c.purchaseUnit, c.unitOfMeasure)) return null
   return { cents: Math.round(c.unitCostCents * per), unit: c.purchaseUnit }
 }
+
+/**
+ * Why a price in cents cannot be stored, or null. Prices are whole cents, and
+ * a fraction was silently rounded: PO 2397's stickers at 0.409 cents each
+ * saved as $0, and PO 2407's labels at 1.883 cents as 1 cent, so both totals
+ * were wrong (13 Oct 2026). A wrong price is worse than none, so it is
+ * refused, with what to do instead. Pure.
+ */
+export function centsProblem(cents: unknown): string | null {
+  if (cents === undefined || cents === null) return null
+  const n = Number(cents)
+  if (!Number.isFinite(n) || n < 0) return `"${String(cents)}" is not a price in cents.`
+  if (Number.isInteger(n)) return null
+  return `${n} cents is a fraction of a cent, and prices are kept in whole cents, so it would be saved as ` +
+    `${Math.round(n)} and every total built on it would be wrong. Price it per pack instead: on a ` +
+    `purchase order, make the line's unit the pack ("pack of 1,000") and give the price of one pack ` +
+    `(the stock still counts single items). For a component's cost on file, leave the price out and ` +
+    `put the pack price in its notes.`
+}

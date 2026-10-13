@@ -563,6 +563,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/context.ts`, `tests/calendar-line.test.ts`.
 - **Needs:** nothing beyond the app.
 
+### A price under a cent is refused, not silently rounded
+- **Problem:** prices are stored in whole cents, and nothing checked a fractional value before saving. A sticker at 0.409 cents was saved as $0 and a label at 1.883 cents as 1 cent, so purchase-order totals were wrong with no warning.
+- **Change:** one pure check, `centsProblem` in `lib/po-units.ts`, runs before anything is saved when a purchase order is created, its lines are edited, or a component's cost is set or changed. A fractional or negative price is refused with what to do instead: price the line per pack ("pack of 1,000"), which converts to single items for stock, or leave the component's cost out and note the pack price.
+- **Files:** `lib/po-units.ts`, `lib/mouse/tools.ts`, `tests/po-units.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install
