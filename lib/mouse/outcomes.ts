@@ -50,7 +50,11 @@ export function classifyResult(name: string, result: unknown): Pick<ToolOutcome,
   if (r.error || r.ok === false || r.applied === false) return { status: 'failed', isWrite: false }
   // A draft is the first step of every send (email, invoice, gift): shown,
   // not sent, on purpose. It was being reported back to Mouse as an error.
-  if (r.draft === true) return { status: 'no_change', isWrite: false }
+  // The wholesale invoice tools name the draft instead ("#D57"): the same
+  // thing, and until 13 Oct 2026 every one of them was logged as a failed
+  // tool and fed back to Mouse as an error. A refusal carries a reason and
+  // no draft, so it still counts as failed.
+  if (r.draft === true || (typeof r.draft === 'string' && r.draft !== '' && !r.reason)) return { status: 'no_change', isWrite: false }
   if (r.sent === false) return { status: 'failed', isWrite: false }
   if (r.created === false || r.skipped) return { status: 'no_change', isWrite: false }
   return { status: 'succeeded', isWrite: !READ_TOOLS.has(name) }

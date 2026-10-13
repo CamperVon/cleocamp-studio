@@ -551,6 +551,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/tools.ts`, `tests/po-carry-over.test.ts`.
 - **Needs:** nothing beyond the app.
 
+### A named invoice draft is a draft, not a failure
+- **Problem:** the tools that draft and send wholesale invoices return the draft's name (`draft: "#D57"`) while waiting for a person to say send. The result classifier only recognised `draft: true`, so every invoice draft was logged as a failed tool call and fed back to the assistant as an error, filling the troubleshooting log with false failures.
+- **Change:** `classifyResult` treats a non-empty draft name with no refusal reason as waiting, the same as `draft: true`. A result with a `reason` or an `error` is still a failure.
+- **Files:** `lib/mouse/outcomes.ts`, `tests/outcomes-draft.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install
