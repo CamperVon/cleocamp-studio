@@ -212,6 +212,19 @@ export function catalogIndexOn(): boolean {
  * catalog: 'full' (default) prints every product and component in full; 'index' (chat, behind
  * MOUSE_CATALOG_INDEX) prints them as an index, the rest on demand.
  */
+/**
+ * One calendar entry as Mouse reads it. An entry Mouse made carries its id,
+ * so a wrong one can be removed with delete_calendar_event (13 Oct 2026:
+ * three stale entries were left standing because no id was in sight).
+ * Studio calendar entries come back on the next sync, so they carry none.
+ * Pure.
+ */
+export function calendarLine(e: { id: string; date: Date; title: string; type: string; source: string; notes: string | null }): string {
+  const tag = e.type === 'DELIVERY_EXPECTED' ? ' [PICKUP/DELIVERY]' : e.source === 'GOOGLE' ? ' (studio calendar)' : ''
+  const id = e.source === 'STUDIO_MOUSE' ? ` [${e.id}]` : ''
+  return `- ${e.date.toISOString().slice(0, 10)} ${e.title}${tag}${id}${e.notes ? ` — ${e.notes.replace(/\s+/g, ' ')}` : ''}`
+}
+
 /** The catalogue's fixed orders for open purchase orders and production runs (12 Oct 2026). */
 export const CATALOG_PO_ORDER = [{ poNumber: 'asc' as const }, { id: 'asc' as const }]
 export const CATALOG_RUN_ORDER = [{ expectedReadyAt: 'asc' as const }, { id: 'asc' as const }]
@@ -517,13 +530,7 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index'; catalog?: '
     L.push('PICKUP/DELIVERY entries are goods physically moving between the studio')
     L.push('and a vendor. They are a heads-up, not a record: never log stock off the')
     L.push('back of one. Ask what actually moved and who has it now.')
-    for (const e of events) {
-      const tag =
-        e.type === 'DELIVERY_EXPECTED' ? ' [PICKUP/DELIVERY]'
-        : e.source === 'GOOGLE' ? ' (studio calendar)'
-        : ''
-      L.push(`- ${e.date.toISOString().slice(0, 10)} ${e.title}${tag}${e.notes ? ` — ${e.notes.replace(/\s+/g, ' ')}` : ''}`)
-    }
+    for (const e of events) L.push(calendarLine(e))
   }
 
   if (notes.length) {

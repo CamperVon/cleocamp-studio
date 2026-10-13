@@ -557,6 +557,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/outcomes.ts`, `tests/outcomes-draft.test.ts`.
 - **Needs:** nothing beyond the app.
 
+### The assistant can see, and so remove, the calendar entries it made
+- **Problem:** the assistant could delete a calendar entry it had created, but its context listed calendar entries without ids, so it never had one to pass. Wrong or stale entries it had made were left standing, noted as problems instead.
+- **Change:** an entry the assistant made carries its id in the context; a subscribed-calendar entry does not, since deleting it would not survive the next sync. The line format is the pure `calendarLine`.
+- **Files:** `lib/mouse/context.ts`, `tests/calendar-line.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install
