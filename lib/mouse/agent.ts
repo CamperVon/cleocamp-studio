@@ -2,7 +2,7 @@ import { runLoop, type AgentUsage, type TurnRoute } from '@/lib/mouse/runner'
 import { classifyResult } from '@/lib/mouse/outcomes'
 import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
-import { buildCatalogParts, catalogStats, type CatalogStats } from '@/lib/mouse/context'
+import { buildCatalogParts, catalogStats, liveTailOn, type CatalogStats } from '@/lib/mouse/context'
 import { systemBlocks } from '@/lib/mouse/cache-blocks'
 import { cacheDiagnosticsOn, chainKey, lastResponseId, prefixHashes } from '@/lib/mouse/cache-diagnostics'
 import { SYSTEM_RULES } from '@/lib/mouse/prompt'
@@ -383,6 +383,9 @@ export async function runAgent(opts: {
   // defaults) sit under a one-hour mark; everything else, notes included,
   // under the five-minute one. Same sections, same text, stable ones first.
   // Layout and the API rules it depends on: lib/mouse/cache-blocks.ts.
+  // With MOUSE_CACHE_LIVE_TAIL=1 (12 Oct 2026, review build) the sections
+  // that change most go last behind a fourth mark; that uses every cache
+  // slot, so it cannot run alongside automatic conversation caching.
   // Cache diagnostics (MOUSE_CACHE_DIAGNOSTICS, 11 Oct 2026), interactive
   // chat only: a run is compared with the last response in the same thread,
   // source, model, lane and effort. The lookup runs alongside the catalogue.
@@ -394,7 +397,7 @@ export async function runAgent(opts: {
     : null
   const firstChain = scope ? chainKey(scope, effort) : null
   const [parts, previousId] = await Promise.all([
-    opts.withCatalog !== false ? buildCatalogParts({ notes: opts.notes ?? 'full', catalog: opts.catalog ?? 'full' }) : null,
+    opts.withCatalog !== false ? buildCatalogParts({ notes: opts.notes ?? 'full', catalog: opts.catalog ?? 'full', tail: liveTailOn() }) : null,
     scope && firstChain ? lastResponseId(scope.threadId, firstChain) : null,
   ])
   const contextStats: CatalogStats | null = parts ? catalogStats(parts) : null
@@ -406,7 +409,7 @@ export async function runAgent(opts: {
   })
   const cacheDiagnostics = scope && firstChain ? { scope, last: { [firstChain]: previousId } } : undefined
   const prefix = scope
-    ? prefixHashes({ tools, rules: SYSTEM_RULES, extraRules: opts.extraRules, practiceRules: opts.practice ? PRACTICE_RULES : null, stable: parts?.stable, live: parts?.live })
+    ? prefixHashes({ tools, rules: SYSTEM_RULES, extraRules: opts.extraRules, practiceRules: opts.practice ? PRACTICE_RULES : null, stable: parts?.stable, live: parts?.live, tail: parts?.tail })
     : null
 
   // Attachments ride along on the turn they were sent. Chat also replays the

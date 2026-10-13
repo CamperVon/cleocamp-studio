@@ -212,6 +212,10 @@ export function catalogIndexOn(): boolean {
  * catalog: 'full' (default) prints every product and component in full; 'index' (chat, behind
  * MOUSE_CATALOG_INDEX) prints them as an index, the rest on demand.
  */
+/** The catalogue's fixed orders for open purchase orders and production runs (12 Oct 2026). */
+export const CATALOG_PO_ORDER = [{ poNumber: 'asc' as const }, { id: 'asc' as const }]
+export const CATALOG_RUN_ORDER = [{ expectedReadyAt: 'asc' as const }, { id: 'asc' as const }]
+
 export async function buildCatalog(opts: { notes?: 'full' | 'index'; catalog?: 'full' | 'index' } = {}): Promise<string> {
   const [products, components, vendors, locations, items, pos, runs, lastSale, notes, events, forecasts, alerts, people, finances, sales, wholesale, shopifySync, docDefaults, notify] = await Promise.all([
     db.product.findMany({ orderBy: { name: 'asc' }, include: PRODUCT_INCLUDE }),
@@ -227,11 +231,16 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index'; catalog?: '
     db.purchaseOrder.findMany({
       where: { status: { in: ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'] } },
       include: { vendor: true, forProduct: true, lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } } },
+      // A fixed order (12 Oct 2026): with none, Postgres returns rows as they
+      // sit on disk, which an update to any order can reshuffle, and a
+      // reshuffle rewrites the cached catalogue for nothing.
+      orderBy: CATALOG_PO_ORDER,
     }),
     db.productionRun.findMany({
       where: { status: { notIn: ['RECEIVED', 'CANCELLED'] } },
       include: { product: true, vendor: true },
-      orderBy: { expectedReadyAt: 'asc' },
+      // Ties (same day, or no date) broken by id, so the order never moves on its own.
+      orderBy: CATALOG_RUN_ORDER,
     }),
     db.salesSnapshot.aggregate({ _max: { date: true } }),
     // No row cap — buildCatalog budgets these by character count below.
@@ -648,37 +657,71 @@ export const STABLE_SECTIONS: readonly string[] = [
   'What every printed document currently says',
 ]
 
-export type CatalogSection = { heading: string; text: string; stable: boolean }
-export type CatalogParts = { stable: string; live: string; sections: CatalogSection[] }
+/**
+ * The live tail (12 Oct 2026, behind MOUSE_CACHE_LIVE_TAIL=1, off by
+ * default; a review build to be measured, not yet a decision).
+ *
+ * Cache diagnostics on 12 Oct showed the live block, about 42,000 tokens
+ * under one five-minute mark, written again on 22 of 31 compared chat
+ * turns, nearly always for real data the turn itself had just changed: a
+ * to-do, a note, a received order. One changed line anywhere meant writing
+ * all of it again. These seven small sections change most (about 5,700
+ * tokens together) and go last, under a mark of their own, so a change
+ * there leaves everything ahead of them readable from the cache.
+ *
+ * Same rule as the stable split: whole sections move, each byte for byte
+ * what it was, each block keeping the catalogue's own order. Today and
+ * "Where these numbers come from" stay at the head. No section refers to
+ * another across the cut ("above"/"below" lines all point within the head).
+ */
+export const TAIL_SECTIONS: readonly string[] = [
+  'Your own forecasts, from the last nightly run',
+  'Alerts you have raised, still open',
+  'Calendar, from today onward',
+  'Money, as last recorded',
+  'Scheduled emails',
+  'Open questions and todos',
+  'Customer support (support@cleocamp.com)',
+]
+
+export const liveTailOn = () => process.env.MOUSE_CACHE_LIVE_TAIL === '1'
+
+export type CatalogSection = { heading: string; text: string; stable: boolean; tail: boolean }
+/** `live` is the live head when the tail is split off, and all of live when it is not; `tail` is then ''. */
+export type CatalogParts = { stable: string; live: string; tail: string; sections: CatalogSection[] }
 
 /**
  * Cut the catalogue at its section headings and sort the sections into
- * stable and live, each keeping its original order. Anything before the
- * first heading, and any heading not on the allowlist, is live. Pure.
+ * stable, live and (with `tail`) the live tail, each keeping its original
+ * order. Anything before the first heading, and any heading on neither
+ * list, is live. Pure.
  */
-export function splitCatalog(text: string): CatalogParts {
+export function splitCatalog(text: string, opts: { tail?: boolean } = {}): CatalogParts {
   const starts = [...text.matchAll(/^## /gm)].map((m) => m.index!)
   const cuts = starts[0] === 0 ? starts : [0, ...starts]
   const sections: CatalogSection[] = cuts.map((at, k) => {
     const chunk = text.slice(at, cuts[k + 1] ?? text.length)
     const heading = chunk.startsWith('## ') ? chunk.slice(3, chunk.indexOf('\n') === -1 ? undefined : chunk.indexOf('\n')).trim() : ''
-    return { heading, text: chunk, stable: STABLE_SECTIONS.includes(heading) }
+    return { heading, text: chunk, stable: STABLE_SECTIONS.includes(heading), tail: !!opts.tail && TAIL_SECTIONS.includes(heading) }
   }).filter((s) => s.text.length > 0)
-  // Fail safe: a stable heading seen twice means some text (a note with a
-  // line reading "## Vendors", say) looks like a section. Rather than guess
-  // which is real, nothing goes in the long-lived block this time.
-  const stableHeads = sections.filter((s) => s.stable).map((s) => s.heading)
-  if (new Set(stableHeads).size !== stableHeads.length) for (const s of sections) s.stable = false
+  // Fail safe: a stable or tail heading seen twice means some text (a note
+  // with a line reading "## Vendors", say) looks like a section. Rather than
+  // guess which is real, nothing moves to that block this time.
+  const twice = (heads: string[]) => new Set(heads).size !== heads.length
+  if (twice(sections.filter((s) => s.stable).map((s) => s.heading))) for (const s of sections) s.stable = false
+  if (twice(sections.filter((s) => s.tail).map((s) => s.heading))) for (const s of sections) s.tail = false
   return {
     stable: sections.filter((s) => s.stable).map((s) => s.text).join(''),
-    live: sections.filter((s) => !s.stable).map((s) => s.text).join(''),
+    live: sections.filter((s) => !s.stable && !s.tail).map((s) => s.text).join(''),
+    tail: sections.filter((s) => s.tail).map((s) => s.text).join(''),
     sections,
   }
 }
 
-/** The catalogue, built as always, in its two blocks. */
-export async function buildCatalogParts(opts: { notes?: 'full' | 'index'; catalog?: 'full' | 'index' } = {}): Promise<CatalogParts> {
-  return splitCatalog(await buildCatalog(opts))
+/** The catalogue, built as always, in its blocks. */
+export async function buildCatalogParts(opts: { notes?: 'full' | 'index'; catalog?: 'full' | 'index'; tail?: boolean } = {}): Promise<CatalogParts> {
+  const { tail, ...build } = opts
+  return splitCatalog(await buildCatalog(build), { tail })
 }
 
 /**
@@ -688,10 +731,11 @@ export async function buildCatalogParts(opts: { notes?: 'full' | 'index'; catalo
  * (and so could have been read from cache). No business text is kept. Pure.
  */
 export type CatalogStats = {
-  blocks: { stable: boolean; live: boolean }
+  blocks: { stable: boolean; live: boolean; tail: boolean }
   stable: { bytes: number; estTokens: number; hash: string }
   live: { bytes: number; estTokens: number; hash: string }
-  sections: Array<{ heading: string; bytes: number; estTokens: number; block: 'stable' | 'live' }>
+  tail: { bytes: number; estTokens: number; hash: string }
+  sections: Array<{ heading: string; bytes: number; estTokens: number; block: 'stable' | 'live' | 'tail' }>
 }
 
 export function catalogStats(p: CatalogParts): CatalogStats {
@@ -700,9 +744,10 @@ export function catalogStats(p: CatalogParts): CatalogStats {
   const est = (s: string) => Math.ceil(s.length / 4)
   const hash = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 12)
   return {
-    blocks: { stable: p.stable.length > 0, live: p.live.length > 0 },
+    blocks: { stable: p.stable.length > 0, live: p.live.length > 0, tail: p.tail.length > 0 },
     stable: { bytes: bytes(p.stable), estTokens: est(p.stable), hash: hash(p.stable) },
     live: { bytes: bytes(p.live), estTokens: est(p.live), hash: hash(p.live) },
-    sections: p.sections.map((s) => ({ heading: s.heading || '(before the first heading)', bytes: bytes(s.text), estTokens: est(s.text), block: s.stable ? 'stable' : 'live' })),
+    tail: { bytes: bytes(p.tail), estTokens: est(p.tail), hash: hash(p.tail) },
+    sections: p.sections.map((s) => ({ heading: s.heading || '(before the first heading)', bytes: bytes(s.text), estTokens: est(s.text), block: s.stable ? 'stable' as const : s.tail ? 'tail' as const : 'live' as const })),
   }
 }

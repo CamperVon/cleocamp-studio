@@ -112,7 +112,7 @@ test('the usage stats hold sizes and hashes, never the text', () => {
   assert.ok(!json.includes('example.test'))
   assert.equal(s.stable.hash, catalogStats(splitCatalog(b)).stable.hash)
   assert.notEqual(s.live.hash, catalogStats(splitCatalog(b)).live.hash)
-  assert.deepEqual(s.blocks, { stable: true, live: true })
+  assert.deepEqual(s.blocks, { stable: true, live: true, tail: false })
   assert.equal(s.sections.reduce((n, x) => n + x.bytes, 0), Buffer.byteLength(a, 'utf8'))
 })
 

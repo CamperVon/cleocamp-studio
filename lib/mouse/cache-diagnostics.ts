@@ -98,6 +98,7 @@ export function prefixHashes(p: {
   practiceRules?: string | null
   stable?: string | null
   live?: string | null
+  tail?: string | null
 }) {
   return {
     tools: short(JSON.stringify(p.tools)),
@@ -106,6 +107,7 @@ export function prefixHashes(p: {
     practiceRules: p.practiceRules ? short(p.practiceRules) : null,
     stable: p.stable ? short(p.stable) : null,
     live: p.live ? short(p.live) : null,
+    tail: p.tail ? short(p.tail) : null,
   }
 }
 export type PrefixHashes = ReturnType<typeof prefixHashes>
