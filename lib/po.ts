@@ -44,6 +44,10 @@ export function poLineLabel(l: {
   // purchase order is often how a new thing first exists — a colour nobody
   // has dyed, a size nobody has cut. Those lines carry their own text.
   if (!v) return l.description || 'unknown item'
+  // A catalogue line's own wording, when someone set it, is what it says
+  // (13 Oct 2026: "Boy Belt / Small (90)" on PO 2403 was saved, reported as
+  // updated, and printed nowhere). Same rule as a component's supplier wording.
+  if (l.description?.trim()) return l.description.trim()
   return [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
 }
 

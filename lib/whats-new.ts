@@ -66,6 +66,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-13',
     text: 'When Mouse runs out of steps on a long request, it now tells you what it did and what is left, instead of "I reached this turn\'s reasoning limit… please continue from here", which made finished work look like a failure.',
   },
+  {
+    on: '2026-10-13',
+    text: 'Purchase orders: when you ask Mouse to reword a product line (say "Boy Belt / Small (90)"), that wording now prints on the PO. Before, it said it had changed it but the PO kept the plain name.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

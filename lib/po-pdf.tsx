@@ -157,6 +157,8 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
     // colourway to dress it up with. See lib/po.ts:poLineLabel.
     const view = viewOf(l)
     if (!view) return l.description ?? ''
+    // Its own wording, when set, replaces the built name (lib/po.ts:poLineLabel).
+    if (l.description?.trim()) return l.description.trim()
     return variantLabel(view, t('style'))
   }
 

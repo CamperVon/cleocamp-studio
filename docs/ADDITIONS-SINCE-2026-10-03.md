@@ -569,6 +569,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/po-units.ts`, `lib/mouse/tools.ts`, `tests/po-units.test.ts`.
 - **Needs:** nothing beyond the app.
 
+### New wording on a catalogue PO line prints, instead of saving to nowhere
+- **Problem:** editing a purchase-order line's wording saved it to the line's description, but a line tied to a catalogue product always printed its built name (product / colour / size) and ignored the description, on the document, the order page and in the assistant's view. The edit was reported as done and changed nothing anyone could see. A component line has the same trap: it prints the component's supplier wording.
+- **Change:** a catalogue product line's own wording, when set, replaces the built name everywhere it is shown (the photo stays), the same rule a component's supplier wording already followed. Rewording a component line is refused with a pointer to the component's supplier wording. Switching a line to another product clears old wording unless new wording comes in the same edit.
+- **Files:** `lib/po.ts` (`poLineLabel`), `lib/po-pdf.tsx`, `app/po/[poNumber]/page.tsx`, `lib/mouse/tools.ts` (`update_purchase_order_lines`), `tests/po-line-wording.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

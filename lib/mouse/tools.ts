@@ -2848,8 +2848,11 @@ export const TOOLS: Record<string, Tool> = {
         'by its LINE NUMBER as printed on the document — line 1 is the top row — which is ' +
         'always available and never needs the exact wording guessed at. componentId or ' +
         'productVariantId also match, when you have one to hand. Give only the field(s) ' +
-        'that changed, the rest of that line is untouched. newDescription rewrites a ' +
-        'described line; setProductVariantId turns one into a real catalogue line, which ' +
+        'that changed, the rest of that line is untouched. newDescription sets the wording ' +
+        'the vendor reads: on a described line it is the line, and on a catalogue product ' +
+        'line it replaces the built product / colour / size name (the photo stays). A ' +
+        'component line prints its supplier wording, so change that with update_component ' +
+        '(vendorDescription) instead. setProductVariantId turns a described line into a real catalogue line, which ' +
         'is what pulls the product photo onto the document. ' +
         'A SENT OR DELIVERED ORDER CAN BE REVISED TOO, when a person asks for it — a price ' +
         'that was wrong on the document, an invoice that came in at a different rate, a ' +
@@ -2885,7 +2888,7 @@ export const TOOLS: Record<string, Tool> = {
                 qty: num('New quantity, if it changed'),
                 unit: str('New unit, if it changed'),
                 unitCostCents: num('New price per unit in cents, if it changed'),
-                newDescription: str('Rewrite a described line — the wording the vendor reads'),
+                newDescription: str('The wording the vendor reads for this line: the whole line for a described one, or in place of the built name for a catalogue product line. Not for component lines.'),
                 setProductVariantId: str(
                   'Attach a real catalogue variant to a line that was written as a ' +
                   'description. Use this the moment a variant turns out to exist after ' +
@@ -2955,14 +2958,21 @@ export const TOOLS: Record<string, Tool> = {
         if (l.qty !== undefined) data.qtyOrdered = String(l.qty)
         if (l.unit !== undefined) data.unit = l.unit
         if (l.unitCostCents !== undefined) data.unitCostCents = l.unitCostCents
-        if (l.newDescription !== undefined) data.description = l.newDescription
+        if (l.newDescription !== undefined) {
+          // A component line prints the component's supplier wording, so text
+          // stored here would save, report "updated" and print nowhere.
+          if (existing.componentId && l.setProductVariantId === undefined) {
+            results.push(`line ${po.lines.indexOf(existing) + 1} is a component line: its printed wording is the component's supplier wording, so change that with update_component (vendorDescription); the line wording was not changed`)
+          } else data.description = l.newDescription
+        }
         if (l.setProductVariantId !== undefined) {
           const v = await db.productVariant.findUnique({ where: { id: l.setProductVariantId } })
           if (!v) { results.push(`no variant ${l.setProductVariantId} — line left as it was`); continue }
           // A line names one thing: once it points at a variant, the loose
-          // text is gone, not kept alongside as a second opinion.
+          // text is gone, not kept alongside as a second opinion, unless new
+          // wording for it was given in the same edit.
           data.productVariantId = v.id
-          data.description = null
+          data.description = l.newDescription ?? null
           // A sent order's line keeps what it said when sent (lib/po-snapshot.ts).
           // Pointing it at a different variant is a deliberate revision, so it
           // is frozen afresh below, from the new variant.

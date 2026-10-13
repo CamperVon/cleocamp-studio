@@ -183,7 +183,13 @@ export default async function PurchaseOrderDoc({
                           className="h-9 w-9 shrink-0 rounded object-cover"
                         />
                       ) : null}
-                      <div>{lineLabel(view, t('style'))}</div>
+                      {/* Its own wording, when set, replaces the built name (lib/po.ts:poLineLabel). */}
+                      <div>
+                        <div>{l.description?.trim() || lineLabel(view, t('style'))}</div>
+                        {l.description?.trim() && pair(l.description, l.descriptionAlt) ? (
+                          <div className="text-[#6A736F]">{pair(l.description, l.descriptionAlt)}</div>
+                        ) : null}
+                      </div>
                     </div>
                   )
                 })()}
