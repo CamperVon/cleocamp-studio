@@ -158,6 +158,28 @@ test('a thank-you after our reply is told apart from a follow-up (25 Sept 2026, 
   for (const t of notThanks) assert.equal(isJustThanks(t), false, t.slice(0, 40))
 })
 
+// #2561, 14 Oct 2026: a second email withdrawing the first sent a Pressing
+// alert. Brandon: "Things like this are not pressing and don't need to be emailed."
+test('a follow-up saying it sorted itself out is told apart from a real follow-up', async () => {
+  const { isSettled } = await import('../lib/support/core')
+  const settled = [
+    'Moments after I sent that email the tracking updated lol. Sorry to bother!!! So excited for my Cleo top <3333 \n\nBest, \nMadeleine\n\n\n> On 14 Oct 2026, at 2:48 PM, Cleo Studio <support@send.cleocamp.com> wrote:\n> \n> Hi Madeleine,',
+    'Never mind, I found it in my spam folder! Thank you',
+    'Please disregard my last email, the package arrived today.',
+    'All good now, it just arrived this morning :)',
+  ]
+  for (const t of settled) assert.equal(isSettled(t), true, t.slice(0, 40))
+  const open = [
+    'Hi, where is my order',
+    'The tracking updated but it still says it is in Sydney, is that right?',
+    'Sorry to bother, but the package has not moved in a week.',
+    'It arrived today but the wrong size, can I swap it',
+    'Sorry to bother you again, any news on my order',
+    'Thank you so much!',
+  ]
+  for (const t of open) assert.equal(isSettled(t), false, t.slice(0, 40))
+})
+
 // #2725, 12 Oct 2026: Tracy Dong wrote from tdtracydong@gmail.com about an
 // order placed with no email at all; the case said twice that none existed.
 test('an order is found under the customer\'s name only when the name really matches', async () => {

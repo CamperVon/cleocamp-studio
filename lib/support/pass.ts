@@ -4,7 +4,7 @@ import { htmlToText } from '@/lib/html-to-text'
 import { sendEmail } from '@/lib/email'
 import { BACKGROUND_MODEL, CHAT_MODEL } from '@/lib/mouse/agent'
 import {
-  CATEGORIES, CATEGORY_LABEL, customerAddress, finalUrgency, forwardedOrigin, isSupportMail, normalizeSubject, orderNumbersIn, trimQuoted, unansweredCount, isJustThanks,
+  CATEGORIES, CATEGORY_LABEL, customerAddress, finalUrgency, forwardedOrigin, isSupportMail, normalizeSubject, orderNumbersIn, trimQuoted, unansweredCount, isJustThanks, isSettled,
   parseVerdict, stripGroupFooter, type Verdict,
 } from '@/lib/support/core'
 import { findOrder, findOrderByName, type OrderSnapshot } from '@/lib/support/orders'
@@ -294,7 +294,11 @@ export async function supportPass() {
     const lastBefore = thread[thread.length - 1]
     const thanks = !!c && verdict.category !== 'SPAM' && lastBefore?.direction === 'OUTBOUND' &&
       lastBefore.fromAddress !== 'Auto-reply' && isJustThanks(body)
-    const urgency = thanks || unknownSender ? 'DIGEST' : finalUrgency({
+    // A later email that withdraws the question ("the tracking updated, sorry
+    // to bother"): filed closed the same way, whether or not we had answered.
+    // See isSettled (#2561, 14 Oct 2026).
+    const settled = !thanks && !!c && verdict.category !== 'SPAM' && isSettled(body)
+    const urgency = thanks || settled || unknownSender ? 'DIGEST' : finalUrgency({
       verdict,
       text: `${subject ?? ''}\n${body}`,
       inboundCount: unansweredCount(thread),
@@ -317,7 +321,7 @@ export async function supportPass() {
           where: { id: c.id },
           // A new email reopens a conversation that had been closed or was
           // waiting on the customer — the ball is back with us.
-          data: thanks
+          data: thanks || settled
             ? { ...fields, category: c.category, status: 'RESOLVED', resolvedAt: c.resolvedAt ?? new Date() }
             : { ...fields, status: verdict.category === 'SPAM' ? c.status : 'OPEN', resolvedAt: null },
         })
@@ -362,11 +366,14 @@ export async function supportPass() {
     if (thanks) {
       await db.supportMessage.create({ data: { caseId: c.id, direction: 'NOTE', body: 'Closed by Mouse: a thank-you after our reply, with nothing to answer. Reopen it if it needs something.' } })
     }
+    if (settled) {
+      await db.supportMessage.create({ data: { caseId: c.id, direction: 'NOTE', body: 'Closed by Mouse: the customer wrote again to say it has sorted itself out, with nothing left to answer. Reopen it if it needs something.' } })
+    }
 
     // Phase 2: a reply drafted for a person to read, edit and send. Best
     // effort — the case is already filed, and a failed draft just means the
     // card offers "Draft a reply" instead.
-    if (verdict.category !== 'SPAM' && !thanks && !unknownSender) await draftForCase(c.id).catch((e) => console.error('[support] draft', e))
+    if (verdict.category !== 'SPAM' && !thanks && !settled && !unknownSender) await draftForCase(c.id).catch((e) => console.error('[support] draft', e))
 
     // The one fixed note that goes without a tap — see autoAckText.
     if (!forwardedBy && isNew && verdict.category !== 'SPAM' && urgency !== 'NOW') {

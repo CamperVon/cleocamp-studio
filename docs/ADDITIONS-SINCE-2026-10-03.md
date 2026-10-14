@@ -587,6 +587,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/shipped-report.ts`, `lib/integrations/shopify.ts` (`fetchUnshippedOrders`), `lib/mouse/tools.ts`, `lib/mouse/tool-kinds.ts`, `tests/unshipped.test.ts`, `tests/read-lane.test.ts`, `tests/tool-kinds.test.ts`.
 - **Needs:** Shopify (read orders).
 
+### A follow-up that withdraws the question no longer raises an alert
+- **Problem:** any second unanswered email from a customer counts as an urgent follow-up and emails the whole team. A customer writing again only to say the problem had fixed itself ("the tracking updated right after I emailed, sorry to bother") set off the same urgent alert as a real chase.
+- **Change:** a pure, conservative check, `isSettled` in `lib/support/core.ts`. It needs a phrase that withdraws the question (never mind, disregard my last email, it arrived today, the tracking updated, all good now), and it fails on any question mark, any ask or problem word, or a long message. "Sorry to bother" alone does not count, because real chases open with it too. A settled follow-up is filed closed with a note, the same way a plain thank-you after a reply already was: no alert and no draft reply.
+- **Files:** `lib/support/core.ts`, `lib/support/pass.ts`, `tests/support-core.test.ts`.
+- **Needs:** email (the inbound support pass).
+
 ---
 
 ## Setup notes for a new install

@@ -309,6 +309,30 @@ export function orderUnderName(hint: { fullName?: string | null; firstName?: str
   })
 }
 
+/**
+ * A customer writing again only to say the problem has sorted itself out:
+ * "Moments after I sent that email the tracking updated lol. Sorry to
+ * bother!!!" (#2561, 14 Oct 2026). As a second unanswered email it tripped
+ * the follow-up rule and sent a Pressing alert to the whole team; Brandon:
+ * "Things like this are not pressing and don't need to be emailed."
+ *
+ * Conservative in the same way as isJustThanks: it needs a phrase that
+ * withdraws the question ("sorry to bother" alone does not: it opens real
+ * follow-ups too), and any question mark, anything that asks for
+ * something or reports a problem, or anything long, and it is not settled.
+ * Pure.
+ */
+export function isSettled(body: string): boolean {
+  const own = trimQuoted(body, 1).text
+    .replace(/\n--\s*\n[\s\S]*$/, '')
+    .trim()
+  if (!own || own.length > 500 || own.includes('?')) return false
+  const withdraws = /\b(never\s?mind|nvm|disregard|ignore (my|that|the|this)( (last|previous|earlier))? (e-?mail|message|note)|all (good|sorted|fine|ok(ay)?) now|figured it out|found it|sorted (itself )?out|(tracking|it|package|parcel|order|shipment) (has )?(just |finally )?(updated|moved|arrived|came|turned up|showed up|started moving)|(just |finally )?(arrived|turned up|came) (today|this morning|this afternoon|now))\b/i
+  if (!withdraws.test(own)) return false
+  const asks = /\b(return(ing|ed)?|refund|exchange|cancel|swap|size|wrong|damaged|broken|stain|missing|defect|hole|haven'?t|hasn'?t|not (yet )?(received|arrived|here|moved|updated)|never (got|received|arrived|came)|let me know|can you|could you|would you|can i|could i|when will|still|address|instead|however|but|unfortunately|problem with|issue|help|any (news|update)|wondering|checking in|following up|update me)\b/i
+  return !asks.test(own)
+}
+
 /** Email addresses written in a message, other than the sender's and our own. Pure. */
 export function mentionedEmails(text: string, sender: string): string[] {
   const found = (text.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) ?? []).map((e) => e.toLowerCase())

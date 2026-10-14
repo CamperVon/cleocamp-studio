@@ -78,6 +78,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-13',
     text: 'Ask Mouse what is still waiting to ship, like "which Story Dress orders haven\'t shipped?" or "how many Black size 1s are we waiting to send?". It answers from Shopify with the order numbers and how long the oldest has been waiting.',
   },
+  {
+    on: '2026-10-14', path: '/support',
+    text: 'Support: when a customer writes a second time only to say the problem sorted itself out ("the tracking just updated, sorry to bother!"), it no longer sends a Pressing email. The case closes itself with a note saying why, and you can reopen it.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */
