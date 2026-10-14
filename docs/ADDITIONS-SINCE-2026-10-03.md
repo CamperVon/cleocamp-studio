@@ -575,6 +575,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/po.ts` (`poLineLabel`), `lib/po-pdf.tsx`, `app/po/[poNumber]/page.tsx`, `lib/mouse/tools.ts` (`update_purchase_order_lines`), `tests/po-line-wording.test.ts`.
 - **Needs:** nothing beyond the app.
 
+### App-only colours go on a wholesale invoice as custom lines
+- **Problem:** a colour that exists only in the app (sold wholesale, never listed online) has no e-commerce variant, so an invoice asked to take stock off the platform refused the whole invoice when one line was app-only, even though every other line was an ordinary listed item.
+- **Change:** each line decides for itself (`wholesaleLineStock`, pure). An app-only variant always goes on the draft as a custom line (its name and price), so platform stock is never touched for it; listed items follow the invoice's reduce-stock choice as before. The draft's summary says which lines are custom and that their app count was not changed, to be logged separately if they left the studio.
+- **Files:** `lib/mouse/tools.ts` (`invoice_wholesale`, `wholesaleLineStock`), `tests/wholesale-custom-lines.test.ts`.
+- **Needs:** Shopify (draft orders).
+
 ---
 
 ## Setup notes for a new install

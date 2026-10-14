@@ -373,6 +373,23 @@ export function nothingCarriedOver(vendor: string, hadEarlierOrder: boolean, sti
     : ''
 }
 
+/**
+ * How one wholesale invoice line treats stock. A variant that exists only in
+ * the app (wholesale-only, never on Shopify) goes on the Shopify draft as a
+ * custom line, so Shopify stock is never touched for it, whatever was asked
+ * for the rest. Until 13 Oct 2026 asking to reduce stock refused the whole
+ * invoice when one line was app-only (a Red Petite Bean Bag on a tee order).
+ * Pure.
+ */
+export function wholesaleLineStock(reduceStock: boolean, shopifyVariantId: string | null): { noStock: boolean; note: string | null } {
+  if (!shopifyVariantId) {
+    return { noStock: true, note: reduceStock
+      ? 'only in the app, not on Shopify, so it goes on as a custom line and no Shopify stock comes off for it. Its count in the app is not changed either; if it left the studio, log that separately.'
+      : 'only in the app, not on Shopify, so it goes on as a custom line.' }
+  }
+  return { noStock: !reduceStock, note: null }
+}
+
 export const TOOLS: Record<string, Tool> = {
   log_inventory_event: {
     def: {
@@ -4339,7 +4356,10 @@ export const TOOLS: Record<string, Tool> = {
         'link. To revise, draft again passing draftOrderId so the same draft is rewritten. ' +
         'confirmed: true with that draftOrderId only once a person says send — it sends the draft ' +
         'exactly as it stands in Shopify, including any edits made there. Never also log an ' +
-        'inventory event for it.',
+        'inventory event for it. A colour that exists only in the app (wholesale-only, not on ' +
+        'Shopify) goes on as a custom line: priced the same way, but Shopify stock is not ' +
+        'touched for it and its count in the app is not changed, whatever reduceStock says; ' +
+        'the draft says so, and if it left the studio that is logged separately.',
       input_schema: {
         type: 'object',
         properties: {
@@ -4409,12 +4429,13 @@ export const TOOLS: Record<string, Tool> = {
         const label0 = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
         if (!(price >= 0)) return { sent: false, reason: named ? `The price for ${label0} is not a number. Ask again.` : `${label0} has no wholesale price on the line sheet. Ask what to charge.` }
         priced.push(named ? 'price named for this invoice' : 'line sheet')
-        if (i.reduceStock && !v.shopifyVariantId) return { sent: false, reason: `${v.product.name} ${v.size ?? ''} is not linked to Shopify, so it cannot come off stock there. Ask whether to invoice it without touching stock.` }
         const qty = Math.max(1, Math.round(Number(it.quantity)))
         const label = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
-        lines.push({ shopifyVariantId: v.shopifyVariantId ?? '', label, quantity: qty, priceOverride: price, noStock: !i.reduceStock })
+        const how = wholesaleLineStock(i.reduceStock === true, v.shopifyVariantId)
+        lines.push({ shopifyVariantId: v.shopifyVariantId ?? '', label, quantity: qty, priceOverride: price, noStock: how.noStock })
+        if (how.note) stockNotes.push(`${label}: ${how.note}`)
         const onHand = v.onHandQty === null ? null : Number(v.onHandQty)
-        if (i.reduceStock && onHand !== null && onHand < qty) stockNotes.push(`${label}: Shopify last showed ${onHand} in stock, fewer than ${qty} — say so before sending.`)
+        if (!how.noStock && onHand !== null && onHand < qty) stockNotes.push(`${label}: Shopify last showed ${onHand} in stock, fewer than ${qty} — say so before sending.`)
       }
       // No sales tax unless a person said so for this invoice (Brandon, 5 Oct
       // 2026: "if we say with sales tax only, yes, but default is no sales tax").
@@ -4458,7 +4479,9 @@ export const TOOLS: Record<string, Tool> = {
           subtotal: `$${d.subtotal.toFixed(2)}`,
           shipping: shipTo && sh ? `to ${addressLines(shipTo)}; shipping & handling $${d.shipping.toFixed(2)} (${sh.why}); label made in Shopify after sending` : d.shipping ? `delivery $${d.shipping.toFixed(2)}, as named; marked handed over when sent` : 'none — marked handed over when sent',
           tax: withTax ? `$${d.tax.toFixed(2)} (sales tax, as asked; Shopify works it out for the address)` : `$${d.tax.toFixed(2)} (wholesale, none)`, total: `$${d.total.toFixed(2)}`,
-          stock: i.reduceStock ? ['Comes off Shopify stock when sent.', ...stockNotes] : ['Stock is left alone.'],
+          stock: i.reduceStock
+            ? [lines.some((l) => l.noStock) ? 'The Shopify lines come off Shopify stock when sent; custom lines do not.' : 'Comes off Shopify stock when sent.', ...stockNotes]
+            : ['Stock is left alone.', ...stockNotes],
           ...(customerNote ? { customer: customerNote } : {}),
           ...(!storeAddress ? { address: `No full address on file for ${acct.name}, so the draft has none. Ask for it if they want it on the invoice.` } : {}),
           tellTheUser: `Give the draft name, the Shopify link and the PDF link (${d.pdfPath}, to share inside the studio) first, so it can be reviewed. Then the store, each line and price and where the price came from, the shipping address if shipping (ask them to check it), the total, and whether stock comes off. Nothing is sent until someone says send; edits made to the draft in Shopify will go out as they are.`,

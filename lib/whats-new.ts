@@ -70,6 +70,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-13',
     text: 'Purchase orders: when you ask Mouse to reword a product line (say "Boy Belt / Small (90)"), that wording now prints on the PO. Before, it said it had changed it but the PO kept the plain name.',
   },
+  {
+    on: '2026-10-13', path: '/wholesale',
+    text: 'Wholesale invoices can now include colours that are only in the app, like the Red, Cannellini and Espresso Petite Bean Bags. They go on the Shopify invoice as their own line, and the rest of the order still comes off stock as usual.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */
