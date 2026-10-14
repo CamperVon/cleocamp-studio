@@ -599,6 +599,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/support/core.ts` (`isOpenEnded`, `finalUrgency`), `lib/support/pass.ts`, `tests/support-core.test.ts`.
 - **Needs:** email (the inbound support pass).
 
+### Copied email is told apart from email sent to the assistant
+- **Problem:** the inbound webhook's `to` field from Resend is the address the mail was delivered to, not the message's To line. For anything reaching the assistant's mailbox it is always that mailbox, copied or not. So "was this sent TO the assistant?" was always yes: a team member's reply to a vendor, which only copied the assistant, was acted on as an instruction and could get an emailed reply.
+- **Change:** the To line is read from the raw message's own headers (`toLineFromHeaders`), fetched together with the DMARC result (`inboundFacts`, one call; anything unknown counts as not addressed and not verified). Copied-only team mail gets no reply at all unless the sender's own words, above any quoted text, name the assistant (`speaksToMouse`); then it answers only the question put to it, with look-up tools only. Copied mail is still read for proposals like any other.
+- **Files:** `lib/mouse/team-mail.ts`, `lib/mouse/nightly-pass.ts`, `tests/team-mail.test.ts`.
+- **Needs:** email (Resend inbound; the raw message download).
+
 ---
 
 ## Setup notes for a new install

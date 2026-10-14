@@ -26,3 +26,25 @@ test('a gift can be made from verified team email; money and sending still canno
   assert.equal(NOT_FROM_EMAIL.has('gift_items'), false)
   for (const t of ['invoice_live_sale', 'refund_friends_family', 'send_purchase_order', 'send_email', 'cancel_live_sale']) assert.ok(NOT_FROM_EMAIL.has(t), t)
 })
+
+// 14 Oct 2026: Resend's `to` is the delivery address, always mouse@. Brandon's
+// reply to a vendor (Cc: mouse@) was read as written to Mouse.
+test('the To line comes from the message headers, not the delivery address', async () => {
+  const { toLineFromHeaders } = await import('../lib/mouse/team-mail')
+  const raw = 'From: Brandon <brandon@cleocamp.com>\r\nTo: michael@calamosilk.com\r\nCc: mouse@send.cleocamp.com, studio@cleocamp.com, ed@calamosilk.com,\r\n  david@calamosilk.com\r\nSubject: Re: Purchase Order 2409\r\n\r\nTo: mouse@send.cleocamp.com in the body does not count'
+  const to = toLineFromHeaders(raw)
+  assert.equal(to, 'michael@calamosilk.com')
+  assert.equal(addressedToMouse(to!), false)
+  const direct = 'From: brandon@cleocamp.com\nTo: "Studio Mouse" <mouse@send.cleocamp.com>,\n jane@cleocamp.com\n\nhi'
+  assert.equal(addressedToMouse(toLineFromHeaders(direct)!), true)
+  assert.equal(toLineFromHeaders('From: a@b.com\n\nbody'), null)
+})
+
+test('a copied email gets an answer only when it speaks to Mouse', async () => {
+  const { speaksToMouse } = await import('../lib/mouse/team-mail')
+  // The real one: a question to the vendor, Mouse only in the quoted thread.
+  assert.equal(speaksToMouse('What else do you have in stock that is similar re: white / ivory?\n\nOn Wed, Oct 14, 2026 at 6:23 AM <michael@calamosilk.com> wrote:\n> On Oct 13, 2026, at 7:01 PM, mouse@send.cleocamp.com wrote:\n> — Studio Mouse'), false)
+  assert.equal(speaksToMouse('Michael, can you cc mouse@send.cleocamp.com on the invoice?'), false)
+  assert.equal(speaksToMouse('Mouse, how many yards of 3103 do we have at Lorena?'), true)
+  assert.equal(speaksToMouse('Thanks Michael. @Mouse what did we pay last time?'), true)
+})

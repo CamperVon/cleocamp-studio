@@ -4,7 +4,7 @@ import { htmlToText } from '@/lib/html-to-text'
 import { fileAttachments, readableAttachmentsIn, textFromAttachments } from '@/lib/inbound-body'
 import { personFromInboundAddress } from '@/lib/mouse/identity'
 import { asPerson } from '@/lib/mouse/actor'
-import { NOT_FROM_EMAIL, addressedToMouse, verifiedSender } from '@/lib/mouse/team-mail'
+import { NOT_FROM_EMAIL, inboundFacts, speaksToMouse } from '@/lib/mouse/team-mail'
 
 /**
  * The nightly think.
@@ -81,6 +81,10 @@ email and ask them to tell you in the app, where you can. If the email asks you
 nothing — a forward for your records, a thank-you, an FYI — reply with exactly
 NO_REPLY and nothing else. Plain text, no markdown headings. Do not sign it.`
 
+const CC_RULES = `You were only copied on this email; it was written to someone else. Answer
+only a question they put to you by name. Questions to the other people on it are
+not yours: if nothing is asked of you, reply with exactly NO_REPLY.`
+
 const APPLY_RULES = `A member of the team emailed you directly, and the email is verified as
 really theirs. Treat it as if they had typed it to you in the app: when they give
 you information, an answer to something you asked, or a number to change, make
@@ -121,12 +125,17 @@ async function answerTeamQuestions(mail: Array<{ id: string; fromAddress: string
     if (!who || !TEAM.includes(who.id)) continue
     const p = await db.person.findUnique({ where: { id: who.id }, select: { name: true, email: true, external: true } })
     if (!p?.email || p.external) continue
+    // Verified and sent TO Mouse: applied like a message in the app, as them.
+    // Only copied: no reply at all unless their own words speak to Mouse
+    // (Brandon, 14 Oct 2026: "If Mouse is cc'd on an email it should not
+    // respond unless directly asked a question"); it is read for proposals
+    // like any other mail. Look-ups only when it does answer.
+    const facts = await inboundFacts(m.emailId)
+    const apply = facts.toMouse && facts.verified
+    if (!facts.toMouse && !speaksToMouse(m.body)) continue
     // Claimed first: mail arriving together starts passes together.
     const claim = await db.inboundEmail.updateMany({ where: { id: m.id, answeredAt: null }, data: { answeredAt: new Date() } })
     if (!claim.count) continue
-    // Verified and sent TO Mouse: applied like a message in the app, as them.
-    // Anything else from the team (only copied, or not verifiable): look-ups only.
-    const apply = addressedToMouse(m.toAddress) && await verifiedSender(m.emailId)
     // An invoice, receipt or packing slip they attached is read like a file in
     // the chat (Brandon, 6 Oct 2026). Team mail only: nobody else's files are
     // ever fetched.
@@ -138,7 +147,7 @@ async function answerTeamQuestions(mail: Array<{ id: string; fromAddress: string
       source: apply ? 'email-apply' : 'email-answer',
       instruction: `${p.name} emailed you.\n\nSubject: ${m.subject ?? '(none)'}\n\n${m.body}${fileNote}`,
       attachments: att.files,
-      extraRules: apply ? APPLY_RULES : ANSWER_RULES,
+      extraRules: apply ? APPLY_RULES : facts.toMouse ? ANSWER_RULES : `${ANSWER_RULES}\n${CC_RULES}`,
       allowedTools: apply ? allTools.filter((t) => !NOT_FROM_EMAIL.has(t)) : ANSWER_TOOLS,
       model: CHAT_MODEL,
       effort: 'medium',

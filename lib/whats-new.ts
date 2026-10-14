@@ -82,6 +82,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-14', path: '/support',
     text: 'Support: fewer Pressing emails. A customer\'s second email now sends one only when it still asks for something (a question, or "I haven\'t heard back"), not when it just confirms or updates you, like "I sent all three back." Changes to an order that hasn\'t shipped still email right away. If the second email only says the problem sorted itself out ("the tracking just updated!"), the case closes itself with a note, and you can reopen it.',
   },
+  {
+    on: '2026-10-14',
+    text: 'Email: when you only cc Mouse on an email to someone else, like a reply to a vendor, Mouse stays quiet. It writes back only if your own words ask it something by name ("Mouse, how many yards do we have?"). What it learns from the thread still lands in the app for a tap, as before.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

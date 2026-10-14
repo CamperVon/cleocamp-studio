@@ -13,7 +13,10 @@
  *  - it is addressed TO Mouse. A reply (or reply-all) to Mouse's own email
  *    has mouse@ in To. A thread with a vendor that merely copies Mouse does
  *    not, so talk among people is never taken as an instruction; it stays a
- *    proposal for a tap, as before.
+ *    proposal for a tap, as before. The To line is read from the message's
+ *    own headers (toLineFromHeaders), never Resend's `to` field.
+ *  - copied only, it gets no reply at all unless their own words speak to
+ *    Mouse by name (speaksToMouse; Brandon, 14 Oct 2026).
  * Even then nothing goes out and no money moves from an email: those tools
  * are left out, and Mouse replies only to the sender's address on file, with
  * what it changed.
@@ -56,19 +59,54 @@ export function dmarcFromHeaders(rawMessage: string): 'pass' | 'fail' | 'unknown
   return !m ? 'unknown' : m[1].toLowerCase() === 'pass' ? 'pass' : 'fail'
 }
 
-/** Did this inbound email pass DMARC? Asks Resend; unknown counts as no. */
-export async function verifiedSender(emailId: string | undefined): Promise<boolean> {
+/**
+ * The To line from a raw message's own headers, unfolded. Pure.
+ *
+ * Not Resend's `to` field: that is the address the mail was delivered to,
+ * which for anything reaching Mouse is always mouse@, copied or not. Found
+ * 14 Oct 2026: Brandon's reply to a vendor (To: the vendor, Cc: mouse@)
+ * arrived with `to: mouse@`, so every copied email from the team had been
+ * read as written to Mouse, and acted on.
+ */
+export function toLineFromHeaders(rawMessage: string): string | null {
+  const head = (rawMessage.split(/\r?\n\r?\n/)[0] ?? '').replace(/\r?\n[ \t]+/g, ' ')
+  const line = head.split(/\r?\n/).find((l) => /^to:/i.test(l))
+  return line ? line.replace(/^to:\s*/i, '').trim() : null
+}
+
+/**
+ * Does the sender's own text, above anything quoted, speak to Mouse by name?
+ * The only way a copied email gets an answer (Brandon, 14 Oct 2026: "If Mouse
+ * is cc'd on an email it should not respond unless directly asked a
+ * question"). A question to a vendor in the same thread is not Mouse's to
+ * answer. Mouse's own address, and quoted text, do not count. Pure.
+ */
+export function speaksToMouse(body: string): boolean {
+  const cut = body.search(/\n[ \t]*On [^\n]{3,200}?(?:\n[^\n]{0,200}?)?\bwrote:|\n[ \t]*-{2,}\s*(Original|Forwarded) Message|\n>|\n[ \t]*From:\s/i)
+  const own = (cut >= 0 ? body.slice(0, cut) : body).replace(/[\w.+-]*mouse@[\w.-]+/gi, '')
+  return /\b(studio )?mouse\b/i.test(own)
+}
+
+/**
+ * What the receiving end knows about an inbound email: whether it passed
+ * DMARC, and the real To line. One fetch of Resend's record and, when
+ * needed, its raw message. Anything unknown counts against: not verified,
+ * not addressed to Mouse.
+ */
+export async function inboundFacts(emailId: string | undefined): Promise<{ verified: boolean; toMouse: boolean }> {
   const key = process.env.RESEND_API_KEY
-  if (!emailId || !key) return false
+  const none = { verified: false, toMouse: false }
+  if (!emailId || !key) return none
   try {
     const r = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, { headers: { Authorization: `Bearer ${key}` } })
-    if (!r.ok) return false
+    if (!r.ok) return none
     const full = (await r.json()) as { authentication?: { dmarc?: string } | null; raw?: { download_url?: string } | null }
-    if (full.authentication?.dmarc) return full.authentication.dmarc.toLowerCase() === 'pass'
-    if (!full.raw?.download_url) return false
-    const raw = await fetch(full.raw.download_url)
-    return raw.ok && dmarcFromHeaders(await raw.text()) === 'pass'
+    const raw = full.raw?.download_url ? await fetch(full.raw.download_url) : null
+    const text = raw?.ok ? await raw.text() : ''
+    const dmarc = full.authentication?.dmarc ? (full.authentication.dmarc.toLowerCase() === 'pass' ? 'pass' : 'fail') : dmarcFromHeaders(text)
+    const to = text ? toLineFromHeaders(text) : null
+    return { verified: dmarc === 'pass', toMouse: !!to && addressedToMouse(to) }
   } catch {
-    return false
+    return none
   }
 }

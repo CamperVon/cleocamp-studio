@@ -315,6 +315,14 @@ Framework-level conventions from the Next.js scaffold live in `AGENTS.md`.
   forecast reads the same lines for what is still on order. A RECEIVED
   stock entry now ticks its PO off (`lib/po-receipts.ts`), from the number
   given or the "PO 1234" in the note.
+- **Resend's inbound `to` is the delivery address, not the To line.** For mail
+  reaching Mouse it always reads `mouse@`, copied or not. Until 14 Oct 2026 the
+  "sent TO mouse@, not merely cc'd" rule in §4 checked that field, so it never
+  held: Brandon's replies to Calamo (To: the vendor, Cc: mouse@) were applied
+  as instructions. The To line is read from the raw headers
+  (`toLineFromHeaders` in `lib/mouse/team-mail.ts`). A copied email gets no
+  reply unless the sender's own words speak to Mouse by name (Brandon,
+  14 Oct 2026).
 - **Studio Mouse must be told the date.** Without it in context it cannot reason
   about lead times or due dates, and correctly refuses to guess — which means
   asking Cleo what day it is.
