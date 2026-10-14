@@ -85,3 +85,51 @@ export function labelRangeProblem(from: string, to: string, today: string): stri
   }
   return `That is ${days} days; one look-up covers at most ${MAX_LABEL_DAYS}. Look it up in ${parts.length} parts and add them up: ${parts.join('; ')}.`
 }
+
+/** An order still waiting to ship, as read from Shopify. */
+export type UnshippedOrder = {
+  name: string
+  createdAt: string
+  cancelledAt: string | null
+  tags: string[]
+  items: Array<{ title: string; variant: string | null; unfulfilled: number; requiresShipping: boolean }>
+}
+export type UnshippedLine = { item: string; variant: string | null; quantity: number; orders: string[]; oldest: string }
+
+/**
+ * What is still waiting to ship, item by item, with the orders and the
+ * oldest order date (13 Oct 2026: "which Story Dress orders are still
+ * waiting to be shipped?" had no answer). Only units not yet on a label;
+ * cancelled orders, wholesale orders and lines that do not ship (a
+ * "priority shipping" fee) are left out. Filters match tallyShipped's: a
+ * whole product title, and a colour or size as Shopify writes it. Pure.
+ */
+export function tallyUnshipped(
+  orders: UnshippedOrder[],
+  opts: { item?: string | null; variant?: string | null } = {},
+): { orders: number; lines: UnshippedLine[] } {
+  const want = (s: string | null | undefined) => (s ?? '').trim().toLowerCase()
+  const item = want(opts.item)
+  const variant = want(opts.variant)
+  const byKey = new Map<string, UnshippedLine>()
+  const counted = new Set<string>()
+  for (const o of orders) {
+    if (o.cancelledAt || o.tags.some((t) => t.toLowerCase() === 'wholesale')) continue
+    for (const i of o.items) {
+      if (!i.requiresShipping || i.unfulfilled <= 0) continue
+      if (item && want(i.title) !== item) continue
+      if (variant && !want(i.variant).split(/\s*\/\s*/).concat(want(i.variant)).includes(variant)) continue
+      counted.add(o.name)
+      const key = `${i.title}\u0000${i.variant ?? ''}`
+      const day = o.createdAt.slice(0, 10)
+      const line = byKey.get(key) ?? { item: i.title, variant: i.variant, quantity: 0, orders: [], oldest: day }
+      line.quantity += i.unfulfilled
+      line.orders.push(i.unfulfilled > 1 ? `${o.name} ×${i.unfulfilled}` : o.name)
+      if (day < line.oldest) line.oldest = day
+      byKey.set(key, line)
+    }
+  }
+  const lines = [...byKey.values()].sort((a, b) =>
+    a.item.localeCompare(b.item) || (a.variant ?? '').localeCompare(b.variant ?? '', undefined, { numeric: true }))
+  return { orders: counted.size, lines }
+}

@@ -581,6 +581,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/tools.ts` (`invoice_wholesale`, `wholesaleLineStock`), `tests/wholesale-custom-lines.test.ts`.
 - **Needs:** Shopify (draft orders).
 
+### What is still waiting to ship · unshipped_orders
+- **Problem:** the assistant could say what had shipped (by label day) but not what was still waiting, so "which orders for this product haven't shipped yet?" had no answer; sales analytics carries no fulfilment status.
+- **Change:** a read-only `unshipped_orders` tool, the twin of `shipped_orders`. It reads open orders that are unshipped or part-shipped (two plain searches, not one with OR, which has lost orders before) and counts only units not yet on a label, by product and colour/size, with order numbers and the oldest order's date. Cancelled and wholesale orders and lines that do not ship are left out; gifts are counted. Filters: an exact product title, and a colour or size. The tally is the pure `tallyUnshipped`. Available in the read-only fast lane.
+- **Files:** `lib/shipped-report.ts`, `lib/integrations/shopify.ts` (`fetchUnshippedOrders`), `lib/mouse/tools.ts`, `lib/mouse/tool-kinds.ts`, `tests/unshipped.test.ts`, `tests/read-lane.test.ts`, `tests/tool-kinds.test.ts`.
+- **Needs:** Shopify (read orders).
+
 ---
 
 ## Setup notes for a new install

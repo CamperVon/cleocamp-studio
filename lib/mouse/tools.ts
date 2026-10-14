@@ -6150,6 +6150,39 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  unshipped_orders: {
+    def: {
+      name: 'unshipped_orders',
+      description:
+        'What is still waiting to ship on Shopify, item by item with the order numbers and the oldest order\'s date: ' +
+        '"which Story Dress orders haven\'t shipped", "how many Black size 1s are we waiting to send". Counts only ' +
+        'units not yet on a label, in open retail orders (gifts included); cancelled and wholesale orders, and lines ' +
+        'that do not ship, are left out. For what already went out, use shipped_orders. Read-only.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          item: str('Only this product, by its exact Shopify title ("Cleo Tee" is not "Cleo Tee - Splish"); leave out for everything'),
+          variant: str('Only this colour or size as Shopify writes it ("Black", "Black / 1"); leave out for all'),
+        },
+      },
+    },
+    run: async (i) => {
+      const { isConfigured, fetchUnshippedOrders } = await import('@/lib/integrations/shopify')
+      if (!isConfigured()) return { ok: false, reason: 'Shopify is not connected.' }
+      const { tallyUnshipped } = await import('@/lib/shipped-report')
+      const t = tallyUnshipped(await fetchUnshippedOrders(), { item: i.item ?? null, variant: i.variant ?? null })
+      return {
+        ok: true, orders: t.orders,
+        totalUnits: t.lines.reduce((n, l) => n + l.quantity, 0),
+        lines: t.lines.map((l) => ({
+          item: l.item, variant: l.variant, quantity: l.quantity, oldestOrder: l.oldest,
+          orders: l.orders.length > 60 ? [...l.orders.slice(0, 60), `and ${l.orders.length - 60} more`] : l.orders,
+        })),
+        note: 'Units in open retail orders not yet on a shipping label, as of now. Wholesale, cancelled orders and lines that do not ship are not counted.',
+      }
+    },
+  },
+
   open_record: {
     def: {
       name: 'open_record',

@@ -74,6 +74,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-13', path: '/wholesale',
     text: 'Wholesale invoices can now include colours that are only in the app, like the Red, Cannellini and Espresso Petite Bean Bags. They go on the Shopify invoice as their own line, and the rest of the order still comes off stock as usual.',
   },
+  {
+    on: '2026-10-13',
+    text: 'Ask Mouse what is still waiting to ship, like "which Story Dress orders haven\'t shipped?" or "how many Black size 1s are we waiting to send?". It answers from Shopify with the order numbers and how long the oldest has been waiting.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

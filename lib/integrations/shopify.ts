@@ -274,6 +274,46 @@ export async function fetchShippedOrders(sinceDay: string): Promise<ShippedOrder
   return out
 }
 
+/**
+ * Open orders still waiting to ship (13 Oct 2026). Two plain searches, not
+ * one with OR: an "A B OR A C" order search here did not mean what it looked
+ * like and lost most orders (see fetchShippedOrders). Wholesale is left out
+ * by tag; cancelled orders are dropped by the caller too. Read-only.
+ */
+export async function fetchUnshippedOrders(maxPages = 20): Promise<import('@/lib/shipped-report').UnshippedOrder[]> {
+  const seen = new Map<string, import('@/lib/shipped-report').UnshippedOrder>()
+  for (const status of ['unshipped', 'partial']) {
+    let cursor: string | null = null
+    let pages = 0
+    type Page = { orders: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: Array<{
+      name: string; createdAt: string; cancelledAt: string | null; tags: string[] | null
+      lineItems: { nodes: Array<{ title: string; variantTitle: string | null; unfulfilledQuantity: number; requiresShipping: boolean }> }
+    }> } }
+    do {
+      const d: Page = await withRetry(() =>
+        shopifyGraphQL<Page>(
+          `query($cursor: String, $q: String!) {
+            orders(first: 50, after: $cursor, query: $q, sortKey: CREATED_AT) {
+              pageInfo { hasNextPage endCursor }
+              nodes { name createdAt cancelledAt tags
+                lineItems(first: 50) { nodes { title variantTitle unfulfilledQuantity requiresShipping } } }
+            }
+          }`,
+          { cursor, q: `status:open fulfillment_status:${status} tag_not:wholesale` },
+        ),
+      )
+      for (const o of d.orders.nodes) {
+        seen.set(o.name, {
+          name: o.name, createdAt: o.createdAt, cancelledAt: o.cancelledAt, tags: o.tags ?? [],
+          items: o.lineItems.nodes.map((l) => ({ title: l.title, variant: l.variantTitle ?? null, unfulfilled: l.unfulfilledQuantity, requiresShipping: l.requiresShipping })),
+        })
+      }
+      cursor = d.orders.pageInfo.hasNextPage ? d.orders.pageInfo.endCursor : null
+    } while (cursor && ++pages < maxPages)
+  }
+  return [...seen.values()]
+}
+
 /** Shopify throttles on a cost budget; back off rather than failing the sync. */
 async function withRetry<T>(fn: () => Promise<T>, tries = 5): Promise<T> {
   for (let i = 0; ; i++) {

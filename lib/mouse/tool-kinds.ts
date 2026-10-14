@@ -31,6 +31,7 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
   shopify_analytics: 'read-lane',
   unpaid_live_sales: 'read-lane',
   shipped_orders: 'read-lane',
+  unshipped_orders: 'read-lane', // 13 Oct 2026: what is still waiting to ship, the twin of shipped_orders
 
   // Look-ups kept with Opus.
   read_file: 'look-up, Opus', // reading a PDF or photo stays with Opus (7 Oct 2026)
