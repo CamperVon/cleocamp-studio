@@ -80,7 +80,7 @@ export const WHATS_NEW: Update[] = [
   },
   {
     on: '2026-10-14', path: '/support',
-    text: 'Support: when a customer writes a second time only to say the problem sorted itself out ("the tracking just updated, sorry to bother!"), it no longer sends a Pressing email. The case closes itself with a note saying why, and you can reopen it.',
+    text: 'Support: fewer Pressing emails. A customer\'s second email now sends one only when it still asks for something (a question, or "I haven\'t heard back"), not when it just confirms or updates you, like "I sent all three back." Changes to an order that hasn\'t shipped still email right away. If the second email only says the problem sorted itself out ("the tracking just updated!"), the case closes itself with a note, and you can reopen it.',
   },
 ]
 

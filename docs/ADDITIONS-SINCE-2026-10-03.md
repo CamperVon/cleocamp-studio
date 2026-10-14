@@ -593,6 +593,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/support/core.ts`, `lib/support/pass.ts`, `tests/support-core.test.ts`.
 - **Needs:** email (the inbound support pass).
 
+### A second email is urgent only when it still asks for something
+- **Problem:** the "second unanswered email" rule alerted the whole team on any second message, including ones that only confirmed or reported ("I sent all three back for the bigger size; another colour is fine if that one is out"). Replayed over three weeks of real alerts, roughly half were confirmations, thank-yous or updates.
+- **Change:** the follow-up rule in `finalUrgency` now also needs `isOpenEnded`: the customer's own words, with the quoted thread cut off so our earlier questions don't count, contain a question mark or chasing words ("haven't heard back", "any update", "re-sending", "please let me know", "can I", "did you get"). Changes to an unshipped order and chargeback or legal threats alert as before. Everything else stays on the support list without an email.
+- **Files:** `lib/support/core.ts` (`isOpenEnded`, `finalUrgency`), `lib/support/pass.ts`, `tests/support-core.test.ts`.
+- **Needs:** email (the inbound support pass).
+
 ---
 
 ## Setup notes for a new install

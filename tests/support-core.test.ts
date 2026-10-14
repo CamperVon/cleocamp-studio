@@ -180,6 +180,30 @@ test('a follow-up saying it sorted itself out is told apart from a real follow-u
   for (const t of open) assert.equal(isSettled(t), false, t.slice(0, 40))
 })
 
+// Brandon, 14 Oct 2026, after #2622 sent a Pressing email: "second email
+// that is open ended, not just a confirmation".
+test('a second email is a fire only when it still asks for something', async () => {
+  const { isOpenEnded } = await import('../lib/support/core')
+  const v = { category: 'RETURN_EXCHANGE' as const, urgency: 'TODAY' as const, summary: null, customerName: null }
+  const johnson = 'I received the shirt yesterday in a size 1, which was also too small. I sent all three back for exchange to a size 3. If either the light pink or black tee is out of stock, I would be happy to receive the hot pink size three as a substitute. Thanks so much!  Fingers crossed the size three will work!'
+  assert.equal(isOpenEnded(johnson), false)
+  assert.equal(finalUrgency({ verdict: v, text: johnson, latest: johnson, inboundCount: 2 }), 'TODAY')
+  // Our own question quoted underneath does not count.
+  assert.equal(isOpenEnded('Yes please!\n\nOn Oct 7, 2026, at 4:48 PM, Cleo Studio <support@send.cleocamp.com> wrote:\n> Would you like us to send the size 3?'), false)
+  const open = [
+    "Hi, I emailed last week and haven't heard back about my exchange.",
+    'Re-sending my earlier email as I have not had a reply',
+    'Please let me know when this will ship. Thank you, Nikki',
+    'Any update on my order',
+    'Did the return arrive',
+    'Can I swap the white for black instead?',
+  ]
+  for (const t of open) {
+    assert.equal(isOpenEnded(t), true, t.slice(0, 40))
+    assert.equal(finalUrgency({ verdict: v, text: t, latest: t, inboundCount: 2 }), 'NOW', t.slice(0, 40))
+  }
+})
+
 // #2725, 12 Oct 2026: Tracy Dong wrote from tdtracydong@gmail.com about an
 // order placed with no email at all; the case said twice that none existed.
 test('an order is found under the customer\'s name only when the name really matches', async () => {

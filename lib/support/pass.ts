@@ -301,6 +301,7 @@ export async function supportPass() {
     const urgency = thanks || settled || unknownSender ? 'DIGEST' : finalUrgency({
       verdict,
       text: `${subject ?? ''}\n${body}`,
+      latest: body,
       inboundCount: unansweredCount(thread),
       orderCreatedAt: lookup.order?.createdAt ?? null,
       orderFulfilled: lookup.order ? (lookup.order.fulfillmentStatus ?? '').toUpperCase() !== 'UNFULFILLED' : undefined,

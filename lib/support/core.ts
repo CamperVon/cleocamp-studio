@@ -138,7 +138,11 @@ export function parseVerdict(raw: string): Verdict {
  * about a purchase that needs immediate change before shipping."
  *
  * So NOW is exactly:
- * - a second (or later) email from a customer the team has not answered yet;
+ * - a second (or later) email from a customer the team has not answered yet,
+ *   when that email still asks for something (isOpenEnded). Brandon,
+ *   14 Oct 2026, after #2622 ("she sent all three back, hot pink is fine")
+ *   and #2561 ("the tracking updated") both sent one: "second email that is
+ *   open ended, not just a confirmation";
  * - a change to an order that has not shipped, which races the packing
  *   table (labels are printed as orders are packed);
  * - a chargeback or legal threat, which costs money if it waits.
@@ -148,6 +152,8 @@ export function parseVerdict(raw: string): Verdict {
 export function finalUrgency(args: {
   verdict: Verdict
   text: string
+  /** The newest email's body, for the follow-up rule. Defaults to `text`. */
+  latest?: string
   inboundCount: number
   orderCreatedAt?: string | null
   orderFulfilled?: boolean
@@ -155,7 +161,7 @@ export function finalUrgency(args: {
 }): Urgency {
   const { verdict, text } = args
   if (verdict.category === 'SPAM') return 'DIGEST'
-  const followUp = args.inboundCount >= 2
+  const followUp = args.inboundCount >= 2 && isOpenEnded(args.latest ?? text)
   const changeBeforeShipping = verdict.category === 'ORDER_CHANGE' && args.orderFulfilled === false
   const threat = /\b(charge\s?back|dispute[ds]?|lawyer|attorney|legal action|small claims|bbb|better business bureau|report(ing)? you)\b/i.test(text)
   if (followUp || changeBeforeShipping || threat) return 'NOW'
@@ -165,6 +171,20 @@ export function finalUrgency(args: {
   if (verdict.category === 'WHERE_IS_MY_ORDER' && args.orderCreatedAt &&
     ((args.now ?? new Date()).getTime() - Date.parse(args.orderCreatedAt)) / 864e5 > 14) return 'TODAY'
   return verdict.urgency
+}
+
+/**
+ * Whether a customer's email still asks us for something: a question, or
+ * words that chase an answer ("haven't heard back", "any update", "please
+ * let me know"). Only an open-ended second email is a fire; one that
+ * confirms, reports or says thanks waits on the Support list. Read from the
+ * customer's own words, never the quoted thread, where our own earlier
+ * questions sit. Pure.
+ */
+export function isOpenEnded(body: string): boolean {
+  const own = trimQuoted(body, 1).text.replace(/\n--\s*\n[\s\S]*$/, '').trim()
+  if (own.includes('?')) return true
+  return /\b(haven'?t heard|have not heard|didn'?t hear|did not hear|no (reply|response|answer)|not heard back|any (update|news|word)|still (waiting|haven'?t|have not|not|no|hasn'?t)|following up|follow(ing)? up on|checking in|re-?sending|resend|let me know|please (advise|confirm|respond|reply|get back|help)|get back to me|when (will|can|should|do)|wondering (if|whether|when|how|what)|can you|could you|would you|can i|could i|did (you|the|my|it)|has (my|the|it)|have you (received|got|gotten|sent|shipped))\b/i.test(own)
 }
 
 /**
