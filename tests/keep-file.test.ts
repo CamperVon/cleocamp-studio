@@ -111,3 +111,19 @@ test('delete_file picks exactly one file or none, and is chat only', async () =>
   assert.ok(CHAT_ONLY_TOOLS.has('delete_file'))
   assert.ok(!toolsFor(undefined, undefined).includes('delete_file'))
 })
+
+// 15 Oct 2026: Mouse could not email the company W-9; send_email attaches kept files.
+test('attachments are named by title or id, each matching exactly one kept file', async () => {
+  const { pickAttachments } = await import('../lib/files')
+  const files = [
+    { id: 'b', title: 'Cleo Couture LLC W-9 (revised, LLC taxed as partnership)', filename: 'Cleo_Couture_LLC_W-9.pdf' },
+    { id: 'c', title: 'Calamo colour card', filename: 'calamo.pdf' },
+    { id: 'd', title: 'Calamo price list', filename: 'calamo-prices.pdf' },
+  ]
+  const ok = pickAttachments(files, ['W-9', 'c', 'Calamo colour card'])
+  assert.ok('files' in ok && ok.files.map((f) => f.id).join() === 'b,c')
+  const many = pickAttachments(files, ['Calamo'])
+  assert.ok('problem' in many && many.candidates.length === 2)
+  const none = pickAttachments(files, ['tech pack'])
+  assert.ok('problem' in none && /No kept file/.test(none.problem))
+})

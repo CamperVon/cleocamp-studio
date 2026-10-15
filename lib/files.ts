@@ -59,6 +59,26 @@ export function pickFile<T extends { id: string; title: string; filename: string
   return loose.length === 1 ? { file: loose[0] } : { candidates: loose }
 }
 
+/**
+ * Kept files to attach to an email, each named by title or id (send_email).
+ * Every name must pick exactly one file (pickFile), or nothing is attached and
+ * the problem names which. Pure.
+ */
+export function pickAttachments<T extends { id: string; title: string; filename: string }>(files: T[], names: string[]): { files: T[] } | { problem: string; candidates: T[] } {
+  const out: T[] = []
+  for (const n of names.map((x) => x.trim()).filter(Boolean)) {
+    const byId = pickFile(files, { id: n })
+    const got = 'file' in byId ? byId : pickFile(files, { title: n })
+    if (!('file' in got)) {
+      return got.candidates.length
+        ? { problem: `"${n}" matches more than one kept file. Say which.`, candidates: got.candidates }
+        : { problem: `No kept file is called "${n}".`, candidates: files }
+    }
+    if (!out.some((f) => f.id === got.file.id)) out.push(got.file)
+  }
+  return { files: out }
+}
+
 /** Every record a file can be linked to, A to Z, for the pickers. */
 export async function linkTargets() {
   const [products, components, vendors] = await Promise.all([

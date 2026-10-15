@@ -94,6 +94,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-15', path: '/files',
     text: 'Files: Mouse can now delete a kept file when you ask in the chat ("delete the old W-9"). If more than one file could be the one you mean, it asks which before deleting anything.',
   },
+  {
+    on: '2026-10-15', path: '/files',
+    text: 'Mouse can now attach anything kept in Files to an email ("send Kaylinn our W-9"). The draft names the attachment, and nothing goes until you say send.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

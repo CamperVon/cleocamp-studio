@@ -3832,6 +3832,11 @@ export const TOOLS: Record<string, Tool> = {
           cc: str('Extra people to copy, comma-separated, if someone in the chat asked for it. Brandon is added automatically regardless.'),
           subject: str('Subject line'),
           body: str('The message. Plain text. Professional and straight — none of your studio voice goes outside. Sign off as "— Studio Mouse", never as Cleo Camp or as a person.'),
+          attach: {
+            type: 'array' as const,
+            items: { type: 'string' as const },
+            description: 'Kept files from the Files area to attach (a W-9, a spec sheet), each by its title or id. Each must match exactly one kept file, or nothing is drafted or sent and you are told which to ask about.',
+          },
           confirmed: {
             type: 'boolean' as const,
             description:
@@ -3905,6 +3910,21 @@ export const TOOLS: Record<string, Tool> = {
         }
       }
 
+      // Kept files to attach, settled before the draft so the draft names them
+      // and the send carries exactly what was shown (15 Oct 2026: Mouse could
+      // not email the company W-9 to a production company that asked for it).
+      const wanted = Array.isArray(i.attach) ? (i.attach as unknown[]).map((x) => String(x)) : []
+      let attachFiles: Array<{ id: string; title: string; filename: string }> = []
+      if (wanted.length) {
+        const { pickAttachments } = await import('@/lib/files')
+        const kept = await db.storedFile.findMany({ select: { id: true, title: true, filename: true }, orderBy: { createdAt: 'desc' } })
+        const got = pickAttachments(kept, wanted)
+        if ('problem' in got) {
+          return { sent: false, reason: `${got.problem} Nothing was drafted or sent.`, files: got.candidates.slice(0, 40).map((f) => ({ id: f.id, title: f.title })) }
+        }
+        attachFiles = got.files
+      }
+
       // A DRAFT UNLESS EXPLICITLY CONFIRMED. Brandon, 18 Sept 2026, having
       // written "Let me draft" in the same breath as asking for the email:
       // "And I said let me seee a draft!!!" The instruction was sitting right
@@ -3918,19 +3938,28 @@ export const TOOLS: Record<string, Tool> = {
           to, cc,
           subject: String(i.subject),
           body: String(i.body),
+          ...(attachFiles.length ? { attached: attachFiles.map((f) => `${f.title} (${f.filename})`) } : {}),
           tellTheUser:
-            'Show this draft in full — recipient, cc, subject and body — and wait to be told to ' +
+            'Show this draft in full — recipient, cc, subject, body and any attachment by name — and wait to be told to ' +
             'send it. Call send_email again with confirmed: true only once a person has seen ' +
             'this exact text and said to send it.',
         }
       }
 
       const { sendEmail } = await import('@/lib/email')
+      const attachments = attachFiles.length
+        ? (await db.storedFile.findMany({ where: { id: { in: attachFiles.map((f) => f.id) } }, select: { filename: true, data: true } }))
+            .map((f) => ({ filename: f.filename, content: Buffer.from(f.data, 'base64') }))
+        : undefined
+      if (attachFiles.length && attachments?.length !== attachFiles.length) {
+        return { sent: false, reason: 'A file to attach is no longer in Files. Nothing was sent.' }
+      }
       const res = await sendEmail({
         to: [to],
         cc,
         subject: String(i.subject),
         text: String(i.body),
+        ...(attachments ? { attachments } : {}),
       })
       if (!res.sent) return { sent: false, reason: res.reason }
 
@@ -3946,6 +3975,7 @@ export const TOOLS: Record<string, Tool> = {
         sent: true,
         to,
         cc,
+        ...(attachFiles.length ? { attached: attachFiles.map((f) => f.title) } : {}),
         note: 'Replies come back to mouse@send.cleocamp.com, so you will read them.',
       }
     },

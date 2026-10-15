@@ -617,6 +617,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/files.ts`, `lib/mouse/tools.ts`, `lib/mouse/agent.ts`, `lib/mouse/tool-kinds.ts`, `tests/keep-file.test.ts`.
 - **Needs:** nothing beyond the app.
 
+### Kept files can be attached to an email
+- **Problem:** the general email tool could not attach anything. Purchase orders went out with their PDF only because that tool builds its own document, so "email our tax form to the client who asked" ended with the assistant saying it could not.
+- **Change:** `send_email` takes `attach`, a list of kept files by title or id. Each must match exactly one file (`pickAttachments`, built on `pickFile`, pure), checked before the draft, so the draft names the attachments and the send carries exactly what was shown. An ambiguous or unknown name drafts and sends nothing and returns the list to ask from. The existing rules still hold: a draft first, and only addresses already on file.
+- **Files:** `lib/files.ts`, `lib/mouse/tools.ts` (`send_email`), `tests/keep-file.test.ts`.
+- **Needs:** email (Resend).
+
 ---
 
 ## Setup notes for a new install
