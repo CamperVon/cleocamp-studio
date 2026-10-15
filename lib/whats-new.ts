@@ -86,6 +86,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-14',
     text: 'Email: when you only cc Mouse on an email to someone else, like a reply to a vendor, Mouse stays quiet. It writes back only if your own words ask it something by name ("Mouse, how many yards do we have?"). What it learns from the thread still lands in the app for a tap, as before.',
   },
+  {
+    on: '2026-10-15',
+    text: 'Email: when you email Mouse and ask it to tell someone on the team something ("let Cleo know the charge is $69.59"), it now emails them itself. It can only write to the team this way. Email to a vendor or customer still goes through the app chat, where you see the draft first.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

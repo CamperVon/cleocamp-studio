@@ -605,6 +605,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/team-mail.ts`, `lib/mouse/nightly-pass.ts`, `tests/team-mail.test.ts`.
 - **Needs:** email (Resend inbound; the raw message download).
 
+### The assistant can email the team when a team member emails it
+- **Problem:** a verified team email was applied like a chat message, but every sending tool was blocked for those runs, so "tell my colleague X" by email ended with the assistant saying it could not, and leaving a to-do for someone to ask again in the app.
+- **Change:** `send_email` is allowed from a verified team email sent to the assistant, to the team only: the company domain plus the addresses on file for people who are not external (`outsideTeam`, pure). Anyone else is refused with nothing sent. The run is marked with an `AsyncLocalStorage` flag (`asEmailRun` / `inEmailRun`) so the tool knows where it was called from. Sending to outsiders, invoices, purchase orders and money stay blocked from email, because text quoted in a thread (a supplier's reply) could otherwise steer a run that can send. The sender's email is the go-ahead, so it sends without a separate confirmation unless they asked for a draft, which goes in the reply to them.
+- **Files:** `lib/mouse/team-mail.ts`, `lib/mouse/tools.ts` (`send_email`), `lib/mouse/nightly-pass.ts`, `tests/team-mail.test.ts`.
+- **Needs:** email (Resend send and inbound).
+
 ---
 
 ## Setup notes for a new install

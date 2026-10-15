@@ -3873,6 +3873,20 @@ export const TOOLS: Record<string, Tool> = {
 
       const cc = [...new Set(['brandon@cleocamp.com', ...extraCc])]
 
+      // From a team member's email, the team only (lib/mouse/team-mail.ts).
+      const { inEmailRun, outsideTeam } = await import('@/lib/mouse/team-mail')
+      const fromEmail = inEmailRun()
+      if (fromEmail) {
+        const team = await db.person.findMany({ where: { external: false }, select: { email: true, aliasEmails: true } })
+        const outside = outsideTeam([to, ...cc], team.flatMap((p) => [p.email ?? '', ...(p.aliasEmails ?? '').split(',')]))
+        if (outside.length) {
+          return {
+            sent: false,
+            reason: `From an email I can only write to the team, and ${outside.join(', ')} is outside it. Nothing was sent. Say it needs the app chat, where a draft to them can be checked and sent.`,
+          }
+        }
+      }
+
       // THIS CHECK USED TO RUN AND THEN SEND ANYWAY, reporting the problem as a
       // note underneath a mail that had already gone. On 18 Sept 2026 that put a
       // message in front of janeclabash@gmail.com — an address held nowhere in
@@ -3925,7 +3939,7 @@ export const TOOLS: Record<string, Tool> = {
           toAddress: to, ccAddress: cc.join(', '),
           subject: String(i.subject), body: String(i.body),
           resendId: (res as { id?: string }).id ?? null,
-          sentBy: 'chat (send_email)',
+          sentBy: fromEmail ? 'email (send_email)' : 'chat (send_email)',
         },
       })
       return {

@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
+
 /**
  * When an email from the team may change things directly. Brandon, 2 Oct
  * 2026: "If cleo or brandon or jane emails info / an answer / changing a
@@ -31,9 +33,14 @@
  * set_order_email is allowed too (Brandon, 12 Oct 2026: "as long as its from
  * us"): it puts an email on a Shopify order, and on its customer only when
  * that has none, never replacing one (lib/shopify-email.ts).
+ * send_email is allowed to the team only (Brandon, 15 Oct 2026: "mouse should
+ * be able to originate email", after Mouse could not tell Cleo something from
+ * his email). Outside the company it still needs the app: text quoted in a
+ * thread (a vendor's reply) could otherwise put "email this to X" in front of
+ * a Mouse that can send. See teamOnlyRecipients.
  */
 export const NOT_FROM_EMAIL = new Set([
-  'send_purchase_order', 'send_email', 'send_context_snapshot', 'send_wholesale_draft', 'send_line_sheet',
+  'send_purchase_order', 'send_context_snapshot', 'send_wholesale_draft', 'send_line_sheet',
   'email_invoice_copy', 'invoice_live_sale', 'invoice_wholesale', 'refund_friends_family',
   'cancel_live_sale', 'update_person_email', 'update_notification_settings', 'record_financials',
   // Takes the newest chat attachment: from an email it would keep the wrong file.
@@ -41,6 +48,28 @@ export const NOT_FROM_EMAIL = new Set([
   // Sends our information outside the company.
   'hand_to_muse', 'send_back_to_muse',
 ])
+
+/** Marks a run started by a team member's email, so send_email can hold it to the team. */
+const emailRun = new AsyncLocalStorage<boolean>()
+export function asEmailRun<T>(fn: () => Promise<T>): Promise<T> {
+  return emailRun.run(true, fn)
+}
+export function inEmailRun(): boolean {
+  return emailRun.getStore() === true
+}
+
+/**
+ * The addresses that are not the team's, from a run started by email. The
+ * team is anyone at cleocamp.com plus the addresses on file for people who
+ * are not external. Empty means every recipient is ours. Pure.
+ */
+export function outsideTeam(addresses: string[], teamEmails: string[]): string[] {
+  const team = new Set(teamEmails.map((e) => e.trim().toLowerCase()).filter(Boolean))
+  return addresses.filter((a) => {
+    const x = a.trim().toLowerCase()
+    return !/@(send\.)?cleocamp\.com$/.test(x) && !team.has(x)
+  })
+}
 
 /** Is Mouse's mailbox in the To line (not just copied)? Pure. */
 export function addressedToMouse(toAddress: string): boolean {

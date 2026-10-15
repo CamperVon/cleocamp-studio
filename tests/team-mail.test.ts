@@ -18,13 +18,27 @@ test("DMARC is read from the receiving server's top header, folded lines and all
   assert.equal(dmarcFromHeaders('From: a@b.com\n\nbody'), 'unknown')
 })
 
-test('nothing that sends or moves money runs from an email', () => {
-  for (const t of ['send_email', 'send_purchase_order', 'invoice_live_sale', 'refund_friends_family', 'update_person_email']) assert.ok(NOT_FROM_EMAIL.has(t), t)
+test('nothing that sends to outsiders or moves money runs from an email', () => {
+  for (const t of ['send_purchase_order', 'invoice_live_sale', 'refund_friends_family', 'update_person_email']) assert.ok(NOT_FROM_EMAIL.has(t), t)
 })
 
 test('a gift can be made from verified team email; money and sending still cannot', () => {
   assert.equal(NOT_FROM_EMAIL.has('gift_items'), false)
-  for (const t of ['invoice_live_sale', 'refund_friends_family', 'send_purchase_order', 'send_email', 'cancel_live_sale']) assert.ok(NOT_FROM_EMAIL.has(t), t)
+  for (const t of ['invoice_live_sale', 'refund_friends_family', 'send_purchase_order', 'cancel_live_sale']) assert.ok(NOT_FROM_EMAIL.has(t), t)
+})
+
+// Brandon, 15 Oct 2026: "mouse should be able to originate email". To the team only.
+test('from an email, send_email reaches the team and nobody else', async () => {
+  const { outsideTeam, asEmailRun, inEmailRun } = await import('../lib/mouse/team-mail')
+  assert.equal(NOT_FROM_EMAIL.has('send_email'), false)
+  const team = ['jane@cleocamp.com', 'cleoschmidt@gmail.com', 'bc@thecampbrand.com']
+  assert.deepEqual(outsideTeam(['studio@cleocamp.com', 'brandon@cleocamp.com'], team), [])
+  assert.deepEqual(outsideTeam(['Cleoschmidt@Gmail.com', 'bc@thecampbrand.com'], team), [])
+  assert.deepEqual(outsideTeam(['michael@calamosilk.com', 'studio@cleocamp.com'], team), ['michael@calamosilk.com'])
+  assert.deepEqual(outsideTeam(['someone@cleocamp.com.evil.com'], team), ['someone@cleocamp.com.evil.com'])
+  assert.equal(inEmailRun(), false)
+  assert.equal(await asEmailRun(async () => inEmailRun()), true)
+  assert.equal(inEmailRun(), false)
 })
 
 // 14 Oct 2026: Resend's `to` is the delivery address, always mouse@. Brandon's
