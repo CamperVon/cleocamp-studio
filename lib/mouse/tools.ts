@@ -6106,6 +6106,39 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  delete_file: {
+    def: {
+      name: 'delete_file',
+      description:
+        'Delete a kept file from the Files area for good, when a person in the chat asks you to ("delete the old W-9"). ' +
+        'Name it by its title as you know it, or by id. If exactly one kept file matches it is deleted and you are told ' +
+        'which; if none or several match, nothing is deleted and you get the list to ask from. Cannot be undone, so never ' +
+        'on your own initiative and never to tidy up.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          title: str('The file\'s title, e.g. "Cleo Couture LLC W-9 (signed 1 Jan 2026)"'),
+          id: str('The file id, if you have it'),
+        },
+      },
+    },
+    run: async (i) => {
+      const { pickFile } = await import('@/lib/files')
+      const files = await db.storedFile.findMany({ select: { id: true, title: true, filename: true, createdAt: true }, orderBy: { createdAt: 'desc' } })
+      const got = pickFile(files, { id: i.id, title: i.title })
+      const list = (xs: typeof files) => xs.slice(0, 40).map((f) => ({ id: f.id, title: f.title, filename: f.filename, kept: f.createdAt.toISOString().slice(0, 10) }))
+      if (!('file' in got)) {
+        return {
+          deleted: false,
+          reason: got.candidates.length ? 'More than one kept file matches, so nothing was deleted. Ask which one.' : 'No kept file matches, so nothing was deleted.',
+          files: list(got.candidates.length ? got.candidates : files),
+        }
+      }
+      await db.storedFile.delete({ where: { id: got.file.id } })
+      return { deleted: true, title: got.file.title, filename: got.file.filename }
+    },
+  },
+
   read_file: {
     def: {
       name: 'read_file',

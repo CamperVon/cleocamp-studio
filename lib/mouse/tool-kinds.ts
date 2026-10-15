@@ -72,6 +72,7 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
   invoice_live_sale: 'changes',
   invoice_wholesale: 'changes',
   keep_file: 'changes',
+  delete_file: 'changes', // 15 Oct 2026: chat only, see CHAT_ONLY_TOOLS
   log_inventory_event: 'changes',
   log_wholesale_shipment: 'changes',
   merge_colorway: 'changes',

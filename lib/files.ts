@@ -38,6 +38,27 @@ export function recordHref(kind: string, id: string): string {
   return `/${kind === 'product' ? 'products' : kind === 'component' ? 'components' : 'vendors'}#rec-${id}`
 }
 
+/**
+ * Which kept file a title means, for delete_file: an exact title first (any
+ * case), then the one file whose title or filename contains every word given.
+ * Anything else is no match or several, and nothing is chosen. Pure.
+ */
+export function pickFile<T extends { id: string; title: string; filename: string }>(files: T[], want: { id?: string; title?: string }): { file: T } | { candidates: T[] } {
+  const id = (want.id ?? '').trim()
+  if (id) {
+    const f = files.find((x) => x.id === id)
+    return f ? { file: f } : { candidates: [] }
+  }
+  const t = (want.title ?? '').trim().toLowerCase()
+  if (!t) return { candidates: [] }
+  const exact = files.filter((x) => x.title.trim().toLowerCase() === t)
+  if (exact.length === 1) return { file: exact[0] }
+  if (exact.length > 1) return { candidates: exact }
+  const words = t.split(/\s+/).filter(Boolean)
+  const loose = files.filter((x) => words.every((w) => `${x.title} ${x.filename}`.toLowerCase().includes(w)))
+  return loose.length === 1 ? { file: loose[0] } : { candidates: loose }
+}
+
 /** Every record a file can be linked to, A to Z, for the pickers. */
 export async function linkTargets() {
   const [products, components, vendors] = await Promise.all([

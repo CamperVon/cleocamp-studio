@@ -89,3 +89,25 @@ test('upload notes are sent on to be saved, and saved', async () => {
   assert.equal(row.notes, 'Scanned 6 Oct; pages 2 and 4 upside down')
   assert.equal(storedFileData({ title: 't', filename: 'f', mediaType: 'application/pdf', base64: 'x', sizeBytes: 1, notes: '   ' }).notes, null)
 })
+
+// Brandon, 15 Oct 2026: "Here is the revised w9. delete the other." Mouse could
+// keep a file but not remove one.
+test('delete_file picks exactly one file or none, and is chat only', async () => {
+  const { pickFile } = await import('../lib/files')
+  const files = [
+    { id: 'a', title: 'Cleo Couture LLC W-9 (signed 1 Jan 2026)', filename: 'W9.pdf' },
+    { id: 'b', title: 'Cleo Couture LLC W-9 (revised, LLC taxed as partnership)', filename: 'Cleo_Couture_LLC_W-9.pdf' },
+    { id: 'c', title: 'Calamo colour card', filename: 'calamo.pdf' },
+  ]
+  const one = (r: ReturnType<typeof pickFile>) => ('file' in r ? r.file.id : null)
+  assert.equal(one(pickFile(files, { title: 'cleo couture llc w-9 (signed 1 jan 2026)' })), 'a')
+  assert.equal(one(pickFile(files, { title: 'W-9 signed' })), 'a')
+  assert.equal(one(pickFile(files, { id: 'c' })), 'c')
+  // Two W-9s: "the W-9" is not enough to delete either.
+  const both = pickFile(files, { title: 'W-9' })
+  assert.ok(!('file' in both) && both.candidates.length === 2)
+  assert.ok(!('file' in pickFile(files, { title: '' })))
+  assert.ok(!('file' in pickFile(files, { id: 'zzz' })))
+  assert.ok(CHAT_ONLY_TOOLS.has('delete_file'))
+  assert.ok(!toolsFor(undefined, undefined).includes('delete_file'))
+})

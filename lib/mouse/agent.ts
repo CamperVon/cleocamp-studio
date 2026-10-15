@@ -609,7 +609,8 @@ export async function runAgent(opts: {
  * pass, team email, an in-flight update, answering a to-do) never has it,
  * even when it otherwise takes the whole tool set.
  */
-export const CHAT_ONLY_TOOLS = new Set(['keep_file'])
+// delete_file too (15 Oct 2026): a delete cannot be undone, so only a person in the chat asks for one.
+export const CHAT_ONLY_TOOLS = new Set(['keep_file', 'delete_file'])
 
 /** The tools a run may use. Pure. */
 /**

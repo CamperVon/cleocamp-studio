@@ -90,6 +90,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-15',
     text: 'Email: when you email Mouse and ask it to tell someone on the team something ("let Cleo know the charge is $69.59"), it now emails them itself. It can only write to the team this way. Email to a vendor or customer still goes through the app chat, where you see the draft first.',
   },
+  {
+    on: '2026-10-15', path: '/files',
+    text: 'Files: Mouse can now delete a kept file when you ask in the chat ("delete the old W-9"). If more than one file could be the one you mean, it asks which before deleting anything.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

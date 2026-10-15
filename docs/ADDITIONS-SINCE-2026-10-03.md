@@ -611,6 +611,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/team-mail.ts`, `lib/mouse/tools.ts` (`send_email`), `lib/mouse/nightly-pass.ts`, `tests/team-mail.test.ts`.
 - **Needs:** email (Resend send and inbound).
 
+### The assistant can delete a kept file
+- **Problem:** the assistant could keep a file (keep_file) but not remove one, so "here is the revised form, delete the other" ended with a to-do asking a person to delete it by hand, and two versions sitting in Files until someone did.
+- **Change:** a `delete_file` tool. It takes a title or id and deletes only when exactly one kept file matches (`pickFile`, pure: exact title first, then the one file whose title or filename holds every word given). No match or several means nothing is deleted and the list comes back to ask from. Chat only (`CHAT_ONLY_TOOLS`), never from email or a background run, because a delete cannot be undone. Links to records go with the file (cascade).
+- **Files:** `lib/files.ts`, `lib/mouse/tools.ts`, `lib/mouse/agent.ts`, `lib/mouse/tool-kinds.ts`, `tests/keep-file.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install
