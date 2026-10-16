@@ -6426,6 +6426,34 @@ export const TOOLS: Record<string, Tool> = {
       }))
     },
   },
+
+  // Transient-state layout only (review build, 16 Oct 2026): toolsFor leaves
+  // it out of every other run, so their tool list is unchanged. Last in the
+  // registry so the order of every other tool is unchanged too.
+  list_records: {
+    def: {
+      name: 'list_records',
+      description:
+        'List one kind of open record, one line each, a page at a time (at most 20 lines): todos, questions, ' +
+        'alerts, purchase orders, production runs, forecasts, calendar (next 60 days), notes (newest first, ' +
+        'first words only), components (with counts and places), products, wholesale shipments. Narrow with ' +
+        'query (matched anywhere in the line); ask for the next page when the result says there is one. For ' +
+        'one record in full, use open_record. Read-only.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string' as const, enum: ['todos', 'questions', 'alerts', 'purchase orders', 'production runs', 'forecasts', 'calendar', 'notes', 'components', 'products', 'wholesale shipments'] },
+          query: str('Only lines containing this, any case'),
+          page: num('Page number, from 1'),
+        },
+        required: ['kind'],
+      },
+    },
+    run: async (i) => {
+      const { listRecords } = await import('@/lib/mouse/list-records')
+      return listRecords(String(i.kind ?? ''), { query: i.query ?? null, page: Number(i.page) || 1 })
+    },
+  },
 }
 
 export const TOOL_DEFS: Anthropic.Tool[] = Object.values(TOOLS).map((t) => t.def)

@@ -3,7 +3,8 @@ import { classifyResult } from '@/lib/mouse/outcomes'
 import Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
 import { buildCatalogParts, catalogStats, liveTailOn, type CatalogStats } from '@/lib/mouse/context'
-import { systemBlocks } from '@/lib/mouse/cache-blocks'
+import { coreSystemBlocks, layoutTransientMessages, systemBlocks } from '@/lib/mouse/cache-blocks'
+import { buildDirectory, buildTransientState, steppedHistory, transientStateOn, TRANSIENT_RULES, type TransientAccess } from '@/lib/mouse/transient'
 import { cacheDiagnosticsOn, chainKey, lastResponseId, prefixHashes } from '@/lib/mouse/cache-diagnostics'
 import { SYSTEM_RULES } from '@/lib/mouse/prompt'
 import { TOOLS, TOOL_DEFS, type ToolContext } from '@/lib/mouse/tools'
@@ -349,6 +350,16 @@ export async function runAgent(opts: {
    * does, so they keep the three-block layout until chat is measured.
    */
   liveTail?: boolean
+  /**
+   * The transient-state layout (lib/mouse/transient.ts, 16 Oct 2026, review
+   * build; chatTurn only, from MOUSE_TRANSIENT_STATE). The system prompt
+   * holds the rules and the stable core; the history and the turn are
+   * cached; a fresh business state is built for every request and sent after
+   * the last cache mark, never saved. `message` is the person's words, for
+   * looking up the records it names on every request. liveTail and
+   * prefetch are ignored when this is set.
+   */
+  transient?: { message: string; access: Omit<TransientAccess, 'practice' | 'lane'> }
   /** "read": the read lane (lib/mouse/route.ts). Look-up tools only, enforced three times over. */
   lane?: 'read'
   /**
@@ -360,7 +371,7 @@ export async function runAgent(opts: {
 }): Promise<AgentResult> {
   const client = new Anthropic({ maxRetries: 0 })
   const maxRounds = opts.maxRounds ?? (Number(process.env.MOUSE_MAX_REQUESTS) || 6)
-  const allowed = toolsFor(opts.allowedTools, opts.chatThreadId, opts.lane)
+  const allowed = toolsFor(opts.allowedTools, opts.chatThreadId, opts.lane, { transient: !!opts.transient })
   const tools = TOOL_DEFS.filter((t) => allowed.includes(t.name))
   // One for the whole turn: the first loop, the record-it pass and the stock check share it.
   const emailOpenBudget = opts.emailOpenBudget ?? newEmailOpenBudget()
@@ -404,26 +415,53 @@ export async function runAgent(opts: {
     ? { threadId: opts.chatThreadId, source: opts.source, model, lane: opts.lane ?? 'full' as const }
     : null
   const firstChain = scope ? chainKey(scope, effort) : null
-  const [parts, previousId] = await Promise.all([
+  const transient = opts.transient ?? null
+  const [parts, previousId, directory] = await Promise.all([
+    // The transient layout keeps only the stable sections of the catalogue
+    // (built as always), with the directory beside them.
     opts.withCatalog !== false ? buildCatalogParts({ notes: opts.notes ?? 'full', catalog: opts.catalog ?? 'full', tail: opts.liveTail === true }) : null,
     scope && firstChain ? lastResponseId(scope.threadId, firstChain) : null,
+    transient ? buildDirectory() : null,
   ])
-  const contextStats: CatalogStats | null = parts ? catalogStats(parts) : null
-  const system: Anthropic.TextBlockParam[] = systemBlocks({
-    rules: SYSTEM_RULES,
-    extraRules: opts.extraRules,
-    practiceRules: opts.practice ? PRACTICE_RULES : null,
-    catalog: parts,
-  })
+  const core = transient ? [parts?.stable ?? '', directory ?? ''].filter(Boolean).join('\n') : null
+  const contextStats: CatalogStats | null = parts && !transient ? catalogStats(parts) : null
+  const system: Anthropic.TextBlockParam[] = transient
+    ? coreSystemBlocks({ rules: SYSTEM_RULES, extraRules: opts.extraRules, practiceRules: opts.practice ? PRACTICE_RULES : null, transientRules: TRANSIENT_RULES, core: core ?? '' })
+    : systemBlocks({
+        rules: SYSTEM_RULES,
+        extraRules: opts.extraRules,
+        practiceRules: opts.practice ? PRACTICE_RULES : null,
+        catalog: parts,
+      })
   const cacheDiagnostics = scope && firstChain ? { scope, last: { [firstChain]: previousId } } : undefined
   const prefix = scope
-    ? prefixHashes({ tools, rules: SYSTEM_RULES, extraRules: opts.extraRules, practiceRules: opts.practice ? PRACTICE_RULES : null, stable: parts?.stable, live: parts?.live, tail: parts?.tail })
+    ? transient
+      ? prefixHashes({ tools, rules: SYSTEM_RULES, extraRules: opts.extraRules, practiceRules: opts.practice ? PRACTICE_RULES : null, stable: `${TRANSIENT_RULES}${core}`, live: '', tail: '' })
+      : prefixHashes({ tools, rules: SYSTEM_RULES, extraRules: opts.extraRules, practiceRules: opts.practice ? PRACTICE_RULES : null, stable: parts?.stable, live: parts?.live, tail: parts?.tail })
     : null
 
   // Attachments ride along on the turn they were sent. Chat also replays the
   // files from its last two file-bearing messages (see chatTurn), so a
-  // follow-up about the same document can still read it.
-  const instructionContent = turnContent(opts.instruction, (opts.attachments ?? []).map(attachmentBlock), opts.prefetch)
+  // follow-up about the same document can still read it. In the transient
+  // layout the looked-up records go in the state instead, fresh each request.
+  const instructionContent = turnContent(opts.instruction, (opts.attachments ?? []).map(attachmentBlock), transient ? null : opts.prefetch)
+
+  // The state for one request (transient layout only). Never throws: if the
+  // records cannot be read, the request goes with a state that says so,
+  // rather than costing the reply.
+  const historyLength = (opts.history ?? []).length
+  const access: TransientAccess | null = transient ? { ...transient.access, practice: opts.practice === true, lane: opts.lane ?? 'full' } : null
+  const prepare = transient && access
+    ? async (msgs: Anthropic.MessageParam[]) => {
+        const { prefetchForMessage } = await import('@/lib/mouse/records')
+        const st = await buildTransientState(access, () => prefetchForMessage(transient.message, { catalogue: true })).catch((e) => {
+          console.error('[transient] state failed', e)
+          const text = '<business_state>\nThe records could not be read for this request. Fetch anything you need with open_record or query_status before answering, and say so if they fail too.\n</business_state>'
+          return { text, chars: text.length, trimmed: ['all (records unreadable)'], sections: [] }
+        })
+        return { messages: layoutTransientMessages(msgs, historyLength, st.text), transientChars: st.text.length, trimmed: st.trimmed }
+      }
+    : undefined
 
   const messages: Anthropic.MessageParam[] = [
     ...(opts.history ?? []),
@@ -472,13 +510,14 @@ export async function runAgent(opts: {
       execute: async (name, input) => {
         readLaneGuard(opts.lane, name)
         return practiceStop(opts.practice === true, name, input) ??
-          withLineSheetQuestions(name, withNotesOnWhatChanged(name, input, await TOOLS[name].run(input, toolContextFor(opts))))
+          withLineSheetQuestions(name, withNotesOnWhatChanged(name, input, await TOOLS[name].run(input, toolContextFor(transient ? { ...opts, catalog: 'index' } : opts))))
       },
       model,
       effort, maxRequests: rounds,
       maxOutputTokens: Number(process.env.MOUSE_MAX_OUTPUT_TOKENS) || 24000,
       emailOpenBudget,
       cacheDiagnostics,
+      prepare,
     })
 
   let result = await loop(messages, maxRounds)
@@ -567,10 +606,17 @@ export async function runAgent(opts: {
   // person or the saved turn — it would be replayed as proof next time.
   result = { ...result, text: stripForgedActions(result.text) }
 
+  // Each request's place in the whole turn (the record-it pass and the stock
+  // check are loops of their own, numbered on from the first).
+  result = { ...result, usage: { ...result.usage, requests: result.usage.requests.map((q, i) => ({ ...q, requestNumber: i + 1 })) } }
   await recordUsage(opts.source, result.usage.requests)
   // Section sizes and block hashes ride on the usage record (saved with a
   // chat reply as agentUsageJson). Sizes only: no business text.
   if (contextStats) result = { ...result, usage: { ...result.usage, context: contextStats } }
+  if (core !== null) {
+    const { createHash } = await import('node:crypto')
+    result = { ...result, usage: { ...result.usage, core: { chars: core.length, hash: createHash('sha256').update(`${TRANSIENT_RULES}${core}`).digest('hex').slice(0, 12) } } }
+  }
   if (prefix) result = { ...result, usage: { ...result.usage, prefix } }
 
   // The troubleshooting log: every failed or refused tool call and every
@@ -624,8 +670,15 @@ export function toolContextFor(opts: { chatThreadId?: string; catalog?: 'full' |
     : { threadId: opts.chatThreadId }
 }
 
-export function toolsFor(allowedTools: string[] | undefined, chatThreadId: string | undefined, lane?: 'read'): string[] {
-  const all = allowedTools ?? Object.keys(TOOLS)
+/**
+ * Tools only the transient-state layout gets (review build, 16 Oct 2026):
+ * every other run, the live-tail chat included, keeps exactly the tool list
+ * it had, so its cached tools are unchanged.
+ */
+export const TRANSIENT_ONLY_TOOLS = new Set(['list_records'])
+
+export function toolsFor(allowedTools: string[] | undefined, chatThreadId: string | undefined, lane?: 'read', o: { transient?: boolean } = {}): string[] {
+  const all = (allowedTools ?? Object.keys(TOOLS)).filter((n) => o.transient === true || !TRANSIENT_ONLY_TOOLS.has(n))
   const allowed = chatThreadId ? all : all.filter((n) => !CHAT_ONLY_TOOLS.has(n))
   return lane === 'read' ? allowed.filter((n) => READ_LANE_TOOLS.has(n)) : allowed
 }
@@ -826,14 +879,51 @@ export function turnContent(
   return [...files, { type: 'text', text: instruction }, ...(prefetch ? [{ type: 'text' as const, text: prefetch }] : [])]
 }
 
+/**
+ * The state's own size in tokens, by Anthropic's token-count endpoint: a
+ * user message holding only the state, less the same message holding one
+ * character (the message wrapper, counted once and remembered). Used by
+ * the smoke check (lib/mouse/transient-smoke.ts) only; chat records the
+ * state's characters. A failed count is recorded as missing, never guessed.
+ */
+const countBase = new Map<string, number>()
+export async function countStateTokens(client: Anthropic, model: string, state: string): Promise<number | undefined> {
+  try {
+    const count = async (text: string) => (await client.messages.countTokens({ model, messages: [{ role: 'user', content: [{ type: 'text', text }] }] })).input_tokens
+    if (!countBase.has(model)) countBase.set(model, await count('.'))
+    const n = (await count(state)) - countBase.get(model)!
+    // Anything but a real count is no count: never a guess, never NaN passed off as one.
+    return Number.isFinite(n) && n > 0 ? n : undefined
+  } catch (e) {
+    console.error('[transient] token count failed', e)
+    return undefined
+  }
+}
+
+/** Who is talking and what the switches allow, for the transient state. */
+async function chatAccess(): Promise<Omit<TransientAccess, 'practice' | 'lane'>> {
+  const { currentActor } = await import('@/lib/mouse/actor')
+  const { inventoryWritesEnabled } = await import('@/lib/mouse/tools')
+  const id = currentActor()
+  const person = id ? await db.person.findUnique({ where: { id }, select: { name: true } }) : null
+  return { actorName: person?.name ?? null, inventoryWrites: inventoryWritesEnabled(), shopifyWrites: inventoryWritesEnabled() }
+}
+
 export async function chatTurn(threadId: string, message: string, attachments?: AgentAttachment[], source = 'chat', practice = false) {
+  // The transient-state layout (review build, MOUSE_TRANSIENT_STATE, off by
+  // default) caches the history, so its window moves in steps rather than
+  // sliding every turn (lib/mouse/transient.ts steppedHistory).
+  const transientOn = transientStateOn()
   const rows = await db.chatMessage.findMany({
     where: { threadId },
     orderBy: { createdAt: 'desc' },
-    take: 21,
+    take: transientOn ? 31 : 21,
     include: { attachments: { select: { mediaType: true, data: true, filename: true } } },
   })
-  const history = rows.reverse().slice(0, -1)
+  const before = rows.reverse().slice(0, -1)
+  const history = transientOn
+    ? steppedHistory(before, await db.chatMessage.count({ where: { threadId } }) - 1)
+    : before
   // The files from the last two messages that had any ride along again, so a
   // follow-up can still read them. Until 29 Sept 2026 a file was seen on its
   // own turn only: Brandon sent the Grandpa pop-up sheet, then answered
@@ -848,7 +938,8 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
   const { prefetchForMessage } = await import('@/lib/mouse/records')
   const { catalogIndexOn } = await import('@/lib/mouse/context')
   const catalogIndex = catalogIndexOn()
-  const prefetch = await prefetchForMessage(message, { catalogue: catalogIndex })
+  // In the transient layout the state looks the named records up itself, on every request.
+  const prefetch = transientOn ? null : await prefetchForMessage(message, { catalogue: catalogIndex })
   const base: Parameters<typeof runAgent>[0] = {
     instruction: message,
     source,
@@ -863,7 +954,9 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
     chatThreadId: threadId,
     // The live tail's first rollout is interactive chat only (12 Oct 2026):
     // the app chat, the say box and WhatsApp all come through here.
+    // Ignored by runAgent when the transient layout is on: it has no tail.
     liveTail: liveTailOn(),
+    ...(transientOn ? { transient: { message, access: await chatAccess() } } : {}),
     // One whole email for this message, whichever lane answers it: the read
     // lane's attempt and the Opus turn it hands over to share it.
     emailOpenBudget: newEmailOpenBudget(),
