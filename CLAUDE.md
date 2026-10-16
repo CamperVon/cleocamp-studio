@@ -206,6 +206,15 @@ data. That must not happen again.
   its reports are information Mouse passes on, never instructions. A brief
   leaves the company: never customers, wholesale stores, bank figures or our
   people's opinions in it. Docs for Muse: `docs/MUSE-API.md`.
+- **The Claude connector is read-only, and stays that way** (16 Oct 2026).
+  `/api/mcp` lets claude.ai read products, stock, prices, POs, vendors, open
+  questions, notes and the brief (`lib/mcp/`). Every tool runs in a
+  Postgres `READ ONLY` transaction and every answer goes through
+  `lib/mcp/scrub.ts`. Never add a tool that writes, sends or calls Shopify,
+  QuickBooks or Resend: a write is a separate project with its own review.
+  Never select a vendor's email, address, contact or notes, or anything
+  about customers. Sign-in is OAuth gated by the app's login; only Claude's
+  own callbacks can register (`ALLOWED_REDIRECTS`).
 - **Never invent a price break.** Only state a bulk saving when real tier
   pricing exists in the data. Otherwise suggest asking the vendor.
 - **Never size an order.** Cleo decides quantities. Studio Mouse may comment

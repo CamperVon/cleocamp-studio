@@ -39,6 +39,16 @@ export async function proxy(req: NextRequest) {
     // Trading a personal link for a session cannot itself require a session.
     pathname === '/enter' ||
     pathname === '/manifest.webmanifest' ||
+    // The read-only Claude connector (lib/mcp/): its endpoint takes an OAuth
+    // bearer token, checked in the route; the metadata, registration and
+    // token endpoints are public by the OAuth spec and grant nothing alone.
+    // The consent page checks the session itself, so that a sign-in can
+    // return to it with the whole request (this redirect keeps only the path).
+    pathname === '/api/mcp' ||
+    pathname.startsWith('/.well-known/oauth-') ||
+    pathname === '/api/oauth/register' ||
+    pathname === '/api/oauth/token' ||
+    pathname === '/oauth/authorize' ||
     // Echoes back only the key it is given; see the route.
     pathname === '/api/manifest'
   ) {

@@ -17,6 +17,20 @@ const nextConfig: NextConfig = {
     // Pictures in a Special email are read from disk at send time, same reason.
     "/special": ["./public/notice/*"],
   },
+  // The Claude connector's consent screen must never sit inside another
+  // site's frame, where an Allow button could be dressed up as something else.
+  headers() {
+    return [
+      {
+        source: "/oauth/authorize",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

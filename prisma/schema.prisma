@@ -1945,3 +1945,61 @@ model TelnyxMessage {
 
   @@index([receivedAt])
 }
+
+/// Apps connected to the read-only Claude connector (/api/mcp, 16 Oct 2026):
+/// one row per OAuth client that registered itself (RFC 7591), which today
+/// means claude.ai. Registration grants nothing on its own; a person signed
+/// in to this app has to approve it on /oauth/authorize first.
+model McpClient {
+  id                      String     @id
+  name                    String?
+  redirectUris            String[]
+  /// "none" for a public client; otherwise its secret is kept as a SHA-256 hash only.
+  tokenEndpointAuthMethod String     @default("none")
+  secretHash              String?
+  createdAt               DateTime   @default(now())
+  grants                  McpGrant[]
+}
+
+/// An authorization code, access token or refresh token for the connector,
+/// kept as a SHA-256 hash: the token itself is never stored. One approval is
+/// one family; reusing a spent refresh token revokes the whole family.
+model McpGrant {
+  id            String    @id @default(cuid())
+  /// "code", "access" or "refresh".
+  kind          String
+  tokenHash     String    @unique
+  clientId      String
+  familyId      String
+  /// Who approved it, when they signed in with their own link; null for the shared password.
+  personId      String?
+  scope         String
+  /// The MCP endpoint the token is for (RFC 8707); checked on every call.
+  resource      String
+  codeChallenge String?
+  redirectUri   String?
+  expiresAt     DateTime
+  usedAt        DateTime?
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  client        McpClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([familyId])
+  @@index([clientId, kind])
+}
+
+/// One row per connector tool call: which tool, when, how long, and whether it
+/// worked. Never the arguments or the answer (shown on /connector).
+model McpCall {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  tool       String
+  ok         Boolean
+  /// A short category ("not_found", "invalid_input", "internal"), never the payload.
+  errorKind  String?
+  durationMs Int
+  clientId   String?
+  personId   String?
+
+  @@index([createdAt])
+}

@@ -623,6 +623,17 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/files.ts`, `lib/mouse/tools.ts` (`send_email`), `tests/keep-file.test.ts`.
 - **Needs:** email (Resend).
 
+### A read-only connector so Claude can read the app's records
+- **Problem:** an outside Claude (claude.ai) could only see what was emailed to the assistant's inbox, so every question about prices, stock or orders needed someone to relay the answer.
+- **Change:** a remote MCP server at `/api/mcp` (Streamable HTTP, stateless, plain JSON, fits a serverless function) with ten read-only tools: products, one product with its BOM and notes, the wholesale price list, purchase orders (list and one), open questions, note search, the latest daily brief, vendors (no contact or bank details) and the style system.
+  - **Sign-in:** OAuth 2.1 as claude.ai custom connectors expect: protected resource and authorization server metadata, dynamic client registration, PKCE S256 only, resource indicators, rotating refresh tokens with reuse detection. The consent page is gated by the app's own login. Only Claude's own callback URLs can be registered, and tokens are stored as SHA-256 hashes only. No new secret or environment variable.
+  - **Read-only:** every tool runs in a Postgres transaction set `READ ONLY`, so the database refuses a write whatever the code does. No tool calls an outside service.
+  - **Scrubbing:** every answer goes through a scrubber that removes emails, phones, Luhn-valid card numbers, numbers after bank words, IBANs and key-shaped strings. Bare long numbers such as invoice and tracking numbers are kept.
+  - **Logging:** every call is logged as tool, time, duration and ok or an error category, never the arguments or answer, and shown on a page with connected apps and a Disconnect button.
+  - **Tests:** run the real Prisma queries against an in-memory Postgres (PGlite through `@electric-sql/pglite-socket`). They cover the data, auth refusal, no writes and no sensitive strings.
+- **Files:** `lib/mcp/oauth.ts`, `lib/mcp/tools.ts`, `lib/mcp/server.ts`, `lib/mcp/scrub.ts`, `app/api/mcp/route.ts`, `app/api/oauth/register/route.ts`, `app/api/oauth/token/route.ts`, `app/.well-known/oauth-protected-resource/`, `app/.well-known/oauth-authorization-server/route.ts`, `app/oauth/authorize/`, `app/(main)/connector/`, `proxy.ts`, `prisma/schema.prisma` (`McpClient`, `McpGrant`, `McpCall`), `tests/mcp-connector.test.ts`.
+- **Needs:** nothing beyond the app. The tools read the app's own database; stock is whatever the Shopify sync last mirrored.
+
 ---
 
 ## Setup notes for a new install

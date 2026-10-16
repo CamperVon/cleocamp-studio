@@ -98,6 +98,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-15', path: '/files',
     text: 'Mouse can now attach anything kept in Files to an email ("send Kaylinn our W-9"). The draft names the attachment, and nothing goes until you say send.',
   },
+  {
+    on: '2026-10-16', path: '/connector',
+    text: 'Claude (claude.ai) can now read Studio Mouse directly: products, stock, prices, POs, vendors, open questions, notes and the daily brief. It can\'t change anything. To connect it, add a custom connector in Claude with https://admin.cleocamp.com/api/mcp and tap Allow. The new Claude Connector page (under More) shows what is connected, every look-up, and a Disconnect button.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */
