@@ -623,6 +623,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/files.ts`, `lib/mouse/tools.ts` (`send_email`), `tests/keep-file.test.ts`.
 - **Needs:** email (Resend).
 
+### Review build, not merged: cached core and a transient business state
+- **Problem:** the assistant's business data (every product's counts, component stock, the notes index, open orders, forecasts, calendar, to-dos) sat in the system prompt under five-minute cache marks, so any change rewrote all of it, and the conversation behind it was never cached. Cache writes were half the chat bill, uncached history another quarter.
+- **Change (behind a flag, off):** the system prompt keeps only the rules and a stable core (places, vendors, stores, people, document defaults, and a directory of products, variants, colourways and components by name and id). The history is cached under a one-hour mark, with a window that moves in steps of ten so its start holds. A compact business state (time and access, alerts and what is due, a stock board, one line per open order and run, the coming week, what to order, open questions, the records the message names) is built fresh for every request, appended after the last cache mark and never saved. Detail is fetched on demand; the record look-up tool also returns a whole current list on request. Per-request measurements: the state's size (the API's own uncached input), request number, tool rounds and look-ups. A paid bake-off script compares it with the old layout on the same practice turns; acceptance waits on that run.
+- **Files:** `lib/mouse/transient.ts`, `lib/mouse/cache-blocks.ts`, `lib/mouse/runner.ts`, `lib/mouse/agent.ts`, `lib/mouse/records.ts`, `lib/mouse/tools.ts`, `scripts/transient-layout.ts`, `scripts/transient-bakeoff.ts`, `scripts/transient-bakeoff-checks.ts`, `docs/TRANSIENT-STATE.md`, tests `transient-state` and `transient-bakeoff`.
+- **Needs:** nothing beyond the app and the Anthropic API.
+
 ---
 
 ## Setup notes for a new install

@@ -360,6 +360,15 @@ export async function runAgent(opts: {
    * prefetch are ignored when this is set.
    */
   transient?: { message: string; access: Omit<TransientAccess, 'practice' | 'lane'> }
+  /**
+   * BAKE-OFF ONLY (scripts/transient-bakeoff.ts); production never passes it.
+   * A practice replay changes no records, so a layout whose cost depends on
+   * how often the records change would read as cheaper than it is. This adds
+   * one line where a real change would land: the end of the live head or the
+   * live tail in the catalogue layout, the business state in the transient
+   * one. The requests are real and paid; only the change is scheduled.
+   */
+  replayChange?: { at: 'head' | 'tail'; line: string }
   /** "read": the read lane (lib/mouse/route.ts). Look-up tools only, enforced three times over. */
   lane?: 'read'
   /**
@@ -424,6 +433,11 @@ export async function runAgent(opts: {
     transient ? buildDirectory() : null,
   ])
   const core = transient ? [parts?.stable ?? '', directory ?? ''].filter(Boolean).join('\n') : null
+  const change = opts.replayChange ? `\n- (replay change) ${opts.replayChange.line}\n` : ''
+  if (change && parts && !transient) {
+    if (opts.replayChange!.at === 'tail' && parts.tail) parts.tail += change
+    else parts.live += change
+  }
   const contextStats: CatalogStats | null = parts && !transient ? catalogStats(parts) : null
   const system: Anthropic.TextBlockParam[] = transient
     ? coreSystemBlocks({ rules: SYSTEM_RULES, extraRules: opts.extraRules, practiceRules: opts.practice ? PRACTICE_RULES : null, transientRules: TRANSIENT_RULES, core: core ?? '' })
@@ -459,7 +473,8 @@ export async function runAgent(opts: {
           const text = '<business_state>\nThe records could not be read for this request. Fetch anything you need with open_record or query_status before answering, and say so if they fail too.\n</business_state>'
           return { text, chars: text.length, trimmed: ['all (records unreadable)'], sections: [] }
         })
-        return { messages: layoutTransientMessages(msgs, historyLength, st.text), transientChars: st.chars, trimmed: st.trimmed }
+        const text = change ? st.text.replace(/\n<\/business_state>$/, `${change}</business_state>`) : st.text
+        return { messages: layoutTransientMessages(msgs, historyLength, text), transientChars: text.length, trimmed: st.trimmed }
       }
     : undefined
 
