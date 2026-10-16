@@ -210,11 +210,17 @@ data. That must not happen again.
   `/api/mcp` lets claude.ai read products, stock, prices, POs, vendors, open
   questions, notes and the brief (`lib/mcp/`). Every tool runs in a
   Postgres `READ ONLY` transaction and every answer goes through
-  `lib/mcp/scrub.ts`. Never add a tool that writes, sends or calls Shopify,
-  QuickBooks or Resend: a write is a separate project with its own review.
-  Never select a vendor's email, address, contact or notes, or anything
+  `lib/mcp/scrub.ts`. Never add a tool that writes or sends anything, here
+  or in Shopify, QuickBooks or Resend: a write is a separate project with
+  its own review. The one outside call is a read: stock comes live from
+  Shopify (`lib/mcp/live-stock.ts`, Brandon 16 Oct 2026: "i would like the
+  latest stock to be included"), falling back to the app's copy and saying
+  so. Never select a vendor's email, address, contact or notes, or anything
   about customers. Sign-in is OAuth gated by the app's login; only Claude's
-  own callbacks can register (`ALLOWED_REDIRECTS`).
+  own callbacks can register (`ALLOWED_REDIRECTS`). Muse may connect too
+  (Brandon, 16 Oct 2026) with its existing key, only while switched on on
+  the Claude Connector page, and only to `MUSE_TOOLS`: never notes, open
+  questions or the brief, by the Muse rule above.
 - **Never invent a price break.** Only state a bulk saving when real tier
   pricing exists in the data. Otherwise suggest asking the vendor.
 - **Never size an order.** Cleo decides quantities. Studio Mouse may comment

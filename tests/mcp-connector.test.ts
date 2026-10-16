@@ -8,8 +8,9 @@ import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '../generated/prisma/client'
 import { checkAuthorize, issueCode, OAuthError, registerClient, tokenRequest, verifyAccess, type AuthorizeParams } from '../lib/mcp/oauth'
 import { scrubText } from '../lib/mcp/scrub'
-import { handleMcp, runTool } from '../lib/mcp/server'
-import { MCP_TOOLS } from '../lib/mcp/tools'
+import { LIVE_STOCK_QUERY } from '../lib/mcp/live-stock'
+import { handleMcp, MUSE_CLIENT_ID, runTool } from '../lib/mcp/server'
+import { MCP_TOOLS, MUSE_TOOLS } from '../lib/mcp/tools'
 
 /**
  * The Claude connector against a real Postgres: every migration applied to an
@@ -48,7 +49,7 @@ before(async () => {
   await db.product.create({ data: { id: 'pr_tee', name: 'Cleo Tee', status: 'ACTIVE', styleId: 's_tp101', retailPriceCents: 12800, wholesalePriceCents: 5600, productionLeadTimeDays: 30 } })
   await db.colorway.create({ data: { id: 'cw_blk', productId: 'pr_tee', customerName: 'Black', colorCode: 'BLK' } })
   await db.productVariant.createMany({ data: [
-    { id: 'pv_1', productId: 'pr_tee', colorwayId: 'cw_blk', size: '1', sku: 'CCSS26TEE-BLK01', newSku: 'TP101-BLK-01', shopifySku: 'TEE-BLK-1', onHandQty: 7 },
+    { id: 'pv_1', productId: 'pr_tee', colorwayId: 'cw_blk', size: '1', sku: 'CCSS26TEE-BLK01', newSku: 'TP101-BLK-01', shopifySku: 'TEE-BLK-1', shopifyVariantId: '111', onHandQty: 7 },
     { id: 'pv_2', productId: 'pr_tee', colorwayId: 'cw_blk', size: '2', newSku: 'TP101-BLK-02', onHandQty: null, wholesalePriceCents: 6000 },
   ] })
   await db.product.create({ data: { id: 'pr_bag', name: 'Bean Bag', status: 'ACTIVE', retailPriceCents: 39800 } })
@@ -357,4 +358,74 @@ test('tokens are stored only as hashes', async () => {
   const { access_token, refresh_token } = await connect()
   const raw = (await pg.query<{ s: string }>(`SELECT string_agg(x::text, '|') AS s FROM "McpGrant" x`)).rows[0].s
   assert.ok(!raw.includes(access_token) && !raw.includes(refresh_token))
+})
+
+// ---- live stock from Shopify (Brandon, 16 Oct 2026) ----
+
+test('stock is Shopify\'s live count when Shopify answers, asked only for variants on Shopify', async () => {
+  const asked: string[][] = []
+  const liveStock = async (ids: string[]) => { asked.push(ids); return new Map([['111', 3]]) }
+  const t = MCP_TOOLS.find((x) => x.name === 'list_products')!
+  const data = JSON.parse((await runTool(db, t, { styleNumber: 'TP101' }, caller, { audience: 'claude', liveStock })).content[0].text)
+  assert.deepEqual(asked, [['111']])
+  assert.equal(data.stock.source, 'Shopify, live')
+  const [v1, v2] = data.products[0].variants
+  assert.deepEqual([v1.onHand, v1.stockFrom], [3, undefined], 'Shopify\'s 3, not the app\'s 7')
+  assert.deepEqual([v2.onHand, v2.stockFrom], [null, 'app (not on Shopify)'])
+  assert.equal(data.products[0].onHandTotal, 3)
+  const one = JSON.parse((await runTool(db, MCP_TOOLS.find((x) => x.name === 'get_product')!, { query: 'TP101' }, caller, { audience: 'claude', liveStock })).content[0].text)
+  assert.equal(one.variants[0].onHand, 3)
+})
+
+test('when Shopify does not answer, the app\'s copy is used and the answer says so', async () => {
+  const liveStock = async () => { throw new Error('Shopify took too long') }
+  const t = MCP_TOOLS.find((x) => x.name === 'list_products')!
+  const r = await runTool(db, t, { styleNumber: 'TP101' }, caller, { audience: 'claude', liveStock })
+  assert.equal(r.isError, undefined)
+  const data = JSON.parse(r.content[0].text)
+  assert.match(data.stock.source, /did not answer/)
+  // Said once, at the top, rather than on every variant.
+  assert.deepEqual([data.products[0].variants[0].onHand, data.products[0].variants[0].stockFrom], [7, undefined])
+})
+
+test('the live stock request to Shopify is a read, never a mutation', () => {
+  assert.match(LIVE_STOCK_QUERY, /^query\b/)
+  assert.doesNotMatch(LIVE_STOCK_QUERY, /mutation|Set|Adjust|update|delete|create/i)
+})
+
+// ---- Muse, with its own key, on a narrower set of tools ----
+
+const MUSE_KEY = 'muse-test-key-' + 'x'.repeat(40)
+const museRpc = (body: unknown, headers: Record<string, string>) => new Request(`${ORIGIN}/api/mcp`, {
+  method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers }, body: JSON.stringify(body),
+})
+
+test('Muse connects with its own key only while switched on, and sees no notes, questions or brief', async () => {
+  const before = process.env.MUSE_API_KEY
+  process.env.MUSE_API_KEY = MUSE_KEY
+  try {
+    const list = { jsonrpc: '2.0', id: 1, method: 'tools/list' }
+    assert.equal((await handleMcp(museRpc(list, { authorization: `Bearer ${MUSE_KEY}` }), { db, origin: ORIGIN })).status, 401, 'switched off: no row')
+    await db.mcpClient.create({ data: { id: MUSE_CLIENT_ID, name: 'Muse', redirectUris: [], tokenEndpointAuthMethod: 'muse-key' } })
+    assert.equal((await handleMcp(museRpc(list, { authorization: 'Bearer wrong-key-' + 'y'.repeat(40) }), { db, origin: ORIGIN })).status, 401, 'wrong key')
+    const listed = await (await handleMcp(museRpc(list, { authorization: `Bearer ${MUSE_KEY}` }), { db, origin: ORIGIN })).json()
+    assert.deepEqual(listed.result.tools.map((t: { name: string }) => t.name).sort(), [...MUSE_TOOLS].sort())
+    for (const hidden of ['search_notes', 'list_open_questions', 'get_latest_snapshot']) assert.ok(!MUSE_TOOLS.has(hidden), hidden)
+    const notes = await (await handleMcp(museRpc({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'search_notes', arguments: {} } }, { 'x-api-key': MUSE_KEY }), { db, origin: ORIGIN })).json()
+    assert.ok(notes.error || notes.result?.isError, 'a tool Muse does not have cannot be called')
+    const product = await (await handleMcp(museRpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'get_product', arguments: { query: 'TP101' } } }, { 'x-api-key': MUSE_KEY }), { db, origin: ORIGIN })).json()
+    const p = JSON.parse(product.result.content[0].text)
+    assert.equal(p.name, 'Cleo Tee')
+    assert.equal(p.notes, undefined, 'no team notes for Muse')
+    assert.ok(await db.mcpCall.findFirst({ where: { clientId: MUSE_CLIENT_ID, tool: 'get_product' } }), 'Muse\'s calls are logged as Muse')
+    // A new registration's clean-up never removes Muse's switch.
+    await db.mcpClient.update({ where: { id: MUSE_CLIENT_ID }, data: { createdAt: new Date(Date.now() - 7 * 864e5) } })
+    await registerClient(db, { redirect_uris: [CALLBACK] })
+    assert.ok(await db.mcpClient.findUnique({ where: { id: MUSE_CLIENT_ID } }))
+    await db.mcpClient.delete({ where: { id: MUSE_CLIENT_ID } })
+    assert.equal((await handleMcp(museRpc(list, { authorization: `Bearer ${MUSE_KEY}` }), { db, origin: ORIGIN })).status, 401, 'switched off again')
+  } finally {
+    if (before === undefined) delete process.env.MUSE_API_KEY
+    else process.env.MUSE_API_KEY = before
+  }
 })

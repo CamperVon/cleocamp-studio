@@ -114,7 +114,8 @@ export async function registerClient(db: Db, body: unknown) {
   const name = typeof b.client_name === 'string' ? b.client_name.slice(0, 120) : null
 
   // Clear out registrations nobody ever approved, then cap what is left.
-  await db.mcpClient.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 24 * 3600e3) }, grants: { none: {} } } })
+  // ('muse' is Muse's on switch, not a registration, and never has grants.)
+  await db.mcpClient.deleteMany({ where: { id: { not: 'muse' }, createdAt: { lt: new Date(Date.now() - 24 * 3600e3) }, grants: { none: {} } } })
   if ((await db.mcpClient.count()) >= MAX_CLIENTS) throw new OAuthError('temporarily_unavailable', 'too many registered clients', 503)
 
   const id = `mcp_${newToken()}`

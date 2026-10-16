@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { unauthorized, verifyAccess } from '@/lib/mcp/oauth'
+import { shopifyLiveStock } from '@/lib/mcp/live-stock'
 import { handleMcp } from '@/lib/mcp/server'
 
 // The read-only Claude connector (lib/mcp/server.ts). Outside the app's
@@ -9,7 +10,7 @@ export const maxDuration = 60
 const origin = (req: Request) => new URL(req.url).origin
 
 export async function POST(req: Request) {
-  return handleMcp(req, { db, origin: origin(req) })
+  return handleMcp(req, { db, origin: origin(req), liveStock: shopifyLiveStock })
 }
 
 // Stateless JSON only: no stream to open, no session to end. Without a token

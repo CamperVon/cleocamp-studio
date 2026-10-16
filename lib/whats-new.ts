@@ -100,7 +100,7 @@ export const WHATS_NEW: Update[] = [
   },
   {
     on: '2026-10-16', path: '/connector',
-    text: 'Claude (claude.ai) can now read Studio Mouse directly: products, stock, prices, POs, vendors, open questions, notes and the daily brief. It can\'t change anything. To connect it, add a custom connector in Claude with https://admin.cleocamp.com/api/mcp and tap Allow. The new Claude Connector page (under More) shows what is connected, every look-up, and a Disconnect button.',
+    text: 'Claude (claude.ai) can now read Studio Mouse directly: products, live Shopify stock, prices, POs, vendors, open questions, notes and the daily brief. It can\'t change anything. To connect it, add a custom connector in Claude with https://admin.cleocamp.com/api/mcp and tap Allow. The new Claude Connector page (under More) shows what is connected, every look-up, a Disconnect button, and a switch that lets Muse read products, stock, prices, POs and vendors too.',
   },
 ]
 

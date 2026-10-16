@@ -1,6 +1,7 @@
 import { TZDate } from '@date-fns/tz'
 import { z } from 'zod'
 import type { Prisma } from '@/generated/prisma/client'
+import type { LiveStock } from '@/lib/mcp/live-stock'
 import { poAmounts, poLineLabel } from '@/lib/po'
 import { nextStyleNumber } from '@/lib/style-system'
 
@@ -21,12 +22,19 @@ export class ToolError extends Error {
   constructor(public kind: 'not_found' | 'invalid_input', message: string) { super(message) }
 }
 
+/**
+ * Who is asking, and how to reach Shopify for live stock. Claude (claude.ai,
+ * through OAuth) gets every tool; Muse (its own key) gets the ones that hold
+ * nothing about customers, stores or the team's opinions (MUSE_TOOLS).
+ */
+export type ToolContext = { audience: 'claude' | 'muse'; liveStock?: LiveStock }
+
 export type McpTool<S extends z.ZodRawShape = z.ZodRawShape> = {
   name: string
   title: string
   description: string
   input: S
-  run: (tx: Tx, input: z.infer<z.ZodObject<S>>) => Promise<unknown>
+  run: (tx: Tx, input: z.infer<z.ZodObject<S>>, ctx: ToolContext) => Promise<unknown>
 }
 
 const tool = <S extends z.ZodRawShape>(t: McpTool<S>) => t
@@ -80,28 +88,56 @@ const productSelect = {
   colorways: { where: { active: true }, orderBy: { customerName: 'asc' }, select: { customerName: true, colorCode: true } },
   variants: {
     orderBy: [{ colorway: { customerName: 'asc' } }, { size: 'asc' }],
-    select: { id: true, size: true, sku: true, newSku: true, shopifySku: true, onHandQty: true, retailPriceCents: true, wholesalePriceCents: true, colorway: { select: { customerName: true } } },
+    select: { id: true, size: true, sku: true, newSku: true, shopifySku: true, shopifyVariantId: true, onHandQty: true, retailPriceCents: true, wholesalePriceCents: true, colorway: { select: { customerName: true } } },
   },
 } satisfies Prisma.ProductSelect
 
 type ProductRow = Prisma.ProductGetPayload<{ select: typeof productSelect }>
 
-function variantOut(p: ProductRow, v: ProductRow['variants'][number]) {
+type Live = Map<string, number> | null
+
+/**
+ * Shopify's count right now for every variant in these products, or null if
+ * Shopify could not be asked (not set up, an error, too slow). Never throws:
+ * the answer then carries the app's copy and says so.
+ */
+async function liveFor(rows: ProductRow[], ctx: ToolContext) {
+  const ids = rows.flatMap((p) => p.variants.map((v) => v.shopifyVariantId).filter((id): id is string => !!id))
+  if (!ctx.liveStock) return { live: null as Live, stock: { source: "the app's copy of Shopify (live stock not available here)" } }
+  try {
+    const live = await ctx.liveStock(ids)
+    return { live: live as Live, stock: { source: 'Shopify, live', asOf: new Date().toISOString() } }
+  } catch {
+    return { live: null as Live, stock: { source: "the app's copy of Shopify: Shopify did not answer just now" } }
+  }
+}
+
+/** A variant's stock: Shopify's live number when there is one, else the app's copy, saying which. */
+function onHandOf(v: ProductRow['variants'][number], live: Live) {
+  if (live && v.shopifyVariantId && live.has(v.shopifyVariantId)) return { onHand: live.get(v.shopifyVariantId)!, from: 'shopify' as const }
+  // Null is unknown, never zero (CLAUDE.md §3).
+  return { onHand: qty(v.onHandQty), from: 'app' as const }
+}
+
+function variantOut(p: ProductRow, v: ProductRow['variants'][number], live: Live) {
+  const s = onHandOf(v, live)
   return {
     colorway: v.colorway?.customerName ?? null,
     size: v.size,
     newSku: v.newSku,
     oldSku: v.sku,
     shopifySku: v.shopifySku,
-    // Null is unknown, never zero (CLAUDE.md §3).
-    onHand: qty(v.onHandQty),
+    onHand: s.onHand,
+    // Only said when it is not Shopify's live count: a variant not on
+    // Shopify (a wholesale-only colour), or Shopify not answering.
+    ...(live && s.from === 'app' ? { stockFrom: v.shopifyVariantId ? "app's copy" : 'app (not on Shopify)' } : {}),
     wholesale: usd(v.wholesalePriceCents ?? p.wholesalePriceCents),
     retail: usd(v.retailPriceCents ?? p.retailPriceCents),
   }
 }
 
-function productOut(p: ProductRow) {
-  const known = p.variants.map((v) => qty(v.onHandQty)).filter((n): n is number => n != null)
+function productOut(p: ProductRow, live: Live) {
+  const known = p.variants.map((v) => onHandOf(v, live).onHand).filter((n): n is number => n != null)
   return {
     name: p.name,
     styleNumber: p.style?.number ?? null,
@@ -113,7 +149,7 @@ function productOut(p: ProductRow) {
     sizes: [...new Set(p.variants.map((v) => v.size).filter((s): s is string => !!s))],
     onHandTotal: known.length ? known.reduce((a, b) => a + b, 0) : null,
     onHandUnknownVariants: p.variants.length - known.length,
-    variants: p.variants.map((v) => variantOut(p, v)),
+    variants: p.variants.map((v) => variantOut(p, v, live)),
   }
 }
 
@@ -124,7 +160,8 @@ export const listProducts = tool({
   title: 'List products',
   description:
     'Every product in Studio Mouse with its style number, category, status, colourways, sizes and, per variant, the new style-system SKU, ' +
-    'the old SKU, the SKU Shopify holds, on-hand stock (the app\'s mirror of Shopify; null means unknown, not zero) and wholesale and retail ' +
+    'the old SKU, the SKU Shopify holds, on-hand stock (Shopify\'s live count; "stock" says if it fell back to the app\'s copy; null means ' +
+    'unknown, not zero) and wholesale and retail ' +
     'prices in USD. Use for questions across the range ("what is in stock", "which products are active", "what does the Cleo Tee cost wholesale"). ' +
     'Filter by status, style category code (e.g. "TP") or style number. For one product with its BOM and notes, use get_product.',
   input: {
@@ -132,7 +169,7 @@ export const listProducts = tool({
     category: z.string().max(10).optional().describe('Style category code, e.g. "TP"'),
     styleNumber: z.string().max(20).optional().describe('Exact style number, e.g. "TP101"'),
   },
-  run: async (tx, i) => {
+  run: async (tx, i, ctx) => {
     const rows = await tx.product.findMany({
       where: {
         ...(i.status ? { status: i.status } : {}),
@@ -141,7 +178,8 @@ export const listProducts = tool({
       orderBy: { name: 'asc' },
       select: productSelect,
     })
-    return { count: rows.length, products: rows.map(productOut) }
+    const { live, stock } = await liveFor(rows, ctx)
+    return { count: rows.length, stock, products: rows.map((p) => productOut(p, live)) }
   },
 })
 
@@ -151,9 +189,9 @@ export const getProduct = tool({
   description:
     'One product in full, found by style number ("TP101"), any SKU (new, old or Shopify\'s) or name: its variants with stock and prices, ' +
     'its bill of materials (each component, how much per unit, which sizes or colours it applies to, its supplier and cost) and the notes ' +
-    'kept about it. If the name matches more than one product, the matches come back to choose from.',
+    'kept about it. Stock is Shopify\'s live count. If the name matches more than one product, the matches come back to choose from.',
   input: { query: z.string().min(1).max(120).describe('Style number, SKU or product name') },
-  run: async (tx, i) => {
+  run: async (tx, i, ctx) => {
     const q = i.query.trim()
     const byStyle = await tx.product.findMany({ where: { style: { number: { equals: q, mode: 'insensitive' } } }, select: { id: true, name: true } })
     const bySku = byStyle.length ? [] : await tx.product.findMany({
@@ -176,17 +214,20 @@ export const getProduct = tool({
         orderBy: { component: { name: 'asc' } },
         select: { qtyPerUnit: true, size: true, colorway: true, notes: true, component: { select: { name: true, category: true, unitOfMeasure: true, unitCostCents: true, leadTimeDays: true, vendor: { select: { name: true } } } } },
       }),
-      tx.note.findMany({ where: { entityType: 'PRODUCT', entityId: id, supersededAt: null }, orderBy: { createdAt: 'desc' }, take: 30, select: { content: true, createdAt: true } }),
+      // The team's notes stay inside the company: Muse never gets them (CLAUDE.md §4).
+      ctx.audience === 'muse' ? [] : tx.note.findMany({ where: { entityType: 'PRODUCT', entityId: id, supersededAt: null }, orderBy: { createdAt: 'desc' }, take: 30, select: { content: true, createdAt: true } }),
     ])
+    const { live, stock } = await liveFor([p], ctx)
     return {
-      ...productOut(p),
+      ...productOut(p, live),
+      stock,
       productionLeadTimeDays: p.productionLeadTimeDays,
       bom: bom.map((b) => ({
         component: b.component.name, category: b.component.category, qtyPerUnit: qty(b.qtyPerUnit), unit: b.component.unitOfMeasure,
         onlyFor: [b.colorway, b.size ? `size ${b.size}` : null].filter(Boolean).join(', ') || null,
         supplier: b.component.vendor?.name ?? null, unitCost: usd(b.component.unitCostCents), leadTimeDays: b.component.leadTimeDays,
       })),
-      notes: notes.map((n) => ({ date: laDate(n.createdAt), text: n.content })),
+      ...(ctx.audience === 'muse' ? {} : { notes: notes.map((n) => ({ date: laDate(n.createdAt), text: n.content })) }),
     }
   },
 })
@@ -476,5 +517,15 @@ export const styleSystem = tool({
     }
   },
 })
+
+/**
+ * What Muse may read (Brandon, 16 Oct 2026: Muse can connect too). Muse is an
+ * outside researcher, and what it sees leaves the company (CLAUDE.md §4: never
+ * customers, wholesale stores, bank figures or our people's opinions). So not
+ * the notes, the open questions or the brief, which carry all of those, and
+ * get_product leaves its notes out for Muse. Products, prices, POs, vendors
+ * (already without contact or bank details) and the style system it can read.
+ */
+export const MUSE_TOOLS: ReadonlySet<string> = new Set(['list_products', 'get_product', 'wholesale_price_list', 'list_purchase_orders', 'get_purchase_order', 'list_vendors', 'style_system'])
 
 export const MCP_TOOLS = [listProducts, getProduct, wholesalePriceList, listPurchaseOrders, getPurchaseOrder, listOpenQuestions, searchNotes, getLatestSnapshot, listVendors, styleSystem] as McpTool[]
