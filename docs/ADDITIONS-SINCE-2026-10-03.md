@@ -656,6 +656,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/patterns.ts`, `lib/po-patterns.ts`, `lib/pattern-seed.ts`, `scripts/seed-patterns.ts`, `lib/po-snapshot.ts`, `lib/po-pdf.tsx`, `lib/po-strings.ts`, `app/po/[poNumber]/page.tsx`, `lib/mouse/tools.ts`, `lib/mouse/prompt.ts`, `lib/mouse/records.ts`, `lib/mouse/route.ts`, `lib/mouse/tool-kinds.ts`, `prisma/schema.prisma` (`Pattern`, `PurchaseOrderLine.patternId`, `.snapPattern`), `tests/patterns.test.ts`.
 - **Needs:** nothing beyond the app.
 
+### One task, one line: no duplicate todos
+- **Problem:** the same task piled up. The assistant's instructions told it to check for an open item before adding one, but nothing enforced it, and the morning summary listed one event several times when it reached it from different places (a todo, a calendar entry and a purchase order's due date).
+- **Change:** a pure word-overlap matcher (`lib/mouse/dupes.ts`) that ignores filler and dates in the wording, treats different PO, order or form numbers as different, and is strict for "is this a copy" (most of all the words shared) and looser for "same event on the same day". `create_todo` and `raise_question` return the open item instead of making a copy (with a `separate: true` override for genuinely different tasks). The morning summary drops a calendar entry or a PO's own due line when a todo on the same day already covers it. Each night, without a model, copies already open are offered on Home for one-tap closing, keeping the older item.
+- **Files:** `lib/mouse/dupes.ts`, `lib/mouse/tools.ts` (`alreadyOpen`), `lib/mouse/daily-cheese.ts`, `lib/mouse/tidy.ts` (`suggestDuplicateCloses`), `app/api/cron/nightly/route.ts`, `tests/dupes.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

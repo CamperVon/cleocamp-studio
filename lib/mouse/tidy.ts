@@ -96,3 +96,30 @@ export async function reviewOpenItems(): Promise<{ reviewed: number; suggested: 
   }
   return { reviewed: items.length, suggested: suggestions.length }
 }
+
+/**
+ * Every night, no model: open items that are the same task as an older open
+ * one (lib/mouse/dupes.ts) get a "same as" suggestion on Home, one tap to
+ * close. Brandon, 16 Oct 2026: "lots of doubled up todos. can mouse
+ * self-clean better?" The older item is kept, as it holds the history; a
+ * person still taps, by the rule above. One kept open is not offered again.
+ */
+export async function suggestDuplicateCloses(): Promise<{ suggested: number }> {
+  const { sameThing } = await import('@/lib/mouse/dupes')
+  const items = await db.actionItem.findMany({
+    where: { resolved: false, kind: { in: ['TODO', 'QUESTION'] } },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, title: true, createdAt: true, closeSuggestion: true, keptOpenAt: true },
+  })
+  const now = new Date()
+  let suggested = 0
+  for (let j = 1; j < items.length; j++) {
+    const later = items[j]
+    if (later.closeSuggestion || later.keptOpenAt) continue
+    const earlier = items.slice(0, j).find((e) => sameThing(e.title, later.title))
+    if (!earlier) continue
+    await db.actionItem.update({ where: { id: later.id }, data: { closeSuggestion: `Same as "${earlier.title}", open since ${earlier.createdAt.toISOString().slice(0, 10)}.`, closeSuggestedAt: now } })
+    suggested++
+  }
+  return { suggested }
+}

@@ -26,6 +26,25 @@ export type ToolContext = { threadId?: string; catalogIndex?: boolean }
 const str = (description: string) => ({ type: 'string' as const, description })
 
 /**
+ * The open todo or question this new one would copy, as the tool's answer;
+ * null when there is none (Brandon, 16 Oct 2026: "lots of doubled up todos.
+ * can mouse self-clean better?"). The instructions said to check first and
+ * copies still went up, so code checks. lib/mouse/dupes.ts decides.
+ */
+async function alreadyOpen(i: Record<string, unknown>) {
+  if (i.separate === true) return null
+  const { findSame } = await import('@/lib/mouse/dupes')
+  const open = await db.actionItem.findMany({ where: { resolved: false, kind: { in: ['TODO', 'QUESTION'] } }, select: { id: true, kind: true, title: true, dueDate: true } })
+  const same = findSame(String(i.title ?? ''), open)
+  if (!same) return null
+  return {
+    created: false, alreadyOpen: { id: same.id, kind: same.kind.toLowerCase(), title: same.title, due: same.dueDate?.toISOString().slice(0, 10) ?? null },
+    say: 'This is already open, so no copy was made. If something about it changed (the date, the wording, urgent), change that item with update_todo; ' +
+      'if it is done, resolve_item. Only if it is a genuinely different task, call again with separate: true.',
+  }
+}
+
+/**
  * Inventory writing is OFF unless explicitly switched on.
  *
  * Paused while the studio does its first physical count — anything logged in
@@ -775,6 +794,12 @@ export const TOOLS: Record<string, Tool> = {
           detail: str('Why it matters and what it blocks'),
           entityType: { type: 'string', enum: ['VENDOR','PRODUCT','PRODUCT_VARIANT','COMPONENT','PRODUCTION_RUN','PURCHASE_ORDER','GENERAL'] },
           entityId: str('What it is about, if anything'),
+          separate: {
+            type: 'boolean' as const,
+            description:
+              'Only when an open item looked like the same thing and you have checked it is not: ' +
+              'a genuinely separate task that happens to share its words. Never to get round a copy.',
+          },
           urgent: {
             type: 'boolean' as const,
             description:
@@ -786,7 +811,7 @@ export const TOOLS: Record<string, Tool> = {
         required: ['title'],
       },
     },
-    run: async (i) =>
+    run: async (i) => (await alreadyOpen(i)) ??
       db.actionItem.create({
         data: {
           kind: 'QUESTION', title: i.title, detail: i.detail ?? null,
@@ -923,6 +948,12 @@ export const TOOLS: Record<string, Tool> = {
           dueDate: str('ISO date, e.g. 2026-09-15'),
           entityType: { type: 'string', enum: ['VENDOR','PRODUCT','PRODUCT_VARIANT','COMPONENT','PRODUCTION_RUN','PURCHASE_ORDER','GENERAL'] },
           entityId: str('What it is about, if anything — a product id puts this on that product\'s row'),
+          separate: {
+            type: 'boolean' as const,
+            description:
+              'Only when an open item looked like the same thing and you have checked it is not: ' +
+              'a genuinely separate task that happens to share its words. Never to get round a copy.',
+          },
           urgent: {
             type: 'boolean' as const,
             description:
@@ -934,7 +965,7 @@ export const TOOLS: Record<string, Tool> = {
         required: ['title'],
       },
     },
-    run: async (i) =>
+    run: async (i) => (await alreadyOpen(i)) ??
       db.actionItem.create({
         data: {
           kind: 'TODO', title: i.title, detail: i.detail ?? null,

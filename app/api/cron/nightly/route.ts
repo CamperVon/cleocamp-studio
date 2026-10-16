@@ -371,6 +371,14 @@ export async function GET(req: NextRequest) {
     return reviewOpenItems()
   })
 
+  // ── 7c. Every night: copies of an open item, offered for one-tap closing ──
+  // Code only, no model (lib/mouse/tidy.ts suggestDuplicateCloses).
+  await step('duplicates', async () => {
+    if (dryRun) return { skipped: 'dry run' }
+    const { suggestDuplicateCloses } = await import('@/lib/mouse/tidy')
+    return suggestDuplicateCloses()
+  })
+
   // ── 8. Clear old content nobody needs kept ────────────────
   // A cheap no-op most nights — see lib/mouse/storage-cleanup.ts for the
   // ~60-day gate. dryRun previews counts without touching anything, same as

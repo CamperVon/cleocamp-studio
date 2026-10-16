@@ -118,6 +118,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-16', path: '/purchase-orders',
     text: 'Purchase orders now say which pattern each piece is cut from, like "Pattern: TCO101-P2" under the Cleo Tee line. A style with one pattern fills it in by itself; a Cleo Tee order waits until you tell Mouse P1 (pre-washed fabric) or P2 (PFD). Patterns never touch SKUs or Shopify.',
   },
+  {
+    on: '2026-10-16',
+    text: 'Fewer doubled-up todos. The Daily Cheese now says each thing once (the Antonio\'s pickup was coming as a todo, a calendar entry and PO 2360 all at once), Mouse will not add a todo or question that is already open, and any copies already there show up on Home each morning for a one-tap close.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

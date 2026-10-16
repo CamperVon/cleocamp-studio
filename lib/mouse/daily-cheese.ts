@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { laMidnight } from '@/lib/dates'
 import { quoteOfTheDay } from '@/lib/quotes'
 import { URGENT_WINDOW_DAYS } from '@/lib/production-view'
+import { sameDayRepeats, type ListLine } from '@/lib/mouse/dupes'
 
 /**
  * The Daily Cheese — Cleo, 17 Sept 2026, after workshopping it turn by turn:
@@ -31,7 +32,7 @@ const DAY = 864e5
  */
 export const APP = 'https://admin.cleocamp.com'
 
-type Item = { on: Date; tag: string; sentence: string; href?: string }
+type Item = { on: Date; tag: string; sentence: string; href?: string; from?: ListLine }
 
 /**
  * The "New" block at the top of an edition: changes to the app no earlier
@@ -58,6 +59,9 @@ export function newLines(app: Array<{ text: string; path?: string }>, fromShopif
 // between the two is off by most of a day and can round PO 2371 (genuinely 2
 // days late on 17 Sept, due 15 Sept) down to 1. Reconstructing `on` at UTC
 // midnight from its own ISO date first removes that offset before diffing.
+/** The day a date belongs to, for matching lines on one list: noon-Pacific and UTC-midnight dates both land on their own ISO date. */
+const isoDay = (on: Date) => on.toISOString().slice(0, 10)
+
 function daysLate(on: Date, today: Date): number {
   const onMidnight = new Date(on.toISOString().slice(0, 10) + 'T00:00:00Z')
   return Math.round((today.getTime() - onMidnight.getTime()) / DAY)
@@ -137,7 +141,7 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
         ? `PO ${po.poNumber} (${po.vendor.name}, ${what}) is overdue. Confirm when it will ship.`
         : `PO ${po.poNumber} (${po.vendor.name}, ${what}). ${duePhrase(on, today)} Confirm it is on track.`
 
-    out.push({ on, tag: staleDraft ? 'DRAFT' : tag(on, today), sentence, href: `${APP}/po/${encodeURIComponent(po.poNumber)}` })
+    out.push({ on, tag: staleDraft ? 'DRAFT' : tag(on, today), sentence, href: `${APP}/po/${encodeURIComponent(po.poNumber)}`, from: { day: isoDay(on), source: 'po', text: `PO ${po.poNumber} ${po.vendor.name} ${what}`, poNumber: po.poNumber } })
   }
 
   // ── Runs at a maker ───────────────────────────────────────
@@ -154,7 +158,7 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
     const sentence = isPast && isReallyOverdue(r.expectedReadyAt, today)
       ? `${r.product.name} at ${vendor} is overdue. Confirm when it will be ready.`
       : `${r.product.name} at ${vendor}. ${duePhrase(r.expectedReadyAt, today)} Confirm it is ready.`
-    out.push({ on: r.expectedReadyAt, tag: tag(r.expectedReadyAt, today), sentence, href: `${APP}/products#rec-${r.productId}` })
+    out.push({ on: r.expectedReadyAt, tag: tag(r.expectedReadyAt, today), sentence, href: `${APP}/products#rec-${r.productId}`, from: { day: isoDay(r.expectedReadyAt), source: 'run', text: `${r.product.name} ${vendor}` } })
   }
 
   // ── Calendar — only when Jane is actually named ────────────
@@ -166,7 +170,7 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
     if (!mentionsJane) continue
     const sentence = `${period(e.title)} ${duePhrase(e.date, today)}`
     // The calendar lives on Home; there is no page per entry.
-    out.push({ on: e.date, tag: tag(e.date, today), sentence, href: `${APP}/` })
+    out.push({ on: e.date, tag: tag(e.date, today), sentence, href: `${APP}/`, from: { day: isoDay(e.date), source: 'calendar', text: e.title } })
   }
 
   // ── Todos ─────────────────────────────────────────────────
@@ -190,8 +194,14 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
       : urgentNoDate
         ? `${period(i.title)} This is urgent.`
         : `${period(i.title)} ${duePhrase(i.dueDate!, today)}`
-    out.push({ on, tag: urgentNoDate ? 'URGENT' : tag(on, today), sentence, href: `${APP}/items#rec-${i.id}` })
+    out.push({ on, tag: urgentNoDate ? 'URGENT' : tag(on, today), sentence, href: `${APP}/items#rec-${i.id}`, from: { day: isoDay(on), source: 'todo', text: i.title } })
   }
+
+  // One event, one line (Brandon, 16 Oct 2026: "lots of doubled up todos").
+  // The White Cleo Tee pickup came as a todo, a calendar entry and PO 2360
+  // coming due, all on the same morning. lib/mouse/dupes.ts decides.
+  const repeats = sameDayRepeats(out.map((i) => i.from!))
+  for (let n = out.length - 1; n >= 0; n--) if (repeats.has(n)) out.splice(n, 1)
 
   out.sort((a, b) => a.on.getTime() - b.on.getTime())
 

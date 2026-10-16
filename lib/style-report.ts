@@ -14,13 +14,20 @@ export type ReportInput = {
   proposed: { styles: string[]; codes: string[] }
 }
 
+/**
+ * Products left without a number on purpose, so the morning report does not
+ * nag about a decision someone is already holding. Brandon, 16 Oct 2026:
+ * "standby on dolce". Once one gets a number it is simply not missing any more.
+ */
+export const NUMBER_ON_HOLD = new Set(['Dolce'])
+
 const few = (xs: string[], n = 4) => xs.slice(0, n).join(', ') + (xs.length > n ? `, and ${xs.length - n} more` : '')
 
 /** The report's lines; ["Style system: nothing outstanding."] when there is nothing. Pure. */
 export function styleReportLines(r: ReportInput): string[] {
   const out: string[] = []
   const live = r.products.filter((p) => p.status !== 'SUNSETTED')
-  const noStyle = live.filter((p) => !p.style).map((p) => p.name)
+  const noStyle = live.filter((p) => !p.style && !NUMBER_ON_HOLD.has(p.name)).map((p) => p.name)
   if (noStyle.length) out.push(`${noStyle.length} product${noStyle.length === 1 ? ' has' : 's have'} no style number: ${few(noStyle)}.`)
 
   const settled = r.variants.filter((v) => v.styleNumber && v.styleStatus !== 'PROPOSED')
