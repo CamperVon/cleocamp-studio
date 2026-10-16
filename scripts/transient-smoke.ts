@@ -29,6 +29,10 @@
  * 8,000-token target, the smoke check fails, so no bake-off is paid for that
  * would miss the size gate.
  */
+// This container sets ANTHROPIC_BASE_URL for its own use; the SDK would send
+// these requests there. Pinned to Anthropic's public API, unless a dry run
+// points MOUSE_API_BASE_URL at a local fake.
+process.env.ANTHROPIC_BASE_URL = process.env.MOUSE_API_BASE_URL ?? 'https://api.anthropic.com'
 import Anthropic from '@anthropic-ai/sdk'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'

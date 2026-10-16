@@ -43,6 +43,10 @@
  * Output: every pair side by side, the claims, <outDir>/bakeoff.json, and
  * <outDir>/review.json for the person's verdicts.
  */
+// This container sets ANTHROPIC_BASE_URL for its own use; the SDK would send
+// these requests there. Pinned to Anthropic's public API, unless a dry run
+// points MOUSE_API_BASE_URL at a local fake.
+process.env.ANTHROPIC_BASE_URL = process.env.MOUSE_API_BASE_URL ?? 'https://api.anthropic.com'
 process.env.EMAIL_DRY_RUN = '1'
 import Anthropic from '@anthropic-ai/sdk'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
