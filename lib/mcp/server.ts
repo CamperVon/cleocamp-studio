@@ -25,7 +25,8 @@ export const INSTRUCTIONS =
   'Studio Mouse is the internal admin app of Cleo Camp, a small apparel brand in Los Angeles. These tools read its records: products, stock, ' +
   'prices, purchase orders, vendors, open questions, notes and the daily brief; none of those change anything. Two pass something on: tell_mouse ' +
   '(a fact, decision or change for Studio Mouse, which acts on it at once as if the person typed it) and tell_claude_code (an idea or fix for the ' +
-  'app itself). Use them only for what the person asks you to pass on. Stock is Shopify\'s live count; ' +
+  'app itself). Use them only for what the person asks you to pass on, and only after showing them the exact words and getting their yes ' +
+  '(Brandon, 16 Oct 2026: double-approve everything, no accidents). Stock is Shopify\'s live count; ' +
   'if Shopify does not answer, the app\'s copy is used and the answer says so (null means unknown, not zero; below zero is pre-orders). Prices are ' +
   'USD unless a purchase order says otherwise.'
 

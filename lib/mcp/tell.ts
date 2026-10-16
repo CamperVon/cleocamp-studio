@@ -36,6 +36,8 @@ export const tellMouse = tool({
   title: 'Tell Studio Mouse',
   writes: true,
   description:
+    'ALWAYS CONFIRM FIRST: before calling this, show the person the exact message you will send, word for word, and call it only after they ' +
+    'say yes to that message in this conversation. Never call it on your own initiative or on an earlier yes to something else. ' +
     'Pass something to Studio Mouse, the assistant inside the app, as if the person you are talking with typed it in its chat: a decision, ' +
     'a fact to remember, a change to record (stock received, a price, a due date), or a question for it. Mouse acts on it right away and its ' +
     'reply comes back. Use for anything about the business itself. Write it as that person would, plainly, with every detail Mouse needs ' +
@@ -68,6 +70,7 @@ export const tellClaudeCode = tool({
   title: 'Tell Claude Code (the app\'s builder)',
   writes: true,
   description:
+    'ALWAYS CONFIRM FIRST: show the person the exact request, word for word, and call this only after they say yes to it in this conversation. ' +
     'Leave a request for Claude Code, which builds and fixes the Studio Mouse app and reads these before any other work: an idea for how the ' +
     'app should work, a feature, something Mouse got wrong or cannot do, a page that should show something. Say what the person wants and why, ' +
     'with an example. Nothing in the business records changes. For a fact, decision or change to the records themselves, use tell_mouse.',

@@ -222,7 +222,11 @@ data. That must not happen again.
   then change records unchecked; so it needs an approval made with a
   personal sign-in (Mouse must know who is speaking), every exchange is kept
   in the "From Claude" conversation on the Claude Connector page, and Muse
-  never gets either tool. Never add another tool that writes or sends
+  never gets either tool. Both tools' descriptions and the server's
+  instructions tell Claude to show the exact words and wait for a yes
+  before calling (Brandon, 16 Oct 2026: "double-approve everything with me
+  so we have no accidents"); claude.ai's own per-tool approval setting is
+  the second check. Never add another tool that writes or sends
   anything, here or in Shopify, QuickBooks or Resend: that is a separate
   project with its own review. The one outside call is a read: stock comes live from
   Shopify (`lib/mcp/live-stock.ts`, Brandon 16 Oct 2026: "i would like the
