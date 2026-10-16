@@ -7,6 +7,7 @@ import { coreSystemBlocks, layoutTransientMessages, systemBlocks } from '@/lib/m
 import { buildDirectory, buildTransientState, steppedHistory, transientStateOn, TRANSIENT_RULES, type TransientAccess } from '@/lib/mouse/transient'
 import { cacheDiagnosticsOn, chainKey, lastResponseId, prefixHashes } from '@/lib/mouse/cache-diagnostics'
 import { SYSTEM_RULES } from '@/lib/mouse/prompt'
+import { ownWords } from '@/lib/mouse/route'
 import { TOOLS, TOOL_DEFS, type ToolContext } from '@/lib/mouse/tools'
 import { refreshForecastsAndAlerts } from '@/lib/forecast'
 import { recordUsage } from '@/lib/mouse/usage'
@@ -295,9 +296,40 @@ const STOCK_CHECK = (lines: string[]) =>
   'wrong, fix it now with correct_inventory_event and say plainly what you corrected. If they ' +
   'are all right, give your answer, stating each change as before → after. Do not mention this check.'
 
-export async function runAgent(opts: {
+/**
+ * Every run is a turn the tools can see (lib/receipt-gate.ts): an id, who it
+ * is for, and the person's own words, so stock added on a number nobody
+ * stated is held for their yes whatever context the model saw. The held
+ * lines are added to the reply by code, so the person always sees exactly
+ * what is waiting; a practice run holds nothing.
+ */
+export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
+  const { inTurn, heldThisTurn, heldBlock } = await import('@/lib/receipt-gate')
+  const { randomUUID } = await import('node:crypto')
+  const { currentActor } = await import('@/lib/mouse/actor')
+  const turn = { id: randomUUID(), personId: currentActor(), words: opts.personWords ?? [] }
+  const result = await inTurn(turn, () => runAgentInTurn(opts))
+  if (opts.practice) return result
+  const held = await heldThisTurn(turn.id).catch(() => [] as string[])
+  if (!held.length) return result
+  const block = heldBlock(held)
+  const said = result.text.trim()
+  return { ...result, text: !said || /^NO_REPLY\b/.test(said) ? block : `${result.text}\n\n${block}` }
+}
+
+export type RunAgentOptions = Parameters<typeof runAgentInTurn>[0]
+
+async function runAgentInTurn(opts: {
   /** What this run is for. Becomes the first user message. */
   instruction: string
+  /**
+   * The person's own words this turn and their last few messages, and
+   * nothing else: not Mouse's replies, not quoted mail, not a page's
+   * wrapper text. A stock receipt, count or upward adjustment goes in only
+   * on a number found here (lib/receipt-gate.ts); left out, every one is
+   * held for a yes.
+   */
+  personWords?: string[]
   /** Which door this came through, for the usage log — "chat", "nightly-pass", … */
   source: string
   /** Prior turns, for chat. Omit for one-shot runs. */
@@ -976,6 +1008,9 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
   const prefetch = transientOn ? null : await prefetchForMessage(message, { catalogue: catalogIndex })
   const base: Parameters<typeof runAgent>[0] = {
     instruction: message,
+    // The person's words, this message and their last three: a stock number
+    // they gave stands (lib/receipt-gate.ts); Mouse's own replies never do.
+    personWords: [message, ...before.filter((m) => m.role === 'USER').slice(-3).map((m) => m.content)].map((t) => ownWords(t).text),
     source,
     attachments,
     notes: 'index',

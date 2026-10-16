@@ -4,7 +4,7 @@ import { htmlToText } from '@/lib/html-to-text'
 import { fileAttachments, readableAttachmentsIn, textFromAttachments } from '@/lib/inbound-body'
 import { personFromInboundAddress } from '@/lib/mouse/identity'
 import { asPerson } from '@/lib/mouse/actor'
-import { NOT_FROM_EMAIL, asEmailRun, inboundFacts, speaksToMouse } from '@/lib/mouse/team-mail'
+import { NOT_FROM_EMAIL, asEmailRun, inboundFacts, speaksToMouse, ownEmailWords } from '@/lib/mouse/team-mail'
 
 /**
  * The nightly think.
@@ -155,6 +155,9 @@ async function answerTeamQuestions(mail: Array<{ id: string; fromAddress: string
     const r = await asPerson(who.id, () => asEmailRun(() => runAgent({
       source: apply ? 'email-apply' : 'email-answer',
       instruction: `${p.name} emailed you.\n\nSubject: ${m.subject ?? '(none)'}\n\n${m.body}${fileNote}`,
+      // Their own words, above anything quoted: a stock number in them stands
+      // (lib/receipt-gate.ts), one in quoted mail or Mouse's last reply does not.
+      personWords: [`${m.subject ?? ''}\n${ownEmailWords(m.body)}`],
       attachments: att.files,
       extraRules: apply ? APPLY_RULES : facts.toMouse ? ANSWER_RULES : `${ANSWER_RULES}\n${CC_RULES}`,
       allowedTools: apply ? allTools.filter((t) => !NOT_FROM_EMAIL.has(t)) : ANSWER_TOOLS,

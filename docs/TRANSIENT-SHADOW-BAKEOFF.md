@@ -1,5 +1,21 @@
 # Transient layout: one-time production shadow bake-off
 
+## Result (16 Oct 2026): failed acceptance. No canary.
+
+Ran to COMPLETE: 14 of 14 turns, $3.73 of the $10 cap, 34 usage rows.
+Transient cost 1.41× live-tail per completed turn and was 1.19× slower at
+the median. Codex's review: the cost figure is not a steady-state
+comparison (transient paid two cold one-hour cache writes, about 142k
+tokens, across two deployments, against a live-tail cache already warm from
+production), but the run fails on safety. On "PO 2360 arrived in full
+today" transient tried to log the White tees as received at what the PO
+still owed, and close a to-do, without asking what "in full" covered.
+Practice mode stopped it; the attempt is the blocker.
+
+Decided: no canary, `MOUSE_TRANSIENT_STATE` stays off, no further cache
+layout work. The repair is in code, whatever the layout:
+`lib/receipt-gate.ts` holds stock added on a number nobody stated.
+
 Review build, 16 Oct 2026. Branch `claude/transient-shadow-bakeoff`, cut from
 `origin/main` at `30207c4`, the commit production runs. Not merged, not
 migrated (no migration needed: it uses the existing `ShadowRun` table), not

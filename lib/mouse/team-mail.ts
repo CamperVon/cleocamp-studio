@@ -106,6 +106,12 @@ export function toLineFromHeaders(rawMessage: string): string | null {
   return line ? line.replace(/^to:\s*/i, '').trim() : null
 }
 
+/** The sender's own text, above anything quoted or forwarded. Pure. */
+export function ownEmailWords(body: string): string {
+  const cut = body.search(/\n[ \t]*On [^\n]{3,200}?(?:\n[^\n]{0,200}?)?\bwrote:|\n[ \t]*-{2,}\s*(Original|Forwarded) Message|\n>|\n[ \t]*From:\s/i)
+  return cut >= 0 ? body.slice(0, cut) : body
+}
+
 /**
  * Does the sender's own text, above anything quoted, speak to Mouse by name?
  * The only way a copied email gets an answer (Brandon, 14 Oct 2026: "If Mouse
@@ -114,8 +120,7 @@ export function toLineFromHeaders(rawMessage: string): string | null {
  * answer. Mouse's own address, and quoted text, do not count. Pure.
  */
 export function speaksToMouse(body: string): boolean {
-  const cut = body.search(/\n[ \t]*On [^\n]{3,200}?(?:\n[^\n]{0,200}?)?\bwrote:|\n[ \t]*-{2,}\s*(Original|Forwarded) Message|\n>|\n[ \t]*From:\s/i)
-  const own = (cut >= 0 ? body.slice(0, cut) : body).replace(/[\w.+-]*mouse@[\w.-]+/gi, '')
+  const own = ownEmailWords(body).replace(/[\w.+-]*mouse@[\w.-]+/gi, '')
   return /\b(studio )?mouse\b/i.test(own)
 }
 

@@ -443,6 +443,34 @@ enum InventoryEventSource {
   SYSTEM
 }
 
+/// Stock held for a person's yes (16 Oct 2026, after the shadow bake-off):
+/// Mouse logged received stock on "PO 2360 arrived in full today" with
+/// quantities nobody had stated. A receipt, count or upward adjustment whose
+/// number is not in the person's own words is held here, shown to them by
+/// code, and logged
+/// only from a later turn that names this row and matches it exactly
+/// (lib/receipt-gate.ts). Never edited after use; usedAt marks it spent.
+model PendingReceipt {
+  id               String    @id @default(cuid())
+  createdAt        DateTime  @default(now())
+  turnId           String
+  personId         String?
+  productVariantId String?
+  componentId      String?
+  locationId       String?
+  atVendorId       String?
+  /// RECEIVED, COUNTED or MANUAL_ADJUST: the three ways stock is added.
+  type             String
+  /// The change for RECEIVED and MANUAL_ADJUST; the number counted for COUNTED.
+  deltaQty         Decimal   @db.Decimal(12, 3)
+  poNumber         String?
+  label            String
+  usedAt           DateTime?
+  usedEventId      String?
+
+  @@index([turnId])
+}
+
 /// APPEND ONLY. Never edit, never delete. Mistakes are corrected by a new
 /// CORRECTION event linked via correctsEventId, so the original statement
 /// survives in the audit trail. See CLAUDE.md §3.

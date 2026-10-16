@@ -138,6 +138,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-16', path: '/components',
     text: 'You can tell Mouse a component goes into no product on purpose, like the gold safety pins and the brass rivets. They stay counted and stop showing up as "on no product" each morning.',
   },
+  {
+    on: '2026-10-16',
+    text: 'When you tell Mouse a delivery came in or give it a count without the numbers ("PO 2360 arrived in full"), it no longer fills them in from the order. It shows you the exact lines it would log and waits for your yes, or your real numbers.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

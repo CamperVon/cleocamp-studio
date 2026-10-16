@@ -686,6 +686,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `prisma/schema.prisma`, `prisma/migrations/20261016250000_component_off_products`, `lib/bom.ts` (`onNoProduct`), `lib/mouse/daily-cheese.ts`, `lib/mouse/tools.ts`, `tests/component-units.test.ts`.
 - **Needs:** nothing beyond the app.
 
+### Stock added only on a number a person gave
+- **Problem:** told "PO 2360 arrived in full today", the assistant in one prompt layout logged part of the order as received, at the quantities the PO still owed, and closed a related to-do, before anyone had said what came. Another layout asked first. Whether it asked depended on the context it saw.
+- **Change:** code decides. A RECEIVED entry, a COUNTED number or an upward MANUAL_ADJUST goes in at once only when its quantity is a number found in the person's own words: their message and their last three, or the sender's own text above any quoted mail. Numbers the assistant wrote, quoted mail, sizes, dates, times, order and PO numbers do not count. Otherwise the entry is held (`PendingReceipt`) and code adds the exact held lines to the reply, so the person always sees them. It is logged only from a later turn, by the same person, naming the held line, with the same item, place, number and PO; a held line is spent once and lapses after two days. Every run is a turn the tools can read (an id, the person, their words) through AsyncLocalStorage set in `runAgent`; a practice run holds nothing.
+- **Files:** `lib/receipt-gate.ts`, `lib/mouse/agent.ts` (`runAgent`, `personWords`), `lib/mouse/tools.ts` (`log_inventory_event`, `heldReceiptId`, `heldLabel`), `lib/mouse/team-mail.ts` (`ownEmailWords`), `lib/mouse/nightly-pass.ts`, `app/(main)/items/actions.ts`, `app/(main)/in-flight-actions.ts`, `app/(main)/support/actions.ts`, `prisma/schema.prisma` (`PendingReceipt`), `prisma/migrations/20261016260000_pending_receipt`, `tests/receipt-gate.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

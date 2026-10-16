@@ -409,6 +409,112 @@ export function wholesaleLineStock(reduceStock: boolean, shopifyVariantId: strin
   return { noStock: !reduceStock, note: null }
 }
 
+/** The held line as the person reads it: "PO 2360 · Cleo Tee / White / 1 · 510 received at the studio". */
+async function heldLabel(c: { type: string; productVariantId: string | null; componentId: string | null; locationId: string | null; atVendorId: string | null; deltaQty: number; poNumber: string | null }) {
+  const [v, comp, loc, vendor] = await Promise.all([
+    c.productVariantId ? db.productVariant.findUnique({ where: { id: c.productVariantId }, select: { size: true, product: { select: { name: true } }, colorway: { select: { customerName: true } } } }) : null,
+    c.componentId ? db.component.findUnique({ where: { id: c.componentId }, select: { name: true, unitOfMeasure: true } }) : null,
+    c.locationId ? db.location.findUnique({ where: { id: c.locationId }, select: { name: true } }) : null,
+    c.atVendorId ? db.vendor.findUnique({ where: { id: c.atVendorId }, select: { name: true } }) : null,
+  ])
+  const item = v ? [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ') : comp?.name ?? 'unknown item'
+  const unit = comp ? ` ${comp.unitOfMeasure}` : ''
+  const what = c.type === 'COUNTED' ? `counted ${c.deltaQty}${unit}` : c.type === 'RECEIVED' ? `${c.deltaQty}${unit} received` : `${c.deltaQty}${unit} added (adjustment)`
+  const where = vendor ? ` at ${vendor.name}` : loc ? ` at ${loc.name}` : comp ? ' at the studio' : ''
+  return `${c.poNumber ? `PO ${c.poNumber} · ` : ''}${item} · ${what}${where}`
+}
+
+/** Paused inventory: noted as a todo to apply after the count, not applied. */
+async function logWhilePaused(i: Parameters<Tool['run']>[0]) {
+  const item = await db.actionItem.create({
+    data: {
+      kind: 'TODO',
+      // A count carries countedQty, not deltaQty: the title read "counted undefined".
+      title: `Apply once counting is done: ${i.type.toLowerCase().replace(/_/g, ' ')} ${i.type === 'COUNTED' ? i.countedQty : i.deltaQty}`,
+      detail:
+        `Studio Mouse was told about this while inventory writing was paused, so it ` +
+        `was not applied. ${JSON.stringify(i)}`,
+      source: 'CHAT',
+    },
+    select: { id: true },
+  })
+  return {
+    applied: false,
+    reason:
+      'Inventory writing is paused until the studio count is done. Recorded as a ' +
+      'todo so it can be applied afterwards — tell the user it was noted but not applied.',
+    todoId: item.id,
+  }
+}
+
+/**
+ * log_inventory_event past the paused check and the held-for-a-yes gate: the
+ * duplicate and over-the-PO checks, the write, and the PO tick-off.
+ */
+async function logEventChecked(i: Parameters<Tool['run']>[0]) {
+  if (i.separateDelivery !== true && i.type !== 'COUNTED' && typeof i.deltaQty === 'number') {
+    // Anything already on file that this might be: the same change in the
+    // last day, or another receipt of the same item in the last week. Who
+    // logged it is named, so a second person logging the same pickup hears
+    // that Jane already did. Receipts since reversed do not count.
+    const recent = await db.inventoryEvent.findMany({
+      where: {
+        componentId: i.componentId ?? null, productVariantId: i.productVariantId ?? null,
+        type: i.type, createdAt: { gte: new Date(Date.now() - Math.max(DUPLICATE_WINDOW_MS, SAME_DELIVERY_WINDOW_MS)) },
+        correctedBy: { none: {} },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, componentId: true, productVariantId: true, locationId: true, atVendorId: true, type: true, deltaQty: true, createdAt: true, note: true, createdBy: { select: { name: true } } },
+    })
+    const asKey = (e: (typeof recent)[number]) => ({ ...e, deltaQty: Number(e.deltaQty) })
+    const same = recent.find((e) => isRepeatOf(i, asKey(e)))
+    const earlier = same ?? recent.find((e) => looksLikeSameDelivery(i, asKey(e)))
+    if (earlier) {
+      const when = earlier.createdAt.toLocaleString('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      const who = earlier.createdBy?.name ?? 'someone (no name on it)'
+      return {
+        applied: false,
+        possibleDuplicateOf: earlier.id,
+        error:
+          `Not logged yet. ${who} already logged ${i.type} ${Number(earlier.deltaQty)} of this item on ${when} ` +
+          `("${earlier.note ?? ''}"), and it is already applied everywhere it goes. ` +
+          (same ? 'This is the exact same change. ' : 'It may be the same delivery told twice, or told before it happened. ') +
+          `Ask the person, naming that entry: is this the same one, or a second, separate delivery? ` +
+          `Only if they say it is a second one, call again with separateDelivery: true. If they say the ` +
+          `earlier one never happened, reverse it with correct_inventory_event and log this one.`,
+      }
+    }
+  }
+  // More in than the PO still owes means it was probably logged already,
+  // or the PO is wrong. Either way a person should say which.
+  if (i.separateDelivery !== true && i.type === 'RECEIVED' && typeof i.deltaQty === 'number' && i.deltaQty > 0) {
+    const { owedOnPo, poNumberIn } = await import('@/lib/po-receipts')
+    const po = (typeof i.purchaseOrderNumber === 'string' && i.purchaseOrderNumber.replace(/\D/g, '')) || poNumberIn(i.note)
+    const owed = po ? await owedOnPo(po, { productVariantId: i.productVariantId, componentId: i.componentId }) : null
+    if (owed !== null && i.deltaQty > owed) {
+      return {
+        applied: false,
+        error:
+          `Not logged yet. PO ${po} only has ${owed} of this still owed, and this would log ${i.deltaQty} in. ` +
+          `Either some of it was logged already or the vendor sent extra. Ask the person which, naming the PO. ` +
+          `If they confirm these really are ${i.deltaQty} more, call again with separateDelivery: true.`,
+      }
+    }
+  }
+  const r = await writeEvent(i)
+  // Tick the delivery off on its PO, from the number given or the one in
+  // the note (Mouse nearly always writes "PO 2362" there).
+  if (i.type === 'RECEIVED' && r.eventId && typeof i.deltaQty === 'number' && i.deltaQty > 0) {
+    const { receiveOnPo, poNumberIn } = await import('@/lib/po-receipts')
+    const po = (typeof i.purchaseOrderNumber === 'string' && i.purchaseOrderNumber.replace(/\D/g, '')) || poNumberIn(i.note)
+    if (po) {
+      const t = await receiveOnPo(po, { productVariantId: i.productVariantId, componentId: i.componentId }, i.deltaQty)
+      return { ...r, purchaseOrder: t.message }
+    }
+  }
+  return r
+}
+
 export const TOOLS: Record<string, Tool> = {
   log_inventory_event: {
     def: {
@@ -424,6 +530,10 @@ export const TOOLS: Record<string, Tool> = {
         'If our own count for a variant is unknown, you do not need to ask the user to sync ' +
         'from Shopify first — this checks Shopify live on its own and uses that as the ' +
         'baseline. Just mention in your reply that it did, so it is not silent.\n\n' +
+        'A receipt, a count or an upward adjustment goes in only when its number is one the person ' +
+        'wrote. Otherwise code holds it, shows them the exact line, and it is logged from their next ' +
+        'message with heldReceiptId. "Arrived in full", "the rest came", "all of it" state no number: ' +
+        'ask what came, never fill it in from what the PO still owes.\n\n' +
         'Goods arriving on a purchase order: type RECEIVED with purchaseOrderNumber, so the PO ' +
         'shows them received and what is still owed stays true. When asked what a PO still owes, ' +
         'answer from the PO\'s received quantities, and check logged stock before ever saying ' +
@@ -454,6 +564,11 @@ export const TOOLS: Record<string, Tool> = {
           countedQty: num('For COUNTED only: the absolute number stated, AT THE PLACE GIVEN — not a total across every place this component lives.'),
           note: str('Who it went to, why, anything worth keeping.'),
           purchaseOrderNumber: str('For RECEIVED on a purchase order: its number, e.g. "2362". Ticks the delivery off on the PO.'),
+          heldReceiptId: str(
+            'Only when this tool held the entry for a yes in an EARLIER turn (it returned "held") and the person ' +
+            'has now said yes to that exact line: its id, with every other field exactly as held. Code refuses it ' +
+            'in the same turn it was held, for anyone else, or for a different item, place, number or PO.',
+          ),
           separateDelivery: {
             type: 'boolean' as const,
             description:
@@ -473,88 +588,41 @@ export const TOOLS: Record<string, Tool> = {
       },
     },
     run: async (i) => {
-      if (!inventoryWritesEnabled()) {
-        const item = await db.actionItem.create({
-          data: {
-            kind: 'TODO',
-            // A count carries countedQty, not deltaQty: the title read "counted undefined".
-            title: `Apply once counting is done: ${i.type.toLowerCase().replace(/_/g, ' ')} ${i.type === 'COUNTED' ? i.countedQty : i.deltaQty}`,
-            detail:
-              `Studio Mouse was told about this while inventory writing was paused, so it ` +
-              `was not applied. ${JSON.stringify(i)}`,
-            source: 'CHAT',
-          },
-          select: { id: true },
-        })
-        return {
-          applied: false,
-          reason:
-            'Inventory writing is paused until the studio count is done. Recorded as a ' +
-            'todo so it can be applied afterwards — tell the user it was noted but not applied.',
-          todoId: item.id,
-        }
-      }
-      if (i.separateDelivery !== true && i.type !== 'COUNTED' && typeof i.deltaQty === 'number') {
-        // Anything already on file that this might be: the same change in the
-        // last day, or another receipt of the same item in the last week. Who
-        // logged it is named, so a second person logging the same pickup hears
-        // that Jane already did. Receipts since reversed do not count.
-        const recent = await db.inventoryEvent.findMany({
-          where: {
-            componentId: i.componentId ?? null, productVariantId: i.productVariantId ?? null,
-            type: i.type, createdAt: { gte: new Date(Date.now() - Math.max(DUPLICATE_WINDOW_MS, SAME_DELIVERY_WINDOW_MS)) },
-            correctedBy: { none: {} },
-          },
-          orderBy: { createdAt: 'desc' },
-          select: { id: true, componentId: true, productVariantId: true, locationId: true, atVendorId: true, type: true, deltaQty: true, createdAt: true, note: true, createdBy: { select: { name: true } } },
-        })
-        const asKey = (e: (typeof recent)[number]) => ({ ...e, deltaQty: Number(e.deltaQty) })
-        const same = recent.find((e) => isRepeatOf(i, asKey(e)))
-        const earlier = same ?? recent.find((e) => looksLikeSameDelivery(i, asKey(e)))
-        if (earlier) {
-          const when = earlier.createdAt.toLocaleString('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-          const who = earlier.createdBy?.name ?? 'someone (no name on it)'
+      if (!inventoryWritesEnabled()) return logWhilePaused(i)
+      // Stock added on a number nobody stated is held for a yes (16 Oct
+      // 2026, the shadow bake-off's "PO 2360 arrived in full today").
+      const gate = await import('@/lib/receipt-gate')
+      const qty = i.type === 'COUNTED' ? i.countedQty : i.deltaQty
+      let heldId: string | null = null
+      if (gate.HELD_TYPES.has(i.type) && typeof qty === 'number' && (i.type === 'COUNTED' || qty > 0)) {
+        const { poNumberIn } = await import('@/lib/po-receipts')
+        const po = i.type === 'RECEIVED' ? ((typeof i.purchaseOrderNumber === 'string' && i.purchaseOrderNumber.replace(/\D/g, '')) || poNumberIn(i.note) || null) : null
+        const call = { type: i.type, productVariantId: i.productVariantId ?? null, componentId: i.componentId ?? null, locationId: i.locationId ?? null, atVendorId: i.atVendorId ?? null, deltaQty: qty, poNumber: po }
+        if (typeof i.heldReceiptId === 'string' && i.heldReceiptId) {
+          const why = await gate.claimHeld(i.heldReceiptId, call)
+          if (why) return { applied: false, error: `Not logged. ${why}` }
+          heldId = i.heldReceiptId
+        } else if (gate.receiptNeedsYes(qty, gate.currentTurn(), po)) {
+          const label = await heldLabel(call)
+          const id = await gate.holdReceipt(call, label)
           return {
             applied: false,
-            possibleDuplicateOf: earlier.id,
+            held: id,
+            heldLine: label,
             error:
-              `Not logged yet. ${who} already logged ${i.type} ${Number(earlier.deltaQty)} of this item on ${when} ` +
-              `("${earlier.note ?? ''}"), and it is already applied everywhere it goes. ` +
-              (same ? 'This is the exact same change. ' : 'It may be the same delivery told twice, or told before it happened. ') +
-              `Ask the person, naming that entry: is this the same one, or a second, separate delivery? ` +
-              `Only if they say it is a second one, call again with separateDelivery: true. If they say the ` +
-              `earlier one never happened, reverse it with correct_inventory_event and log this one.`,
+              `Not logged: ${qty} is not a number the person gave, so it is held for their yes. Code shows them ` +
+              `"${label}" under your reply. Ask what actually came (or what the count was), and do not put it in ` +
+              `any other way. If their next message says yes to it, call again with the same fields and ` +
+              `heldReceiptId "${id}". If they give numbers, log those.`,
           }
         }
       }
-      // More in than the PO still owes means it was probably logged already,
-      // or the PO is wrong. Either way a person should say which.
-      if (i.separateDelivery !== true && i.type === 'RECEIVED' && typeof i.deltaQty === 'number' && i.deltaQty > 0) {
-        const { owedOnPo, poNumberIn } = await import('@/lib/po-receipts')
-        const po = (typeof i.purchaseOrderNumber === 'string' && i.purchaseOrderNumber.replace(/\D/g, '')) || poNumberIn(i.note)
-        const owed = po ? await owedOnPo(po, { productVariantId: i.productVariantId, componentId: i.componentId }) : null
-        if (owed !== null && i.deltaQty > owed) {
-          return {
-            applied: false,
-            error:
-              `Not logged yet. PO ${po} only has ${owed} of this still owed, and this would log ${i.deltaQty} in. ` +
-              `Either some of it was logged already or the vendor sent extra. Ask the person which, naming the PO. ` +
-              `If they confirm these really are ${i.deltaQty} more, call again with separateDelivery: true.`,
-          }
-        }
+      const out = await logEventChecked(i)
+      if (heldId) {
+        if ((out as { eventId?: string | null }).eventId) await gate.markHeldLogged(heldId, (out as { eventId: string }).eventId)
+        else await gate.releaseHeld(heldId)
       }
-      const r = await writeEvent(i)
-      // Tick the delivery off on its PO, from the number given or the one in
-      // the note (Mouse nearly always writes "PO 2362" there).
-      if (i.type === 'RECEIVED' && r.eventId && typeof i.deltaQty === 'number' && i.deltaQty > 0) {
-        const { receiveOnPo, poNumberIn } = await import('@/lib/po-receipts')
-        const po = (typeof i.purchaseOrderNumber === 'string' && i.purchaseOrderNumber.replace(/\D/g, '')) || poNumberIn(i.note)
-        if (po) {
-          const t = await receiveOnPo(po, { productVariantId: i.productVariantId, componentId: i.componentId }, i.deltaQty)
-          return { ...r, purchaseOrder: t.message }
-        }
-      }
-      return r
+      return out
     },
   },
 
