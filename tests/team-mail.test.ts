@@ -75,3 +75,14 @@ test('from a team email an invoice can be drafted but never sent', async () => {
     assert.match(r.reason, /drafted only, never sent/, t)
   }
 })
+
+test("Mouse's email instructions say what the tools allow: an invoice is drafted, never sent", async () => {
+  // 16 Oct 2026: the tools allowed a draft but the words still said invoices
+  // "cannot be done from an email", so Mouse refused Brandon's Bucatini invoice.
+  const { APPLY_RULES } = await import('../lib/mouse/nightly-pass')
+  const rules = APPLY_RULES.replace(/\s+/g, ' ')
+  assert.match(rules, /An invoice can be DRAFTED from their email/)
+  assert.match(rules, /Never pass confirmed: true from an email/)
+  assert.doesNotMatch(rules, /invoices and purchase orders, and moving money cannot be done/)
+  assert.match(rules, /sending an invoice, purchase orders and moving money cannot be done from an email/)
+})
