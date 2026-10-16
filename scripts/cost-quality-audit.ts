@@ -12,23 +12,9 @@
  * Anthropic Console's daily total is the billing truth.
  */
 import { db } from '@/lib/db'
+import { costOf, PRICES, type PricedRequest as Req } from '@/lib/mouse/prices'
 
-// $ per million tokens: input, output, 5-minute cache write, 1-hour cache write, cache read.
-// From platform.claude.com/docs/en/about-claude/pricing, read 8 Oct 2026. Cache
-// reads on these two are 0.05x input, not the usual 0.1x: Sonnet's is $0.10.
-export const PRICES: Record<string, { in: number; out: number; w5: number; w1h: number; read: number }> = {
-  'claude-opus-5-5': { in: 4, out: 20, w5: 5, w1h: 8, read: 0.2 },
-  'claude-sonnet-5-5': { in: 2, out: 10, w5: 2.5, w1h: 4, read: 0.1 },
-}
-type Req = { model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; cacheWrite1hTokens: number; durationMs?: number | null }
-export function costOf(r: Req): number | null {
-  const p = PRICES[r.model]
-  if (!p) return null
-  // cacheWriteTokens is every cache write; the 1-hour ones are a subset of it.
-  const w1h = r.cacheWrite1hTokens ?? 0
-  const w5 = Math.max(0, (r.cacheWriteTokens ?? 0) - w1h)
-  return (r.inputTokens * p.in + r.outputTokens * p.out + w5 * p.w5 + w1h * p.w1h + r.cacheReadTokens * p.read) / 1e6
-}
+export { costOf, PRICES }
 
 const arg = (name: string) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : undefined }
 const median = (xs: number[]) => { if (!xs.length) return 0; const s = [...xs].sort((a, b) => a - b); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2 }

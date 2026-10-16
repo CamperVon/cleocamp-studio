@@ -1946,6 +1946,25 @@ model TelnyxMessage {
   @@index([receivedAt])
 }
 
+/// One-time background jobs that must never run twice, across every app
+/// instance (16 Oct 2026; first use: the transient-layout shadow smoke check,
+/// lib/mouse/shadow-smoke.ts). The row IS the lock: a job claims its key with
+/// an insert that only one caller can win, and the row stays forever, so the
+/// job never runs again whatever its outcome. Results only: never prompts,
+/// replies or credentials.
+model ShadowRun {
+  key          String    @id
+  /// RUNNING until it finishes; then PASSED, FAILED (checks failed) or ERROR (stopped short).
+  status       String
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+  /// The deployed commit (VERCEL_GIT_COMMIT_SHA) and deployment that ran it.
+  codeVersion  String?
+  deploymentId String?
+  resultJson   Json?
+  error        String?
+}
+
 /// Apps connected to the read-only Claude connector (/api/mcp, 16 Oct 2026):
 /// one row per OAuth client that registered itself (RFC 7591), which today
 /// means claude.ai. Registration grants nothing on its own; a person signed

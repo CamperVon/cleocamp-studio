@@ -13,6 +13,23 @@ export type RequestUsage = {
   effort?: 'low' | 'medium' | 'high'
   /** Set only while MOUSE_CACHE_DIAGNOSTICS is on, in interactive chat (lib/mouse/cache-diagnostics.ts). */
   cacheDiagnosis?: CacheDiagnosis
+  /** This request's place in the turn, from 1 (set by runAgent across all of the turn's loops). */
+  requestNumber?: number
+  /** How many tool rounds the turn had finished before this request. */
+  toolRounds?: number
+  /** How many look-ups (open_record, query_status, read_file, open_email) the turn had run before this request. */
+  fullRecordFetches?: number
+  /**
+   * Transient-state layout only (lib/mouse/transient.ts): the state's size in
+   * characters, always. transientTokens is the state alone as Anthropic's
+   * token-count endpoint counts it, and is set only when the run asked for
+   * that count (no production run does); it is never derived from inputTokens, which
+   * also holds the person's message and any uncached tool results.
+   */
+  transientChars?: number
+  transientTokens?: number
+  /** Sections the state dropped to fit its cap, if any. */
+  transientTrimmed?: string[]
 }
 export type AgentUsage = {
   requests: RequestUsage[]
@@ -26,6 +43,12 @@ export type AgentUsage = {
   route?: TurnRoute
   /** Short hashes of each prefix block, set by runAgent while MOUSE_CACHE_DIAGNOSTICS is on. */
   prefix?: PrefixHashes
+  /**
+   * Transient-state layout: the cached core's size and a short hash. Two
+   * turns whose hashes differ rewrote the core and the history behind it
+   * (lib/mouse/transient.ts DIRECTORY_INVALIDATED_BY).
+   */
+  core?: { chars: number; hash: string }
 }
 
 /**
@@ -73,6 +96,13 @@ export async function runLoop(opts: {
    * the run. Changes nothing about the request but the `diagnostics` field.
    */
   cacheDiagnostics?: DiagnosticsChains
+  /**
+   * The transient-state layout (lib/mouse/transient.ts): called before EVERY
+   * request (each tool follow-up, a retry, the wrap-up) with the loop's own
+   * messages, it returns what to send. The loop's messages are never changed
+   * by it, so nothing it adds is carried into the next request or kept.
+   */
+  prepare?: (messages: Anthropic.MessageParam[]) => Promise<{ messages: Anthropic.MessageParam[]; transientChars: number; transientTokens?: number; trimmed: string[] }>
 }): Promise<LoopResult> {
   const started = Date.now()
   const maxRequests = Math.max(1, Math.min(12, Math.trunc(opts.maxRequests ?? 6)))
@@ -101,21 +131,29 @@ export async function runLoop(opts: {
   let retriedProvider = false
   const diag = opts.cacheDiagnostics
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+  let toolRounds = 0
+  const fetchesSoFar = () => calls.filter((c) => FETCH_TOOLS.has(c.name)).length
+  const measure = (p: Awaited<ReturnType<NonNullable<typeof opts.prepare>>> | null) => ({
+    toolRounds, fullRecordFetches: fetchesSoFar(),
+    ...(p ? { transientChars: p.transientChars, ...(typeof p.transientTokens === 'number' ? { transientTokens: p.transientTokens } : {}), ...(p.trimmed.length ? { transientTrimmed: p.trimmed } : {}) } : {}),
+  })
 
   for (let round = 0; round < maxRequests && spent < maxOutputTokens; round++) {
     const at = Date.now()
     // The chain this request belongs to; it follows the effort it runs at.
     const chain = diag ? chainKey(diag.scope, effort ?? 'medium') : null
     let res: Response
+    let prepared: Awaited<ReturnType<NonNullable<typeof opts.prepare>>> | null = null
     try {
       attemptedRequests++
+      prepared = opts.prepare ? await opts.prepare(messages) : null
       res = await opts.create({
         // 16k, not 8k: on 23 Sept 2026 a long bag update from Brandon (three
         // orders, a pickup and a stock count) spent all 8,000 of a single
         // request thinking, made no tool call, and the turn ended "reasoning
         // limit" with two-thirds of its budget unspent.
         model, max_tokens: Math.min(16000, maxOutputTokens - spent),
-        system: opts.system, tools: opts.tools, messages,
+        system: opts.system, tools: opts.tools, messages: prepared?.messages ?? messages,
         thinking: { type: 'adaptive' },
         output_config: { effort: effort ?? 'medium' },
         ...(chain ? { diagnostics: { previous_message_id: diag!.last[chain] ?? null } } : {}),
@@ -142,6 +180,7 @@ export async function runLoop(opts: {
       cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0,
       cacheWrite1hTokens: res.usage.cache_creation?.ephemeral_1h_input_tokens ?? 0, durationMs: Date.now() - at,
       effort: effort ?? 'medium',
+      ...measure(prepared),
       ...(chain && res.id ? { cacheDiagnosis: diagnosisOf(chain, res.id, diag!.last[chain] ?? null, res.diagnostics) } : {}) })
     if (chain && res.id) diag!.last[chain] = res.id
     spent += res.usage.output_tokens
@@ -216,6 +255,7 @@ export async function runLoop(opts: {
       results.push({ type: 'tool_result', tool_use_id: u.id, is_error: classification.status === 'failed', content })
     }
     messages.push({ role: 'user', content: results })
+    toolRounds++
   }
 
   // Out of rounds in the middle of work (13 Oct 2026). Jane asked Mouse to
@@ -239,10 +279,12 @@ export async function runLoop(opts: {
     const chain = diag ? chainKey(diag.scope, 'low') : null
     try {
       attemptedRequests++
+      const wrapMessages: Anthropic.MessageParam[] = [...messages.slice(0, -1), { ...last, content: [...(last.content as Anthropic.ContentBlockParam[]), { type: 'text', text: WRAP_UP }] }]
+      const prepared = opts.prepare ? await opts.prepare(wrapMessages) : null
       const res = await opts.create({
         model, max_tokens: Math.min(4000, maxOutputTokens - spent),
         system: opts.system, tools: opts.tools, tool_choice: { type: 'none' },
-        messages: [...messages.slice(0, -1), { ...last, content: [...(last.content as Anthropic.ContentBlockParam[]), { type: 'text', text: WRAP_UP }] }],
+        messages: prepared?.messages ?? wrapMessages,
         thinking: { type: 'adaptive' },
         output_config: { effort: 'low' },
         ...(chain ? { diagnostics: { previous_message_id: diag!.last[chain] ?? null } } : {}),
@@ -252,6 +294,7 @@ export async function runLoop(opts: {
         cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0,
         cacheWrite1hTokens: res.usage.cache_creation?.ephemeral_1h_input_tokens ?? 0, durationMs: Date.now() - at,
         effort: 'low',
+        ...measure(prepared),
         ...(chain && res.id ? { cacheDiagnosis: diagnosisOf(chain, res.id, diag!.last[chain] ?? null, res.diagnostics) } : {}) })
       if (chain && res.id) diag!.last[chain] = res.id
       wrapUp = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim()
@@ -276,6 +319,9 @@ export async function runLoop(opts: {
   return { text, writes: completedWrites(calls), toolCalls: calls, model,
     usage: { requests, attemptedRequests, providerError, durationMs: Date.now() - started, stopReason } }
 }
+
+/** The look-ups that read a record, list, file or email on demand: counted per request as fullRecordFetches. */
+export const FETCH_TOOLS: ReadonlySet<string> = new Set(['open_record', 'query_status', 'read_file', 'open_email'])
 
 /** Added to the last message when a turn runs out of rounds mid-work: say what was done, call nothing. */
 export const WRAP_UP =
