@@ -140,7 +140,7 @@ export const WHATS_NEW: Update[] = [
   },
   {
     on: '2026-10-16',
-    text: 'Mouse only logs a delivery or a count when your message says what it is: the item, the number and the PO, like "PO 2360: 510 Cleo Tee White size 1". Otherwise ("PO 2360 arrived in full") it shows each line it would log with a short code. Reply LOG and the code to log exactly that line, or send the real numbers. A plain "yes" logs nothing.',
+    text: 'Mouse only logs a delivery or a count when one sentence of your message says it all: the PO, the item and the number, like "PO 2360: 510 Cleo Tee White size 1". Otherwise ("PO 2360 arrived in full") it shows each line it would log with a code. Reply LOG and the code (like LOG K7Q2-M4XA) to log exactly that line, or send the real numbers. A plain "yes" logs nothing.',
   },
   {
     on: '2026-10-16', path: '/products',

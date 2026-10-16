@@ -19,4 +19,4 @@ CREATE TABLE "PendingReceipt" (
     CONSTRAINT "PendingReceipt_pkey" PRIMARY KEY ("id")
 );
 CREATE INDEX "PendingReceipt_turnId_idx" ON "PendingReceipt"("turnId");
-CREATE INDEX "PendingReceipt_code_idx" ON "PendingReceipt"("code");
+CREATE UNIQUE INDEX "PendingReceipt_code_key" ON "PendingReceipt"("code");

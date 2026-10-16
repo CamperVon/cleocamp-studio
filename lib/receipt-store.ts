@@ -4,7 +4,7 @@
  * on the tool's real path with an in-memory store instead.
  */
 import { db } from '@/lib/db'
-import { newCode, type ConfirmDeps, type GateDeps, type HeldRow, type ItemTerms, type StockCall, type Turn } from '@/lib/receipt-gate'
+import { withUniqueCode, type ConfirmDeps, type GateDeps, type HeldRow, type ItemTerms, type StockCall, type Turn } from '@/lib/receipt-gate'
 
 async function terms(call: StockCall): Promise<ItemTerms | null> {
   if (call.productVariantId) {
@@ -33,12 +33,10 @@ async function terms(call: StockCall): Promise<ItemTerms | null> {
 }
 
 async function hold(call: StockCall, label: string, turn: Turn): Promise<{ id: string; code: string }> {
-  // A code no open line already has.
-  for (let n = 0; n < 8; n++) {
-    const code = newCode()
-    const clash = await db.pendingReceipt.findFirst({ where: { code, usedAt: null }, select: { id: true } })
-    if (clash) continue
-    const r = await db.pendingReceipt.create({
+  // The unique index on code decides: a colliding insert fails (P2002) and a
+  // new code is tried. No look-up first, so concurrent holds cannot share one.
+  return withUniqueCode(
+    (code) => db.pendingReceipt.create({
       data: {
         code, turnId: turn.id, personId: turn.personId, type: call.type,
         productVariantId: call.productVariantId, componentId: call.componentId,
@@ -46,10 +44,9 @@ async function hold(call: StockCall, label: string, turn: Turn): Promise<{ id: s
         deltaQty: String(call.qty), poNumber: call.poNumber, note: call.note, label,
       },
       select: { id: true, code: true },
-    })
-    return r
-  }
-  throw new Error('Could not find a free hold code.')
+    }),
+    (e) => (e as { code?: string })?.code === 'P2002',
+  )
 }
 
 export function gateDeps(label: (call: StockCall) => Promise<string>): GateDeps {
@@ -59,7 +56,7 @@ export function gateDeps(label: (call: StockCall) => Promise<string>): GateDeps 
 export function confirmDeps(write: ConfirmDeps['write']): ConfirmDeps {
   return {
     findOpen: async (code) => {
-      const r = await db.pendingReceipt.findFirst({ where: { code, usedEventId: null }, orderBy: { createdAt: 'desc' } })
+      const r = await db.pendingReceipt.findUnique({ where: { code } })
       return r ? ({ ...r, qty: Number(r.deltaQty) } as HeldRow) : null
     },
     claim: async (id) => (await db.pendingReceipt.updateMany({ where: { id, usedAt: null }, data: { usedAt: new Date() } })).count === 1,

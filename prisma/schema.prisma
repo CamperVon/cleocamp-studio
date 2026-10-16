@@ -453,8 +453,9 @@ enum InventoryEventSource {
 model PendingReceipt {
   id               String    @id @default(cuid())
   createdAt        DateTime  @default(now())
-  /// What the person writes to log it: "LOG K7Q2". Unique among open lines.
-  code             String
+  /// What the person writes to log it: "LOG K7Q2-M4XA" (stored K7Q2M4XA).
+  /// Unique for good, used rows included, so a code names exactly one line.
+  code             String    @unique
   turnId           String
   personId         String?
   productVariantId String?
@@ -472,7 +473,6 @@ model PendingReceipt {
   usedEventId      String?
 
   @@index([turnId])
-  @@index([code])
 }
 
 /// APPEND ONLY. Never edit, never delete. Mistakes are corrected by a new

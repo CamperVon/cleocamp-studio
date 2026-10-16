@@ -103,7 +103,7 @@ export function routeChat(message: string, ctx: RouteContext): Route {
   if (ctx.filesInHistory) return opus('files-in-history')
   // A LOG code confirms a held stock line (lib/receipt-gate.ts): code logs it
   // in the run that writes, never in the look-up lane.
-  if (/\bLOG[\s:#-]*[A-Za-z0-9]{4}\b/i.test(message)) return opus('log-code')
+  if (/\bLOG[\s:#]*[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}\b/i.test(message)) return opus('log-code')
 
   const { text, fromPageBox } = ownWords(message)
   const lower = text.toLowerCase().replace(/[’‘]/g, "'")

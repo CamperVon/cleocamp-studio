@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { TOOLS } from '../lib/mouse/tools'
 import {
-  inTurn, statesStockLine, codesIn, confirmFromWords, replyBlock, HOLD_MS,
+  inTurn, statesStockLine, codesIn, confirmFromWords, replyBlock, withUniqueCode, newCode, showCode, HOLD_MS,
   type ItemTerms, type StockCall, type HeldRow, type Turn, type ConfirmDeps, type GateDeps,
 } from '../lib/receipt-gate'
 import { ownEmailWords } from '../lib/mouse/team-mail'
@@ -31,19 +31,28 @@ const termsFor = (variantId: string): ItemTerms => {
   return { ...CLEO_TEE, colour: { ...CLEO_TEE.colour, mine: colour }, size: { ...CLEO_TEE.size, mine: size } } as ItemTerms
 }
 
-/** An in-memory stand-in for PendingReceipt and the ledger. */
-function store(now = () => 1_000_000) {
+/**
+ * An in-memory stand-in for PendingReceipt and the ledger. Like the table, a
+ * code is unique for good: an insert under a taken code fails the way
+ * Postgres does (P2002), and the real withUniqueCode retries.
+ */
+function store(now = () => 1_000_000, codes: string[] = ['K7Q2M4XA', 'M4XAT9PC', 'T9PCK7Q2', 'ACDEFHJK']) {
   const rows: HeldRow[] = []
+  const queue = [...codes]
   const writes: Array<Record<string, unknown>> = []
   let n = 0
   const gate: GateDeps = {
     terms: async (c: StockCall) => (c.productVariantId ? termsFor(c.productVariantId) : null),
     label: async (c: StockCall) => `${c.poNumber ? `PO ${c.poNumber} · ` : ''}${c.productVariantId} · ${c.qty} received`,
-    hold: async (c: StockCall, label: string, turn: Turn) => {
-      const code = ['K7Q2', 'M4XA', 'T9PC'][rows.length] ?? `Z${rows.length}ZZ`
-      rows.push({ ...c, id: `h${rows.length}`, code, label, createdAt: new Date(now()), personId: turn.personId, usedAt: null })
-      return { id: rows[rows.length - 1].id, code }
-    },
+    hold: (c: StockCall, label: string, turn: Turn) => withUniqueCode(
+      async (code) => {
+        if (rows.some((r) => r.code === code)) throw Object.assign(new Error('Unique constraint failed on code'), { code: 'P2002' })
+        rows.push({ ...c, id: `h${rows.length}`, code, label, createdAt: new Date(now()), personId: turn.personId, usedAt: null })
+        return { id: rows[rows.length - 1].id, code }
+      },
+      (e) => (e as { code?: string }).code === 'P2002',
+      () => queue.shift() ?? newCode(),
+    ),
   }
   const write = async (i: Record<string, unknown>) => { writes.push(i); return { eventId: `e${++n}`, applied: true } }
   const confirm: ConfirmDeps = {
@@ -71,7 +80,7 @@ test('the bake-off case: "arrived in full" logs nothing and holds the line', asy
   const r = await run(s, brandon('PO 2360 arrived in full today.'), WHITE_1)
   assert.equal(s.writes.length, 0)
   assert.equal(r.applied, false)
-  assert.equal(r.held, 'K7Q2')
+  assert.equal(r.held, 'K7Q2-M4XA')
   assert.match(String(r.error), /cannot log a held line/)
 })
 
@@ -110,11 +119,11 @@ test('an unknown person: nothing held for them, nothing confirmed by them', asyn
 
   // A line held for Brandon cannot be confirmed by an unknown sign-in…
   await run(s, brandon('PO 2360 arrived in full today.'), WHITE_1)
-  const c1 = await confirmFromWords({ id: 't2', personId: null, words: 'LOG K7Q2' }, s.confirm)
+  const c1 = await confirmFromWords({ id: 't2', personId: null, words: 'LOG K7Q2-M4XA' }, s.confirm)
   assert.equal(c1.logged.length, 0)
   // …and a line held with no person (an old row, say) cannot be confirmed by anyone.
   s.rows[0].personId = null
-  const c2 = await confirmFromWords(brandon('LOG K7Q2', 't3'), s.confirm)
+  const c2 = await confirmFromWords(brandon('LOG K7Q2-M4XA', 't3'), s.confirm)
   assert.equal(c2.logged.length, 0)
   assert.equal(s.writes.length, 0)
 })
@@ -123,12 +132,12 @@ test('an explicit, exact confirmation logs that one held line, once', async () =
   const s = store()
   await run(s, brandon('PO 2360 arrived in full today.'), WHITE_1)
   await run(s, brandon('PO 2360 arrived in full today.'), { ...WHITE_1, productVariantId: 'cleo-White-2', deltaQty: 245 })
-  const c = await confirmFromWords(brandon('LOG k7q2', 't2'), s.confirm)
+  const c = await confirmFromWords(brandon('LOG k7q2m4xa', 't2'), s.confirm)
   assert.equal(c.logged.length, 1)
   assert.deepEqual(s.writes, [{ type: 'RECEIVED', productVariantId: 'cleo-White-1', deltaQty: 510, purchaseOrderNumber: '2360' }])
   // The other held line is untouched; the same code again logs nothing.
   assert.equal(s.rows[1].usedAt, null)
-  const again = await confirmFromWords(brandon('LOG K7Q2', 't3'), s.confirm)
+  const again = await confirmFromWords(brandon('LOG K7Q2-M4XA', 't3'), s.confirm)
   assert.equal(again.logged.length, 0)
   assert.match(again.refused[0], /already logged/)
   assert.equal(s.writes.length, 1)
@@ -138,10 +147,10 @@ test('another person cannot use your code, and a code lapses', async () => {
   let t = 1_000_000
   const s = store(() => t)
   await run(s, brandon('PO 2360 arrived in full today.'), WHITE_1)
-  const jane = await confirmFromWords({ id: 't2', personId: 'jane', words: 'LOG K7Q2' }, s.confirm)
+  const jane = await confirmFromWords({ id: 't2', personId: 'jane', words: 'LOG K7Q2-M4XA' }, s.confirm)
   assert.match(jane.refused[0], /someone else/)
   t += HOLD_MS + 1
-  const late = await confirmFromWords(brandon('LOG K7Q2', 't3'), s.confirm)
+  const late = await confirmFromWords(brandon('LOG K7Q2-M4XA', 't3'), s.confirm)
   assert.match(late.refused[0], /lapsed/)
   assert.equal(s.writes.length, 0)
 })
@@ -149,7 +158,6 @@ test('another person cannot use your code, and a code lapses', async () => {
 test('a direct message naming the exact item, PO and quantity logs normally', async () => {
   for (const words of [
     'PO 2360: 510 Cleo Tee White size 1 came in today',
-    'Cleo Tees from PO 2360 came. White: 510 size 1, 245 size 2, 85 size 3',
     'PO 2360 Cleo Tee White size 1: 510',
     'PO 2360 white cleo tees, size 1 x 510',
   ]) {
@@ -173,20 +181,23 @@ test('the longer product name wins: "Long Sleeve Cleo Tee" is not the Cleo Tee',
   assert.equal(statesStockLine('PO 2360: 40 Long Sleeve Cleo Tee White size 1', 40, CLEO_TEE, '2360').ok, false)
 })
 
-test('LOG codes are read from the words, in any case', () => {
-  assert.deepEqual(codesIn('ok LOG k7q2 and log-M4XA please'), ['K7Q2', 'M4XA'])
+test('LOG codes are read from the words, hyphen optional, any case', () => {
+  assert.deepEqual(codesIn('ok LOG k7q2-m4xa and log: T9PCK7Q2 please'), ['K7Q2M4XA', 'T9PCK7Q2'])
   assert.deepEqual(codesIn('yes, log it'), [])
+  assert.deepEqual(codesIn('LOG K7Q2'), [], 'a short code is not a code')
+  assert.equal(showCode('K7Q2M4XA'), 'K7Q2-M4XA')
+  assert.match(newCode(), /^[ACDEFHJKMNPRTUVWXY3479]{8}$/)
 })
 
 test("a code in quoted mail is not the sender's", () => {
-  const body = 'Thanks.\n\nOn Thu, Oct 16, 2026 at 9:00 AM Studio Mouse <mouse@send.cleocamp.com> wrote:\n> To log exactly this, reply LOG K7Q2'
+  const body = 'Thanks.\n\nOn Thu, Oct 16, 2026 at 9:00 AM Studio Mouse <mouse@send.cleocamp.com> wrote:\n> To log exactly this, reply LOG K7Q2-M4XA'
   assert.deepEqual(codesIn(ownEmailWords(body)), [])
 })
 
 test('the reply block names each held line with its code', () => {
-  const b = replyBlock([{ label: 'PO 2360 · Cleo Tee / White / 1 · 510 received', code: 'K7Q2' }], { logged: [], refused: [] })
+  const b = replyBlock([{ label: 'PO 2360 · Cleo Tee / White / 1 · 510 received', code: 'K7Q2M4XA' }], { logged: [], refused: [] })
   assert.match(b, /^Not logged yet\./)
-  assert.match(b, /reply LOG K7Q2/)
+  assert.match(b, /reply LOG K7Q2-M4XA/)
   assert.equal(replyBlock([], { logged: [], refused: [] }), '')
 })
 
@@ -195,4 +206,91 @@ test('a component and its number named together, and no other component beside i
   assert.equal(statesStockLine('50 sq ft of black leather, cleo bag', 50, H, null).ok, true)
   assert.equal(statesStockLine('50 black leather for the cleo bag and bean bag', 50, H, null).ok, false)
   assert.equal(statesStockLine('2 sq ft black leather for the cleo bag', 50, H, null).ok, false)
+})
+
+// ── Codex's second review: one sentence, and codes unique for good ─────────
+
+test('a PO named in another sentence does not authorize the receipt', async () => {
+  const s = store()
+  const r = await run(s, brandon('PO 2360 was sent Monday. 510 White Cleo Tee size 1 arrived today.'), WHITE_1)
+  assert.equal(s.writes.length, 0)
+  assert.equal(r.applied, false)
+  assert.equal(r.held, 'K7Q2-M4XA')
+})
+
+test('product, colour, size or number split across sentences holds', async () => {
+  for (const words of [
+    'Cleo Tees from PO 2360 came. White: 510 size 1, 245 size 2, 85 size 3', // product and PO apart from the rest
+    'PO 2360: 510 size 1 came in. They were the White Cleo Tee', // colour and product in the next sentence
+    'PO 2360: 510 White Cleo Tees came. All size 1', // size in the next sentence
+    'PO 2360: White Cleo Tee size 1 came in. There were 510', // number in the next sentence
+    'PO 2360 Cleo Tee White\n510 size 1', // a line of its own without the item
+    'PO 2360 and PO 2378: 510 Cleo Tee White size 1', // two POs in the one sentence
+  ]) {
+    const s = store()
+    const r = await run(s, brandon(words), WHITE_1)
+    assert.equal(s.writes.length, 0, words)
+    assert.equal(r.applied, false, words)
+  }
+})
+
+test('an exact one-line PO receipt still logs', async () => {
+  for (const words of [
+    'PO 2360: 510 Cleo Tee White size 1 came in today',
+    'Got the White Cleo Tees.\nPO 2360 Cleo Tee White size 1: 510\nThanks!',
+  ]) {
+    const s = store()
+    const r = await run(s, brandon(words), WHITE_1)
+    assert.equal(s.writes.length, 1, words)
+    assert.equal(r.applied, true, words)
+  }
+})
+
+test('a code collision retries; concurrent holds never share a code', async () => {
+  // Every hold is offered the same two codes first: only one request can win
+  // each, the rest collide and draw fresh ones.
+  const s = store(() => 1_000_000, [])
+  const fixed = ['K7Q2M4XA', 'K7Q2M4XA', 'M4XAT9PC']
+  let k = 0
+  const gate = { ...s.ctx.stock.gate, hold: (c: StockCall, label: string, turn: Turn) => withUniqueCode(
+    async (code) => {
+      await new Promise((r) => setTimeout(r, Math.random() * 3))
+      if (s.rows.some((r) => r.code === code)) throw Object.assign(new Error('Unique constraint failed on code'), { code: 'P2002' })
+      s.rows.push({ ...c, id: `h${s.rows.length}`, code, label, createdAt: new Date(), personId: turn.personId, usedAt: null })
+      return { id: s.rows[s.rows.length - 1].id, code }
+    },
+    (e) => (e as { code?: string }).code === 'P2002',
+    () => (k < fixed.length * 10 ? fixed[k++ % fixed.length] : newCode()),
+    50,
+  ) }
+  const ctx = { stock: { ...s.ctx.stock, gate } }
+  const results = await Promise.all(Array.from({ length: 20 }, (_, i) =>
+    inTurn(brandon('PO 2360 arrived in full today.', `t${i}`), () => TOOLS.log_inventory_event.run(WHITE_1, ctx)) as Promise<Record<string, unknown>>))
+  const codes = s.rows.map((r) => r.code)
+  assert.equal(codes.length, 20)
+  assert.equal(new Set(codes).size, 20, 'every held line has its own code')
+  assert.equal(new Set(results.map((r) => r.held)).size, 20)
+  assert.equal(s.writes.length, 0)
+})
+
+test('when no free code can be found, nothing is held and nothing logged', async () => {
+  const s = store(() => 1_000_000, [])
+  const gate = { ...s.ctx.stock.gate, hold: () => withUniqueCode(
+    async () => { throw Object.assign(new Error('Unique constraint failed on code'), { code: 'P2002' }) },
+    (e) => (e as { code?: string }).code === 'P2002', () => 'K7Q2M4XA', 5) }
+  const r = await inTurn(brandon('PO 2360 arrived in full today.'), () => TOOLS.log_inventory_event.run(WHITE_1, { stock: { ...s.ctx.stock, gate } })) as Record<string, unknown>
+  assert.equal(r.applied, false)
+  assert.equal(r.held, undefined)
+  assert.match(String(r.error), /could not be held/)
+  assert.equal(s.writes.length, 0)
+})
+
+test('a confirmation resolves exactly one held line', async () => {
+  const s = store()
+  await run(s, brandon('PO 2360 arrived in full today.'), WHITE_1)
+  await run(s, brandon('PO 2360 arrived in full today.', 't2'), { ...WHITE_1, productVariantId: 'cleo-White-2', deltaQty: 245 })
+  const c = await confirmFromWords(brandon('LOG M4XA-T9PC', 't3'), s.confirm)
+  assert.equal(c.logged.length, 1)
+  assert.deepEqual(s.writes, [{ type: 'RECEIVED', productVariantId: 'cleo-White-2', deltaQty: 245, purchaseOrderNumber: '2360' }])
+  assert.equal(s.rows[0].usedAt, null)
 })
