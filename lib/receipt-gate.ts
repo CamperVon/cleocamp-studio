@@ -189,7 +189,8 @@ export function sentences(text: string): Array<{ raw: string; blanked: string }>
  */
 function namesOnlyPo(raw: string, po: string): boolean {
   if (!new RegExp(`(?:\\bPOs?\\s*#?\\s*|#\\s*)${po}(?![\\d])`, 'i').test(raw)) return false
-  const others = [...raw.matchAll(/\bPOs?\s*#?\s*(\d+)/gi)].map((m) => m[1]).filter((n) => n !== po)
+  // Another PO in either form, "PO 2378" or "#2378", makes the sentence ambiguous.
+  const others = [...raw.matchAll(/(?:\bPOs?\s*#?\s*|#\s*)(\d+)/gi)].map((m) => m[1]).filter((n) => n !== po)
   return others.length === 0
 }
 

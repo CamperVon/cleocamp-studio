@@ -304,6 +304,8 @@ test('a bare PO number does not authorize a receipt; PO 2360 or #2360 does', asy
     ['PO 2360: 510 Cleo Tee White size 1 arrived', true],
     ['#2360: 510 Cleo Tee White size 1 arrived', true],
     ['PO #2360: 510 Cleo Tee White size 1 arrived', true],
+    ['#2360 and #2378: 510 Cleo Tee White size 1 arrived', false],
+    ['PO 2360 and #2378: 510 Cleo Tee White size 1 arrived', false],
   ] as const) {
     const s = store()
     const r = await run(s, brandon(words), WHITE_1)
