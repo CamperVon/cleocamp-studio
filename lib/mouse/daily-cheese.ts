@@ -214,7 +214,7 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
   // count them (Brandon, 7 Oct 2026: "make sure this never happens again").
   // A day's grace, so one added this afternoon is not a fault by morning.
   const orphans = await db.component.count({
-    where: { active: true, category: { not: 'PACKAGING' }, usedIn: { none: {} }, createdAt: { lt: new Date(Date.now() - DAY) } },
+    where: { active: true, offProducts: false, category: { not: 'PACKAGING' }, usedIn: { none: {} }, createdAt: { lt: new Date(Date.now() - DAY) } },
   })
   if (orphans) {
     out.unshift({

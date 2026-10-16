@@ -331,7 +331,7 @@ export async function writeEvent(args: {
 export function unitChangeProblem(c: { from: string; to: string; events: number; poLines: number; onHand: number }): string | null {
   if (!c.to.trim()) return 'Give the unit.'
   if (c.to.trim() === c.from) return null
-  if (c.events || c.poLines || c.onHand) return `Counts or orders are already recorded in ${c.from}s, and they would silently read as ${c.to}s. Keep ${c.from} as the counting unit; if it is bought in ${c.to}s, set purchaseUnit and unitsPerPurchaseUnit instead.`
+  if (c.events || c.poLines || c.onHand) return `Counts or orders are already recorded in ${c.from}s, and they would silently read as ${c.to}s. To switch anyway, give perOldUnit (how many ${c.to} one ${c.from} was) and conversionBasis (where that figure comes from), and everything is restated. If it is only bought in ${c.to}s, keep ${c.from} and set purchaseUnit and unitsPerPurchaseUnit instead.`
   return null
 }
 
@@ -1340,11 +1340,25 @@ export const TOOLS: Record<string, Tool> = {
             'The unit it is counted and used in (yard, metre, piece). Only while nothing has been counted or ' +
             'ordered in the old one: a count or order already in yards would silently become metres, so then it is refused. ' +
             'Recipe amounts are NOT converted: change them with update_product_bom in the same turn. When it is bought ' +
-            'in a different unit (by the metre, counted in yards), keep this as the counting unit and set purchaseUnit and unitsPerPurchaseUnit instead.',
+            'in a different unit (by the metre, counted in yards), keep this as the counting unit and set purchaseUnit and unitsPerPurchaseUnit instead. ' +
+            'Once stock is on file, give perOldUnit and conversionBasis as well, and the change restates it.',
           ),
+          perOldUnit: num(
+            'With a new unitOfMeasure, once stock is on file in the old one: how many new units one old unit was, e.g. 25 ' +
+            '(sq ft per skin, from an invoice "2 hides, 50 sq ft"). The stock at each place, every recipe amount, the price and ' +
+            'the reorder level are restated in one go. Leather is counted in sq ft (Brandon, 7 Oct 2026), so a leather still in ' +
+            "skins or hides is switched this way, using the vendor invoice's sq ft per hide.",
+          ),
+          conversionBasis: str('With perOldUnit: where the figure comes from ("United Leather UL49027, 2 hides = 50 sq ft"). Kept on the stock entries.'),
           purchaseUnit: str('How it is bought, e.g. roll or hide'),
           unitsPerPurchaseUnit: num('How many consumption units per purchase unit'),
           notes: str('Replaces the existing note'),
+          offProducts: {
+            type: 'boolean' as const,
+            description:
+              'True when a person says it goes into no product on purpose (the gold safety pins, the brass rivets): ' +
+              'it is still counted, and stops being raised as "on no product". Only on their word, never to quiet the list.',
+          },
           active: {
             type: 'boolean' as const,
             description:
@@ -1358,7 +1372,7 @@ export const TOOLS: Record<string, Tool> = {
         required: ['id'],
       },
     },
-    run: async ({ id, ...rest }) => {
+    run: async ({ id, perOldUnit, conversionBasis, ...rest }) => {
       const data: any = {}
       for (const [k, v] of Object.entries(rest)) if (v !== undefined && v !== null) data[k] = v
       {
@@ -1381,6 +1395,15 @@ export const TOOLS: Record<string, Tool> = {
         })
         if (!c) return { error: `No component ${id}` }
         const problem = unitChangeProblem({ from: c.unitOfMeasure, to: unit, events: c._count.events, poLines: c._count.poLines, onHand: Number(c.onHandQty) })
+        if (problem && perOldUnit !== undefined && perOldUnit !== null) {
+          // Stock on file: restated at the given rate, all or nothing (lib/unit-convert.ts).
+          const { convertComponentUnit } = await import('@/lib/unit-convert')
+          const converted = await convertComponentUnit(id, unit, Number(perOldUnit), String(conversionBasis ?? ''))
+          if ('error' in converted) return converted
+          delete data.unitOfMeasure
+          if (Object.keys(data).length) await db.component.update({ where: { id }, data })
+          return converted
+        }
         if (problem) return { error: problem }
         if (unit === c.unitOfMeasure) delete data.unitOfMeasure
         else {
@@ -3987,12 +4010,16 @@ export const TOOLS: Record<string, Tool> = {
       // instruction, not something pulled from an email, so it doesn't need
       // the same suspicion.
       const [vendors, people, stylist] = await Promise.all([
-        db.vendor.findMany({ select: { name: true, contactInfo: true } }),
+        db.vendor.findMany({ select: { name: true, contactInfo: true, email: true, ccEmails: true } }),
         db.person.findMany({ select: { name: true, email: true } }),
         db.stylist.findFirst({ where: { email: { equals: to, mode: 'insensitive' } }, select: { id: true } }),
       ])
+      // The vendor's email and cc fields count, not only the free-text contact
+      // line: until 16 Oct 2026 only contactInfo was read, so Lorena's address,
+      // held in her record's email field, was refused as "not on file". Whole
+      // addresses only, so x@gmail.com is not passed by max@gmail.com.
       const known =
-        vendors.some((v) => (v.contactInfo ?? '').toLowerCase().includes(to.toLowerCase())) ||
+        vendors.some((v) => [v.contactInfo, v.email, v.ccEmails].some((f) => (f ?? '').toLowerCase().split(/[\s,;<>()]+/).includes(to.toLowerCase()))) ||
         people.some((p) => (p.email ?? '').toLowerCase() === to.toLowerCase()) ||
         !!stylist ||
         /@(send\.)?cleocamp\.com$/i.test(to)

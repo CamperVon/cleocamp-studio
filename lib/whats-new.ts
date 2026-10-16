@@ -126,6 +126,18 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-16',
     text: 'Mouse can now draft a wholesale invoice as a deposit: say "half now, the rest on delivery" and the invoice keeps the full order, adds a line like "50% deposit. Balance of $3,530 due on delivery." and asks for what is due now. Shopify works out every figure, and a revision keeps the deposit, or a discount you added in Shopify, instead of wiping it.',
   },
+  {
+    on: '2026-10-16', path: '/components',
+    text: 'Mouse can now switch a leather from skins to square feet once stock is counted. Tell it how many sq ft a skin was (from the invoice) and it restates the stock, the recipes and the price together.',
+  },
+  {
+    on: '2026-10-16',
+    text: 'Mouse can now email Lorena (and any vendor) at the address on their record. It was refusing her address as "not on file".',
+  },
+  {
+    on: '2026-10-16', path: '/components',
+    text: 'You can tell Mouse a component goes into no product on purpose, like the gold safety pins and the brass rivets. They stay counted and stop showing up as "on no product" each morning.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

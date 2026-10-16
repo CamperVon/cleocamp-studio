@@ -28,12 +28,13 @@ export function matchColorway(name: string, colorways: Array<{ customerName: str
 
 /**
  * A component that goes into no product: it never shows on Products and the
- * forecast cannot count it. Packaging is meant to sit on no product. Brandon,
+ * forecast cannot count it. Packaging is meant to sit on no product, and so
+ * is anything marked offProducts (the safety pins, the rivets). Brandon,
  * 7 Oct 2026, after 16 leathers and silks sat like this unnoticed: "make sure
  * this never happens again." Pure.
  */
-export function onNoProduct(c: { category: string; _count: { usedIn: number } }): boolean {
-  return c.category !== 'PACKAGING' && c._count.usedIn === 0
+export function onNoProduct(c: { category: string; offProducts?: boolean; _count: { usedIn: number } }): boolean {
+  return c.category !== 'PACKAGING' && !c.offProducts && c._count.usedIn === 0
 }
 
 /** A recipe change refused part-way: the transaction rolls back and the tool says why. */

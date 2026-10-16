@@ -668,6 +668,24 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/deposit.ts`, `lib/live-sale.ts` (`readDraftDiscount`, `retitleDraftDiscount`, `fixedDiscount`, `clearDiscount`, draft `discount` total), `lib/mouse/tools.ts` (`invoice_wholesale`), `tests/deposit.test.ts`.
 - **Needs:** Shopify (draft orders).
 
+### Switching a component's counting unit after stock is recorded
+- **Problem:** the assistant refused to change a counting unit once anything was counted in the old one (rightly: 4 skins would silently read as 4 square feet). That left leather bought by the square foot stuck in skins: a recipe given in square feet could not be recorded, and an invoice's square footage got logged as that many skins and had to be corrected.
+- **Change:** `update_component` takes `perOldUnit` (how many new units one old unit was) and `conversionBasis` (where that figure comes from). In one transaction it writes a COUNTED entry at each place restating the stock (so the ledger still sums to the stock), multiplies every recipe amount, divides the price, scales the reorder level, and moves a purchase unit that only repeated the old counting unit. It refuses while a purchase order still owes the item in the old unit. The planning step is pure and tested.
+- **Files:** `lib/unit-convert.ts`, `lib/mouse/tools.ts` (`update_component`, `unitChangeProblem`), `lib/po-units.ts` (`sameUnit` exported), `tests/component-units.test.ts`.
+- **Needs:** nothing beyond the app.
+
+### Vendor emails on file are recognised when sending
+- **Problem:** the send guard that refuses addresses held nowhere only read a vendor's free-text contact line, not its email or cc fields, so the assistant refused to write to a vendor at the address on their own record.
+- **Change:** the guard reads the contact line, email and cc fields, and matches whole addresses only (so `x@gmail.com` is not passed by `max@gmail.com`).
+- **Files:** `lib/mouse/tools.ts` (`send_email`).
+- **Needs:** email.
+
+### Components on no product on purpose
+- **Problem:** a component that is counted but goes into nothing sold (a stash of pins, rivets) was raised every morning as "on no product", with no way to say that is intended.
+- **Change:** `Component.offProducts`, set through `update_component` only on a person's word; the morning summary and the assistant's context skip those.
+- **Files:** `prisma/schema.prisma`, `prisma/migrations/20261016250000_component_off_products`, `lib/bom.ts` (`onNoProduct`), `lib/mouse/daily-cheese.ts`, `lib/mouse/tools.ts`, `tests/component-units.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

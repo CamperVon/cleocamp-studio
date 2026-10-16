@@ -24,7 +24,7 @@ const forms = (s: string) => {
   const w = s.trim().toLowerCase()
   return new Set([w, w.replace(/s$/, ''), w.replace(/es$/, '')])
 }
-const sameUnit = (a: string, b: string) => [...forms(a)].some((x) => forms(b).has(x))
+export const sameUnit = (a: string, b: string) => [...forms(a)].some((x) => forms(b).has(x))
 
 export function unitsPerLineUnit(lineUnit: string | null | undefined, comp: Comp): number {
   if (!comp || !lineUnit) return 1

@@ -338,6 +338,10 @@ model Component {
   /// Derived from open PurchaseOrderLines — do not set directly.
   incomingQty      Decimal  @default(0) @db.Decimal(12, 3)
   active           Boolean  @default(true)
+  /// On no product on purpose (16 Oct 2026): the gold safety pins and the
+  /// brass rivets are counted but go into nothing we sell, so they are not
+  /// raised every morning as "on no product".
+  offProducts      Boolean  @default(false)
   notes            String?
   createdAt        DateTime @default(now())
 
