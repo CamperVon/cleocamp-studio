@@ -686,6 +686,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `prisma/schema.prisma`, `prisma/migrations/20261016250000_component_off_products`, `lib/bom.ts` (`onNoProduct`), `lib/mouse/daily-cheese.ts`, `lib/mouse/tools.ts`, `tests/component-units.test.ts`.
 - **Needs:** nothing beyond the app.
 
+### Links kept in Files, attached to products
+- **Problem:** a style's tech pack and pattern files live in a Google Drive folder, and Files only held uploaded files (4 MB at most), so there was nowhere to attach the folder to its product, and the assistant could not give anyone the link.
+- **Change:** a kept file can be a link instead (`StoredFile.url`, no bytes stored). It is linked to products, components or vendors like any kept file, shows on their rows and on the Files page with ↗, and opening it goes to the link (https only, checked when kept and again when opened). The Files page takes a pasted link as well as a file. The assistant gets `keep_link` (only when a person asks), sees a record's links when it opens the record and gives the link itself, and `read_file` says a link cannot be read. Links are never attached to an email and never handed to the outside researcher.
+- **Files:** `prisma/schema.prisma` (`StoredFile.url`), `prisma/migrations/20261016253000_stored_file_url`, `lib/files.ts` (`linkProblem`, `keepLink`, `filesFor`), `app/files/[id]/route.ts`, `app/ui/file-links.tsx`, `app/(main)/files/*`, `lib/mouse/tools.ts` (`keep_link`, `read_file`, `send_email`, `hand_to_muse`), `lib/mouse/records.ts`, `lib/mouse/tool-kinds.ts`, `tests/file-links.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

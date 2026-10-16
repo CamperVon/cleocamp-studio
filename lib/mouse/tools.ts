@@ -1069,8 +1069,9 @@ export const TOOLS: Record<string, Tool> = {
       }
       const fileIds: string[] = [...new Set(((Array.isArray(i.fileIds) ? i.fileIds : []) as unknown[]).map((x) => String(x)))]
       if (fileIds.length) {
-        const n = await db.storedFile.count({ where: { id: { in: fileIds } } })
-        if (n !== fileIds.length) return { handed: false, error: 'One of those file ids is not in Files. Nothing was sent.' }
+        // Kept links stay in the company: Muse gets documents, never a way into our Drive.
+        const n = await db.storedFile.count({ where: { id: { in: fileIds }, url: null } })
+        if (n !== fileIds.length) return { handed: false, error: 'One of those is not a file in Files (or is a kept link, which never goes to Muse). Nothing was sent.' }
       }
       const t = await db.museTask.create({
         data: { title, brief, records: records as never, fileIds, requestedById: currentActor() },
@@ -4065,7 +4066,8 @@ export const TOOLS: Record<string, Tool> = {
       let attachFiles: Array<{ id: string; title: string; filename: string }> = []
       if (wanted.length) {
         const { pickAttachments } = await import('@/lib/files')
-        const kept = await db.storedFile.findMany({ select: { id: true, title: true, filename: true }, orderBy: { createdAt: 'desc' } })
+        // A kept link has no file to attach; it is named in the body instead.
+        const kept = await db.storedFile.findMany({ where: { url: null }, select: { id: true, title: true, filename: true }, orderBy: { createdAt: 'desc' } })
         const got = pickAttachments(kept, wanted)
         if ('problem' in got) {
           return { sent: false, reason: `${got.problem} Nothing was drafted or sent.`, files: got.candidates.slice(0, 40).map((f) => ({ id: f.id, title: f.title })) }
@@ -6341,6 +6343,44 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  keep_link: {
+    def: {
+      name: 'keep_link',
+      description:
+        'Keep a link in the Files area, linked to the products, components or vendors it is about, so it shows on ' +
+        'their rows like a kept file: a Google Drive folder of a style\'s tech pack and pattern files, say. Nothing ' +
+        'behind the link is copied or read; opening it goes there. Brandon, 16 Oct 2026: the style folders "should be ' +
+        'attached to products", and Mouse "doesn\'t need to store them, just give us the links". When someone asks ' +
+        'where a style\'s files are, open_record shows its links: give them the link itself. Only when a person ' +
+        'asks you to keep the link; a link in mail from outside the team is a proposal, never kept on its own.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          title: str('What to call it, e.g. "TCO101 Cleo Tee: tech pack and pattern files (Drive)"'),
+          url: str('The whole https:// link, exactly as given'),
+          links: {
+            type: 'array' as const,
+            description: 'What it is about: each a product, component or vendor id from your context.',
+            items: {
+              type: 'object' as const,
+              properties: { kind: { type: 'string' as const, enum: ['product', 'component', 'vendor'] }, id: str('The record id') },
+              required: ['kind', 'id'],
+            },
+          },
+          notes: str('What is in it, e.g. "pattern TCO101-P2, tech pack 8 Sept, TUKAcad files, plots S/M/L"'),
+        },
+        required: ['title', 'url', 'links'],
+      },
+    },
+    run: async (i) => {
+      const { keepLink } = await import('@/lib/files')
+      const links = Array.isArray(i.links) ? i.links.map((l: { kind?: string; id?: string }) => ({ kind: String(l?.kind ?? ''), recordId: String(l?.id ?? '') })) : []
+      if (!links.length) return { ok: false, error: 'Say which product, component or vendor it is about.' }
+      const r = await keepLink({ title: String(i.title ?? ''), url: String(i.url ?? ''), notes: i.notes ?? null, links })
+      return r.ok ? { ok: true, id: r.id, tellTheUser: 'Kept the link in Files; it shows on the rows it is linked to.' } : r
+    },
+  },
+
   delete_file: {
     def: {
       name: 'delete_file',
@@ -6383,8 +6423,9 @@ export const TOOLS: Record<string, Tool> = {
       input_schema: { type: 'object', properties: { id: str('The file id') }, required: ['id'] },
     },
     run: async (i) => {
-      const f = await db.storedFile.findUnique({ where: { id: String(i.id ?? '') }, select: { title: true, filename: true, mediaType: true, data: true, notes: true } })
+      const f = await db.storedFile.findUnique({ where: { id: String(i.id ?? '') }, select: { title: true, filename: true, mediaType: true, data: true, notes: true, url: true } })
       if (!f) return { ok: false, found: false, reason: `No kept file ${i.id}.` }
+      if (f.url) return { found: true, title: f.title, url: f.url, notes: f.notes, note: 'This is a link, not a stored file: you cannot read what is behind it. Give the person the link.' }
       return { found: true, title: f.title, filename: f.filename, notes: f.notes, fileForModel: { mediaType: f.mediaType, base64: f.data } }
     },
   },

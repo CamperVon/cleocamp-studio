@@ -3,8 +3,10 @@ import { db } from '@/lib/db'
 /** A kept file, opened in the browser. Signed-in only (proxy.ts). */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const f = await db.storedFile.findUnique({ where: { id }, select: { filename: true, mediaType: true, data: true } })
+  const f = await db.storedFile.findUnique({ where: { id }, select: { filename: true, mediaType: true, data: true, url: true } })
   if (!f) return new Response('Not found', { status: 404 })
+  // A kept link goes where it points (https only, checked again here).
+  if (f.url) return /^https:\/\//i.test(f.url) ? Response.redirect(f.url, 302) : new Response('Not a web link', { status: 400 })
   return new Response(new Uint8Array(Buffer.from(f.data, 'base64')), {
     headers: {
       'Content-Type': f.mediaType,

@@ -138,6 +138,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-16', path: '/components',
     text: 'You can tell Mouse a component goes into no product on purpose, like the gold safety pins and the brass rivets. They stay counted and stop showing up as "on no product" each morning.',
   },
+  {
+    on: '2026-10-16', path: '/products',
+    text: 'Files can now hold a link as well as a file. The Google Drive folders for the Cleo Tee, Cosmo Stripe Tee and Story Dress (tech packs and pattern files) show under each product; tap to open. Ask Mouse "where are the Story Dress files?" and it gives you the link, or paste a link on the Files page.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

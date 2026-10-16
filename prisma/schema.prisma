@@ -1783,8 +1783,12 @@ model StoredFile {
   filename  String
   mediaType String
   sizeBytes Int
-  /// Base64-encoded bytes.
+  /// Base64-encoded bytes. Empty for a link.
   data      String
+  /// A link kept instead of a file (16 Oct 2026, Brandon: the style folders
+  /// on Google Drive "should be attached to products as well"; Mouse "doesn't
+  /// need to store them, just give us the links"). Opening it goes there.
+  url       String?
   notes     String?
   createdAt DateTime @default(now())
 

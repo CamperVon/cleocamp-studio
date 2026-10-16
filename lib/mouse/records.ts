@@ -157,7 +157,7 @@ export async function openRecord(ref: string, opts: { catalogue?: boolean } = {}
   const withCatalogue = opts.catalogue === true && (rec.kind === 'product' || rec.kind === 'component')
   const [notes, detail, latest, files, entries] = await Promise.all([
     currentNotes(keys), detailFor(rec), latestCounts(),
-    fileKind ? db.storedFileLink.findMany({ where: { kind: fileKind, recordId: rec.id }, select: { file: { select: { id: true, title: true } } } }) : [],
+    fileKind ? db.storedFileLink.findMany({ where: { kind: fileKind, recordId: rec.id }, select: { file: { select: { id: true, title: true, url: true } } } }) : [],
     withCatalogue ? catalogueEntries(rec.kind === 'product' ? [rec.id] : [], rec.kind === 'component' ? [rec.id] : []) : null,
   ])
   const catalogue = entries?.get(rec.id)
@@ -166,7 +166,7 @@ export async function openRecord(ref: string, opts: { catalogue?: boolean } = {}
     record: { kind: rec.kind, id: rec.id, name: rec.name },
     detail,
     ...(catalogue ? { catalogue, catalogueNote: 'Its full catalogue entry, exactly as the full catalogue prints it: recipe, notes field, lead time, cost and the rest.' } : {}),
-    ...(files.length ? { files: files.map((f) => f.file), filesNote: 'Kept files linked to this record. read_file gives you one.' } : {}),
+    ...(files.length ? { files: files.map((f) => (f.file.url ? f.file : { id: f.file.id, title: f.file.title })), filesNote: 'Kept files linked to this record. One with a url is a link (a Google Drive folder, say): give the person the link itself. read_file gives you any other.' } : {}),
     notes: notes.map((n) => noteLine(n, latest)),
     notesNote: notes.length ? 'Every current note on this record, in full. Each starts with the id add_note\'s supersedes and retire_note take.' : 'No current notes on this record.',
   }

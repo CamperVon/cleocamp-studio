@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
-import { checkLinks } from '@/lib/files'
+import { checkLinks, keepLink } from '@/lib/files'
 
 type Result = { ok: true } | { ok: false; error: string }
 
@@ -32,6 +32,14 @@ export async function renameFile(fileId: string, title: string, notes: string): 
 /** Deleting a kept file is for good: asked to confirm in the page first. */
 export async function deleteFile(fileId: string): Promise<Result> {
   await db.storedFile.deleteMany({ where: { id: fileId } })
+  touched()
+  return { ok: true }
+}
+
+/** Keep a link (a Google Drive folder) instead of a file, linked to its rows. */
+export async function keepLinkAction(title: string, url: string, notes: string, links: Array<{ kind: string; recordId: string }>): Promise<Result> {
+  const r = await keepLink({ title, url, notes, links })
+  if (!r.ok) return r
   touched()
   return { ok: true }
 }
