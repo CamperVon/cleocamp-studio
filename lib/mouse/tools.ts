@@ -6269,10 +6269,12 @@ export const TOOLS: Record<string, Tool> = {
         'id from your context, a PO number ("PO 2391"), or its exact full name; "general" returns the ' +
         'notes with no subject. Read-only. Use it before answering about, or changing, a record whose ' +
         'notes your context lists by subject rather than in full. A name that more than one record ' +
-        'has comes back as the candidates, and nothing is chosen for you.',
+        'has comes back as the candidates, and nothing is chosen for you. "section: <name>" returns a whole ' +
+        'current list instead, exactly as it is kept: products, components, purchase orders, production runs, ' +
+        'forecasts, calendar, todos, notes, wholesale, stylists, alerts, money, loose po lines, style, muse.',
       input_schema: {
         type: 'object',
-        properties: { ref: str('The record: an id, a PO number, or its exact name') },
+        properties: { ref: str('The record: an id, a PO number, or its exact name; or "section: <name>" for a whole list') },
         required: ['ref'],
       },
     },

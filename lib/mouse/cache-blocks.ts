@@ -58,3 +58,53 @@ export function systemBlocks(o: {
   }
   return blocks
 }
+
+/**
+ * The system prompt for the transient-state layout (lib/mouse/transient.ts,
+ * 16 Oct 2026, review build): the rules, then the stable core with the
+ * layout's own rules at its head. Two marks, both one hour; the history and
+ * the turn take the other two (layoutTransientMessages). No business data
+ * that changes by the day is in here: it all goes in the state, after the
+ * last mark. Pure.
+ *
+ *   1. SYSTEM_RULES                         mark, 1 hour (with the tools ahead of it)
+ *   2. per-caller extra rules, practice     no mark
+ *   3. TRANSIENT_RULES + stable core        mark, 1 hour
+ */
+export function coreSystemBlocks(o: { rules: string; extraRules?: string | null; practiceRules?: string | null; transientRules: string; core: string }): Anthropic.TextBlockParam[] {
+  const blocks: Anthropic.TextBlockParam[] = [{ type: 'text', text: o.rules, cache_control: { type: 'ephemeral', ttl: '1h' } }]
+  if (o.extraRules) blocks.push({ type: 'text', text: o.extraRules })
+  if (o.practiceRules) blocks.push({ type: 'text', text: o.practiceRules })
+  blocks.push({ type: 'text', text: `${o.transientRules}\n\n${CATALOG_HEADING}${o.core}`, cache_control: { type: 'ephemeral', ttl: '1h' } })
+  return blocks
+}
+
+/**
+ * The request as sent in this layout. A copy: the loop's own messages are
+ * never changed, so the state is never carried into the next request or
+ * saved. Marks: the last block of the history (1 hour) and the last block of
+ * the turn so far (5 minutes); the state goes after both, in the last
+ * message, which is always the person's or a tool result. Pure.
+ */
+export function layoutTransientMessages(messages: Anthropic.MessageParam[], historyLength: number, state: string): Anthropic.MessageParam[] {
+  const asBlocks = (c: Anthropic.MessageParam['content']): Anthropic.ContentBlockParam[] =>
+    typeof c === 'string' ? [{ type: 'text', text: c }] : c.map((b) => ({ ...b }) as Anthropic.ContentBlockParam)
+  const out = messages.map((m) => ({ ...m, content: asBlocks(m.content) }))
+  const mark = (i: number, ttl: '1h' | '5m') => {
+    const blocks = out[i]?.content as Anthropic.ContentBlockParam[] | undefined
+    if (!blocks?.length) return
+    // A thinking block cannot carry a mark; the last block that can, does.
+    for (let k = blocks.length - 1; k >= 0; k--) {
+      const b = blocks[k] as { type: string }
+      if (b.type === 'thinking' || b.type === 'redacted_thinking') continue
+      ;(blocks[k] as { cache_control?: unknown }).cache_control = ttl === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' }
+      return
+    }
+  }
+  if (historyLength > 0 && historyLength < out.length) mark(historyLength - 1, '1h')
+  mark(out.length - 1, '5m')
+  const last = out[out.length - 1]
+  if (last?.role !== 'user') throw new Error('the state goes in a user message; the request must end with one')
+  ;(last.content as Anthropic.ContentBlockParam[]).push({ type: 'text', text: state })
+  return out
+}
