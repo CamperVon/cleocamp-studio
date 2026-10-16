@@ -181,9 +181,14 @@ export function sentences(text: string): Array<{ raw: string; blanked: string }>
   return out.filter((x) => x.raw.trim())
 }
 
-/** Does this one sentence name the PO, and no other PO? Pure. */
+/**
+ * Does this one sentence name the PO with an explicit marker ("PO 2360",
+ * "PO #2360", "#2360"), and no other PO? A bare 2360 is not enough, even when
+ * the model picked PO 2360 from context: it could be an address or a count.
+ * Pure.
+ */
 function namesOnlyPo(raw: string, po: string): boolean {
-  if (!new RegExp(`(?<![\\d])${po}(?![\\d])`).test(raw)) return false
+  if (!new RegExp(`(?:\\bPOs?\\s*#?\\s*|#\\s*)${po}(?![\\d])`, 'i').test(raw)) return false
   const others = [...raw.matchAll(/\bPOs?\s*#?\s*(\d+)/gi)].map((m) => m[1]).filter((n) => n !== po)
   return others.length === 0
 }

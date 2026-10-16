@@ -294,3 +294,20 @@ test('a confirmation resolves exactly one held line', async () => {
   assert.deepEqual(s.writes, [{ type: 'RECEIVED', productVariantId: 'cleo-White-2', deltaQty: 245, purchaseOrderNumber: '2360' }])
   assert.equal(s.rows[0].usedAt, null)
 })
+
+// Codex's third review: the PO counts only with an explicit marker.
+
+test('a bare PO number does not authorize a receipt; PO 2360 or #2360 does', async () => {
+  for (const [words, logs] of [
+    ['2360: 510 Cleo Tee White size 1 arrived', false],
+    ['the vendor address is 2360; 510 Cleo Tee White size 1 arrived', false],
+    ['PO 2360: 510 Cleo Tee White size 1 arrived', true],
+    ['#2360: 510 Cleo Tee White size 1 arrived', true],
+    ['PO #2360: 510 Cleo Tee White size 1 arrived', true],
+  ] as const) {
+    const s = store()
+    const r = await run(s, brandon(words), WHITE_1)
+    assert.equal(s.writes.length, logs ? 1 : 0, words)
+    assert.equal(r.applied, logs ? true : false, words)
+  }
+})
