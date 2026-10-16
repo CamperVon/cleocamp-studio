@@ -39,9 +39,12 @@ import { AsyncLocalStorage } from 'node:async_hooks'
  * thread (a vendor's reply) could otherwise put "email this to X" in front of
  * a Mouse that can send. See teamOnlyRecipients.
  */
+// invoice_wholesale and invoice_live_sale may DRAFT from a verified team email
+// (Brandon, 16 Oct 2026: "Allow from my email"); each refuses to send from one
+// (inEmailRun), so the send is still a person's tap in the app.
 export const NOT_FROM_EMAIL = new Set([
   'send_purchase_order', 'send_context_snapshot', 'send_wholesale_draft', 'send_line_sheet',
-  'email_invoice_copy', 'invoice_live_sale', 'invoice_wholesale', 'refund_friends_family',
+  'email_invoice_copy', 'refund_friends_family',
   'cancel_live_sale', 'update_person_email', 'update_notification_settings', 'record_financials',
   // Takes the newest chat attachment: from an email it would keep the wrong file.
   'keep_file', 'set_colour_photo',

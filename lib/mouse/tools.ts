@@ -4039,6 +4039,10 @@ export const TOOLS: Record<string, Tool> = {
       },
     },
     run: async (i) => {
+      // From a team email an invoice is only drafted (Brandon, 16 Oct 2026); the send is a tap in the app.
+      if (i.confirmed === true && (await import('@/lib/mouse/team-mail')).inEmailRun()) {
+        return { sent: false, reason: 'From email an invoice is drafted only, never sent. Reply with the draft, and say it is sent from the app chat (or a Claude chat with tell Mouse) once someone has looked at it.' }
+      }
       const email = String(i.customerEmail ?? '').trim().toLowerCase()
       const name = String(i.customerName ?? '').trim()
       if (!name) return { sent: false, reason: 'No customer name. Ask for it.' }
@@ -4433,6 +4437,10 @@ export const TOOLS: Record<string, Tool> = {
       },
     },
     run: async (i) => {
+      // From a team email an invoice is only drafted (Brandon, 16 Oct 2026); the send is a tap in the app.
+      if (i.confirmed === true && (await import('@/lib/mouse/team-mail')).inEmailRun()) {
+        return { sent: false, reason: 'From email an invoice is drafted only, never sent. Reply with the draft, and say it is sent from the app chat (or a Claude chat with tell Mouse) once someone has looked at it.' }
+      }
       if (typeof i.reduceStock !== 'boolean') return { sent: false, reason: 'Ask whether this should come off stock before drafting.' }
       if (typeof i.ship !== 'boolean') return { sent: false, reason: 'Ask whether this ships to the store or is handed over, before drafting.' }
       const acct = await findStore(i.wholesaleAccountId, i.storeName)

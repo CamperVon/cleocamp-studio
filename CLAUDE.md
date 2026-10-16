@@ -149,7 +149,11 @@ data. That must not happen again.
   DMARC result is pass, so a forged From line is not enough. Nothing that
   sends, invoices or moves money runs from email (`NOT_FROM_EMAIL` in
   `lib/mouse/team-mail.ts`), except a gift (Brandon, 8 Oct 2026): it makes a
-  $0 Shopify order that waits for a person to make the shipping label; and
+  $0 Shopify order that waits for a person to make the shipping label; an
+  invoice DRAFT (Brandon, 16 Oct 2026: "Allow from my email"):
+  `invoice_wholesale` and `invoice_live_sale` may draft from such a run, and
+  each refuses to send from one (`inEmailRun`), so sending stays a tap in the
+  app; and
   email to the team (Brandon, 15 Oct 2026: "mouse should be able to originate
   email"): `send_email` from such a run reaches cleocamp.com and the team's own
   addresses only (`outsideTeam`), never a vendor or customer, so a vendor's

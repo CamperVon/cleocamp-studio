@@ -637,6 +637,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mcp/oauth.ts`, `lib/mcp/tools.ts`, `lib/mcp/server.ts`, `lib/mcp/scrub.ts`, `lib/mcp/live-stock.ts`, `lib/mcp/tell.ts`, `app/api/mcp/route.ts`, `app/api/oauth/register/route.ts`, `app/api/oauth/token/route.ts`, `app/.well-known/oauth-protected-resource/`, `app/.well-known/oauth-authorization-server/route.ts`, `app/oauth/authorize/`, `app/(main)/connector/`, `proxy.ts`, `prisma/schema.prisma` (`McpClient`, `McpGrant`, `McpCall`), `tests/mcp-connector.test.ts`.
 - **Needs:** Shopify for live stock (optional: without it, stock is the app's own copy). Otherwise nothing beyond the app.
 
+### Invoices can be drafted from a verified team email, never sent
+- **Problem:** money tools were blocked outright for runs started by a team member's email, so "invoice this store" by email ended with the assistant saying it could not, and the work waited for someone to open the app.
+- **Change:** the two invoice tools are no longer on the blocked list; each refuses to *send* from an email run (`inEmailRun`), so an email can create the Shopify draft (and get its link back) while the send stays a tap in the app. Every other money and sending tool stays blocked from email.
+- **Files:** `lib/mouse/team-mail.ts` (`NOT_FROM_EMAIL`), `lib/mouse/tools.ts` (`invoice_wholesale`, `invoice_live_sale`), `tests/team-mail.test.ts`.
+- **Needs:** Shopify and email (inbound, with DMARC).
+
 ---
 
 ## Setup notes for a new install

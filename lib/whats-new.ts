@@ -106,6 +106,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-16', path: '/connector',
     text: 'In a Claude chat you can now say "tell Mouse …" and Claude passes it straight to Mouse, which acts on it as if you had typed it; or "tell Claude Code …" for an idea about how the app should work. Everything Claude told Mouse, with Mouse\'s reply, is on the Claude Connector page.',
   },
+  {
+    on: '2026-10-16',
+    text: 'You can now ask Mouse by email to draft a wholesale or live-sale invoice. It drafts it in Shopify and replies with the link; sending it to the customer is still done in the app chat.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

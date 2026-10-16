@@ -19,12 +19,12 @@ test("DMARC is read from the receiving server's top header, folded lines and all
 })
 
 test('nothing that sends to outsiders or moves money runs from an email', () => {
-  for (const t of ['send_purchase_order', 'invoice_live_sale', 'refund_friends_family', 'update_person_email']) assert.ok(NOT_FROM_EMAIL.has(t), t)
+  for (const t of ['send_purchase_order', 'send_wholesale_draft', 'email_invoice_copy', 'refund_friends_family', 'update_person_email']) assert.ok(NOT_FROM_EMAIL.has(t), t)
 })
 
 test('a gift can be made from verified team email; money and sending still cannot', () => {
   assert.equal(NOT_FROM_EMAIL.has('gift_items'), false)
-  for (const t of ['invoice_live_sale', 'refund_friends_family', 'send_purchase_order', 'cancel_live_sale']) assert.ok(NOT_FROM_EMAIL.has(t), t)
+  for (const t of ['refund_friends_family', 'send_purchase_order', 'cancel_live_sale', 'send_wholesale_draft']) assert.ok(NOT_FROM_EMAIL.has(t), t)
 })
 
 // Brandon, 15 Oct 2026: "mouse should be able to originate email". To the team only.
@@ -61,4 +61,17 @@ test('a copied email gets an answer only when it speaks to Mouse', async () => {
   assert.equal(speaksToMouse('Michael, can you cc mouse@send.cleocamp.com on the invoice?'), false)
   assert.equal(speaksToMouse('Mouse, how many yards of 3103 do we have at Lorena?'), true)
   assert.equal(speaksToMouse('Thanks Michael. @Mouse what did we pay last time?'), true)
+})
+
+// Brandon, 16 Oct 2026: "Allow from my email". An invoice may be DRAFTED from
+// a verified team email; sending it is still a tap in the app.
+test('from a team email an invoice can be drafted but never sent', async () => {
+  const { asEmailRun } = await import('../lib/mouse/team-mail')
+  const { TOOLS } = await import('../lib/mouse/tools')
+  for (const t of ['invoice_wholesale', 'invoice_live_sale']) {
+    assert.equal(NOT_FROM_EMAIL.has(t), false, `${t} may draft from email`)
+    const r = await asEmailRun(() => TOOLS[t].run({ confirmed: true, draftOrderId: 'gid://shopify/DraftOrder/1', reduceStock: false, ship: false }, {} as never)) as { sent: boolean; reason: string }
+    assert.equal(r.sent, false, t)
+    assert.match(r.reason, /drafted only, never sent/, t)
+  }
 })
