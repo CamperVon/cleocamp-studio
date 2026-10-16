@@ -58,7 +58,7 @@ export type LineSheetLine = {
   productId: string | null
   colorway: string | null
   item: string
-  /** The product's style number (TP101), printed under the item. Null: none yet. */
+  /** The product's style number (TCO101), printed under the item. Null: none yet. */
   style: string | null
   colorLabel: string
   /** What prints: the row's own words, or else the product's Shopify description. */

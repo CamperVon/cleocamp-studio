@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { Prisma } from '@/generated/prisma/client'
 import type { LiveStock } from '@/lib/mcp/live-stock'
 import { poAmounts, poLineLabel } from '@/lib/po'
-import { nextStyleNumber } from '@/lib/style-system'
+import { LINES, nextVersion, parseStyle } from '@/lib/style-system'
 
 /**
  * The Claude connector's tools (16 Oct 2026). Read-only: each one gets a
@@ -205,9 +205,12 @@ export const getProduct = tool({
   input: { query: z.string().min(1).max(120).describe('Style number, SKU or product name') },
   run: async (tx, i, ctx) => {
     const q = i.query.trim()
-    const byStyle = await tx.product.findMany({ where: { style: { number: { equals: q, mode: 'insensitive' } } }, select: { id: true, name: true } })
+    // A retired number (TP101) finds the product that carries its replacement (16 Oct 2026 re-key).
+    const retired = await tx.retiredStyleNumber.findUnique({ where: { number: q.toUpperCase() }, select: { replacedBy: true } })
+    const number = retired?.replacedBy ?? q
+    const byStyle = await tx.product.findMany({ where: { style: { number: { equals: number, mode: 'insensitive' } } }, select: { id: true, name: true } })
     const bySku = byStyle.length ? [] : await tx.product.findMany({
-      where: { variants: { some: { OR: [{ newSku: { equals: q, mode: 'insensitive' } }, { sku: { equals: q, mode: 'insensitive' } }, { shopifySku: { equals: q, mode: 'insensitive' } }] } } },
+      where: { variants: { some: { OR: [{ newSku: { equals: q, mode: 'insensitive' } }, { previousSku: { equals: q, mode: 'insensitive' } }, { sku: { equals: q, mode: 'insensitive' } }, { shopifySku: { equals: q, mode: 'insensitive' } }] } } },
       select: { id: true, name: true },
     })
     const byName = byStyle.length || bySku.length ? [] : await tx.product.findMany({ where: { name: { equals: q, mode: 'insensitive' } }, select: { id: true, name: true } })
@@ -511,19 +514,34 @@ export const styleSystem = tool({
   name: 'style_system',
   title: 'Style system',
   description:
-    'The style-number system: style categories with the next free style number in each, colour codes and size codes, each confirmed or ' +
-    'proposed. A SKU is STYLE-COLOUR-SIZE, e.g. TP101-BLK-01. Use before suggesting a new style number or SKU.',
+    'The style-number system (since 16 Oct 2026): a style number is three letters and three digits, e.g. TCO101 = T tees, CO the ' +
+    'product, 1 women\'s line, 01 first version. Returns the category letters, every style family with its next version, colour and size ' +
+    'codes (each confirmed or proposed) and the retired numbers (the old TP101-era ones, never reused). A SKU is STYLE-COLOUR-SIZE, e.g. ' +
+    'TCO101-BLK-01. The letters for a new family are a person\'s choice. Use before suggesting a new style number or SKU.',
   input: {},
   run: async (tx) => {
-    const [codes, styles] = await Promise.all([
-      tx.styleCode.findMany({ orderBy: [{ type: 'asc' }, { code: 'asc' }], select: { type: true, code: true, name: true, status: true } }),
-      tx.style.findMany({ select: { number: true, categoryCode: true } }),
+    const [codes, styles, retired] = await Promise.all([
+      tx.styleCode.findMany({ orderBy: [{ type: 'asc' }, { code: 'asc' }], select: { type: true, code: true, name: true, status: true, notes: true } }),
+      tx.style.findMany({ orderBy: { number: 'asc' }, select: { number: true, name: true, categoryCode: true, status: true } }),
+      tx.retiredStyleNumber.findMany({ orderBy: { number: 'asc' }, select: { number: true, replacedBy: true } }),
     ])
-    const numbers = styles.map((s) => s.number)
+    const taken = [...styles.map((s) => s.number), ...retired.map((r) => r.number)]
     const of = (t: string) => codes.filter((c) => c.type === t)
+    const families = new Map<string, { family: string; line: string; styles: string[] }>()
+    for (const s of styles) {
+      const p = parseStyle(s.number)
+      if (!p) continue
+      const k = `${p.family}${p.line}`
+      const f = families.get(k) ?? { family: p.family, line: p.line, styles: [] }
+      f.styles.push(`${s.number} ${s.name}${s.status === 'PROPOSED' ? ' (proposed)' : ''}`)
+      families.set(k, f)
+    }
     return {
-      skuFormat: 'STYLE-COLOUR-SIZE, e.g. TP101-BLK-01',
-      categories: of('CATEGORY').map((c) => ({ code: c.code, name: c.name, status: c.status, styles: styles.filter((s) => s.categoryCode === c.code).length, nextStyleNumber: nextStyleNumber(c.code, numbers) })),
+      format: 'STYLE = category letter + 2 letters for the product + line digit (1 women\'s, 5 men\'s, 7 unisex) + 2-digit version. SKU = STYLE-COLOUR-SIZE, e.g. TCO101-BLK-01.',
+      categories: of('CATEGORY').map((c) => ({ code: c.code, name: c.name, ...(c.notes ? { note: c.notes } : {}), styles: styles.filter((s) => s.categoryCode === c.code).length })),
+      lines: LINES,
+      families: [...families.values()].map((f) => ({ family: f.family, line: LINES[f.line] ?? f.line, styles: f.styles, nextVersion: nextVersion(f.family, f.line, taken) })),
+      retired: retired.map((r) => (r.replacedBy ? `${r.number} → ${r.replacedBy}` : `${r.number} (no replacement)`)),
       colors: of('COLOR').map((c) => ({ code: c.code, name: c.name, status: c.status })),
       sizes: of('SIZE').map((c) => ({ code: c.code, name: c.name, status: c.status })),
     }

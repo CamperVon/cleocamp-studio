@@ -18,7 +18,7 @@ export const asSkuDisplayMode = (m: string | null | undefined): SkuDisplayMode =
 
 /**
  * The SKU text for a variant: in transition, the new SKU with the old one in
- * brackets ("TP101-WHT-01 (was CCSS25COT-WHT01)"); in new, the new SKU only.
+ * brackets ("TCO101-WHT-01 (was CCSS25COT-WHT01)"); in new, the new SKU only.
  * Either way a variant without a new SKU shows its old one. Pure.
  */
 export function skuText(v: { sku: string | null; newSku?: string | null }, mode: SkuDisplayMode): string | null {

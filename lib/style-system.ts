@@ -1,14 +1,92 @@
 /**
- * Style numbers and SKUs (8 Oct 2026). The spec and the data it was seeded
- * from live in docs/style-system/. A style is one pattern: TP101 is the Cleo
- * Tee in every colour and size. A SKU is STYLE-COLOUR-SIZE: TP101-BLK-01.
+ * Style numbers and SKUs. The spec lives in docs/style-system/style-system.md.
+ *
+ * Since 16 Oct 2026 (Prompt 4, replacing the 8 Oct TP101 system): a style
+ * number is three letters and three digits, TCO101. Letter 1 is the
+ * category, letters 2-3 the product (from its name), digit 1 the line
+ * (1 women's, 5 men's, 7 unisex), digits 2-3 the version, 01 first. A style
+ * is a pattern plus its construction: a new colour or material on the same
+ * pattern and build is a colourway; a different construction or cost sheet
+ * (an extra lining) is a new style. A SKU is STYLE-COLOUR-SIZE: TCO101-BLK-01.
+ * The old TP101-era numbers are retired, never reused, and still found.
  *
  * Everything here is pure, so the rules are tested rather than trusted.
  */
 
 /** The SKU format, exactly as docs/style-system/style-system.md gives it. */
-export const SKU_RE = /^[A-Z]{2}\d{3}-[A-Z]{3}-(\d{2}|XS|SM|MD|LG|XL|PT|OS)$/
-export const STYLE_RE = /^[A-Z]{2}\d{3}$/
+export const SKU_RE = /^[A-Z]{3}[157]\d{2}-[A-Z]{3}-(\d{2}|XS|SM|MD|LG|XL|PT|OS)$/
+export const STYLE_RE = /^[A-Z]{3}[157]\d{2}$/
+/** The 8 Oct 2026 formats (TP101, TP101-BLK-01): retired, never valid for anything new, still recognised. */
+export const OLD_STYLE_RE = /^[A-Z]{2}\d{3}$/
+export const OLD_SKU_RE = /^[A-Z]{2}\d{3}-[A-Z]{3}-(\d{2}|XS|SM|MD|LG|XL|PT|OS)$/
+
+/** Letter 1 of a style number. Reserved letters are kept for later and confirmed before first use. */
+export const CATEGORIES: ReadonlyArray<{ code: string; name: string; reserved?: true }> = [
+  { code: 'T', name: 'Tees' },
+  { code: 'U', name: 'Tops (blouses, shirts)', reserved: true },
+  { code: 'S', name: 'Sweaters' },
+  { code: 'B', name: 'Bottoms (pants and skirts)' },
+  { code: 'D', name: 'Dresses' },
+  { code: 'H', name: 'Handbags' },
+  { code: 'A', name: 'Accessories' },
+  { code: 'I', name: 'Intimates' },
+  { code: 'O', name: 'Other' },
+  { code: 'X', name: 'Parts and components' },
+  { code: 'J', name: 'Jackets', reserved: true },
+]
+
+/** Digit 1 of a style number. 7 is reserved. */
+export const LINES: Readonly<Record<string, string>> = { '1': "women's", '5': "men's", '7': 'unisex' }
+
+/** A style number's parts, or null if it is not one. Pure. */
+export function parseStyle(n: string): { category: string; family: string; line: string; version: number } | null {
+  const s = n.trim().toUpperCase()
+  if (!STYLE_RE.test(s)) return null
+  return { category: s[0], family: s.slice(0, 3), line: s[3], version: Number(s.slice(4)) }
+}
+
+/**
+ * Why a new style number cannot be used, or null if it can. `taken` holds
+ * every number ever used: current ones, and the retired, including the old
+ * TP101-era numbers. Pure.
+ */
+export function styleProblem(n: string, taken: ReadonlySet<string>): string | null {
+  const s = n.trim().toUpperCase()
+  if (OLD_STYLE_RE.test(s)) return `${s} is in the old format (two letters, three digits), retired on 16 Oct 2026. Style numbers are now three letters and three digits, e.g. TCO101.`
+  const p = parseStyle(s)
+  if (!p) return `"${n}" is not a style number: three letters (category, then two for the product) and three digits (line 1, 5 or 7, then a two-digit version), e.g. TCO101.`
+  if (!CATEGORIES.some((c) => c.code === p.category)) return `${p.category} is not a category letter (${CATEGORIES.map((c) => c.code).join(', ')}).`
+  if (p.version < 1) return `The version starts at 01: ${p.family}${p.line}01.`
+  if (taken.has(s)) return `${s} has been used before. A style number is never reused, retired ones included.`
+  return null
+}
+
+/**
+ * The next version of an existing product family within one line: the
+ * highest version used (retired included) plus one, e.g. TCO101 → TCO102.
+ * Only for a redesign customers would see as a different version, never a
+ * new colour or a pattern revision. The first number of a new family is a
+ * person's choice of letters. Pure.
+ */
+export function nextVersion(family: string, line: string, existing: Iterable<string>): string {
+  const f = family.trim().toUpperCase()
+  const used = [...existing].map((n) => parseStyle(n)).filter((p): p is NonNullable<typeof p> => !!p && p.family === f && p.line === line).map((p) => p.version)
+  return `${f}${line}${String(Math.max(0, ...used) + 1).padStart(2, '0')}`
+}
+
+/**
+ * Letters 2-3 suggested from a product's name: the first letters of its
+ * first two words, or the first two letters of a one-word name, skipping
+ * words like "the" and "and". A suggestion only: a person picks the letters.
+ * Pure.
+ */
+export function suggestFamilyLetters(name: string): string | null {
+  const words = name.toUpperCase().replace(/\(.*?\)/g, ' ').replace(/[^A-Z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w && !['THE', 'AND', 'OF', 'A'].includes(w))
+  const letters = words.map((w) => w.replace(/[^A-Z]/g, '')).filter(Boolean)
+  if (!letters.length) return null
+  if (letters.length === 1) return letters[0].length >= 2 ? letters[0].slice(0, 2) : null
+  return letters[0][0] + letters[1][0]
+}
 
 export type StyleStatusName = 'ACTIVE' | 'DRAFT' | 'DEVELOPMENT' | 'NOT_LIVE' | 'LIVE_ONLY' | 'PROPOSED' | 'RETIRED'
 
@@ -20,7 +98,7 @@ export function styleStatus(s: string): StyleStatusName | null {
 
 /** Why a SKU cannot be used, or null if it can. `taken` is every SKU already assigned elsewhere. Pure. */
 export function skuProblem(sku: string, parts: { style: string; color: string; size: string }, taken: Set<string> = new Set()): string | null {
-  if (!SKU_RE.test(sku)) return `"${sku}" is not a SKU: it must read like TP101-BLK-01 (style, 3-letter colour, size code).`
+  if (!SKU_RE.test(sku)) return `"${sku}" is not a SKU: it must read like TCO101-BLK-01 (style, 3-letter colour, size code).`
   if (sku !== `${parts.style}-${parts.color}-${parts.size}`) return `"${sku}" does not equal ${parts.style}-${parts.color}-${parts.size}, its style, colour and size.`
   if (taken.has(sku)) return `${sku} is already used by another variant. SKUs are unique.`
   return null
@@ -74,17 +152,6 @@ export function planSkus(style: string, variants: SkuVariant[], codeStatus: (typ
     used.add(sku)
     return { kind: 'set', id: v.id, label: v.label, sku, color, size, from: v.newSku, shopifySku: v.shopifySku }
   })
-}
-
-/**
- * The next style number in a category: the highest ever used, plus one.
- * Retired and proposed numbers count, so no number is ever handed out twice.
- * Starts at 101. Pure.
- */
-export function nextStyleNumber(category: string, existing: string[]): string {
-  const cat = category.trim().toUpperCase()
-  const used = existing.filter((n) => n.startsWith(cat) && STYLE_RE.test(n)).map((n) => Number(n.slice(2)))
-  return `${cat}${Math.max(100, ...used) + 1}`
 }
 
 /**

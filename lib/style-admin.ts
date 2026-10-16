@@ -1,8 +1,9 @@
 import { db } from '@/lib/db'
-import { STYLE_RE, nextStyleNumber, planSkus, sizeCodeFor } from '@/lib/style-system'
+import { CATEGORIES, LINES, OLD_STYLE_RE, STYLE_RE, nextVersion, planSkus, sizeCodeFor, styleProblem, suggestFamilyLetters } from '@/lib/style-system'
 
 /**
- * Giving things style numbers and codes (8 Oct 2026, docs/style-system/).
+ * Giving things style numbers and codes (8 Oct 2026, re-keyed 16 Oct 2026;
+ * docs/style-system/).
  * The rules that do not bend: a number is never reused; a code nobody has
  * confirmed is PROPOSED and cannot go into a SKU; only Brandon or Cleo
  * confirm. Every proposal raises a question for them, so nothing is decided
@@ -13,7 +14,8 @@ import { STYLE_RE, nextStyleNumber, planSkus, sizeCodeFor } from '@/lib/style-sy
 export const CONFIRMERS = new Set(['per_brandon', 'per_cleo'])
 
 const FORMAT: Record<'CATEGORY' | 'COLOR' | 'SIZE', RegExp> = {
-  CATEGORY: /^[A-Z]{2}$/,
+  // One letter since 16 Oct 2026 (lib/style-system.ts CATEGORIES).
+  CATEGORY: /^[A-Z]$/,
   COLOR: /^[A-Z]{3}$/,
   // Only the sizes a SKU can carry (lib/style-system.ts SKU_RE).
   SIZE: /^(\d{2}|XS|SM|MD|LG|XL|PT|OS)$/,
@@ -39,7 +41,7 @@ export async function proposeCode(type: CodeType, code: string, name: string): P
   if (!FORMAT[type].test(c)) {
     return { ok: false, error: type === 'SIZE'
       ? `"${code}" cannot be a size code: a SKU allows only 00 to 99, XS, SM, MD, LG, XL, PT or OS. A different size needs Brandon to change the SKU format first.`
-      : `"${code}" cannot be a ${type === 'COLOR' ? 'colour' : 'category'} code: it must be ${type === 'COLOR' ? 'three' : 'two'} capital letters.` }
+      : `"${code}" cannot be a ${type === 'COLOR' ? 'colour' : 'category'} code: it must be ${type === 'COLOR' ? 'three capital letters' : 'one capital letter'}.` }
   }
   const existing = await db.styleCode.findUnique({ where: { type_code: { type, code: c } } })
   if (existing) return { ok: true, code: c, status: existing.status }
@@ -50,33 +52,64 @@ export async function proposeCode(type: CodeType, code: string, name: string): P
   return { ok: true, code: c, status: 'PROPOSED', questionId }
 }
 
+/** Every style number ever used: current ones and retired ones (old TP101-era numbers included). */
+export async function takenStyleNumbers(): Promise<Set<string>> {
+  const [live, retired] = await Promise.all([db.style.findMany({ select: { number: true } }), db.retiredStyleNumber.findMany({ select: { number: true } })])
+  return new Set([...live.map((s) => s.number), ...retired.map((r) => r.number)])
+}
+
 /**
- * A new pattern: the next number in its category (highest ever used plus
- * one, retired and proposed included), created PROPOSED, and the product
- * linked to it. A new category is proposed with it.
+ * A new style for a product, proposed for Brandon or Cleo to confirm
+ * (16 Oct 2026). The number is category letter + two letters for the product
+ * + line digit + version: TCO101. The product letters are a person's choice;
+ * when none are given, letters from the name are suggested. `of` makes it the
+ * next version of an existing family instead (a redesign customers would see
+ * as different: never a new colour, never a pattern revision).
  */
-export async function proposeStyle(input: { productId: string; categoryCode: string; categoryName?: string }) {
+export async function proposeStyle(input: { productId: string; categoryCode: string; letters?: string; line?: string; of?: string }) {
   const product = await db.product.findUnique({ where: { id: input.productId }, select: { id: true, name: true, styleId: true } })
   if (!product) return { ok: false as const, error: `No product ${input.productId}.` }
   if (product.styleId) {
     const s = await db.style.findUnique({ where: { id: product.styleId }, select: { number: true } })
     return { ok: false as const, error: `${product.name} already has style ${s?.number}. A number is never reused or moved; ask Brandon if it is wrong.` }
   }
-  const cat = await proposeCode('CATEGORY', input.categoryCode, input.categoryName ?? '')
-  if (!cat.ok) return cat
-  const all = await db.style.findMany({ select: { number: true } })
-  const number = nextStyleNumber(cat.code, all.map((s) => s.number))
-  const style = await db.style.create({ data: { number, name: product.name, categoryCode: cat.code, status: 'PROPOSED', sizes: 'TBD', notes: 'Proposed by Studio Mouse; not confirmed.' } })
+  const taken = await takenStyleNumbers()
+  const line = (input.line ?? '1').trim()
+  if (!LINES[line]) return { ok: false as const, error: `The line digit is 1 (women's), 5 (men's) or 7 (unisex), not "${input.line}".` }
+  let number: string
+  if (input.of?.trim()) {
+    const base = input.of.trim().toUpperCase()
+    if (!STYLE_RE.test(base)) return { ok: false as const, error: `"${input.of}" is not a style number to make a new version of (e.g. TCO101).` }
+    number = nextVersion(base.slice(0, 3), line, taken)
+  } else {
+    const cat = input.categoryCode.trim().toUpperCase()
+    const category = CATEGORIES.find((c) => c.code === cat)
+    if (!category) return { ok: false as const, error: `"${input.categoryCode}" is not a category letter: ${CATEGORIES.map((c) => `${c.code} ${c.name}`).join(', ')}.` }
+    const letters = (input.letters?.trim().toUpperCase() || suggestFamilyLetters(product.name) || '').replace(/[^A-Z]/g, '')
+    if (letters.length !== 2) return { ok: false as const, error: `Say which two letters stand for ${product.name} (letters 2 and 3 of the style number).` }
+    const family = `${cat}${letters}`
+    // A family already in use belongs to another product: its letters are taken.
+    if ([...taken].some((n) => n.startsWith(family) && STYLE_RE.test(n))) return { ok: false as const, error: `${family} is already used by another style. Pick two other letters for ${product.name}, or make it a new version of that style.` }
+    number = `${family}${line}01`
+  }
+  const problem = styleProblem(number, taken)
+  if (problem) return { ok: false as const, error: problem }
+  const style = await db.style.create({ data: { number, name: product.name, categoryCode: number[0], status: 'PROPOSED', sizes: 'TBD', notes: 'Proposed by Studio Mouse; not confirmed.' } })
   await db.product.update({ where: { id: product.id }, data: { styleId: style.id } })
+  const reserved = CATEGORIES.find((c) => c.code === number[0])?.reserved
   const questionId = await ask(`Confirm style number ${number} for ${product.name}`,
-    `${product.name} was recorded as a new pattern, so it was given the next ${cat.code} number, ${number}. Confirm it, or say if it is really a new colour of an existing style.`, product.id)
-  return { ok: true as const, number, status: 'PROPOSED' as const, questionId, categoryStatus: cat.status }
+    `${product.name} was recorded as a new style, ${number} (${number[0]} ${CATEGORIES.find((c) => c.code === number[0])?.name}, letters ${number.slice(1, 3)}, ${LINES[number[3]]}, version ${number.slice(4)}).${reserved ? ' Its category letter is reserved and not in use yet.' : ''} Confirm it, pick other letters, or say if it is really a colourway of an existing style.`, product.id)
+  return { ok: true as const, number, status: 'PROPOSED' as const, questionId }
 }
 
 /** A new colour or version of an existing style: the product is linked to that style's number. */
 export async function linkStyle(productId: string, styleNumber: string) {
   const n = styleNumber.trim().toUpperCase()
-  if (!STYLE_RE.test(n)) return { ok: false as const, error: `"${styleNumber}" is not a style number (two letters, three digits: TP101).` }
+  if (OLD_STYLE_RE.test(n)) {
+    const r = await db.retiredStyleNumber.findUnique({ where: { number: n } })
+    return { ok: false as const, error: `${n} was retired on 16 Oct 2026${r?.replacedBy ? `; it is now ${r.replacedBy}` : ''}. Use the new number.` }
+  }
+  if (!STYLE_RE.test(n)) return { ok: false as const, error: `"${styleNumber}" is not a style number (three letters, three digits: TCO101).` }
   const [product, style] = await Promise.all([
     db.product.findUnique({ where: { id: productId }, select: { id: true, name: true, styleId: true } }),
     db.style.findUnique({ where: { number: n } }),

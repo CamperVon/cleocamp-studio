@@ -9,17 +9,25 @@ import { catalogueEntries } from '@/lib/mouse/context'
 
 /** Every record a note can be about, with the exact strings that name it. */
 export async function recordDirectory(): Promise<RecordRef[]> {
-  const [products, components, vendors, pos, runs, accounts, subjects] = await Promise.all([
-    db.product.findMany({ select: { id: true, name: true } }),
+  const [products, components, vendors, pos, runs, accounts, subjects, retired] = await Promise.all([
+    // Style numbers and every SKU a product has carried find it too (16 Oct 2026 re-key).
+    db.product.findMany({ select: { id: true, name: true, style: { select: { number: true } }, variants: { select: { newSku: true, previousSku: true, sku: true } } } }),
     db.component.findMany({ where: { active: true }, select: { id: true, name: true } }),
     db.vendor.findMany({ select: { id: true, name: true, legalName: true } }),
     db.purchaseOrder.findMany({ select: { id: true, poNumber: true, vendor: { select: { name: true } } } }),
     db.productionRun.findMany({ select: { id: true, product: { select: { name: true } }, cutRef: true } }),
     db.wholesaleAccount.findMany({ select: { id: true, name: true } }),
     db.note.findMany({ where: { supersededAt: null, entityId: { not: null } }, select: { entityId: true }, distinct: ['entityId'] }),
+    // Never costs the lookup: before the re-key migration the table is not there.
+    db.retiredStyleNumber.findMany({ where: { replacedBy: { not: null } }, select: { number: true, replacedBy: true } }).catch(() => []),
   ])
+  const oldNumbers = (n: string | undefined) => (n ? retired.filter((r) => r.replacedBy === n).map((r) => r.number) : [])
   const dir: RecordRef[] = [
-    ...products.map((p) => ({ kind: 'product' as const, id: p.id, name: p.name, keys: [p.id, p.name] })),
+    ...products.map((p) => ({
+      kind: 'product' as const, id: p.id, name: p.name,
+      keys: [p.id, p.name, ...(p.style ? [p.style.number] : []), ...oldNumbers(p.style?.number),
+        ...p.variants.flatMap((v) => [v.newSku, v.previousSku, v.sku].filter((k): k is string => !!k))],
+    })),
     ...components.map((c) => ({ kind: 'component' as const, id: c.id, name: c.name, keys: [c.id, c.name] })),
     ...vendors.map((v) => ({ kind: 'vendor' as const, id: v.id, name: v.name, keys: [v.id, v.name, ...(v.legalName ? [v.legalName] : [])] })),
     ...pos.map((p) => ({ kind: 'purchase order' as const, id: p.id, name: `PO ${p.poNumber} · ${p.vendor.name}`, keys: [p.id, String(p.poNumber), `PO ${p.poNumber}`] })),
@@ -81,7 +89,7 @@ async function detailFor(r: RecordRef): Promise<Record<string, unknown>> {
         style: p.style ? { number: p.style.number, status: p.style.status } : null,
         variants: p.variants.map((v) => ({
           id: v.id, label: [v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'default', onHand: v.onHandQty === null ? 'UNKNOWN' : Number(v.onHandQty),
-          sku: v.newSku, oldSku: v.sku,
+          sku: v.newSku, ...(v.previousSku ? { skuBefore16Oct: v.previousSku } : {}), oldSku: v.sku,
         })),
       } : {}
     }

@@ -5,7 +5,7 @@ import { db } from '@/lib/db'
 
 /**
  * How SKUs read while the style system rolls out (8 Oct 2026): "transition"
- * shows TP101-WHT-01 (was CCSS25COT-WHT01), "new" the new SKU only. Sent
+ * shows TCO101-WHT-01 (was CCSS25COT-WHT01), "new" the new SKU only. Sent
  * purchase orders are not affected: they keep what they were sent with.
  */
 export async function setSkuDisplayMode(mode: string): Promise<{ ok: true } | { ok: false; error: string }> {

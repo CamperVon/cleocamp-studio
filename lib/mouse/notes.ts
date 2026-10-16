@@ -209,8 +209,11 @@ export function mentionedRecords(message: string, directory: RecordRef[]): { fou
   const byKey = new Map<string, RecordRef[]>()
   // A free-text note subject ("stylists") is reachable through open_record
   // only: an everyday word in a message must not preload anything.
+  // A product is also named by its codes: style numbers (TCO101, the retired
+  // TP101) and SKUs of every generation (16 Oct 2026 re-key).
+  const isCode = (k: string) => /^[A-Z0-9-]{5,}$/i.test(k) && /\d/.test(k) && /[A-Z]/i.test(k)
   for (const r of directory.filter((x) => x.kind !== 'note subject')) {
-    for (const k of [r.id, r.name]) {
+    for (const k of [r.id, r.name, ...(r.kind === 'product' ? r.keys.filter(isCode) : [])]) {
       const key = norm(k)
       if (key.length < 4) continue
       const list = byKey.get(key) ?? []

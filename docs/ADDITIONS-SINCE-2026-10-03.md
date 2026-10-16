@@ -643,6 +643,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/team-mail.ts` (`NOT_FROM_EMAIL`), `lib/mouse/tools.ts` (`invoice_wholesale`, `invoice_live_sale`), `tests/team-mail.test.ts`.
 - **Needs:** Shopify and email (inbound, with DMARC).
 
+### Retiring a numbering scheme without losing the old codes
+- **Problem:** changing style numbers and SKUs to a new format would break every reference people already use: old SKUs on tags, notes and emails naming the old numbers, and purchase orders already sent.
+- **Change:** a re-key planned as a pure function from a mapping table (`planRekey`: renumber in place, split one style in two, drop a number, merge duplicate products, re-key every SKU) and applied in one transaction by a script that refuses if anything does not fit the table. Old numbers go to a `RetiredStyleNumber` table that new numbers are checked against, and each variant keeps its previous SKU, so the app search and the assistant's record lookup find a product by any generation of code. Sent purchase orders keep the codes they were sent with (their saved snapshot); drafts pick up the new ones. The style format moved to category letter + two product letters + line digit + version (`TCO101`), with the validator, new-product flow and reference page following.
+- **Files:** `lib/style-system.ts`, `lib/style-rekey.ts`, `scripts/rekey-styles.ts`, `lib/style-admin.ts`, `lib/search.ts`, `lib/mouse/records.ts`, `lib/mouse/notes.ts`, `lib/style-reference.ts`, `lib/mcp/tools.ts`, `app/(main)/style-numbers/crosswalk/page.tsx`, `prisma/schema.prisma` (`ProductVariant.previousSku`, `RetiredStyleNumber`), `tests/style-rekey.test.ts`, `tests/style-system.test.ts`.
+- **Needs:** nothing beyond the app (Shopify's own SKUs are re-keyed separately).
+
 ---
 
 ## Setup notes for a new install

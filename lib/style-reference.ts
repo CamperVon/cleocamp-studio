@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { CATEGORIES, LINES, parseStyle } from '@/lib/style-system'
 
 /**
  * The partner reference (8 Oct 2026): what our style numbers mean, for the
@@ -39,21 +40,24 @@ export async function partnerReference(): Promise<{ categories: RefCategory[]; e
     cat.styles.push({ number: s.number, name: s.name, status: s.status, photo, colours, sizes })
     cats.set(s.categoryCode, cat)
   }
-  const order = ['TP', 'DR', 'BT', 'BG', 'AC', 'IN', 'PT', 'OT']
+  // The order the letters are listed in the style system (lib/style-system.ts).
+  const order = CATEGORIES.map((c) => c.code)
   // The worked example is the one everybody knows, when it exists.
-  const example = allSkus.includes('TP101-BLK-01') ? 'TP101-BLK-01' : allSkus.sort()[0] ?? null
-  const categoryCodes = order.map((c) => ({ code: c, name: name('CATEGORY', c) })).filter((c): c is RefCode => !!c.name)
+  const example = allSkus.includes('TCO101-BLK-01') ? 'TCO101-BLK-01' : allSkus.sort()[0] ?? null
+  // Reserved letters are not in use yet, so a partner never sees them.
+  const categoryCodes = CATEGORIES.filter((c) => !c.reserved).map((c) => ({ code: c.code, name: name('CATEGORY', c.code) })).filter((c): c is RefCode => !!c.name)
   const sizeCodes = SIZE_ORDER.map((c) => ({ code: c, name: name('SIZE', c) })).filter((c): c is RefCode => !!c.name)
   return { categories: [...cats.values()].sort((a, b) => order.indexOf(a.code) - order.indexOf(b.code)), example, categoryCodes, sizeCodes }
 }
 
 /** How to read a SKU, in plain words, built from a real one. Pure. */
 export function howToRead(example: string | null): string[] {
-  const sku = example ?? 'TP101-BLK-01'
+  const sku = example ?? 'TCO101-BLK-01'
   const [style, colour, size] = sku.split('-')
+  const p = parseStyle(style)
   return [
     `A SKU has three parts: style, colour and size. ${sku} is style ${style}, colour ${colour}, size ${size}.`,
-    'The style number is the pattern. Two letters for the category, then three digits. A new colour or size keeps the same style number; a new pattern gets a new one.',
+    `The style number is the pattern and its construction: three letters, then three digits.${p ? ` In ${style}, ${p.category} is the category, ${p.family.slice(1)} the product, ${p.line} the line (${LINES[p.line]}) and ${String(p.version).padStart(2, '0')} the version.` : ''} A new colour or size keeps the same style number; a new pattern or construction gets a new one.`,
     'The colour is a three-letter code and the size a two-character code, both from the lists below. Season and year are never part of the code.',
     'A number is never reused, even when a style is retired.',
     'Please put the style number, and the SKU where there is one, on invoices, packing lists, markers, tech packs and sample tags.',

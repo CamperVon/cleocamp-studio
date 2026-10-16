@@ -1738,18 +1738,23 @@ export const TOOLS: Record<string, Tool> = {
         'Add a product. Afterwards, raise questions for whatever is still missing — ' +
         'components and quantities, manufacturer, dye house, lead times, colourways, sizes, ' +
         'retail price. Ask over time rather than all at once. ' +
-        'pattern is required (style numbers, 8 Oct 2026): "new" for a new pattern, with category ' +
-        '(TP tops, DR dresses, BT bottoms, BG bags, AC accessories, PT parts, IN intimates, OT other), ' +
-        'which proposes the next number for Brandon or Cleo to confirm; "existing" with styleNumber ' +
-        'when it is a new colour or version of a style already made; "unsure" when nobody has said, ' +
-        'which records it unnumbered and asks. Never guess which.',
+        'pattern is required (style numbers, re-keyed 16 Oct 2026): "new" for a new style (a new pattern or a ' +
+        'different construction, e.g. an extra lining), with category (one letter: T tees, S sweaters, B bottoms, ' +
+        'D dresses, H handbags, A accessories, I intimates, O other, X parts; U tops and J jackets are reserved), ' +
+        'letters (two for the product, from its name, as the person says; leave out to suggest from the name) and ' +
+        'line (1 women\'s, 5 men\'s, 7 unisex), which proposes e.g. TCO101 for Brandon or Cleo to confirm; ' +
+        '"existing" with styleNumber when it is a colourway (same pattern and build, new colour or material) of a ' +
+        'style already made; "unsure" when nobody has said, which records it unnumbered and asks. Never guess which. ' +
+        'A collaboration gets its own style.',
       input_schema: {
         type: 'object',
         properties: {
           name: str('Product name'),
           pattern: { type: 'string' as const, enum: ['new', 'existing', 'unsure'], description: 'New pattern, a colour or version of an existing style, or nobody has said' },
-          category: str('For a new pattern: the 2-letter category code'),
-          styleNumber: str('For an existing style: its number, e.g. BG101'),
+          category: str('For a new style: the category letter'),
+          letters: str('For a new style: the two letters for the product, if the person said'),
+          line: { type: 'string' as const, enum: ['1', '5', '7'], description: 'For a new style: 1 women\'s (default), 5 men\'s, 7 unisex' },
+          styleNumber: str('For an existing style: its number, e.g. HCB101'),
           status: { type: 'string' as const, enum: ['DEVELOPMENT', 'SAMPLING', 'ACTIVE', 'SUNSETTED'] },
           retailPriceCents: num('Retail price in cents'),
           productionLeadTimeDays: num('Cut-and-sew turnaround in days'),
@@ -1759,17 +1764,17 @@ export const TOOLS: Record<string, Tool> = {
       },
     },
     run: async (i) => {
-      const { pattern, category, styleNumber, ...data } = i as Record<string, unknown>
-      if (pattern === 'new' && !String(category ?? '').trim()) return { error: 'A new pattern needs its category code (TP, DR, BT, BG, AC, PT, IN or OT). Ask if it is not clear.' }
-      if (pattern === 'existing' && !String(styleNumber ?? '').trim()) return { error: 'Say which style it belongs to (its number, e.g. BG101).' }
+      const { pattern, category, styleNumber, letters, line, ...data } = i as Record<string, unknown>
+      if (pattern === 'new' && !String(category ?? '').trim()) return { error: 'A new style needs its category letter (T, S, B, D, H, A, I, O or X). Ask if it is not clear.' }
+      if (pattern === 'existing' && !String(styleNumber ?? '').trim()) return { error: 'Say which style it belongs to (its number, e.g. HCB101).' }
       const product = await db.product.create({ data: data as never, select: { id: true, name: true } })
       const admin = await import('@/lib/style-admin')
-      const style = pattern === 'new' ? await admin.proposeStyle({ productId: product.id, categoryCode: String(category) })
+      const style = pattern === 'new' ? await admin.proposeStyle({ productId: product.id, categoryCode: String(category), letters: letters ? String(letters) : undefined, line: line ? String(line) : undefined })
         : pattern === 'existing' ? await admin.linkStyle(product.id, String(styleNumber))
           : await (async () => {
             await db.actionItem.create({ data: { kind: 'QUESTION', source: 'SYSTEM', entityType: 'PRODUCT', entityId: product.id,
               title: `${product.name}: new pattern, or a new colour of an existing style?`,
-              detail: 'For Brandon and Cleo (style system). A new pattern gets the next number in its category; a new colour keeps its style\'s number.' } })
+              detail: 'For Brandon and Cleo (style system). A new pattern or construction gets its own style number; a new colour or material on the same pattern and build is a colourway and keeps its style\'s number.' } })
             return { ok: true, number: null, note: 'Recorded with no style number; asked whether it is a new pattern.' }
           })()
       return { ...product, style }
@@ -1781,9 +1786,12 @@ export const TOOLS: Record<string, Tool> = {
       name: 'style_numbers',
       description:
         'Style numbers and SKUs (docs/style-system; your context shows each product\'s style and each variant\'s ' +
-        'new SKU). A style is one pattern (TP101 Cleo Tee); a SKU is STYLE-COLOUR-SIZE (TP101-BLK-01). Never ' +
-        'invent a number or a code: a new one is PROPOSED and waits for Brandon or Cleo. Actions: ' +
-        'propose_style (a product that is a new pattern gets the next number in category); link_style (a product ' +
+        'SKU). Since 16 Oct 2026 a style number is three letters and three digits: TCO101 = T tees, CO the product, ' +
+        '1 women\'s, 01 first version; a SKU is STYLE-COLOUR-SIZE (TCO101-BLK-01). The old numbers (TP101, BG101 ...) ' +
+        'are retired, never reused, and still found. A style is a pattern plus construction; a new colour or material ' +
+        'on it is a colourway. Never invent a number or a code: a new one is PROPOSED and waits for Brandon or Cleo. ' +
+        'Actions: propose_style (a new style: category letter, letters for the product as the person says, line ' +
+        '1/5/7; or styleNumber with "of" set to make the next version of that style for a visible redesign); link_style (a product ' +
         'that is a colour or version of an existing style); colour_code (put a colour code on a colourway; a new ' +
         'code is proposed, with name saying what it is); propose_code (a new size or category code); confirm ' +
         '(ONLY when Brandon or Cleo, in this conversation, confirm a proposed styleNumber or codeType+code; code ' +
@@ -1797,11 +1805,14 @@ export const TOOLS: Record<string, Tool> = {
         properties: {
           action: { type: 'string' as const, enum: ['propose_style', 'link_style', 'colour_code', 'propose_code', 'confirm', 'assign_skus'] },
           productId: str('The product'),
-          category: str('2-letter category code, for propose_style'),
+          category: str('Category letter, for propose_style'),
+          letters: str('Two letters for the product, for propose_style'),
+          line: { type: 'string' as const, enum: ['1', '5', '7'], description: 'Line digit for propose_style: 1 women\'s, 5 men\'s, 7 unisex' },
+          of: str('For propose_style: an existing style number this is the next version of'),
           styleNumber: str('A style number, for link_style or confirm'),
           colorwayId: str('The colourway, for colour_code'),
           codeType: { type: 'string' as const, enum: ['CATEGORY', 'COLOR', 'SIZE'] },
-          code: str('The code itself: BLK, XL, IN'),
+          code: str('The code itself: BLK, XL, T'),
           name: str('What a new code stands for: "Blue Atol", "Extra Large"'),
         },
         required: ['action'],
@@ -1811,7 +1822,7 @@ export const TOOLS: Record<string, Tool> = {
       const a = await import('@/lib/style-admin')
       const s = (k: string) => String(i[k] ?? '')
       switch (i.action) {
-        case 'propose_style': return a.proposeStyle({ productId: s('productId'), categoryCode: s('category'), categoryName: s('name') })
+        case 'propose_style': return a.proposeStyle({ productId: s('productId'), categoryCode: s('category'), letters: s('letters') || undefined, line: s('line') || undefined, of: s('of') || undefined })
         case 'link_style': return a.linkStyle(s('productId'), s('styleNumber'))
         case 'colour_code': return a.setColourCode(s('colorwayId'), s('code'), s('name') || undefined)
         case 'propose_code': return i.codeType ? a.proposeCode(i.codeType as 'CATEGORY' | 'COLOR' | 'SIZE', s('code'), s('name')) : { ok: false, error: 'Say codeType.' }

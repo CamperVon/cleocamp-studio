@@ -1,4 +1,6 @@
 /**
+ * SUPERSEDED on 16 Oct 2026 by scripts/rekey-styles.ts; refuses --apply.
+ *
  * Seed the style system from docs/style-system (8 Oct 2026): styles, code
  * tables, each product's style, and each variant's new SKU, matched on
  * product, colour and size. Never on the old SKU, which most variants lack.
@@ -46,6 +48,9 @@ const PROPOSED_CODES: Record<string, string> = {
 }
 
 async function main() {
+  // Superseded by the 16 Oct 2026 re-key (scripts/rekey-styles.ts): these
+  // files hold the retired TP101-era numbers, which must never come back.
+  if (apply) throw new Error('This seed is superseded by the 16 Oct 2026 re-key (scripts/rekey-styles.ts) and would bring back retired style numbers. Nothing was written.')
   const styles = parseCsv(readFileSync(`${DIR}/styles.csv`, 'utf8'))
   const codes = parseCsv(readFileSync(`${DIR}/codes.csv`, 'utf8'))
   const skuRows: SkuRow[] = parseCsv(readFileSync(`${DIR}/skus.csv`, 'utf8')).map((r) => ({

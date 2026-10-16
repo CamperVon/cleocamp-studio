@@ -240,6 +240,10 @@ model ProductVariant {
   /// the old sku above, which stays untouched and searchable. Null = not
   /// assigned. Checked against the regex in lib/style-system.ts.
   newSku                 String?  @unique
+  /// The 8 Oct 2026 SKU (TP101-BLK-01) this variant carried before the
+  /// 16 Oct re-key gave it newSku (TCO101-BLK-01). Kept so it is still found;
+  /// never reused. Null for a variant that never had one.
+  previousSku            String?
   /// The codes newSku is built from, kept so a missing one can be reported.
   colorCode              String?
   sizeCode               String?
@@ -2021,4 +2025,14 @@ model McpCall {
   personId   String?
 
   @@index([createdAt])
+}
+
+/// Style numbers no longer in use, kept forever so they are still found and
+/// never handed out again (16 Oct 2026 re-key: TP101 → TCO101, and the rest).
+model RetiredStyleNumber {
+  number     String   @id
+  /// What replaced it, if anything (a split one names the first; see note).
+  replacedBy String?
+  note       String?
+  retiredAt  DateTime @default(now())
 }

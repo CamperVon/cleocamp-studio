@@ -1,33 +1,51 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { SKU_RE, colourKey, matchVariants, nextStyleNumber, parseCsv, planSkus, sizeCodeFor, skuProblem, styleStatus, type AppVariant, type SkuRow, type SkuVariant } from '../lib/style-system'
+import { OLD_SKU_RE, SKU_RE, STYLE_RE, colourKey, matchVariants, nextVersion, parseCsv, parseStyle, planSkus, sizeCodeFor, skuProblem, styleProblem, styleStatus, suggestFamilyLetters, type AppVariant, type SkuRow, type SkuVariant } from '../lib/style-system'
 
 const rows = parseCsv(readFileSync('docs/style-system/skus.csv', 'utf8'))
 
-test('every SKU in skus.csv passes the validator', () => {
+const crosswalk = parseCsv(readFileSync('docs/style-system/crosswalk-2026-10-16.csv', 'utf8'))
+
+test('every new SKU in the crosswalk passes the validator, once, and is its old one with the style swapped', () => {
   const seen = new Set<string>()
-  for (const r of rows) {
-    assert.equal(skuProblem(r.sku_new, { style: r.style_number, color: r.color_code, size: r.size_code }, seen), null, r.sku_new)
-    seen.add(r.sku_new)
+  const withSku = crosswalk.filter((r) => r.new_sku)
+  for (const r of withSku) {
+    const [style, color, size] = r.new_sku.split('-')
+    assert.equal(skuProblem(r.new_sku, { style, color, size }, seen), null, r.new_sku)
+    seen.add(r.new_sku)
+    assert.ok(OLD_SKU_RE.test(r.previous_sku) && !SKU_RE.test(r.previous_sku), `${r.previous_sku} is the old format`)
+    assert.equal(r.new_sku, `${r.new_style}-${r.previous_sku.split('-').slice(1).join('-')}`)
   }
-  assert.ok(rows.length > 100)
+  assert.ok(withSku.length > 100)
 })
 
-test('malformed SKUs are refused with a reason', () => {
-  for (const bad of ['TP101-BLK-1', 'tp101-blk-01', 'TP10-BLK-01', 'TP101-BK-01', 'TP101-BLK-XXL', 'TP101 BLK 01', 'TP101-BLK-01-OLD', 'CCSS25COT-BLK01']) {
+test('the new format: every new style and SKU passes; the old formats are refused for anything new', () => {
+  for (const ok of ['TCO101', 'HCD101', 'XBT101', 'ABH101', 'TCO501', 'TCO702', 'SFR101']) assert.ok(STYLE_RE.test(ok), ok)
+  for (const ok of ['TCO101-BLK-01', 'HCD101-DBL-OS', 'HBN101-RED-PT', 'BFS101-PNK-XL']) assert.ok(SKU_RE.test(ok), ok)
+  for (const bad of ['TCO101-BLK-1', 'tco101-blk-01', 'TC101-BLK-01', 'TCO301-BLK-01', 'TCO101-BK-01', 'TCO101-BLK-XXL', 'TCO101 BLK 01', 'TCO101-BLK-01-OLD', 'CCSS25COT-BLK01', 'TP101-BLK-01']) {
     assert.ok(!SKU_RE.test(bad), bad)
-    assert.match(skuProblem(bad, { style: 'TP101', color: 'BLK', size: '01' })!, /not a SKU/)
+    assert.match(skuProblem(bad, { style: 'TCO101', color: 'BLK', size: '01' })!, /not a SKU/)
   }
-  assert.match(skuProblem('TP101-BLK-01', { style: 'TP101', color: 'WHT', size: '01' })!, /does not equal/)
-  assert.match(skuProblem('TP101-BLK-01', { style: 'TP101', color: 'BLK', size: '01' }, new Set(['TP101-BLK-01']))!, /already used/)
+  assert.match(skuProblem('TCO101-BLK-01', { style: 'TCO101', color: 'WHT', size: '01' })!, /does not equal/)
+  assert.match(skuProblem('TCO101-BLK-01', { style: 'TCO101', color: 'BLK', size: '01' }, new Set(['TCO101-BLK-01']))!, /already used/)
+  assert.match(styleProblem('TP106', new Set())!, /old format/)
+  assert.match(styleProblem('TCO101', new Set(['TCO101']))!, /never reused/)
+  assert.match(styleProblem('QZZ101', new Set())!, /not a category letter/)
+  assert.match(styleProblem('TCO100', new Set())!, /starts at 01/)
+  assert.match(styleProblem('TCO-101', new Set())!, /not a style number/)
+  assert.equal(styleProblem('TCW101', new Set(['TCO101', 'TP101'])), null)
 })
 
-test('the next number counts retired and proposed numbers, and starts at 101', () => {
-  assert.equal(nextStyleNumber('TP', ['TP101', 'TP102', 'TP105', 'DR103']), 'TP106')
-  assert.equal(nextStyleNumber('DR', ['TP101', 'DR101', 'DR102', 'DR103', 'DR104', 'DR105']), 'DR106')
-  assert.equal(nextStyleNumber('IN', ['TP101']), 'IN101')
-  assert.equal(nextStyleNumber('bt', ['BT101', 'BT102']), 'BT103')
+test('a new version is the highest in its family and line plus one; letters are suggested from the name', () => {
+  assert.equal(nextVersion('TCO', '1', ['TCO101', 'TCO102', 'TCO501', 'TCC101']), 'TCO103')
+  assert.equal(nextVersion('TCO', '5', ['TCO101', 'TCO501']), 'TCO502')
+  assert.equal(nextVersion('HCD', '1', []), 'HCD101')
+  assert.deepEqual(parseStyle('TCO101'), { category: 'T', family: 'TCO', line: '1', version: 1 })
+  assert.equal(parseStyle('TP101'), null)
+  assert.equal(suggestFamilyLetters('Little Sister'), 'LS')
+  assert.equal(suggestFamilyLetters('Cachet'), 'CA')
+  assert.equal(suggestFamilyLetters('The Story Dress'), 'SD')
 })
 
 test('sizes become codes only when they plainly are one', () => {
@@ -98,67 +116,67 @@ test('create_product cannot be called without saying new pattern or existing sty
 
 test('the style report is one line when nothing is outstanding, and short when something is', async () => {
   const { styleReportLines } = await import('../lib/style-report')
-  const clean = { products: [{ name: 'Cleo Tee', status: 'ACTIVE', style: { number: 'TP101', status: 'ACTIVE' } }],
-    variants: [{ label: 'Cleo Tee / Black / 1', styleNumber: 'TP101', styleStatus: 'ACTIVE', newSku: 'TP101-BLK-01', colorCode: 'BLK', sizeCode: '01', shopifySku: 'TP101-BLK-01', linkedToShopify: true }],
-    poLines: [{ poNumber: '2400', label: 'Cleo Tee / Black / 1', styleNumber: 'TP101' }], proposed: { styles: [], codes: [] } }
+  const clean = { products: [{ name: 'Cleo Tee', status: 'ACTIVE', style: { number: 'TCO101', status: 'ACTIVE' } }],
+    variants: [{ label: 'Cleo Tee / Black / 1', styleNumber: 'TCO101', styleStatus: 'ACTIVE', newSku: 'TCO101-BLK-01', colorCode: 'BLK', sizeCode: '01', shopifySku: 'TCO101-BLK-01', linkedToShopify: true }],
+    poLines: [{ poNumber: '2400', label: 'Cleo Tee / Black / 1', styleNumber: 'TCO101' }], proposed: { styles: [], codes: [] } }
   assert.deepEqual(styleReportLines(clean), ['Style system: nothing outstanding.'])
   const messy = { ...clean,
     products: [...clean.products, { name: 'Dolce', status: 'DEVELOPMENT', style: null }, { name: 'Old Thing', status: 'SUNSETTED', style: null }],
-    variants: [...clean.variants, { label: 'Cleo Tee / White / 1', styleNumber: 'TP101', styleStatus: 'ACTIVE', newSku: 'TP101-BLK-01', colorCode: 'WHT', sizeCode: '01', shopifySku: 'CCSS25COT-WHT01', linkedToShopify: true }],
-    poLines: [{ poNumber: '2362', label: 'Dolce / M', styleNumber: null }], proposed: { styles: ['TP103 Cleo Sweater'], codes: ['color FLG'] } }
+    variants: [...clean.variants, { label: 'Cleo Tee / White / 1', styleNumber: 'TCO101', styleStatus: 'ACTIVE', newSku: 'TCO101-BLK-01', colorCode: 'WHT', sizeCode: '01', shopifySku: 'CCSS25COT-WHT01', linkedToShopify: true }],
+    poLines: [{ poNumber: '2362', label: 'Dolce / M', styleNumber: null }], proposed: { styles: ['SFR101 Cleo Sweater'], codes: ['color FLG'] } }
   const lines = styleReportLines(messy)
   assert.match(lines.join('\n'), /1 product has no style number: Dolce\./)
   assert.doesNotMatch(lines.join('\n'), /Old Thing/)
-  assert.match(lines.join('\n'), /do not match the format or their style, colour and size: Cleo Tee \/ White \/ 1 TP101-BLK-01/)
+  assert.match(lines.join('\n'), /do not match the format or their style, colour and size: Cleo Tee \/ White \/ 1 TCO101-BLK-01/)
   assert.match(lines.join('\n'), /Shopify still has 1 old-format SKU \(expected/)
   assert.match(lines.join('\n'), /PO 2362 Dolce \/ M/)
-  assert.match(lines.join('\n'), /Waiting on Brandon or Cleo: 1 proposed style \(TP103 Cleo Sweater\) and 1 proposed code \(color FLG\)/)
+  assert.match(lines.join('\n'), /Waiting on Brandon or Cleo: 1 proposed style \(SFR101 Cleo Sweater\) and 1 proposed code \(color FLG\)/)
 })
 
 test('the partner reference explains a SKU from a real one, and says nothing internal', async () => {
   const { howToRead } = await import('../lib/style-reference')
-  const lines = howToRead('BG105-CHP-PT').join(' ')
-  assert.match(lines, /BG105-CHP-PT is style BG105, colour CHP, size PT/)
+  const lines = howToRead('HBN101-CHP-PT').join(' ')
+  assert.match(lines, /HBN101-CHP-PT is style HBN101, colour CHP, size PT/)
   assert.doesNotMatch(lines, /cost|price|stock|\$|on hand/i)
-  assert.match(howToRead(null)[0], /TP101-BLK-01/)
+  assert.match(howToRead(null)[0], /TCO101-BLK-01/)
 })
 
 // assign_skus after a colourway is recoded (12 Oct 2026: the Cosmo Tee went
-// from RST to CST and kept TP102-RST-0x while reporting nothing).
+// from RST to CST and kept TCC101-RST-0x while reporting nothing).
 const codes: Record<string, string> = { 'COLOR:RST': 'CONFIRMED', 'COLOR:CST': 'CONFIRMED', 'COLOR:NEW': 'PROPOSED', 'SIZE:01': 'CONFIRMED', 'SIZE:02': 'CONFIRMED' }
 const codeStatus = (t: 'COLOR' | 'SIZE', c: string) => codes[`${t}:${c}`] ?? null
 const sizeFor = (s: string | null) => (s ? `0${s}` : null)
 const cosmo = (size: string, over: Partial<SkuVariant> = {}): SkuVariant => ({
-  id: `v${size}`, label: `Red Stripe / ${size}`, newSku: `TP102-RST-0${size}`, colorCode: 'RST', sizeCode: `0${size}`, size,
-  colorwayCode: 'CST', shopifySku: `TP102-RST-0${size}`, ...over,
+  id: `v${size}`, label: `Red Stripe / ${size}`, newSku: `TCC101-RST-0${size}`, colorCode: 'RST', sizeCode: `0${size}`, size,
+  colorwayCode: 'CST', shopifySku: `TCC101-RST-0${size}`, ...over,
 })
 
 test('a recoded colourway rebuilds its variants\' SKUs once the new code is confirmed, and says Shopify still differs', () => {
-  const steps = planSkus('TP102', [cosmo('1'), cosmo('2')], codeStatus, new Set(), sizeFor)
+  const steps = planSkus('TCC101', [cosmo('1'), cosmo('2')], codeStatus, new Set(), sizeFor)
   assert.deepEqual(steps.map((s) => s.kind === 'set' ? [s.from, s.sku, s.shopifySku] : s.kind), [
-    ['TP102-RST-01', 'TP102-CST-01', 'TP102-RST-01'],
-    ['TP102-RST-02', 'TP102-CST-02', 'TP102-RST-02'],
+    ['TCC101-RST-01', 'TCC101-CST-01', 'TCC101-RST-01'],
+    ['TCC101-RST-02', 'TCC101-CST-02', 'TCC101-RST-02'],
   ])
 })
 
 test('a recode waiting on an unconfirmed code is reported with the SKU it still reads, never skipped silently', () => {
-  const [s] = planSkus('TP102', [cosmo('1', { colorwayCode: 'NEW' })], codeStatus, new Set(), sizeFor)
+  const [s] = planSkus('TCC101', [cosmo('1', { colorwayCode: 'NEW' })], codeStatus, new Set(), sizeFor)
   assert.equal(s.kind, 'wait')
-  assert.match((s as { why: string }).why, /NEW is not confirmed yet\. It still reads TP102-RST-01\./)
+  assert.match((s as { why: string }).why, /NEW is not confirmed yet\. It still reads TCC101-RST-01\./)
 })
 
 test('SKUs that match their colourway are kept; missing ones are filled; a taken SKU is refused', () => {
-  const steps = planSkus('TP101', [
-    { id: 'a', label: 'Black / 1', newSku: 'TP101-RST-01', colorCode: 'RST', sizeCode: '01', size: '1', colorwayCode: 'RST', shopifySku: null },
+  const steps = planSkus('TCO101', [
+    { id: 'a', label: 'Black / 1', newSku: 'TCO101-RST-01', colorCode: 'RST', sizeCode: '01', size: '1', colorwayCode: 'RST', shopifySku: null },
     { id: 'b', label: 'Black / 2', newSku: null, colorCode: null, sizeCode: null, size: '2', colorwayCode: 'RST', shopifySku: null },
     { id: 'c', label: 'Black / 1 again', newSku: null, colorCode: null, sizeCode: null, size: '1', colorwayCode: 'RST', shopifySku: null },
   ], codeStatus, new Set(), sizeFor)
   assert.deepEqual(steps.map((s) => s.kind), ['keep', 'set', 'wait'])
-  assert.equal((steps[1] as { sku: string }).sku, 'TP101-RST-02')
+  assert.equal((steps[1] as { sku: string }).sku, 'TCO101-RST-02')
   assert.match((steps[2] as { why: string }).why, /already used/)
 })
 
 test('a variant with no colourway code is never recoded', () => {
-  const [s] = planSkus('TP102', [cosmo('1', { colorwayCode: null })], codeStatus, new Set(), sizeFor)
-  assert.deepEqual(s, { kind: 'keep', sku: 'TP102-RST-01' })
+  const [s] = planSkus('TCC101', [cosmo('1', { colorwayCode: null })], codeStatus, new Set(), sizeFor)
+  assert.deepEqual(s, { kind: 'keep', sku: 'TCC101-RST-01' })
 })

@@ -93,8 +93,8 @@ export async function searchEverything(query: string): Promise<SearchHit[]> {
   // so a typo can still find them.
   const words = norm(q).split(' ').filter((w) => w.length >= 2)
   const like = (field: string) => ({ OR: words.map((w) => ({ [field]: { contains: w, mode: 'insensitive' as const } })) })
-  const [products, components, vendors, pos, accounts, stylists, contacts, customers, cases, files, items] = await Promise.all([
-    db.product.findMany({ select: { id: true, name: true, status: true, style: { select: { number: true } }, variants: { select: { id: true, sku: true, newSku: true, size: true, colorway: { select: { customerName: true } } } } } }),
+  const [products, components, vendors, pos, accounts, stylists, contacts, customers, cases, files, items, retired] = await Promise.all([
+    db.product.findMany({ select: { id: true, name: true, status: true, style: { select: { number: true } }, variants: { select: { id: true, sku: true, newSku: true, previousSku: true, size: true, colorway: { select: { customerName: true } } } } } }),
     db.component.findMany({ where: { active: true }, select: { id: true, name: true, vendorSku: true, vendor: { select: { name: true } } } }),
     db.vendor.findMany({ select: { id: true, name: true, legalName: true, contactName: true, email: true } }),
     db.purchaseOrder.findMany({ select: { poNumber: true, status: true, vendor: { select: { name: true } } } }),
@@ -114,18 +114,25 @@ export async function searchEverything(query: string): Promise<SearchHit[]> {
     }) : [],
     db.storedFile.findMany({ select: { id: true, title: true, filename: true } }),
     words.length ? db.actionItem.findMany({ where: { resolved: false, ...like('title') }, select: { id: true, title: true, kind: true }, take: 50 }) : [],
+    db.retiredStyleNumber.findMany({ select: { number: true, replacedBy: true } }).catch(() => []),
   ])
+  // A retired style number (TP101) still finds the product that carries its replacement (16 Oct 2026).
+  const retiredFor = (n: string | undefined) => (n ? retired.filter((r) => r.replacedBy === n).map((r) => r.number) : [])
   const po = poNumberIn(q)
   const candidates: Candidate[] = [
     ...pos.map((p) => ({
       kind: 'Purchase order', label: `PO ${p.poNumber} · ${p.vendor.name}`, sub: p.status.replace(/_/g, ' ').toLowerCase(), href: `/po/${p.poNumber}`,
       also: [`PO ${p.poNumber}`], exact: po === p.poNumber,
     })),
-    ...products.map((p) => ({ kind: 'Product', label: p.name, sub: [p.style?.number, p.status.toLowerCase()].filter(Boolean).join(' · '), href: at('/products', p.id), also: [p.style?.number] })),
-    // Each SKU, old and new, finds its product (style system, 8 Oct 2026).
-    ...products.flatMap((p) => p.variants.filter((v) => v.sku || v.newSku).map((v) => ({
-      kind: 'Product', label: v.newSku ?? v.sku!, sub: [p.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ') + (v.newSku && v.sku ? ` · was ${v.sku}` : ''),
-      href: at('/products', p.id), also: [v.sku, v.newSku],
+    ...products.map((p) => {
+      const was = retiredFor(p.style?.number)
+      return { kind: 'Product', label: p.name, sub: [p.style?.number, was.length ? `was ${was.join(', ')}` : null, p.status.toLowerCase()].filter(Boolean).join(' · '), href: at('/products', p.id), also: [p.style?.number, ...was] }
+    }),
+    // Each SKU, of every generation, finds its product: the legacy one
+    // (CCSS25COT-BLK01), the 8 Oct one (TP101-BLK-01) and today's (TCO101-BLK-01).
+    ...products.flatMap((p) => p.variants.filter((v) => v.sku || v.newSku || v.previousSku).map((v) => ({
+      kind: 'Product', label: v.newSku ?? v.previousSku ?? v.sku!, sub: [p.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ') + ([v.previousSku, v.sku].filter((x) => x && x !== v.newSku).length ? ` · was ${[v.previousSku, v.sku].filter((x) => x && x !== v.newSku).join(', ')}` : ''),
+      href: at('/products', p.id), also: [v.sku, v.newSku, v.previousSku],
     }))),
     ...components.map((c) => ({ kind: 'Component', label: c.name, sub: c.vendor?.name ?? null, href: at('/components', c.id), also: [c.vendorSku] })),
     ...vendors.map((v) => ({ kind: 'Vendor', label: v.name, sub: v.legalName ?? v.contactName, href: at('/vendors', v.id), also: [v.legalName, v.contactName, v.email] })),

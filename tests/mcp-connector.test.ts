@@ -41,16 +41,18 @@ before(async () => {
   await db.vendor.create({ data: { id: 'v_old', name: 'Old Buttons Co', active: false } })
   await db.component.create({ data: { id: 'c_btn', name: 'Shell button 15mm', category: 'TRIM', vendorId: 'v_emp', unitOfMeasure: 'pcs', unitCostCents: 12, leadTimeDays: 14 } })
   await db.styleCode.createMany({ data: [
-    { type: 'CATEGORY', code: 'TP', name: 'Tops' }, { type: 'CATEGORY', code: 'DR', name: 'Dresses' },
+    { type: 'CATEGORY', code: 'T', name: 'Tees' }, { type: 'CATEGORY', code: 'D', name: 'Dresses' },
     { type: 'COLOR', code: 'BLK', name: 'Black' }, { type: 'COLOR', code: 'SHL', name: 'Shell', status: 'PROPOSED' },
     { type: 'SIZE', code: '01', name: 'Size 1' },
   ] })
-  await db.style.createMany({ data: [{ id: 's_tp101', number: 'TP101', name: 'Cleo Tee', categoryCode: 'TP', status: 'ACTIVE' }, { id: 's_tp104', number: 'TP104', name: 'Other', categoryCode: 'TP', status: 'RETIRED' }] })
-  await db.product.create({ data: { id: 'pr_tee', name: 'Cleo Tee', status: 'ACTIVE', styleId: 's_tp101', retailPriceCents: 12800, wholesalePriceCents: 5600, productionLeadTimeDays: 30 } })
+  await db.style.createMany({ data: [{ id: 's_tco101', number: 'TCO101', name: 'Cleo Tee', categoryCode: 'T', status: 'ACTIVE' }, { id: 's_tco104', number: 'TCO104', name: 'Other', categoryCode: 'T', status: 'RETIRED' }] })
+  // The 16 Oct 2026 re-key: the old number is retired and points at the new one.
+  await db.retiredStyleNumber.create({ data: { number: 'TP101', replacedBy: 'TCO101' } })
+  await db.product.create({ data: { id: 'pr_tee', name: 'Cleo Tee', status: 'ACTIVE', styleId: 's_tco101', retailPriceCents: 12800, wholesalePriceCents: 5600, productionLeadTimeDays: 30 } })
   await db.colorway.create({ data: { id: 'cw_blk', productId: 'pr_tee', customerName: 'Black', colorCode: 'BLK' } })
   await db.productVariant.createMany({ data: [
-    { id: 'pv_1', productId: 'pr_tee', colorwayId: 'cw_blk', size: '1', sku: 'CCSS26TEE-BLK01', newSku: 'TP101-BLK-01', shopifySku: 'TEE-BLK-1', shopifyVariantId: '111', onHandQty: 7 },
-    { id: 'pv_2', productId: 'pr_tee', colorwayId: 'cw_blk', size: '2', newSku: 'TP101-BLK-02', onHandQty: null, wholesalePriceCents: 6000 },
+    { id: 'pv_1', productId: 'pr_tee', colorwayId: 'cw_blk', size: '1', sku: 'CCSS26TEE-BLK01', newSku: 'TCO101-BLK-01', previousSku: 'TP101-BLK-01', shopifySku: 'TEE-BLK-1', shopifyVariantId: '111', onHandQty: 7 },
+    { id: 'pv_2', productId: 'pr_tee', colorwayId: 'cw_blk', size: '2', newSku: 'TCO101-BLK-02', previousSku: 'TP101-BLK-02', onHandQty: null, wholesalePriceCents: 6000 },
   ] })
   await db.product.create({ data: { id: 'pr_bag', name: 'Bean Bag', status: 'ACTIVE', retailPriceCents: 39800 } })
   await db.product.create({ data: { id: 'pr_dev', name: 'Story Dress', status: 'DEVELOPMENT' } })
@@ -96,20 +98,21 @@ test('list_products: styles, colourways, sizes, SKUs, stock (unknown stays null)
   const { data } = await call('list_products', { status: 'ACTIVE' })
   assert.equal(data.count, 2)
   const tee = data.products.find((p: { name: string }) => p.name === 'Cleo Tee')
-  assert.deepEqual([tee.styleNumber, tee.category, tee.wholesale, tee.retail, tee.colorways, tee.sizes, tee.onHandTotal, tee.onHandUnknownVariants], ['TP101', 'TP', 56, 128, ['Black'], ['1', '2'], 7, 1])
-  assert.deepEqual(tee.variants[0], { colorway: 'Black', size: '1', newSku: 'TP101-BLK-01', oldSku: 'CCSS26TEE-BLK01', shopifySku: 'TEE-BLK-1', onHand: 7, wholesale: 56, retail: 128 })
+  assert.deepEqual([tee.styleNumber, tee.category, tee.wholesale, tee.retail, tee.colorways, tee.sizes, tee.onHandTotal, tee.onHandUnknownVariants], ['TCO101', 'T', 56, 128, ['Black'], ['1', '2'], 7, 1])
+  assert.deepEqual(tee.variants[0], { colorway: 'Black', size: '1', newSku: 'TCO101-BLK-01', oldSku: 'CCSS26TEE-BLK01', shopifySku: 'TEE-BLK-1', onHand: 7, wholesale: 56, retail: 128 })
   assert.equal(tee.variants[1].onHand, null)
   assert.equal(tee.variants[1].wholesale, 60, 'a variant\'s own wholesale price wins')
-  assert.equal((await call('list_products', { category: 'tp' })).data.count, 1)
+  assert.equal((await call('list_products', { category: 't' })).data.count, 1)
   assert.equal((await call('list_products', { styleNumber: 'TP999' })).data.count, 0)
 })
 
 test('get_product: by style number, SKU or name, with BOM and current notes only', async () => {
-  for (const q of ['TP101', 'tp101-blk-02', 'CCSS26TEE-BLK01', 'cleo tee']) {
+  // The new number and SKU, the retired number and TP-era SKU, the legacy SKU and the name all find it.
+  for (const q of ['TCO101', 'tco101-blk-02', 'TP101', 'TP101-BLK-01', 'CCSS26TEE-BLK01', 'cleo tee']) {
     const { data } = await call('get_product', { query: q })
     assert.equal(data.name, 'Cleo Tee', q)
   }
-  const { data } = await call('get_product', { query: 'TP101' })
+  const { data } = await call('get_product', { query: 'TCO101' })
   assert.deepEqual(data.bom, [{ component: 'Shell button 15mm', category: 'TRIM', qtyPerUnit: 3, unit: 'pcs', onlyFor: 'size 2', supplier: 'Empire Sewing', unitCost: 0.12, leadTimeDays: 14 }])
   assert.deepEqual(data.notes.map((n: { text: string }) => n.text), ['Cleo Tee lining is black cotton.'])
   assert.equal(data.productionLeadTimeDays, 30)
@@ -189,9 +192,11 @@ test('list_vendors: what they supply and lead times, active only by default, no 
   assert.equal((await call('list_vendors', { includeInactive: true })).data.count, 2)
 })
 
-test('style_system: categories with the next free number (retired ones count), colours and sizes', async () => {
+test('style_system: category letters, families with their next version, retired numbers, colours and sizes', async () => {
   const { data } = await call('style_system')
-  assert.deepEqual(data.categories, [{ code: 'DR', name: 'Dresses', status: 'CONFIRMED', styles: 0, nextStyleNumber: 'DR101' }, { code: 'TP', name: 'Tops', status: 'CONFIRMED', styles: 2, nextStyleNumber: 'TP105' }])
+  assert.deepEqual(data.categories, [{ code: 'D', name: 'Dresses', styles: 0 }, { code: 'T', name: 'Tees', styles: 2 }])
+  assert.deepEqual(data.families, [{ family: 'TCO', line: "women's", styles: ['TCO101 Cleo Tee', 'TCO104 Other'], nextVersion: 'TCO105' }])
+  assert.deepEqual(data.retired, ['TP101 → TCO101'])
   assert.deepEqual(data.colors.map((c: { code: string; status: string }) => [c.code, c.status]), [['BLK', 'CONFIRMED'], ['SHL', 'PROPOSED']])
   assert.deepEqual(data.sizes, [{ code: '01', name: 'Size 1', status: 'CONFIRMED' }])
 })
@@ -206,7 +211,7 @@ async function fingerprint(skip: string[]) {
 }
 
 const EVERY_CALL: Array<[string, Record<string, unknown>]> = [
-  ['list_products', {}], ['get_product', { query: 'TP101' }], ['wholesale_price_list', {}], ['list_purchase_orders', {}],
+  ['list_products', {}], ['get_product', { query: 'TCO101' }], ['wholesale_price_list', {}], ['list_purchase_orders', {}],
   ['get_purchase_order', { poNumber: '2403' }], ['list_open_questions', {}], ['search_notes', {}], ['search_notes', { includeSuperseded: true }],
   ['get_latest_snapshot', {}], ['list_vendors', { includeInactive: true }], ['style_system', {}],
 ]
@@ -367,21 +372,21 @@ test('stock is Shopify\'s live count when Shopify answers, asked only for varian
   const asked: string[][] = []
   const liveStock = async (ids: string[]) => { asked.push(ids); return new Map([['111', 3]]) }
   const t = MCP_TOOLS.find((x) => x.name === 'list_products')!
-  const data = JSON.parse((await runTool(db, t, { styleNumber: 'TP101' }, caller, { audience: 'claude', liveStock })).content[0].text)
+  const data = JSON.parse((await runTool(db, t, { styleNumber: 'TCO101' }, caller, { audience: 'claude', liveStock })).content[0].text)
   assert.deepEqual(asked, [['111']])
   assert.equal(data.stock.source, 'Shopify, live')
   const [v1, v2] = data.products[0].variants
   assert.deepEqual([v1.onHand, v1.stockFrom], [3, undefined], 'Shopify\'s 3, not the app\'s 7')
   assert.deepEqual([v2.onHand, v2.stockFrom], [null, 'app (not on Shopify)'])
   assert.equal(data.products[0].onHandTotal, 3)
-  const one = JSON.parse((await runTool(db, MCP_TOOLS.find((x) => x.name === 'get_product')!, { query: 'TP101' }, caller, { audience: 'claude', liveStock })).content[0].text)
+  const one = JSON.parse((await runTool(db, MCP_TOOLS.find((x) => x.name === 'get_product')!, { query: 'TCO101' }, caller, { audience: 'claude', liveStock })).content[0].text)
   assert.equal(one.variants[0].onHand, 3)
 })
 
 test('when Shopify does not answer, the app\'s copy is used and the answer says so', async () => {
   const liveStock = async () => { throw new Error('Shopify took too long') }
   const t = MCP_TOOLS.find((x) => x.name === 'list_products')!
-  const r = await runTool(db, t, { styleNumber: 'TP101' }, caller, { audience: 'claude', liveStock })
+  const r = await runTool(db, t, { styleNumber: 'TCO101' }, caller, { audience: 'claude', liveStock })
   assert.equal(r.isError, undefined)
   const data = JSON.parse(r.content[0].text)
   assert.match(data.stock.source, /did not answer/)
@@ -414,7 +419,7 @@ test('Muse connects with its own key only while switched on, and sees no notes, 
     for (const hidden of ['search_notes', 'list_open_questions', 'get_latest_snapshot']) assert.ok(!MUSE_TOOLS.has(hidden), hidden)
     const notes = await (await handleMcp(museRpc({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'search_notes', arguments: {} } }, { 'x-api-key': MUSE_KEY }), { db, origin: ORIGIN })).json()
     assert.ok(notes.error || notes.result?.isError, 'a tool Muse does not have cannot be called')
-    const product = await (await handleMcp(museRpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'get_product', arguments: { query: 'TP101' } } }, { 'x-api-key': MUSE_KEY }), { db, origin: ORIGIN })).json()
+    const product = await (await handleMcp(museRpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'get_product', arguments: { query: 'TCO101' } } }, { 'x-api-key': MUSE_KEY }), { db, origin: ORIGIN })).json()
     const p = JSON.parse(product.result.content[0].text)
     assert.equal(p.name, 'Cleo Tee')
     assert.equal(p.notes, undefined, 'no team notes for Muse')
