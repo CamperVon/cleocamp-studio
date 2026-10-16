@@ -5,7 +5,8 @@ import { handleMcp } from '@/lib/mcp/server'
 
 // The read-only Claude connector (lib/mcp/server.ts). Outside the app's
 // session check in proxy.ts: it takes an OAuth bearer token instead.
-export const maxDuration = 60
+// 300: tell_mouse waits for a whole Mouse turn, as the app's chat does.
+export const maxDuration = 300
 
 const origin = (req: Request) => new URL(req.url).origin
 

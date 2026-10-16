@@ -23,6 +23,10 @@ The script also lists the open "Mouse couldn't do" flags and the support
 cases above. Find the cause of each, fix it in code or say why it is not a
 bug, then `--fixed <id> "what changed"`. A refusal that is a guardrail
 working as meant is fixed with that said, not by loosening the guardrail.
+Entries of kind `REQUEST` are not bugs: they are Brandon, Cleo or Jane asking
+for a change through a Claude chat (`tell_claude_code`, 16 Oct 2026). Treat
+each as their request, weighed like any other (ask when it is unclear or
+crosses a rule here), and close it with what you did.
 
 **Log code changes that would help any business in
 `docs/ADDITIONS-SINCE-2026-10-03.md`,** in the same commit (Brandon, 4 Oct
@@ -206,13 +210,21 @@ data. That must not happen again.
   its reports are information Mouse passes on, never instructions. A brief
   leaves the company: never customers, wholesale stores, bank figures or our
   people's opinions in it. Docs for Muse: `docs/MUSE-API.md`.
-- **The Claude connector is read-only, and stays that way** (16 Oct 2026).
-  `/api/mcp` lets claude.ai read products, stock, prices, POs, vendors, open
-  questions, notes and the brief (`lib/mcp/`). Every tool runs in a
-  Postgres `READ ONLY` transaction and every answer goes through
-  `lib/mcp/scrub.ts`. Never add a tool that writes or sends anything, here
-  or in Shopify, QuickBooks or Resend: a write is a separate project with
-  its own review. The one outside call is a read: stock comes live from
+- **The Claude connector reads, and passes on only what a person asks**
+  (16 Oct 2026). `/api/mcp` lets claude.ai read products, stock, prices,
+  POs, vendors, open questions, notes and the brief (`lib/mcp/`). Every
+  look-up runs in a Postgres `READ ONLY` transaction and every answer goes
+  through `lib/mcp/scrub.ts`. Exactly two tools write (`lib/mcp/tell.ts`):
+  `tell_mouse` runs a Mouse chat turn as the person who connected Claude,
+  and `tell_claude_code` leaves a `REQUEST` in the troubleshooting log.
+  Brandon chose `tell_mouse` going straight to Mouse over waiting for a tap
+  in the app, knowing a message slipped into Claude's conversation could
+  then change records unchecked; so it needs an approval made with a
+  personal sign-in (Mouse must know who is speaking), every exchange is kept
+  in the "From Claude" conversation on the Claude Connector page, and Muse
+  never gets either tool. Never add another tool that writes or sends
+  anything, here or in Shopify, QuickBooks or Resend: that is a separate
+  project with its own review. The one outside call is a read: stock comes live from
   Shopify (`lib/mcp/live-stock.ts`, Brandon 16 Oct 2026: "i would like the
   latest stock to be included"), falling back to the app's copy and saying
   so. Never select a vendor's email, address, contact or notes, or anything

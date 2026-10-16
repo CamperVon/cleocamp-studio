@@ -32,7 +32,7 @@ export default async function Authorize({ searchParams }: { searchParams: Promis
               {check.clientName ? <><span className="font-medium text-ink">{check.clientName}</span> is asking. </> : null}
               Claude will be able to look up products, stock, prices, purchase orders, vendors, open questions, notes and the daily brief.
             </p>
-            <p className="mt-2 text-sm text-muted">It can read only. It cannot change anything here, in Shopify, in QuickBooks or in email, and it never sees customers&rsquo; contact details. You can disconnect it any time on the Claude Connector page.</p>
+            <p className="mt-2 text-sm text-muted">Looking things up changes nothing. When you ask it to, Claude can also tell Mouse something, and Mouse acts on it straight away as if you had typed it, or leave a request for Claude Code. It never sees customers&rsquo; contact details. You can disconnect it any time on the Claude Connector page.</p>
             <div className="mt-7 flex flex-col gap-3">
               <form action={allow}>
                 {AUTHORIZE_KEYS.map((k) => (p[k] ? <input key={k} type="hidden" name={k} value={p[k]!} /> : null))}

@@ -4,6 +4,7 @@ import type { PrismaClient } from '@/generated/prisma/client'
 import type { LiveStock } from '@/lib/mcp/live-stock'
 import { SCOPE, unauthorized, verifyAccess, type Caller } from '@/lib/mcp/oauth'
 import { scrub } from '@/lib/mcp/scrub'
+import { tellClaudeCode, tellMouse } from '@/lib/mcp/tell'
 import { MCP_TOOLS, MUSE_TOOLS, ToolError, type McpTool, type ToolContext, type Tx } from '@/lib/mcp/tools'
 import { museAuthorized, museKey } from '@/lib/muse'
 
@@ -22,10 +23,11 @@ type Db = PrismaClient
 
 export const INSTRUCTIONS =
   'Studio Mouse is the internal admin app of Cleo Camp, a small apparel brand in Los Angeles. These tools read its records: products, stock, ' +
-  'prices, purchase orders, vendors, open questions, notes and the daily brief. They cannot change anything. Stock is Shopify\'s live count; ' +
+  'prices, purchase orders, vendors, open questions, notes and the daily brief; none of those change anything. Two pass something on: tell_mouse ' +
+  '(a fact, decision or change for Studio Mouse, which acts on it at once as if the person typed it) and tell_claude_code (an idea or fix for the ' +
+  'app itself). Use them only for what the person asks you to pass on. Stock is Shopify\'s live count; ' +
   'if Shopify does not answer, the app\'s copy is used and the answer says so (null means unknown, not zero; below zero is pre-orders). Prices are ' +
-  'USD unless a purchase order says otherwise. To change something, ask a person to tell ' +
-  'Studio Mouse in the app.'
+  'USD unless a purchase order says otherwise.'
 
 /** One tool call: read-only transaction, scrubbed answer, logged outcome. */
 export async function runTool(db: Db, t: McpTool, args: unknown, caller: Pick<Caller, 'clientId' | 'personId'>, ctx: ToolContext = { audience: 'claude' }) {
@@ -33,10 +35,13 @@ export async function runTool(db: Db, t: McpTool, args: unknown, caller: Pick<Ca
   let ok = false
   let errorKind: string | null = null
   try {
-    const result = await db.$transaction(async (tx: Tx) => {
-      await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY')
-      return t.run(tx, args as never, ctx)
-    }, { timeout: 25_000, maxWait: 10_000 })
+    const result = t.writes
+      // tell_mouse / tell_claude_code: they write, so no read-only transaction.
+      ? await t.run(db as unknown as Tx, args as never, ctx)
+      : await db.$transaction(async (tx: Tx) => {
+          await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY')
+          return t.run(tx, args as never, ctx)
+        }, { timeout: 25_000, maxWait: 10_000 })
     ok = true
     return { content: [{ type: 'text' as const, text: JSON.stringify(scrub(result)) }] }
   } catch (e) {
@@ -54,15 +59,22 @@ export async function runTool(db: Db, t: McpTool, args: unknown, caller: Pick<Ca
 /** The id Muse's calls are logged under, and its on/off switch (an McpClient row by this id; /connector). */
 export const MUSE_CLIENT_ID = 'muse'
 
+/** Every tool: the read-only ones, then the two that pass something on (Claude only, never Muse). */
+export const ALL_TOOLS = [...MCP_TOOLS, tellMouse, tellClaudeCode] as McpTool[]
+
+const annotationsFor = (t: McpTool) => t.writes
+  ? { title: t.title, readOnlyHint: false, destructiveHint: t.name === 'tell_mouse', idempotentHint: false, openWorldHint: t.name === 'tell_mouse' }
+  : { title: t.title, readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+
 export function buildServer(db: Db, caller: Caller, ctx: ToolContext) {
   const server = new McpServer({ name: 'studio-mouse', title: 'Studio Mouse', version: '1.0.0' }, { instructions: INSTRUCTIONS })
-  for (const t of MCP_TOOLS) {
+  for (const t of ALL_TOOLS) {
     if (ctx.audience === 'muse' && !MUSE_TOOLS.has(t.name)) continue
     server.registerTool(t.name, {
       title: t.title,
       description: t.description,
       inputSchema: t.input,
-      annotations: { title: t.title, readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: annotationsFor(t),
     }, (args: unknown) => runTool(db, t, args, caller, ctx))
   }
   return server
@@ -80,12 +92,12 @@ async function museCaller(db: Db, req: Request): Promise<Caller | null> {
 }
 
 /** POST /api/mcp. Anything without a live access token (or Muse's key) gets the 401 that starts sign-in. */
-export async function handleMcp(req: Request, deps: { db: Db; origin: string; liveStock?: LiveStock }): Promise<Response> {
+export async function handleMcp(req: Request, deps: { db: Db; origin: string; liveStock?: LiveStock; runMouse?: ToolContext['runMouse'] }): Promise<Response> {
   const auth = req.headers.get('authorization')
   const oauth = await verifyAccess(deps.db, auth, deps.origin)
   const caller = oauth ?? await museCaller(deps.db, req)
   if (!caller) return unauthorized(deps.origin, auth ? 'invalid_token' : undefined)
-  const server = buildServer(deps.db, caller, { audience: oauth ? 'claude' : 'muse', liveStock: deps.liveStock })
+  const server = buildServer(deps.db, caller, { audience: oauth ? 'claude' : 'muse', liveStock: deps.liveStock, personId: oauth?.personId ?? null, runMouse: deps.runMouse })
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
   await server.connect(transport)
   try {

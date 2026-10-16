@@ -9,7 +9,7 @@ import { PrismaClient } from '../generated/prisma/client'
 import { checkAuthorize, issueCode, OAuthError, registerClient, tokenRequest, verifyAccess, type AuthorizeParams } from '../lib/mcp/oauth'
 import { scrubText } from '../lib/mcp/scrub'
 import { LIVE_STOCK_QUERY } from '../lib/mcp/live-stock'
-import { handleMcp, MUSE_CLIENT_ID, runTool } from '../lib/mcp/server'
+import { ALL_TOOLS, handleMcp, MUSE_CLIENT_ID, runTool } from '../lib/mcp/server'
 import { MCP_TOOLS, MUSE_TOOLS } from '../lib/mcp/tools'
 
 /**
@@ -317,8 +317,9 @@ test('end to end: register, approve, exchange with PKCE, then list and call tool
   assert.equal(init.status, 200)
   const listed = await (await handleMcp(rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, access_token), { db, origin: ORIGIN })).json()
   const tools = listed.result.tools as Array<{ name: string; annotations: { readOnlyHint: boolean } }>
-  assert.deepEqual(tools.map((t) => t.name).sort(), MCP_TOOLS.map((t) => t.name).sort())
-  assert.ok(tools.every((t) => t.annotations.readOnlyHint === true))
+  assert.deepEqual(tools.map((t) => t.name).sort(), ALL_TOOLS.map((t) => t.name).sort())
+  assert.ok(tools.filter((t) => !['tell_mouse', 'tell_claude_code'].includes(t.name)).every((t) => t.annotations.readOnlyHint === true))
+  assert.ok(tools.filter((t) => ['tell_mouse', 'tell_claude_code'].includes(t.name)).every((t) => t.annotations.readOnlyHint === false), 'the two that write say so')
   const called = await (await handleMcp(rpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'get_purchase_order', arguments: { poNumber: '2403' } } }, access_token), { db, origin: ORIGIN })).json()
   assert.equal(JSON.parse(called.result.content[0].text).vendor, 'Empire Sewing')
   const bad = await (await handleMcp(rpc({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'list_purchase_orders', arguments: { from: 'last week' } } }, access_token), { db, origin: ORIGIN })).json()
@@ -428,4 +429,43 @@ test('Muse connects with its own key only while switched on, and sees no notes, 
     if (before === undefined) delete process.env.MUSE_API_KEY
     else process.env.MUSE_API_KEY = before
   }
+})
+
+// ---- passing something on: tell_mouse and tell_claude_code (Brandon, 16 Oct 2026) ----
+
+const tellMouse = ALL_TOOLS.find((t) => t.name === 'tell_mouse')!
+const tellClaudeCode = ALL_TOOLS.find((t) => t.name === 'tell_claude_code')!
+
+test('tell_mouse goes straight to Mouse as the person who connected, and both sides are kept', async () => {
+  const seen: Array<{ said: string; personId: string }> = []
+  const runMouse = async (_thread: string, said: string, personId: string) => { seen.push({ said, personId }); return { text: 'Noted: 12 Black size 1 received against PO 2403.', writes: ['log_inventory_event'], toolCalls: [{ name: 'log_inventory_event' }] } }
+  const r = await runTool(db, tellMouse, { message: '12 Black size 1 tees arrived on PO 2403' }, { clientId: 'c', personId: 'p_cleo' }, { audience: 'claude', personId: 'p_cleo', runMouse })
+  assert.equal(r.isError, undefined)
+  assert.deepEqual(seen, [{ said: '[Cleo, via a Claude chat] 12 Black size 1 tees arrived on PO 2403', personId: 'p_cleo' }])
+  assert.equal(JSON.parse(r.content[0].text).mouseReplied, 'Noted: 12 Black size 1 received against PO 2403.')
+  const kept = await db.chatMessage.findMany({ where: { thread: { title: 'From Claude' } }, orderBy: { createdAt: 'asc' }, select: { role: true, content: true } })
+  assert.deepEqual(kept.slice(-2).map((m) => m.role), ['USER', 'ASSISTANT'])
+  assert.equal(kept.at(-2)!.content, '12 Black size 1 tees arrived on PO 2403', 'the person\'s words, as the app chat shows them')
+})
+
+test('tell_mouse refuses without a named person, and Mouse is never run', async () => {
+  let ran = false
+  const runMouse = async () => { ran = true; return { text: 'x', toolCalls: [] } }
+  const before = await db.chatMessage.count()
+  const r = await runTool(db, tellMouse, { message: 'anything' }, { clientId: 'c', personId: null }, { audience: 'claude', personId: null, runMouse })
+  assert.equal(r.isError, true)
+  assert.match(r.content[0].text, /who is speaking/)
+  assert.equal(ran, false)
+  assert.equal(await db.chatMessage.count(), before)
+})
+
+test('tell_claude_code leaves a request in the troubleshooting log and touches nothing else', async () => {
+  const r = await runTool(db, tellClaudeCode, { request: 'Show the wholesale price on the Products page too.' }, { clientId: 'c', personId: 'p_cleo' }, { audience: 'claude', personId: 'p_cleo' })
+  const out = JSON.parse(r.content[0].text)
+  const row = await db.mouseIssue.findUniqueOrThrow({ where: { id: out.reference } })
+  assert.deepEqual([row.kind, row.source, row.tool, row.detail, row.asked, row.fixedAt], ['REQUEST', 'claude-chat', 'tell_claude_code', 'Show the wholesale price on the Products page too.', 'From Cleo, via a Claude chat', null])
+})
+
+test('Muse never gets the tools that pass something on', () => {
+  for (const t of ['tell_mouse', 'tell_claude_code']) assert.ok(!MUSE_TOOLS.has(t), t)
 })

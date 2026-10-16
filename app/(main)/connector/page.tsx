@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { Card, Empty, Fold, Page } from '@/app/ui/primitives'
+import { FROM_CLAUDE_TITLE } from '@/lib/mcp/tell'
 import { museKey } from '@/lib/muse'
 import { disconnect, setMuse } from './actions'
 
@@ -14,7 +15,7 @@ const when = (d: Date) => d.toLocaleString('en-US', { timeZone: 'America/Los_Ang
  */
 export default async function Connector() {
   const now = new Date()
-  const [live, calls, people, muse] = await Promise.all([
+  const [live, calls, people, muse, told] = await Promise.all([
     // Connected = holds a refresh token that is unspent, unrevoked and unexpired.
     db.mcpGrant.findMany({
       where: { kind: 'refresh', usedAt: null, revokedAt: null, expiresAt: { gt: now } },
@@ -24,6 +25,8 @@ export default async function Connector() {
     db.mcpCall.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
     db.person.findMany({ select: { id: true, name: true } }),
     db.mcpClient.findUnique({ where: { id: 'muse' }, select: { createdAt: true } }),
+    // What Claude chats told Mouse (tell_mouse), and what Mouse said back.
+    db.chatMessage.findMany({ where: { thread: { title: FROM_CLAUDE_TITLE } }, orderBy: { createdAt: 'desc' }, take: 40, select: { id: true, role: true, content: true, createdAt: true } }),
   ])
   // Shape only, never the value (CLAUDE.md §2).
   const museKeySet = museKey().length >= 32
@@ -32,7 +35,7 @@ export default async function Connector() {
   const failed = calls.filter((c) => !c.ok).length
 
   return (
-    <Page title="Claude Connector" lede="Claude can read Studio Mouse through its connector: products, stock, prices, POs, vendors, open questions, notes and the daily brief. It can't change anything.">
+    <Page title="Claude Connector" lede="Claude can read Studio Mouse through its connector: products, stock, prices, POs, vendors, open questions, notes and the daily brief. When you ask it to, it can also tell Mouse something (Mouse acts on it straight away) or leave a request for Claude Code.">
       <Card title={`Connected (${apps.length})`}>
         {apps.length === 0 ? <Empty>Nothing connected. In Claude: Settings → Connectors → Add custom connector, with https://admin.cleocamp.com/api/mcp.</Empty> : (
           <ul className="divide-y divide-line">
@@ -50,6 +53,25 @@ export default async function Connector() {
             ))}
           </ul>
         )}
+      </Card>
+      <Card>
+        <Fold summary={
+          <span className="flex items-center justify-between gap-3">
+            <span className="font-serif text-[17px] italic text-accent">Claude told Mouse</span>
+            <span className="text-xs text-muted">{told.length ? `last on ${when(told[0].createdAt)}` : 'nothing yet'}</span>
+          </span>
+        }>
+          {told.length === 0 ? <Empty>When you ask Claude to tell Mouse something, it shows here with Mouse&rsquo;s reply. Mouse acts on it straight away.</Empty> : (
+            <ul className="divide-y divide-line">
+              {[...told].reverse().map((m) => (
+                <li key={m.id} className="px-4 py-2.5 text-sm sm:px-5">
+                  <p className="text-xs text-muted">{m.role === 'USER' ? 'Claude' : 'Mouse'} · {when(m.createdAt)}</p>
+                  <p className="mt-0.5 whitespace-pre-wrap">{m.content}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Fold>
       </Card>
       <Card title="Muse">
         <div className="flex items-center justify-between gap-3 px-4 py-3 text-sm sm:px-5">

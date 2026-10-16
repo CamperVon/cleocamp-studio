@@ -27,17 +27,29 @@ export class ToolError extends Error {
  * through OAuth) gets every tool; Muse (its own key) gets the ones that hold
  * nothing about customers, stores or the team's opinions (MUSE_TOOLS).
  */
-export type ToolContext = { audience: 'claude' | 'muse'; liveStock?: LiveStock }
+export type ToolContext = {
+  audience: 'claude' | 'muse'
+  liveStock?: LiveStock
+  /** Who approved the connection (a personal sign-in), or null for the shared password or Muse. */
+  personId?: string | null
+  /** Mouse's chat turn, for tell_mouse (lib/mcp/tell.ts); injected in tests. */
+  runMouse?: import('@/lib/mcp/tell').MouseRunner
+}
 
 export type McpTool<S extends z.ZodRawShape = z.ZodRawShape> = {
   name: string
   title: string
   description: string
   input: S
+  /**
+   * Only the two tell tools (lib/mcp/tell.ts). Every other tool runs in a
+   * READ ONLY transaction; these run on the plain client, because they write.
+   */
+  writes?: boolean
   run: (tx: Tx, input: z.infer<z.ZodObject<S>>, ctx: ToolContext) => Promise<unknown>
 }
 
-const tool = <S extends z.ZodRawShape>(t: McpTool<S>) => t
+export const tool = <S extends z.ZodRawShape>(t: McpTool<S>) => t
 
 const usd = (cents: number | null | undefined) => (cents == null ? null : Math.round(cents) / 100)
 // Calendar dates (due, ordered, expected, the brief's day) are stored at UTC
