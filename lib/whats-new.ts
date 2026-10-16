@@ -122,6 +122,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-16',
     text: 'Fewer doubled-up todos. The Daily Cheese now says each thing once (the Antonio\'s pickup was coming as a todo, a calendar entry and PO 2360 all at once), Mouse will not add a todo or question that is already open, and any copies already there show up on Home each morning for a one-tap close.',
   },
+  {
+    on: '2026-10-16',
+    text: 'Mouse can now draft a wholesale invoice as a deposit: say "half now, the rest on delivery" and the invoice keeps the full order, adds a line like "50% deposit. Balance of $3,530 due on delivery." and asks for what is due now. Shopify works out every figure, and a revision keeps the deposit, or a discount you added in Shopify, instead of wiping it.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

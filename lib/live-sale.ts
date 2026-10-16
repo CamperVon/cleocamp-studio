@@ -61,6 +61,13 @@ export type InvoiceOptions = {
    * cannot make that mistake.
    */
   discount?: { percent: number; title: string } | null
+  /**
+   * A discount kept as Shopify holds it, by amount (one someone put on the
+   * draft in Shopify by hand). A revision sends it back rather than drop it.
+   */
+  fixedDiscount?: { amount: number; title: string } | null
+  /** Take any order discount off the draft (a deposit no longer wanted). */
+  clearDiscount?: boolean
   /** Extra people to copy (blind) on the invoice email, beyond the studio. */
   bcc?: string[]
 }
@@ -137,7 +144,8 @@ type Money = { shopMoney: { amount: string } }
 const gid = (id: string) => (id.startsWith('gid://') ? id : `gid://shopify/ProductVariant/${id}`)
 const money = (m: Money | null | undefined) => Number(m?.shopMoney.amount ?? 0)
 
-function draftInput(email: string, lines: SaleLine[], note: string, opts: InvoiceOptions = {}) {
+/** The draft order as Shopify takes it. Exported for its tests; pure. */
+export function draftInput(email: string, lines: SaleLine[], note: string, opts: InvoiceOptions = {}) {
   return {
     // A gift can have no email: nobody is invoiced.
     ...(email ? { email } : {}),
@@ -149,6 +157,8 @@ function draftInput(email: string, lines: SaleLine[], note: string, opts: Invoic
     ...(opts.shipTo ?? opts.billTo ? { shippingAddress: opts.shipTo ?? opts.billTo, billingAddress: opts.billTo ?? opts.shipTo } : {}),
     ...(opts.customerId ? { purchasingEntity: { customerId: opts.customerId } } : {}),
     ...(opts.discount ? { appliedDiscount: { value: opts.discount.percent, valueType: 'PERCENTAGE', title: opts.discount.title } } : {}),
+    ...(!opts.discount && opts.fixedDiscount ? { appliedDiscount: { value: opts.fixedDiscount.amount, valueType: 'FIXED_AMOUNT', title: opts.fixedDiscount.title } } : {}),
+    ...(opts.clearDiscount && !opts.discount && !opts.fixedDiscount ? { appliedDiscount: null } : {}),
     ...(opts.shippingCharge != null
       ? { shippingLine: { title: opts.shippingTitle ?? 'Shipping', priceWithCurrency: { amount: opts.shippingCharge.toFixed(2), currencyCode: 'USD' } } }
       : {}),
@@ -461,18 +471,20 @@ export type SavedDraft = {
   pdfPath: string
   lines: Array<{ label: string; quantity: number; unitPrice: number }>
   subtotal: number
+  /** Taken off by an order discount, as Shopify worked it out. */
+  discount: number
   shipping: number
   tax: number
   total: number
 }
 
 const DRAFT_FIELDS = `id name legacyResourceId status
-  subtotalPriceSet { shopMoney { amount } } totalShippingPriceSet { shopMoney { amount } }
+  subtotalPriceSet { shopMoney { amount } } totalDiscountsSet { shopMoney { amount } } totalShippingPriceSet { shopMoney { amount } }
   totalTaxSet { shopMoney { amount } } totalPriceSet { shopMoney { amount } }
   lineItems(first: 100) { nodes { title variantTitle quantity originalUnitPriceSet { shopMoney { amount } } } }`
 type DraftShape = {
   id: string; name: string; legacyResourceId: string; status: string
-  subtotalPriceSet: Money; totalShippingPriceSet: Money; totalTaxSet: Money; totalPriceSet: Money
+  subtotalPriceSet: Money; totalDiscountsSet: Money; totalShippingPriceSet: Money; totalTaxSet: Money; totalPriceSet: Money
   lineItems: { nodes: Array<{ title: string; variantTitle: string | null; quantity: number; originalUnitPriceSet: Money }> }
 }
 
@@ -514,9 +526,38 @@ export async function saveDraft(args: { email: string; lines: SaleLine[]; note: 
     pdfPath: `/drafts/${d.legacyResourceId}/pdf`,
     lines: d.lineItems.nodes.map((l) => ({ label: `${l.title}${l.variantTitle ? ` — ${l.variantTitle}` : ''}`, quantity: l.quantity, unitPrice: money(l.originalUnitPriceSet) })),
     subtotal: money(d.subtotalPriceSet),
+    discount: money(d.totalDiscountsSet),
     shipping: money(d.totalShippingPriceSet),
     tax: money(d.totalTaxSet),
     total: money(d.totalPriceSet),
+  }
+}
+
+/** The order discount on a draft as Shopify holds it now, or null. */
+export async function readDraftDiscount(draftOrderId: string): Promise<{ value: number; valueType: string; title: string | null } | null> {
+  const d = await shopifyGraphQL<{ draftOrder: { appliedDiscount: { value: number; valueType: string; title: string | null } | null } | null }>(
+    `query($id: ID!) { draftOrder(id: $id) { appliedDiscount { value valueType title } } }`,
+    { id: draftOrderId },
+  )
+  return d.draftOrder?.appliedDiscount ?? null
+}
+
+/**
+ * Rename a draft's order discount once Shopify has worked out its amount, so
+ * the line can say it ("Balance of $3,530 due on delivery"). Only the
+ * discount is sent; the lines are left as they are.
+ */
+export async function retitleDraftDiscount(draftOrderId: string, percent: number, title: string): Promise<SavedDraft> {
+  const u = await shopifyGraphQL<{ draftOrderUpdate: { draftOrder: DraftShape | null; userErrors: Array<{ message: string }> } }>(
+    `mutation($id: ID!, $input: DraftOrderInput!) { draftOrderUpdate(id: $id, input: $input) { draftOrder { ${DRAFT_FIELDS} } userErrors { message } } }`,
+    { id: draftOrderId, input: { appliedDiscount: { value: percent, valueType: 'PERCENTAGE', title } } },
+  )
+  const d = u.draftOrderUpdate.draftOrder
+  if (!d) throw new Error(u.draftOrderUpdate.userErrors.map((e) => e.message).join('; ') || 'Shopify would not update the draft.')
+  return {
+    draftOrderId: d.id, name: d.name, adminUrl: await draftAdminUrl(d.legacyResourceId), pdfPath: `/drafts/${d.legacyResourceId}/pdf`,
+    lines: d.lineItems.nodes.map((l) => ({ label: `${l.title}${l.variantTitle ? ` — ${l.variantTitle}` : ''}`, quantity: l.quantity, unitPrice: money(l.originalUnitPriceSet) })),
+    subtotal: money(d.subtotalPriceSet), discount: money(d.totalDiscountsSet), shipping: money(d.totalShippingPriceSet), tax: money(d.totalTaxSet), total: money(d.totalPriceSet),
   }
 }
 

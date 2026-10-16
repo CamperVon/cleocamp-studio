@@ -662,6 +662,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/dupes.ts`, `lib/mouse/tools.ts` (`alreadyOpen`), `lib/mouse/daily-cheese.ts`, `lib/mouse/tidy.ts` (`suggestDuplicateCloses`), `app/api/cron/nightly/route.ts`, `tests/dupes.test.ts`.
 - **Needs:** nothing beyond the app.
 
+### Deposit invoices, and discounts that survive a revision
+- **Problem:** a wholesale invoice for part now and the rest later could only be made by halving every line price (the full order then appears nowhere and the store sees half-price goods) or by editing the draft in Shopify by hand, which the assistant's next revision wiped, because a revision rewrote the draft without its order discount.
+- **Change:** `invoice_wholesale` takes `deposit` (the percent due now) and `balanceDue` (when, never an amount). The draft keeps the full lines and gets one order discount for the rest; once Shopify has worked out that amount, the discount is retitled with it ("50% deposit. Balance of $3,530 due on delivery."), so every figure is the store platform's own. A revision reads the draft's discount back and keeps it: a deposit it recognises, or any percentage or fixed discount someone added by hand. `removeDeposit` takes it off. The invoice email says what the invoice is for, plus an optional `messageToStore`.
+- **Files:** `lib/deposit.ts`, `lib/live-sale.ts` (`readDraftDiscount`, `retitleDraftDiscount`, `fixedDiscount`, `clearDiscount`, draft `discount` total), `lib/mouse/tools.ts` (`invoice_wholesale`), `tests/deposit.test.ts`.
+- **Needs:** Shopify (draft orders).
+
 ---
 
 ## Setup notes for a new install

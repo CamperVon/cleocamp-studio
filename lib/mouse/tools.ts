@@ -4552,6 +4552,16 @@ export const TOOLS: Record<string, Tool> = {
           chargeSalesTax: { type: 'boolean' as const, description: 'true ONLY when the person said to charge sales tax on this invoice ("with sales tax"). Default: no sales tax. Shopify works out the tax for the address. Pass it again on every revision of the same draft, or the revision drops it.' },
           draftOrderId: str('The Shopify draft from an earlier call (gid://shopify/DraftOrder/…). Pass it to revise that draft, and to send it.'),
           alsoCopy: { type: 'array' as const, items: { type: 'string' as const }, description: 'Other people to get a copy of the invoice (our own email, with the PDF), e.g. Jane or a second contact at the store. Only addresses a person gave. studio@ always gets one.' },
+          deposit: num(
+            'For an invoice asking for part now and the rest later: the percent due now, a whole number (50 for half). ' +
+            'Shopify keeps the full order and prices, takes the rest off as one line titled e.g. "50% deposit. Balance of ' +
+            '$3,530 due on delivery.", and the total is what is due now. Shopify works out every figure, including the ' +
+            'balance: never halve the line prices yourself. Needs balanceDue. Kept on every revision of the same draft ' +
+            'without passing it again; removeDeposit: true takes it off.',
+          ),
+          balanceDue: str('With deposit: when the rest is due, in the person\'s words ("on delivery", "by 1 Nov"). Never an amount. Ask if they have not said.'),
+          removeDeposit: { type: 'boolean' as const, description: 'true only when a person says the invoice is no longer a deposit: takes the deposit line off the draft.' },
+          messageToStore: str('On the send call only: a sentence the store should read in the invoice email, as the person worded it. The deposit sentence is added for you.'),
           confirmed: { type: 'boolean' as const, description: 'Leave out to draft. true only after a person has seen the draft and said send; needs draftOrderId.' },
         },
         required: ['storeName', 'items', 'reduceStock', 'ship'],
@@ -4637,14 +4647,41 @@ export const TOOLS: Record<string, Tool> = {
       const customerNote = cust.id ? null : `The draft is not linked to a Shopify customer, so it may show no name (${cust.problem ?? 'unknown reason'}). The email is still on it.`
       const draftOrderId = typeof i.draftOrderId === 'string' && i.draftOrderId.startsWith('gid://shopify/DraftOrder/') ? i.draftOrderId : null
       const note = `Wholesale: ${acct.name}. Drafted by Studio Mouse.`
+      // A deposit, or any discount someone put on the draft in Shopify, is
+      // read back and kept: a revision from here used to rewrite the draft
+      // without it (Mouse on D62, 16 Oct 2026). lib/deposit.ts.
+      const dep = await import('@/lib/deposit')
+      const { readDraftDiscount, retitleDraftDiscount } = await import('@/lib/live-sale')
+      const onDraft = draftOrderId ? await readDraftDiscount(draftOrderId).catch(() => null) : null
+      const keptDeposit = dep.parseDepositTitle(onDraft?.title)
+      let deposit: { percent: number; balanceDue: string } | null = null
+      if (i.removeDeposit === true) {
+        options.clearDiscount = true
+      } else if (i.deposit != null) {
+        const balanceDue = typeof i.balanceDue === 'string' && i.balanceDue.trim() ? i.balanceDue : keptDeposit?.balanceDue
+        const bad = dep.depositProblem(i.deposit, balanceDue)
+        if (bad) return { sent: false, reason: bad }
+        deposit = { percent: Number(i.deposit), balanceDue: String(balanceDue) }
+      } else if (keptDeposit) {
+        deposit = keptDeposit
+      } else if (onDraft?.valueType === 'PERCENTAGE') {
+        options.discount = { percent: onDraft.value, title: onDraft.title ?? 'Discount' }
+      } else if (onDraft?.valueType === 'FIXED_AMOUNT') {
+        options.fixedDiscount = { amount: onDraft.value, title: onDraft.title ?? 'Discount' }
+      }
+      if (deposit) options.discount = { percent: dep.depositDiscountPercent(deposit.percent), title: dep.depositTitle(deposit.percent, null, deposit.balanceDue) }
       if (i.confirmed !== true) {
         let d
         try {
           d = await saveDraft({ email, lines, note, options, draftOrderId })
+          // The balance is Shopify's own discount amount, written into the line once it is known.
+          if (deposit) d = await retitleDraftDiscount(d.draftOrderId, dep.depositDiscountPercent(deposit.percent), dep.depositTitle(deposit.percent, d.discount, deposit.balanceDue))
         } catch (e) {
           return { sent: false, reason: `Shopify would not save the draft: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}` }
         }
         return {
+          ...(deposit ? { deposit: `${dep.depositTitle(deposit.percent, d.discount, deposit.balanceDue)} The invoice shows the full order, this line, and $${d.total.toFixed(2)} due now.` } : {}),
+          ...(!deposit && d.discount ? { discount: `$${d.discount.toFixed(2)} off the order, kept as it was on the draft.` } : {}),
           sent: false, draft: d.name, draftOrderId: d.draftOrderId, reviewInShopify: d.adminUrl, pdf: d.pdfPath,
           to: `${acct.name} <${email}>`,
           copied: ['studio@cleocamp.com (always; replies come back to the studio)', ...copy],
@@ -4661,6 +4698,18 @@ export const TOOLS: Record<string, Tool> = {
         }
       }
       if (!draftOrderId) return { sent: false, reason: 'There is no draft to send. Draft it first (leave confirmed out) so it can be reviewed, then send that draft.' }
+      // The email says what the invoice is for: the deposit line as it stands
+      // on the draft (an edit in Shopify included), and any words the person gave.
+      {
+        const extra = [
+          keptDeposit && onDraft?.title ? `This invoice is for a ${onDraft.title.charAt(0).toLowerCase()}${onDraft.title.slice(1)}` : null,
+          typeof i.messageToStore === 'string' && i.messageToStore.trim() ? i.messageToStore.trim() : null,
+        ].filter(Boolean)
+        if (extra.length) {
+          const hello = `Hello ${acct.contactName?.trim().split(/\s+/)[0] ?? acct.name}, thank you for your order. Your invoice is below, with a link to pay.`
+          options.message = () => `${hello}\n\n${extra.join('\n\n')}\n\nKindly,\nCleo Studio`
+        }
+      }
       let r
       try {
         r = await sendDraft({ draftOrderId, email, customerName: acct.contactName ?? acct.name, requireTag: 'wholesale', options })
