@@ -115,7 +115,7 @@ export async function linkStyle(productId: string, styleNumber: string) {
     db.style.findUnique({ where: { number: n } }),
   ])
   if (!product) return { ok: false as const, error: `No product ${productId}.` }
-  if (!style) return { ok: false as const, error: `There is no style ${n}. A new pattern gets a new number: propose one instead.` }
+  if (!style) return { ok: false as const, error: `There is no style ${n}. A new style gets a new number: propose one instead.` }
   if (product.styleId && product.styleId !== style.id) return { ok: false as const, error: `${product.name} already has a different style. Ask Brandon before moving it.` }
   await db.product.update({ where: { id: product.id }, data: { styleId: style.id } })
   return { ok: true as const, number: n, status: style.status }

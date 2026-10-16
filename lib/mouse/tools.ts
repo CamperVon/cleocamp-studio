@@ -1833,6 +1833,47 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  patterns: {
+    def: {
+      name: 'patterns',
+      description:
+        'The physical patterns a style is cut from (16 Oct 2026). Coded STYLE-P#: TCO101-P1 is the Cleo Tee\'s ' +
+        'first pattern, for pre-washed fabric; TCO101-P2 is for PFD fabric. A pattern is a PRODUCTION DETAIL: ' +
+        'not a product, not a colourway, not a size. Never make a variant, a SKU or anything on Shopify from one, ' +
+        'and a new pattern revision never changes the style number. A cut-and-sew purchase order line says which ' +
+        'pattern it is cut from: one active pattern is the default; with two or more the order cannot be sent ' +
+        'until one is picked (update_purchase_order_lines, patternCode), so ask the person which, using the ' +
+        'fabric as the guide. Actions: list (a style\'s patterns, or all); add (a new pattern for a style, ' +
+        'numbered for you, only when a person says one exists); update (what is known: who holds it, the ' +
+        'fabric, status ACTIVE / RETIRING / ARCHIVED). Never delete; archive. Unknown holder stays unknown.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string' as const, enum: ['list', 'add', 'update'] },
+          styleNumber: str('The style, for list or add: TCO101'),
+          code: str('The pattern, for update: TCO101-P2'),
+          description: str('What it is: "for PFD fabric", "current pattern"'),
+          fabric: str('The fabric it is cut for, when that is the point: "pre-washed", "PFD"'),
+          heldBy: str('Who has the physical pattern: a person or a factory, as the team says it'),
+          status: { type: 'string' as const, enum: ['ACTIVE', 'RETIRING', 'ARCHIVED'] },
+          notes: str('Anything else about it, internal'),
+        },
+        required: ['action'],
+      },
+    },
+    run: async (i) => {
+      const a = await import('@/lib/po-patterns')
+      const opt = (k: string) => (i[k] === undefined ? undefined : String(i[k]))
+      const fields = { description: opt('description'), fabric: opt('fabric'), heldBy: opt('heldBy'), notes: opt('notes'), status: i.status as never }
+      switch (i.action) {
+        case 'list': return { patterns: await a.listPatterns(opt('styleNumber')?.toUpperCase()) }
+        case 'add': return i.styleNumber ? a.addPattern(String(i.styleNumber).toUpperCase(), fields) : { ok: false, error: 'Say styleNumber.' }
+        case 'update': return i.code ? a.updatePattern(String(i.code).toUpperCase(), fields) : { ok: false, error: 'Say code.' }
+        default: return { ok: false, error: 'Unknown action.' }
+      }
+    },
+  },
+
   create_colorway: {
     def: {
       name: 'create_colorway',
@@ -2709,10 +2750,13 @@ export const TOOLS: Record<string, Tool> = {
             ? [l.productVariant.product.name, l.productVariant.colorway?.customerName, l.productVariant.size]
                 .filter(Boolean).join(' / ')
             : (l.description ?? '')
+      // Asked now, while the draft is open, rather than at the send.
+      const pickPattern = await (await import('@/lib/po-patterns')).patternGate(po.id)
       return {
         poNumber: po.poNumber,
         vendor: po.vendor.name,
         status: 'DRAFT — not sent',
+        patternToPick: pickPattern ? pickPattern.replace(/^Not sent: /, '').replace(/ and send again\.$/, '.') : undefined,
         totalDollars: (total / 100).toFixed(2),
         lines: po.lines.map((l) => `${l.qtyOrdered} ${l.unit} ${lineName(l)}`),
         document: `/po/${po.poNumber}`,
@@ -2820,6 +2864,12 @@ export const TOOLS: Record<string, Tool> = {
         if (v === undefined || v === null) continue
         data[k] = /At$/.test(k) ? new Date(String(v) + 'T12:00:00-07:00') : v
       }
+      // Marking it sent by hand is a send: a cut-and-sew line still needs its pattern.
+      if (po.status === 'DRAFT' && data.status && data.status !== 'DRAFT' && data.status !== 'CANCELLED') {
+        const { patternGate } = await import('@/lib/po-patterns')
+        const stop = await patternGate(po.id)
+        if (stop) return { error: stop }
+      }
       const updated = await db.purchaseOrder.update({
         where: { id: po.id }, data,
         select: { id: true, poNumber: true, status: true, expectedAt: true, depositPaidAt: true, receivedAt: true },
@@ -2917,6 +2967,11 @@ export const TOOLS: Record<string, Tool> = {
                 unit: str('New unit, if it changed'),
                 unitCostCents: num('New price per unit in cents, if it changed'),
                 newDescription: str('The wording the vendor reads for this line: the whole line for a described one, or in place of the built name for a catalogue product line. Not for component lines.'),
+                patternCode: str(
+                  'Which physical pattern this product line is cut from, e.g. "TCO101-P2". One of the ' +
+                  'style\'s own patterns (patterns tool, action list). A production detail printed as ' +
+                  '"Pattern: TCO101-P2" under the line; never part of a SKU or variant.',
+                ),
                 setProductVariantId: str(
                   'Attach a real catalogue variant to a line that was written as a ' +
                   'description. Use this the moment a variant turns out to exist after ' +
@@ -3001,10 +3056,20 @@ export const TOOLS: Record<string, Tool> = {
           // wording for it was given in the same edit.
           data.productVariantId = v.id
           data.description = l.newDescription ?? null
+          data.patternId = null // a pattern belongs to the old variant's style; set again below if given
           // A sent order's line keeps what it said when sent (lib/po-snapshot.ts).
           // Pointing it at a different variant is a deliberate revision, so it
           // is frozen afresh below, from the new variant.
-          if (revising) Object.assign(data, { snapshotAt: null, snapSku: null, snapStyleNumber: null, snapProductName: null, snapColorway: null, snapSize: null, snapImageUrl: null })
+          if (revising) Object.assign(data, { snapshotAt: null, snapSku: null, snapStyleNumber: null, snapProductName: null, snapColorway: null, snapSize: null, snapImageUrl: null, snapPattern: null })
+        }
+        if (l.patternCode !== undefined) {
+          const { patternForLine } = await import('@/lib/po-patterns')
+          const p = await patternForLine(String(l.patternCode), data.productVariantId ?? existing.productVariantId)
+          if ('error' in p) { results.push(`line ${po.lines.indexOf(existing) + 1}: ${p.error} Pattern not changed.`); continue }
+          data.patternId = p.id
+          // On a sent order the pattern it went out with changes only by this
+          // deliberate revision; a line being refrozen picks it up below.
+          if (revising && !('snapshotAt' in data)) data.snapPattern = p.code
         }
         if (Object.keys(data).length === 0) continue
         if (revising) {
@@ -3015,6 +3080,7 @@ export const TOOLS: Record<string, Tool> = {
             data.unitCostCents !== undefined
               ? `price ${existing.unitCostCents === null ? 'none' : cur + (existing.unitCostCents / 100).toFixed(2)}` : null,
             data.description !== undefined ? `wording "${existing.description ?? poLineLabel(existing)}"` : null,
+            data.snapPattern !== undefined ? `pattern ${existing.snapPattern ?? 'none'}` : null,
           ].filter(Boolean)
           was.push(`${poLineLabel(existing)}: was ${before.join(', ')}`)
         }
@@ -3022,7 +3088,12 @@ export const TOOLS: Record<string, Tool> = {
         results.push(`updated ${named}`)
       }
 
+      let patternStop: string | null = null
       if (revising) {
+        // A line pointed at a new variant on a sent order is frozen afresh;
+        // if its style has two patterns in use, say so rather than guess.
+        const { patternGate } = await import('@/lib/po-patterns')
+        patternStop = await patternGate(po.id)
         const { freezePoLines } = await import('@/lib/po-snapshot')
         await freezePoLines(po.id)
       }
@@ -3049,6 +3120,7 @@ export const TOOLS: Record<string, Tool> = {
       const total = updated!.lines.reduce((n, l) => n + Number(l.qtyOrdered) * (l.unitCostCents ?? 0), 0)
       return {
         poNumber: po.poNumber, results,
+        ...(patternStop ? { patternNotPicked: patternStop.replace(/^Not sent: /, '').replace(/ and send again\.$/, '.') } : {}),
         newTotal: `${po.currency} ${(total / 100).toFixed(2)}`,
         ...(revising
           ? { revised: true, vendorCopy: 'The vendor still holds the old version. Say so, and offer to send the revised PDF — do not send unless asked.' }
@@ -3135,6 +3207,13 @@ export const TOOLS: Record<string, Tool> = {
       // saying it after any later SKU or name change (lib/po-snapshot.ts).
       // Frozen before the PDF is drawn, so the two match; undone if the order
       // does not actually go. An internal copy freezes nothing.
+      // A cut-and-sew line whose style has two patterns in use goes out only
+      // once one is picked (lib/patterns.ts). An internal copy is not a send.
+      if (!internal) {
+        const { patternGate } = await import('@/lib/po-patterns')
+        const stop = await patternGate(po.id)
+        if (stop) return { sent: false, reason: stop }
+      }
       const { freezePoLines, unfreezePoLines } = await import('@/lib/po-snapshot')
       const frozen = internal ? [] : await freezePoLines(po.id)
 

@@ -58,12 +58,13 @@ const JUDGEMENT = /\b(why|should|recommend\w*|suggest\w*|plan\w*|best|compare\w*
  * What only an Opus tool can answer (READ_LANE_LEAVES_TO_OPUS, from
  * lib/mouse/tool-kinds.ts): a kept document or picture (read_file), a draft
  * order's link (draft_order_links), Muse's research (muse_tasks), the stylist
- * inventory (stylist_inventory) or the line sheet's words (update_line_sheet).
+ * inventory (stylist_inventory), the line sheet's words (update_line_sheet) or
+ * a style's patterns (patterns).
  * Decided here, by code, so the read lane is never left to notice it lacks
  * the tool (8 Oct 2026). "file" is already an action word. An email's
  * whole text (open_email) is ASKS_EMAIL_BODY below.
  */
-export const NEEDS_OPUS_TOOL = /\b(pdfs?|photos?|pictures?|images?|attachments?|scans?|spec sheets?|colou?r cards?|tech packs?|draft orders?|payment links?|invoice links?|checkout links?|muse|stylist (?:inventory|stock)|line ?sheets?)\b/
+export const NEEDS_OPUS_TOOL = /\b(pdfs?|photos?|pictures?|images?|attachments?|scans?|spec sheets?|colou?r cards?|tech packs?|draft orders?|payment links?|invoice links?|checkout links?|muse|stylist (?:inventory|stock)|line ?sheets?|patterns?)\b/
 
 /**
  * Asking what an email says: its wording, not whether it came (9 Oct 2026).

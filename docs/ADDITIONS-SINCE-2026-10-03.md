@@ -649,6 +649,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/style-system.ts`, `lib/style-rekey.ts`, `scripts/rekey-styles.ts`, `lib/style-admin.ts`, `lib/search.ts`, `lib/mouse/records.ts`, `lib/mouse/notes.ts`, `lib/style-reference.ts`, `lib/mcp/tools.ts`, `app/(main)/style-numbers/crosswalk/page.tsx`, `prisma/schema.prisma` (`ProductVariant.previousSku`, `RetiredStyleNumber`), `tests/style-rekey.test.ts`, `tests/style-system.test.ts`.
 - **Needs:** nothing beyond the app (Shopify's own SKUs are re-keyed separately).
 
+### Pattern labels on purchase-order lines
+- **Problem:** one product style can be cut from more than one physical pattern (one for pre-washed fabric, one for unwashed), and nothing told the factory which. Putting it in the SKU or as a variant would split stock and the store listing over a production detail.
+- **Change:** a `Pattern` per style (code `STYLE-P#`, description, fabric, who holds it, status ACTIVE / RETIRING / ARCHIVED, date), and a pattern on each purchase-order line. On an order with a maker (vendor role MANUFACTURER), a style with one pattern in use defaults to it; with two or more, the send stops (`patternGate`) until one is picked. The code prints under the line on the order page and the vendor PDF, and is saved with the sent-order snapshot like the SKU; orders sent before keep printing exactly as they did. The assistant has a `patterns` tool (list, add, update; never delete) and picks a line's pattern with `update_purchase_order_lines`; its prompt says a pattern is never a product, colourway, variant, SKU or anything sent to the store. A seed script gives every style that has been made a P1 and asks one open question for who holds them, naming the latest maker as the likely answer.
+- **Files:** `lib/patterns.ts`, `lib/po-patterns.ts`, `lib/pattern-seed.ts`, `scripts/seed-patterns.ts`, `lib/po-snapshot.ts`, `lib/po-pdf.tsx`, `lib/po-strings.ts`, `app/po/[poNumber]/page.tsx`, `lib/mouse/tools.ts`, `lib/mouse/prompt.ts`, `lib/mouse/records.ts`, `lib/mouse/route.ts`, `lib/mouse/tool-kinds.ts`, `prisma/schema.prisma` (`Pattern`, `PurchaseOrderLine.patternId`, `.snapPattern`), `tests/patterns.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

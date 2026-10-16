@@ -63,6 +63,22 @@ is labelled `STYLE-P#` (TCO101-P1, TCO101-P2) and lives only on patterns and
 purchase-order lines. A pattern label is never part of a SKU, a variant or
 anything sent to Shopify.
 
+- **TCO101-P1**: for pre-washed fabric. Sampling with Pat; the standard once
+  we move off PFD.
+- **TCO101-P2**: for PFD fabric. At Empire (Antonio's). Goes to RETIRING when
+  we move off PFD.
+- Rule today: **PFD fabric → P2, pre-washed fabric → P1.**
+- Every other style that has been made has one pattern, P1, "current
+  pattern". Who holds each is an open question until answered.
+- Each pattern has a description, the fabric it is for, who holds it, a status
+  (ACTIVE, RETIRING, ARCHIVED) and the date it took that status. Numbers are
+  never reused; a pattern is archived, not deleted. A new pattern never changes
+  the style number.
+- On a purchase order with a maker (cut and sew), a style with one pattern in
+  use fills it in; with two or more the order cannot be sent until one is
+  picked. It prints under the line as "Pattern: TCO101-P2" and is saved with
+  the sent order like the SKU.
+
 ## Bateau kits
 
 A handle (ABH101) fits both bag sizes. The Bateau Bag (HBT101) is body XBT101

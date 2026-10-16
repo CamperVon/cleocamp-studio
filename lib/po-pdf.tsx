@@ -4,6 +4,7 @@ import { Document, Page, Text, View, Image, Font, StyleSheet, renderToBuffer } f
 import { db } from '@/lib/db'
 import { asDocLanguage, confirmSentence, formatDate, label, type DocLanguage } from '@/lib/po-strings'
 import { asSkuDisplayMode, lineLabel as variantLabel, lineView } from '@/lib/po-snapshot'
+import { patternLine } from '@/lib/patterns'
 import { wordmark, WORDMARK_RATIO } from '@/lib/brand'
 
 /**
@@ -89,7 +90,7 @@ export async function loadPo(poNumber: string) {
     where: { poNumber },
     include: {
       vendor: true, forProduct: true,
-      lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } },
+      lines: { orderBy: { id: 'asc' }, include: { component: true, pattern: true, productVariant: { include: { product: { include: { style: { include: { patterns: true } } } }, colorway: true } } } },
     },
   })
   if (!po) return po
@@ -147,7 +148,8 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
   // A sent order's variant lines read what they said when it was sent; a
   // draft reads them live. See lib/po-snapshot.ts.
   const skuMode = asSkuDisplayMode(content.skuDisplayMode)
-  const viewOf = (l: (typeof po.lines)[number]) => (l.productVariant ? lineView(l, skuMode) : null)
+  const cutAndSew = po.vendor.role === 'MANUFACTURER'
+  const viewOf = (l: (typeof po.lines)[number]) => (l.productVariant ? lineView(l, skuMode, { cutAndSew }) : null)
   const lineLabel = (l: (typeof po.lines)[number]) => {
     if (l.component) {
       return `${l.component.vendorSku ? `${t('style')} ${l.component.vendorSku} — ` : ''}${l.component.vendorDescription || l.component.name}`
@@ -235,6 +237,10 @@ export function PurchaseOrderDoc({ po, content }: { po: PoForPdf; content: DocCo
                   {pair(lineLabel(l), l.descriptionAlt) ? (
                     <Text style={styles.muted}>{pair(lineLabel(l), l.descriptionAlt)}</Text>
                   ) : null}
+                  {/* Which physical pattern it is cut from (lib/patterns.ts).
+                      A line sent before patterns existed has none and prints
+                      exactly as it did. */}
+                  {viewOf(l)?.pattern ? <Text style={styles.muted}>{patternLine(viewOf(l)!.pattern!, t('pattern'))}</Text> : null}
                 </View>
               </View>
               <Text style={styles.tdQty}>{Number(l.qtyOrdered).toLocaleString()}</Text>

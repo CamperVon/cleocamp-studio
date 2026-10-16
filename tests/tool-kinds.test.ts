@@ -81,6 +81,10 @@ const NEEDS: Record<string, string[]> = {
     'What does the line sheet say under the footnote?',
     'What are the terms on the linesheet?',
   ],
+  patterns: [
+    'Who holds the Cleo Tee pattern?',
+    'Which patterns does TCO101 have?',
+  ],
 }
 
 test('never dumber: a question needing a tool the read lane lacks goes to Opus by code', () => {

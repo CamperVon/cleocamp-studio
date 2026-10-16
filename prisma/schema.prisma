@@ -699,10 +699,20 @@ model PurchaseOrderLine {
   snapColorway     String?
   snapSize         String?
   snapImageUrl     String?
+  /// Which physical pattern a cut-and-sew line is cut from (Prompt 4, 16 Oct
+  /// 2026). Null on a draft means "the style's one active pattern", if it has
+  /// exactly one; with two or more the line cannot be sent until one is
+  /// picked. A production detail only: never a variant, a SKU or anything
+  /// sent to Shopify. See lib/patterns.ts.
+  patternId        String?
+  /// The pattern code the line went out with ("TCO101-P2"), frozen with the
+  /// rest of the snapshot. Null on a line sent before patterns existed.
+  snapPattern      String?
 
   purchaseOrder  PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   component      Component?      @relation(fields: [componentId], references: [id])
   productVariant ProductVariant? @relation(fields: [productVariantId], references: [id])
+  pattern        Pattern?        @relation(fields: [patternId], references: [id], onDelete: SetNull)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1870,7 +1880,7 @@ enum StyleStatus {
 /// kept off anything a partner sees.
 model Style {
   id           String      @id @default(cuid())
-  /// "TP101": 2-letter category + 3 digits.
+  /// "TCO101": category letter, two product letters, line digit, version.
   number       String      @unique
   name         String
   categoryCode String
@@ -1882,6 +1892,40 @@ model Style {
   updatedAt    DateTime    @updatedAt
 
   products Product[]
+  patterns Pattern[]
+}
+
+/// A physical pattern for a style (Prompt 4, 16 Oct 2026). The Cleo Tee has
+/// two: P1 for pre-washed fabric, P2 for PFD. A pattern lives on patterns
+/// and purchase-order lines only: never a variant, a SKU or Shopify.
+model Pattern {
+  id          String        @id @default(cuid())
+  styleId     String
+  /// "TCO101-P1": the style number, -P, then 1 for the style's first.
+  code        String        @unique
+  description String
+  /// The fabric it is cut for ("pre-washed", "PFD"), when that is the point.
+  fabric      String?
+  /// Who has the physical pattern ("Pat", "Empire (Antonio's)"). Null is
+  /// unknown, and an open question asks.
+  heldBy      String?
+  status      PatternStatus @default(ACTIVE)
+  /// When it took its current status.
+  since       DateTime      @default(now())
+  notes       String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  style Style               @relation(fields: [styleId], references: [id], onDelete: Restrict)
+  lines PurchaseOrderLine[]
+
+  @@index([styleId])
+}
+
+enum PatternStatus {
+  ACTIVE
+  RETIRING
+  ARCHIVED
 }
 
 enum StyleCodeType {

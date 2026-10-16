@@ -110,6 +110,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-16',
     text: 'You can now ask Mouse by email to draft a wholesale or live-sale invoice. It drafts it in Shopify and replies with the link; sending it to the customer is still done in the app chat.',
   },
+  {
+    on: '2026-10-16', path: '/purchase-orders',
+    text: 'Purchase orders now say which pattern each piece is cut from, like "Pattern: TCO101-P2" under the Cleo Tee line. A style with one pattern fills it in by itself; a Cleo Tee order waits until you tell Mouse P1 (pre-washed fabric) or P2 (PFD). Patterns never touch SKUs or Shopify.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

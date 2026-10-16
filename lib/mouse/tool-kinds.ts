@@ -45,6 +45,7 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
   // Change things, and also answer questions.
   muse_tasks: 'answers, Opus', // reading a task files the team's answers onto Muse's questions
   stylist_inventory: 'answers, Opus', // "list" shows it; add, remove and count change it
+  patterns: 'answers, Opus', // "list" shows a style's patterns; add and update change them (16 Oct 2026)
   update_line_sheet: 'answers, Opus', // "list" shows the current words; the rest edits the sheet
 
   add_note: 'changes',

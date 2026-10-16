@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { PdfButton } from './pdf-button'
 import { db } from '@/lib/db'
 import { asSkuDisplayMode, lineLabel, lineView } from '@/lib/po-snapshot'
+import { patternLine } from '@/lib/patterns'
 import { asDocLanguage, confirmSentence, formatDate, label, type DocLanguage } from '@/lib/po-strings'
 
 export const dynamic = 'force-dynamic'
@@ -26,7 +27,7 @@ export default async function PurchaseOrderDoc({
     where: { poNumber },
     include: {
       vendor: true, forProduct: true,
-      lines: { orderBy: { id: 'asc' }, include: { component: true, productVariant: { include: { product: true, colorway: true } } } },
+      lines: { orderBy: { id: 'asc' }, include: { component: true, pattern: true, productVariant: { include: { product: { include: { style: { include: { patterns: true } } } }, colorway: true } } } },
     },
   })
   if (!po) notFound()
@@ -169,7 +170,7 @@ export default async function PurchaseOrderDoc({
                     ) : null}
                   </div>
                 ) : (() => {
-                  const view = lineView(l, skuMode)!
+                  const view = lineView(l, skuMode, { cutAndSew: po.vendor.role === 'MANUFACTURER' })!
                   return (
                     <div className="flex items-start gap-2.5">
                       {view.imageUrl ? (
@@ -188,6 +189,12 @@ export default async function PurchaseOrderDoc({
                         <div>{l.description?.trim() || lineLabel(view, t('style'))}</div>
                         {l.description?.trim() && pair(l.description, l.descriptionAlt) ? (
                           <div className="text-[#6A736F]">{pair(l.description, l.descriptionAlt)}</div>
+                        ) : null}
+                        {/* The pattern it is cut from (lib/patterns.ts); none on a line sent before patterns existed. */}
+                        {view.pattern ? <div className="text-[#6A736F]">{patternLine(view.pattern, t('pattern'))}</div> : null}
+                        {/* A draft only: the PDF is drawn after this is settled, so the vendor never sees it. */}
+                        {po.status === 'DRAFT' && view.patternToPick ? (
+                          <div className="text-[#B3261E] print:hidden">{t('pattern')}: not picked yet. {view.patternToPick}</div>
                         ) : null}
                       </div>
                     </div>

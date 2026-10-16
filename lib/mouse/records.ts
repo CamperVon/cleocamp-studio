@@ -83,10 +83,14 @@ const day = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : 
 async function detailFor(r: RecordRef): Promise<Record<string, unknown>> {
   switch (r.kind) {
     case 'product': {
-      const p = await db.product.findUnique({ where: { id: r.id }, include: { style: true, variants: { include: { colorway: true }, orderBy: { size: 'asc' } } } })
+      const p = await db.product.findUnique({ where: { id: r.id }, include: { style: { include: { patterns: { orderBy: { code: 'asc' } } } }, variants: { include: { colorway: true }, orderBy: { size: 'asc' } } } })
       return p ? {
         status: p.status,
-        style: p.style ? { number: p.style.number, status: p.style.status } : null,
+        style: p.style ? {
+          number: p.style.number, status: p.style.status,
+          // Production detail only: never a variant or SKU (lib/patterns.ts).
+          patterns: p.style.patterns.map((x) => ({ code: x.code, description: x.description, fabric: x.fabric, heldBy: x.heldBy ?? 'unknown', status: x.status })),
+        } : null,
         variants: p.variants.map((v) => ({
           id: v.id, label: [v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'default', onHand: v.onHandQty === null ? 'UNKNOWN' : Number(v.onHandQty),
           sku: v.newSku, ...(v.previousSku ? { skuBefore16Oct: v.previousSku } : {}), oldSku: v.sku,

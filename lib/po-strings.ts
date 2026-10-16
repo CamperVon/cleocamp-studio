@@ -57,14 +57,14 @@ export function asDocLanguage(v: string | null | undefined): DocLanguage {
 type Key =
   | 'purchaseOrder' | 'no' | 'for' | 'date' | 'expected' | 'terms' | 'draft'
   | 'vendor' | 'attn' | 'address' | 'billTo'
-  | 'item' | 'qty' | 'unit' | 'price' | 'amount' | 'total' | 'knownSubtotal' | 'totalUnits' | 'notes' | 'style'
+  | 'item' | 'qty' | 'unit' | 'price' | 'amount' | 'total' | 'knownSubtotal' | 'totalUnits' | 'notes' | 'style' | 'pattern'
 
 const EN: Record<Key, string> = {
   purchaseOrder: 'PURCHASE ORDER', no: 'No.', for: 'For', date: 'Date',
   expected: 'Expected', terms: 'Terms', draft: 'DRAFT — NOT SENT',
   vendor: 'VENDOR', attn: 'Attn:', address: 'ADDRESS', billTo: 'BILL TO',
   item: 'ITEM', qty: 'QTY', unit: 'UNIT', price: 'PRICE', amount: 'AMOUNT',
-  total: 'Total', knownSubtotal: 'Known subtotal', totalUnits: 'Total units', notes: 'NOTES', style: 'Style',
+  total: 'Total', knownSubtotal: 'Known subtotal', totalUnits: 'Total units', notes: 'NOTES', style: 'Style', pattern: 'Pattern',
 }
 
 const ES: Record<Key, string> = {
@@ -72,7 +72,7 @@ const ES: Record<Key, string> = {
   expected: 'Entrega prevista', terms: 'Condiciones', draft: 'BORRADOR — NO ENVIADO',
   vendor: 'PROVEEDOR', attn: 'Atn:', address: 'DIRECCIÓN', billTo: 'FACTURAR A',
   item: 'ARTÍCULO', qty: 'CANT.', unit: 'UNIDAD', price: 'PRECIO', amount: 'IMPORTE',
-  total: 'Total', knownSubtotal: 'Subtotal conocido', totalUnits: 'Unidades totales', notes: 'NOTAS', style: 'Estilo',
+  total: 'Total', knownSubtotal: 'Subtotal conocido', totalUnits: 'Unidades totales', notes: 'NOTAS', style: 'Estilo', pattern: 'Patrón',
 }
 
 const IT: Record<Key, string> = {
@@ -80,7 +80,7 @@ const IT: Record<Key, string> = {
   expected: 'Consegna prevista', terms: 'Condizioni', draft: 'BOZZA — NON INVIATO',
   vendor: 'FORNITORE', attn: 'Att.ne:', address: 'INDIRIZZO', billTo: 'FATTURARE A',
   item: 'ARTICOLO', qty: 'Q.TÀ', unit: 'UNITÀ', price: 'PREZZO', amount: 'IMPORTO',
-  total: 'Totale', knownSubtotal: 'Subtotale noto', totalUnits: 'Unità totali', notes: 'NOTE', style: 'Modello',
+  total: 'Totale', knownSubtotal: 'Subtotale noto', totalUnits: 'Unità totali', notes: 'NOTE', style: 'Modello', pattern: 'Cartamodello',
 }
 
 const DICT: Record<Single, Record<Key, string>> = { en: EN, es: ES, it: IT }
