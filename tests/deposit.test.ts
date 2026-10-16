@@ -34,5 +34,5 @@ test('the draft sent to Shopify: a deposit discount, a kept fixed discount, or t
   assert.deepEqual(draftInput('s@e.com', lines, 'n', { fixedDiscount: { amount: 20, title: 'Courtesy' } }).appliedDiscount, { value: 20, valueType: 'FIXED_AMOUNT', title: 'Courtesy' })
   assert.equal(draftInput('s@e.com', lines, 'n', { clearDiscount: true }).appliedDiscount, null)
   assert.ok(!('appliedDiscount' in draftInput('s@e.com', lines, 'n', {})), 'nothing said, nothing sent')
-  assert.equal(dep.lineItems[0].priceOverride?.amount, '184.00', 'line prices are left as they are, never halved')
+  assert.equal((dep.lineItems[0] as { priceOverride?: { amount: string } }).priceOverride?.amount, '184.00', 'line prices are left as they are, never halved')
 })
