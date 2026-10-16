@@ -265,6 +265,13 @@ data. That must not happen again.
   set, urgent) on the closed line so nothing that matters hides inside.
 - Cleo is not technical. Favor one conversational interface over forms, and
   favor asking a question over guessing.
+- **Brandon does not do the technical work; Claude does** (16 Oct 2026: "stop
+  asking me to code things. You do it", and "In the future I don't want to do
+  all this. You're ai."). Run every script, command, check and write-up
+  yourself. Ask him only for what needs his own hand: an approval, a judgement
+  call, or something behind his own login (creating an API key, billing, a
+  setting only his account can change). Batch those into one short message
+  with exact taps, never a command for him to run or a file for him to edit.
 
 ---
 
