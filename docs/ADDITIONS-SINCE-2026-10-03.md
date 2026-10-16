@@ -699,6 +699,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `prisma/schema.prisma` (`StoredFile.url`), `prisma/migrations/20261016253000_stored_file_url`, `lib/files.ts` (`linkProblem`, `keepLink`, `filesFor`), `app/files/[id]/route.ts`, `app/ui/file-links.tsx`, `app/(main)/files/*`, `lib/mouse/tools.ts` (`keep_link`, `read_file`, `send_email`, `hand_to_muse`), `lib/mouse/records.ts`, `lib/mouse/tool-kinds.ts`, `tests/file-links.test.ts`.
 - **Needs:** nothing beyond the app.
 
+### Customer and wholesale-store addresses recognised when sending
+- **Problem:** the send guard that refuses addresses held nowhere read vendors, the team and stylists, but not the customer or wholesale-store records, so the assistant could not email a customer about their own order (a courier needing a phone number), even after saving the confirmed address on the customer's record.
+- **Change:** the guard also accepts an exact match on a customer's or a wholesale store's email. Sending still needs a person in the chat to see the draft and confirm; from an emailed request the assistant still writes only to the team.
+- **Files:** `lib/mouse/tools.ts` (`send_email`).
+- **Needs:** email.
+
 ---
 
 ## Setup notes for a new install

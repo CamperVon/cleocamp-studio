@@ -146,6 +146,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-16', path: '/products',
     text: 'Files can now hold a link as well as a file. The Google Drive folders for the Cleo Tee, Cosmo Stripe Tee and Story Dress (tech packs and pattern files) show under each product; tap to open. Ask Mouse "where are the Story Dress files?" and it gives you the link, or paste a link on the Files page.',
   },
+  {
+    on: '2026-10-16',
+    text: 'Mouse can now email a customer or a wholesale store at the address on their record, like asking order #2835 for a phone number for DHL. It still shows you the email in the chat and sends only when you say so.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

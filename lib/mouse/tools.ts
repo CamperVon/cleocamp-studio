@@ -4085,10 +4085,16 @@ export const TOOLS: Record<string, Tool> = {
       // primary recipient: a cc named directly in the chat is a live human
       // instruction, not something pulled from an email, so it doesn't need
       // the same suspicion.
-      const [vendors, people, stylist] = await Promise.all([
+      // Customers and wholesale stores count too (16 Oct 2026): Mouse saved
+      // Jacky Cheng to Customers with the address Brandon confirmed for order
+      // #2835 (DHL needed a phone number), and the send was still refused,
+      // because this check never read those records.
+      const [vendors, people, stylist, customer, store] = await Promise.all([
         db.vendor.findMany({ select: { name: true, contactInfo: true, email: true, ccEmails: true } }),
         db.person.findMany({ select: { name: true, email: true } }),
         db.stylist.findFirst({ where: { email: { equals: to, mode: 'insensitive' } }, select: { id: true } }),
+        db.customer.findFirst({ where: { email: { equals: to, mode: 'insensitive' } }, select: { id: true } }),
+        db.wholesaleAccount.findFirst({ where: { email: { equals: to, mode: 'insensitive' } }, select: { id: true } }),
       ])
       // The vendor's email and cc fields count, not only the free-text contact
       // line: until 16 Oct 2026 only contactInfo was read, so Lorena's address,
@@ -4097,7 +4103,7 @@ export const TOOLS: Record<string, Tool> = {
       const known =
         vendors.some((v) => [v.contactInfo, v.email, v.ccEmails].some((f) => (f ?? '').toLowerCase().split(/[\s,;<>()]+/).includes(to.toLowerCase()))) ||
         people.some((p) => (p.email ?? '').toLowerCase() === to.toLowerCase()) ||
-        !!stylist ||
+        !!stylist || !!customer || !!store ||
         /@(send\.)?cleocamp\.com$/i.test(to)
 
       const cc = [...new Set(['brandon@cleocamp.com', ...extraCc])]
@@ -4130,7 +4136,8 @@ export const TOOLS: Record<string, Tool> = {
             `"${to}" is not an address held for any vendor or person on file, so nothing was sent. ` +
             `Do not retry with a guess. Say whose address you were reaching for and ask for the ` +
             `right one — or, if the person in the chat gives it to you now, record it on their ` +
-            `record first (update_person / update_vendor / save_stylist) and then send.`,
+            `record first (update_person / update_vendor / save_stylist / the customer or wholesale ` +
+            `store record) and then send.`,
         }
       }
 
