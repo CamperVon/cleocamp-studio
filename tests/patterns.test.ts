@@ -7,7 +7,7 @@ import { PGLiteSocketServer } from '@electric-sql/pglite-socket'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '../generated/prisma/client'
 import { nextPatternCode, PATTERN_RE, patternChoices, resolvePattern, type PatternLite } from '../lib/patterns'
-import { CLEO_TEE_PATTERNS, holderQuestion, planPatternSeed } from '../lib/pattern-seed'
+import { CLEO_TEE_PATTERNS, HOLDERS, holderQuestion, planPatternSeed } from '../lib/pattern-seed'
 import { lineView } from '../lib/po-snapshot'
 import { SKU_RE, STYLE_RE } from '../lib/style-system'
 import { renderPoSnapshot, type PoForPdf } from '../lib/po-pdf'
@@ -62,25 +62,31 @@ test('no pattern code is ever a style number or a SKU, and nothing that writes t
   assert.doesNotMatch(variant, /pattern/i, 'a variant has no pattern field')
 })
 
-test('the seed: the Cleo Tee\'s two as given, P1 "current pattern" for every style that has been made, holders asked, not guessed', () => {
+test('the seed: the Cleo Tee\'s two as given, P1 for every style that has been made, holders as Brandon confirmed, the rest asked', () => {
   const at = (d: string) => new Date(`${d}T12:00:00-07:00`)
   const styles = [
     { id: 's1', number: 'TCO101', name: 'Cleo Tee', patternCount: 0, makers: [{ vendor: "Antonio's", at: at('2026-09-16'), ref: 'PO 2360' }] },
-    { id: 's2', number: 'HCB101', name: 'Cleo Bag', patternCount: 0, makers: [{ vendor: 'Lorena and Santos', at: at('2026-09-16'), ref: 'run' }, { vendor: 'Lorena and Santos', at: at('2026-10-15'), ref: 'PO 2405' }] },
+    { id: 's2', number: 'HCB101', name: 'Cleo Bag', patternCount: 0, makers: [{ vendor: 'Lorena and Santos', at: at('2026-10-15'), ref: 'PO 2405' }] },
     { id: 's3', number: 'ASR101', name: 'Sardine', patternCount: 0, makers: [] },
     { id: 's4', number: 'BFS101', name: '5to7 Skirt', patternCount: 1, makers: [{ vendor: 'Staples', at: at('2026-09-09'), ref: 'PO 2362' }] },
+    { id: 's5', number: 'TCL101', name: 'Long Sleeve Cleo Tee', patternCount: 0, makers: [] },
+    { id: 's6', number: 'DXM101', name: 'Christmas Dress', patternCount: 0, makers: [{ vendor: 'Fashion Garcia', at: at('2026-09-01'), ref: 'run started Sep 1' }, { vendor: 'Staples', at: at('2026-10-01'), ref: 'PO 2399' }] },
   ]
   const plan = planPatternSeed(styles)
   assert.deepEqual(plan.problems, [])
-  assert.deepEqual(plan.create.map((p) => [p.code, p.fabric, p.heldBy, p.status]), [
-    ['HCB101-P1', null, null, 'ACTIVE'],
-    ['TCO101-P1', 'pre-washed', 'Pat', 'ACTIVE'],
-    ['TCO101-P2', 'PFD', "Empire (Antonio's)", 'ACTIVE'],
+  assert.deepEqual(plan.create.map((p) => [p.code, p.fabric, p.heldBy]), [
+    ['DXM101-P1', null, null],
+    ['HCB101-P1', null, 'Lorena and Santos'],
+    ['TCL101-P1', null, 'Staples'],
+    ['TCO101-P1', 'pre-washed', 'Pat'],
+    ['TCO101-P2', 'PFD', "Empire (Antonio's), Staples"],
   ])
   assert.equal(plan.create.find((p) => p.code === 'HCB101-P1')!.description, 'current pattern')
   assert.deepEqual(plan.skipped, ['BFS101 already has 1 pattern(s)'], 'running it again adds nothing')
-  assert.deepEqual(plan.unknownHolder, [{ number: 'HCB101', name: 'Cleo Bag', likely: 'Lorena and Santos', ref: 'PO 2405' }])
-  assert.match(holderQuestion(plan.unknownHolder).detail, /HCB101-P1 \(Cleo Bag\): probably Lorena and Santos, PO 2405/)
+  // Only a style nobody has confirmed is asked about, naming the latest maker.
+  assert.deepEqual(plan.unknownHolder, [{ number: 'DXM101', name: 'Christmas Dress', likely: 'Staples', ref: 'PO 2399' }])
+  assert.match(holderQuestion(plan.unknownHolder).detail, /DXM101-P1 \(Christmas Dress\): probably Staples, PO 2399/)
+  assert.equal(HOLDERS['TCC101-P1'], "Empire (Antonio's), Staples", 'a pattern held in two places says both')
   assert.match(planPatternSeed(styles.filter((s) => s.number !== 'TCO101')).problems[0], /re-key/)
 })
 

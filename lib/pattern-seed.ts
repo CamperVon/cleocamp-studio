@@ -5,9 +5,10 @@
  *
  * The Cleo Tee's two patterns are as Brandon gave them. Every other style
  * that has been made (a production run, or a purchase order with a maker)
- * gets one, P1, "current pattern". Who holds it is not on file, so it stays
- * unknown and one open question asks, naming the maker of the latest run as
- * the likely answer. Never a guess written as a fact.
+ * gets one, P1, "current pattern". Who holds each is as Brandon confirmed
+ * on 16 Oct 2026 (HOLDERS); a style missing from that list stays unknown and
+ * one open question asks, naming the maker of the latest run as the likely
+ * answer. Never a guess written as a fact.
  */
 
 export const CLEO_TEE = 'TCO101'
@@ -18,10 +19,33 @@ export const CLEO_TEE_PATTERNS = [
     description: 'Pattern #1, for pre-washed fabric. Sampling with Pat; becomes the standard once we move off PFD (in the next few months).',
   },
   {
-    code: 'TCO101-P2', fabric: 'PFD', heldBy: "Empire (Antonio's)", status: 'ACTIVE' as const,
+    code: 'TCO101-P2', fabric: 'PFD', heldBy: "Empire (Antonio's), Staples", status: 'ACTIVE' as const,
     description: 'Pattern #2, for PFD fabric. Becomes RETIRING when we move off PFD.',
   },
 ]
+
+/**
+ * Who holds each pattern, as Brandon confirmed on 16 Oct 2026 ("those 10
+ * patterns are mostly right", adding that Staples also has the Long Sleeve
+ * Cleo Tee's pattern #1, the Cleo Tee's #2 and the Cosmo's #1, and Empire
+ * the Cleo Tee's #2 and the Cosmo's #1). A pattern can be held in two places.
+ */
+export const HOLDERS: Readonly<Record<string, string>> = {
+  'ABB101-P1': 'Cinturificiog',
+  'BFS101-P1': 'Staples',
+  'DST101-P1': 'Novelty Fashion',
+  'DYO101-P1': 'Fashion Garcia',
+  'HBN101-P1': 'Lorena and Santos',
+  'HCB101-P1': 'Lorena and Santos',
+  'HCD101-P1': 'Lorena and Santos',
+  'ICU101-P1': 'Staples',
+  'SFR101-P1': 'Knit Collab',
+  'TCC101-P1': "Empire (Antonio's), Staples",
+  'TCL101-P1': 'Staples',
+}
+
+/** Styles with a pattern though nothing has been made yet: Brandon named them. */
+export const PATTERN_WITHOUT_RUN = ['TCL101']
 
 export type SeedStyle = { id: string; number: string; name: string; patternCount: number; makers: Array<{ vendor: string; at: Date; ref: string }> }
 export type SeedPattern = { styleId: string; code: string; description: string; fabric: string | null; heldBy: string | null; status: 'ACTIVE' }
@@ -38,10 +62,12 @@ export function planPatternSeed(styles: SeedStyle[]) {
       for (const p of CLEO_TEE_PATTERNS) create.push({ styleId: s.id, code: p.code, description: p.description, fabric: p.fabric, heldBy: p.heldBy, status: p.status })
       continue
     }
-    if (!s.makers.length) continue
-    create.push({ styleId: s.id, code: `${s.number}-P1`, description: 'current pattern', fabric: null, heldBy: null, status: 'ACTIVE' })
+    if (!s.makers.length && !PATTERN_WITHOUT_RUN.includes(s.number)) continue
+    const code = `${s.number}-P1`
+    create.push({ styleId: s.id, code, description: 'current pattern', fabric: null, heldBy: HOLDERS[code] ?? null, status: 'ACTIVE' })
+    if (HOLDERS[code]) continue
     const last = [...s.makers].sort((a, b) => b.at.getTime() - a.at.getTime())[0]
-    unknownHolder.push({ number: s.number, name: s.name, likely: last.vendor, ref: last.ref })
+    unknownHolder.push({ number: s.number, name: s.name, likely: last?.vendor ?? null, ref: last?.ref ?? null })
   }
   return { create, unknownHolder, skipped, problems }
 }

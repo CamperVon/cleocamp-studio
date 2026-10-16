@@ -69,7 +69,9 @@ anything sent to Shopify.
   we move off PFD.
 - Rule today: **PFD fabric → P2, pre-washed fabric → P1.**
 - Every other style that has been made has one pattern, P1, "current
-  pattern". Who holds each is an open question until answered.
+  pattern", and so does the Long Sleeve Cleo Tee (TCL101-P1, at Staples).
+  Holders as Brandon confirmed on 16 Oct 2026; Staples and Empire (Antonio's)
+  both hold TCO101-P2 and TCC101-P1.
 - Each pattern has a description, the fabric it is for, who holds it, a status
   (ACTIVE, RETIRING, ARCHIVED) and the date it took that status. Numbers are
   never reused; a pattern is archived, not deleted. A new pattern never changes

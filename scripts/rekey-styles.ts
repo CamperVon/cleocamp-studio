@@ -87,9 +87,9 @@ async function main() {
     }
     for (const u of plan.unlink) {
       await tx.product.update({ where: { id: u.productId }, data: { styleId: null } })
-      await tx.actionItem.create({ data: { kind: 'QUESTION', source: 'SYSTEM', entityType: 'PRODUCT', entityId: u.productId,
-        title: `${u.name}: which style number, if any?`,
-        detail: `For Brandon and Cleo (style system). ${u.name}'s number ${u.from} was removed in the 16 Oct 2026 re-key and it is unnumbered for now. Is it a new style (and which letters), a colourway of an existing one, or not going ahead?` } })
+      // Brandon, 16 Oct 2026: "standby on dolce". A note, not a question: he is deciding.
+      await tx.note.create({ data: { entityType: 'PRODUCT', entityId: u.productId, source: 'SYSTEM',
+        content: `${u.name}'s style number ${u.from} was removed in the 16 Oct 2026 re-key. It is unnumbered on purpose: Brandon is on standby about it (16 Oct 2026). Do not propose a number or ask until he raises it.` } })
     }
     for (const r of plan.remove) await tx.style.delete({ where: { id: r.id } })
     await tx.retiredStyleNumber.createMany({ data: plan.retire })
