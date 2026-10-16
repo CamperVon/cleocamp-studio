@@ -125,20 +125,6 @@ async function detailFor(r: RecordRef): Promise<Record<string, unknown>> {
 export async function openRecord(ref: string, opts: { catalogue?: boolean } = {}): Promise<Record<string, unknown>> {
   const want = String(ref ?? '').trim()
   if (!want) return { found: false, reason: 'Say which record: a PO number, an id from your context, or its exact name.' }
-  // A whole current list (16 Oct 2026, for the transient-state layout, where
-  // the lists are not printed): built exactly as the catalogue builds it, then
-  // the one section returned. Read-only.
-  const { sectionAsked, OPENABLE_SECTIONS } = await import('@/lib/mouse/transient')
-  if (/^\s*section\s*:/i.test(want)) {
-    const heading = sectionAsked(want)
-    if (!heading) return { found: false, reason: `No such section. Ask for one of: ${Object.keys(OPENABLE_SECTIONS).join(', ')}.` }
-    const { buildCatalog, splitCatalog } = await import('@/lib/mouse/context')
-    const text = await buildCatalog({ notes: 'index', catalog: opts.catalogue ? 'index' : 'full' })
-    const sec = splitCatalog(text).sections.find((x) => x.heading === heading)
-    return sec
-      ? { found: true, section: heading, text: sec.text.trim(), note: 'Current, read just now, exactly as kept. Read-only.' }
-      : { found: true, section: heading, text: '(nothing in this section right now)' }
-  }
   if (/^general$/i.test(want)) {
     const [notes, latest] = await Promise.all([
       db.note.findMany({ where: { entityId: null, supersededAt: null }, orderBy: { createdAt: 'desc' }, select: { id: true, entityType: true, entityId: true, content: true, createdAt: true } }),

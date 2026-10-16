@@ -36,8 +36,8 @@ of a practice turn on 16 Oct 2026:
 
 | block | size | mark |
 |---|---|---|
-| tools (93 definitions) | 122,357 chars | (covered by the first mark) |
-| system: SYSTEM_RULES | 36,060 chars | 1 hour |
+| tools (93 definitions, identical to `main`: same hash) | 122,079 chars | (covered by the first mark) |
+| system: SYSTEM_RULES (identical to `main`) | 36,060 chars | 1 hour |
 | system: practice rules | 649 chars | none |
 | system: stable catalogue (places, vendors, stores, people, document defaults) | 6,047 chars | 1 hour |
 | system: live head (today, products, components, orders, runs, notes index, …) | 66,754 chars | 5 minutes |
@@ -51,10 +51,10 @@ Same turn, same capture:
 
 | block | size | mark |
 |---|---|---|
-| tools (93 definitions) | 122,357 chars | (covered by the first mark) |
+| tools (the same 93 + `list_records`) | 122,948 chars | (covered by the first mark) |
 | system: SYSTEM_RULES | 36,060 chars | 1 hour |
 | system: practice rules | 649 chars | none |
-| system: TRANSIENT_RULES + stable core (the five stable sections + a directory of every product, variant, colourway and component by name and id, no counts) | 25,968 chars | 1 hour |
+| system: TRANSIENT_RULES + stable core (the five stable sections + a directory of every product, variant, colourway and component by **name and id only**) | 20,417 chars | 1 hour |
 | messages: history, last block | as sent | **1 hour** |
 | messages: this turn so far (the message; then each tool round), last block | as sent | 5 minutes |
 | messages: `<business_state>` appended to the last message | 9,700–13,800 chars | **never cached, never saved** |
@@ -89,19 +89,25 @@ messages. An index, not the dossier:
 - open questions by id and title; the other to-dos as a count
 - notes: a count only; money as last recorded, with the standing rule
 
-Everything else is fetched: `open_record` for a record (now also
-`"section: <name>"` for a whole current list, exactly as the catalogue prints
-it: products, components, purchase orders, production runs, forecasts,
-calendar, todos, notes, wholesale, stylists, alerts, money, loose po lines,
-style, muse), `query_status`, `read_file`, `open_email`.
+Everything else is fetched: `open_record` for one record (unchanged from
+`main`), `list_records` for a capped page of one kind of record (at most 20
+lines and 3,000 characters a page, paginated, with a query filter: todos,
+questions, alerts, purchase orders, production runs, forecasts, calendar,
+notes, components, products, wholesale shipments), `query_status`,
+`read_file`, `open_email`. There is no whole-section retrieval: a 20,000-
+character list returned as a tool result would rebuild the expensive prompt
+by another door (Codex). `list_records` is offered to the transient layout
+only; every other run's tool list is unchanged.
 
 **Budget.** 8,000 tokens for a normal turn. Before sending, a 14,000-character
 cap drops the lowest-priority sections first and says which (this text
 tokenises at about 1.75 characters a token, from the 13 Oct live-tail
 measurement). On real data on 16 Oct the state is 9,700 characters with no
-records named and 13,800 with two. The size that counts is measured: the
-state is the only uncached part of the request, so the API's own
-`input_tokens` is its token size.
+records named and 13,800 with two. Production records the state's
+**characters** on every request. Its **tokens** are counted only on request
+(the smoke check and the bake-off), by Anthropic's token-count endpoint, on
+the state alone: never read off a request's `input_tokens`, which also holds
+the person's message and any uncached tool results (Codex).
 
 **Safety.** Framed as reference data read by the app, never instructions; free
 text inside cannot open or close the frame. What may appear is decided
@@ -114,41 +120,36 @@ multiple of 10 in the thread), so its start holds for five exchanges instead
 of moving every turn (10 of 36 threads in the two weeks to 16 Oct were longer
 than the old 20-message window). Transient layout only.
 
+## The cached core, and what invalidates it
+
+The directory holds names and ids only: no prices, SKUs, statuses, active
+flags, dye-house names or style numbers (Codex). What can still change the
+core, and so rewrite it and the history cached behind it, is listed in code
+(`DIRECTORY_INVALIDATED_BY`, `STABLE_SECTIONS_INVALIDATED_BY`):
+
+- a product added, renamed or deleted; a variant added or deleted, or its
+  colourway or size changed; a colourway added, renamed or deleted; a
+  component added or renamed, retired or brought back
+- the five stable sections, exactly as the live-tail layout's own one-hour
+  block today: a place, a vendor's details, a wholesale store's details, a
+  person, the printed-document defaults
+
+Every run records the core's size and a hash (`usage.core`); two turns with
+different hashes paid for a rewrite. The bake-off reports it per turn.
+
 ## Measurements, per request
 
 On every `RequestUsage` (saved with each chat reply in `agentUsageJson`):
 `requestNumber`, `toolRounds` (finished before this request),
 `fullRecordFetches` (open_record, query_status, read_file, open_email so
-far), `transientChars`, `transientTokens` (the API's uncached input), and
-`transientTrimmed` when the cap dropped anything; plus cache reads and
-writes, as before.
+far), `transientChars`, `transientTrimmed` when the cap dropped anything,
+and `transientTokens` only when counted (see Budget); plus cache reads and
+writes, as before. Per run: `usage.core` (size and hash).
 
-## Acceptance (not yet met: needs the paid run)
+## Acceptance
 
-`scripts/transient-bakeoff.ts`: the same 13 practice turns in both layouts,
-real Opus answers, interleaved, record churn scheduled at production's rate,
-usage recorded under `transient-bakeoff`. Roughly $8–12. Needs
-`ANTHROPIC_API_KEY` and database access; refuses without the key.
-
-Turns: time zone, stock count, stock write, stock-pause warning, PO receipt,
-cash (finance rule), friends-and-family price (Shopify works out money, never
-Mouse), never size an order (for a person to judge), files (the W-9), email
-lookup (Calamo, 3103), product notes (Story Dress lining), to-do awareness,
-multi-round (overdue POs).
-
-Claims, judged in `scripts/transient-bakeoff-checks.ts` (tested):
-
-1. safety: no write ran in either layout
-2. quality: transient fails no automatic check that live-tail passes, and
-   every turn finished in both
-3. size: the measured state averages 8,000 tokens or less on normal turns
-4. cache writes: transient at most 50% of live-tail on the same turns
-5. cost: production's completed-chat cost under live-tail, scaled by the
-   replay's real cost ratio, about $0.30 or below
-
-A plumbing run against a local fake API (`BAKEOFF_DRY_RUN=1`) exercised every
-turn, measurement and claim with fake numbers. It proves the harness, not the
-layout.
+Not met yet: it needs the paid run. The revised plan, with every rule Codex
+set, is `docs/TRANSIENT-BAKEOFF-PLAN.md`.
 
 ## Open points for review
 
@@ -158,7 +159,7 @@ layout.
 - A change to the stable core (a product, variant, colourway or component
   added, renamed or retired) rewrites the core and, behind it, the cached
   history: about 15,000 tokens. Rare, but measured nowhere yet.
-- A whole-section fetch is large (products 18.7k characters, notes 20.6k);
-  the rules steer Mouse to single records first.
+- A `list_records` page is at most 3,000 characters; how many pages a turn
+  reads, and every tool result's size, is in the bake-off output.
 - The state is rebuilt per request with about 16 queries in one batch (about
   0.6–0.8 s from here); a turn with many tool rounds pays that each time.

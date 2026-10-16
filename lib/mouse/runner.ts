@@ -21,9 +21,10 @@ export type RequestUsage = {
   fullRecordFetches?: number
   /**
    * Transient-state layout only (lib/mouse/transient.ts): the state's size in
-   * characters, and in tokens as the API counted it. The state is the only
-   * uncached part of such a request (everything before it is read from or
-   * written to the cache), so its token size is the request's uncached input.
+   * characters, always. transientTokens is the state alone as Anthropic's
+   * token-count endpoint counts it, and is set only when the run asked for
+   * that count (the bake-off); it is never derived from inputTokens, which
+   * also holds the person's message and any uncached tool results.
    */
   transientChars?: number
   transientTokens?: number
@@ -42,6 +43,12 @@ export type AgentUsage = {
   route?: TurnRoute
   /** Short hashes of each prefix block, set by runAgent while MOUSE_CACHE_DIAGNOSTICS is on. */
   prefix?: PrefixHashes
+  /**
+   * Transient-state layout: the cached core's size and a short hash. Two
+   * turns whose hashes differ rewrote the core and the history behind it
+   * (lib/mouse/transient.ts DIRECTORY_INVALIDATED_BY).
+   */
+  core?: { chars: number; hash: string }
 }
 
 /**
@@ -95,7 +102,7 @@ export async function runLoop(opts: {
    * messages, it returns what to send. The loop's messages are never changed
    * by it, so nothing it adds is carried into the next request or kept.
    */
-  prepare?: (messages: Anthropic.MessageParam[]) => Promise<{ messages: Anthropic.MessageParam[]; transientChars: number; trimmed: string[] }>
+  prepare?: (messages: Anthropic.MessageParam[]) => Promise<{ messages: Anthropic.MessageParam[]; transientChars: number; transientTokens?: number; trimmed: string[] }>
 }): Promise<LoopResult> {
   const started = Date.now()
   const maxRequests = Math.max(1, Math.min(12, Math.trunc(opts.maxRequests ?? 6)))
@@ -126,9 +133,9 @@ export async function runLoop(opts: {
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
   let toolRounds = 0
   const fetchesSoFar = () => calls.filter((c) => FETCH_TOOLS.has(c.name)).length
-  const measure = (p: Awaited<ReturnType<NonNullable<typeof opts.prepare>>> | null, inputTokens: number) => ({
+  const measure = (p: Awaited<ReturnType<NonNullable<typeof opts.prepare>>> | null) => ({
     toolRounds, fullRecordFetches: fetchesSoFar(),
-    ...(p ? { transientChars: p.transientChars, transientTokens: inputTokens, ...(p.trimmed.length ? { transientTrimmed: p.trimmed } : {}) } : {}),
+    ...(p ? { transientChars: p.transientChars, ...(typeof p.transientTokens === 'number' ? { transientTokens: p.transientTokens } : {}), ...(p.trimmed.length ? { transientTrimmed: p.trimmed } : {}) } : {}),
   })
 
   for (let round = 0; round < maxRequests && spent < maxOutputTokens; round++) {
@@ -173,7 +180,7 @@ export async function runLoop(opts: {
       cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0,
       cacheWrite1hTokens: res.usage.cache_creation?.ephemeral_1h_input_tokens ?? 0, durationMs: Date.now() - at,
       effort: effort ?? 'medium',
-      ...measure(prepared, res.usage.input_tokens),
+      ...measure(prepared),
       ...(chain && res.id ? { cacheDiagnosis: diagnosisOf(chain, res.id, diag!.last[chain] ?? null, res.diagnostics) } : {}) })
     if (chain && res.id) diag!.last[chain] = res.id
     spent += res.usage.output_tokens
@@ -287,7 +294,7 @@ export async function runLoop(opts: {
         cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0,
         cacheWrite1hTokens: res.usage.cache_creation?.ephemeral_1h_input_tokens ?? 0, durationMs: Date.now() - at,
         effort: 'low',
-        ...measure(prepared, res.usage.input_tokens),
+        ...measure(prepared),
         ...(chain && res.id ? { cacheDiagnosis: diagnosisOf(chain, res.id, diag!.last[chain] ?? null, res.diagnostics) } : {}) })
       if (chain && res.id) diag!.last[chain] = res.id
       wrapUp = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim()

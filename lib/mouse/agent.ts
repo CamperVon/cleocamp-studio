@@ -369,6 +369,12 @@ export async function runAgent(opts: {
    * one. The requests are real and paid; only the change is scheduled.
    */
   replayChange?: { at: 'head' | 'tail'; line: string }
+  /**
+   * BAKE-OFF ONLY: count each request's state with Anthropic's token-count
+   * endpoint (free, separate from the request) and record it as
+   * transientTokens. Off in production, which records the state's characters.
+   */
+  countStateTokens?: boolean
   /** "read": the read lane (lib/mouse/route.ts). Look-up tools only, enforced three times over. */
   lane?: 'read'
   /**
@@ -380,7 +386,7 @@ export async function runAgent(opts: {
 }): Promise<AgentResult> {
   const client = new Anthropic({ maxRetries: 0 })
   const maxRounds = opts.maxRounds ?? (Number(process.env.MOUSE_MAX_REQUESTS) || 6)
-  const allowed = toolsFor(opts.allowedTools, opts.chatThreadId, opts.lane)
+  const allowed = toolsFor(opts.allowedTools, opts.chatThreadId, opts.lane, { transient: !!opts.transient })
   const tools = TOOL_DEFS.filter((t) => allowed.includes(t.name))
   // One for the whole turn: the first loop, the record-it pass and the stock check share it.
   const emailOpenBudget = opts.emailOpenBudget ?? newEmailOpenBudget()
@@ -474,7 +480,8 @@ export async function runAgent(opts: {
           return { text, chars: text.length, trimmed: ['all (records unreadable)'], sections: [] }
         })
         const text = change ? st.text.replace(/\n<\/business_state>$/, `${change}</business_state>`) : st.text
-        return { messages: layoutTransientMessages(msgs, historyLength, text), transientChars: text.length, trimmed: st.trimmed }
+        const transientTokens = opts.countStateTokens ? await countStateTokens(client, model, text) : undefined
+        return { messages: layoutTransientMessages(msgs, historyLength, text), transientChars: text.length, transientTokens, trimmed: st.trimmed }
       }
     : undefined
 
@@ -628,6 +635,10 @@ export async function runAgent(opts: {
   // Section sizes and block hashes ride on the usage record (saved with a
   // chat reply as agentUsageJson). Sizes only: no business text.
   if (contextStats) result = { ...result, usage: { ...result.usage, context: contextStats } }
+  if (core !== null) {
+    const { createHash } = await import('node:crypto')
+    result = { ...result, usage: { ...result.usage, core: { chars: core.length, hash: createHash('sha256').update(`${TRANSIENT_RULES}${core}`).digest('hex').slice(0, 12) } } }
+  }
   if (prefix) result = { ...result, usage: { ...result.usage, prefix } }
 
   // The troubleshooting log: every failed or refused tool call and every
@@ -681,8 +692,15 @@ export function toolContextFor(opts: { chatThreadId?: string; catalog?: 'full' |
     : { threadId: opts.chatThreadId }
 }
 
-export function toolsFor(allowedTools: string[] | undefined, chatThreadId: string | undefined, lane?: 'read'): string[] {
-  const all = allowedTools ?? Object.keys(TOOLS)
+/**
+ * Tools only the transient-state layout gets (review build, 16 Oct 2026):
+ * every other run, the live-tail chat included, keeps exactly the tool list
+ * it had, so its cached tools are unchanged.
+ */
+export const TRANSIENT_ONLY_TOOLS = new Set(['list_records'])
+
+export function toolsFor(allowedTools: string[] | undefined, chatThreadId: string | undefined, lane?: 'read', o: { transient?: boolean } = {}): string[] {
+  const all = (allowedTools ?? Object.keys(TOOLS)).filter((n) => o.transient === true || !TRANSIENT_ONLY_TOOLS.has(n))
   const allowed = chatThreadId ? all : all.filter((n) => !CHAT_ONLY_TOOLS.has(n))
   return lane === 'read' ? allowed.filter((n) => READ_LANE_TOOLS.has(n)) : allowed
 }
@@ -881,6 +899,26 @@ export function turnContent(
 ): Anthropic.MessageParam['content'] {
   if (!files.length && !prefetch) return instruction
   return [...files, { type: 'text', text: instruction }, ...(prefetch ? [{ type: 'text' as const, text: prefetch }] : [])]
+}
+
+/**
+ * The state's own size in tokens, by Anthropic's token-count endpoint: a
+ * user message holding only the state, less the same message holding one
+ * character (the message wrapper, counted once and remembered). Bake-off
+ * only; a failed count is recorded as missing, never guessed.
+ */
+const countBase = new Map<string, number>()
+export async function countStateTokens(client: Anthropic, model: string, state: string): Promise<number | undefined> {
+  try {
+    const count = async (text: string) => (await client.messages.countTokens({ model, messages: [{ role: 'user', content: [{ type: 'text', text }] }] })).input_tokens
+    if (!countBase.has(model)) countBase.set(model, await count('.'))
+    const n = (await count(state)) - countBase.get(model)!
+    // Anything but a real count is no count: never a guess, never NaN passed off as one.
+    return Number.isFinite(n) && n > 0 ? n : undefined
+  } catch (e) {
+    console.error('[transient] token count failed', e)
+    return undefined
+  }
 }
 
 /** Who is talking and what the switches allow, for the transient state. */

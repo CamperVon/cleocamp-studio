@@ -23,13 +23,15 @@ test('every tool Mouse has is given a kind, and every kind names a real tool', (
 
 test('the look-ups are pinned: making a tool one runs it in practice and stops it counting as a write', () => {
   // Read the tool before adding it to either list: it must change nothing.
-  assert.deepEqual(of('read-lane').sort(), ['check_sent_mail', 'find_contacts', 'find_customer', 'find_in_shopify', 'open_record', 'query_status', 'reorder_math', 'search_chat', 'shipped_orders', 'shopify_analytics', 'unpaid_live_sales', 'unshipped_orders'])
+  assert.deepEqual(of('read-lane').sort(), ['check_sent_mail', 'find_contacts', 'find_customer', 'find_in_shopify', 'list_records', 'open_record', 'query_status', 'reorder_math', 'search_chat', 'shipped_orders', 'shopify_analytics', 'unpaid_live_sales', 'unshipped_orders'])
   assert.deepEqual(of('look-up, Opus').sort(), ['draft_order_links', 'open_email', 'read_file'])
 })
 
 test('the read lane holds exactly the read-lane look-ups, and is offered nothing else', () => {
   assert.deepEqual([...READ_LANE_TOOLS].sort(), of('read-lane').sort())
-  assert.deepEqual(toolsFor(undefined, 'thread_1', 'read').sort(), of('read-lane').sort())
+  // list_records is transient-layout only (16 Oct 2026): offered there, nowhere else.
+  assert.deepEqual(toolsFor(undefined, 'thread_1', 'read').sort(), of('read-lane').filter((n) => n !== 'list_records').sort())
+  assert.deepEqual(toolsFor(undefined, 'thread_1', 'read', { transient: true }).sort(), of('read-lane').sort())
   for (const n of of('changes')) assert.ok(!READ_LANE_TOOLS.has(n), `${n} changes things and must stay out of the read lane`)
 })
 

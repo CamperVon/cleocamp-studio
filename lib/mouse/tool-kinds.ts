@@ -32,6 +32,7 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
   unpaid_live_sales: 'read-lane',
   shipped_orders: 'read-lane',
   unshipped_orders: 'read-lane', // 13 Oct 2026: what is still waiting to ship, the twin of shipped_orders
+  list_records: 'read-lane', // 16 Oct 2026: transient-state layout only (toolsFor), capped pages of one kind of record
 
   // Look-ups kept with Opus.
   read_file: 'look-up, Opus', // reading a PDF or photo stays with Opus (7 Oct 2026)

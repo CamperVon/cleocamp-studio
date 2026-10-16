@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type Anthropic from '@anthropic-ai/sdk'
 import { coreSystemBlocks, layoutTransientMessages } from '../lib/mouse/cache-blocks'
-import { assembleTransient, cleanText, sectionAsked, steppedHistory, stockBoardLine, transientSections, transientSelection, TRANSIENT_CHAR_CAP, type TransientAccess } from '../lib/mouse/transient'
+import { assembleTransient, cleanText, renderDirectory, steppedHistory, stockBoardLine, transientSections, transientSelection, TRANSIENT_CHAR_CAP, type TransientAccess } from '../lib/mouse/transient'
 import { runLoop } from '../lib/mouse/runner'
 
 const marksIn = (msgs: Anthropic.MessageParam[]) => msgs.flatMap((m, i) => (Array.isArray(m.content) ? m.content : []).flatMap((b, k) => ((b as { cache_control?: { ttl?: string } }).cache_control ? [{ i, k, ttl: (b as { cache_control: { ttl?: string } }).cache_control.ttl ?? '5m' }] : [])))
@@ -68,12 +68,29 @@ test('the history window moves in steps of ten, so its start holds for five exch
   assert.equal(steppedHistory(rows, 31).length, 11)
 })
 
-test('sections are asked for by name', () => {
-  assert.equal(sectionAsked('section: purchase orders'), 'Open purchase orders')
-  assert.equal(sectionAsked('Section:  Todos '), 'Open questions and todos')
-  assert.equal(sectionAsked('section: forecast'), 'Your own forecasts, from the last nightly run')
-  assert.equal(sectionAsked('section: nonsense'), null)
-  assert.equal(sectionAsked('PO 2409'), null)
+test('the directory is names and ids only, in a fixed order', () => {
+  const text = renderDirectory(
+    [
+      { id: 'p2', name: 'Story Dress', colorways: [{ id: 'c2', customerName: 'Red (Wiltshire)' }, { id: 'c1', customerName: 'Green (Betsey)' }], variants: [{ id: 'v2', size: '2', colorway: { customerName: 'Green (Betsey)' } }, { id: 'v1', size: '1', colorway: { customerName: 'Green (Betsey)' } }] },
+      { id: 'p1', name: 'Cleo Tee', colorways: [], variants: [] },
+    ],
+    [{ id: 'k2', name: 'Size label' }, { id: 'k1', name: 'Main label' }],
+  )
+  assert.equal(text, [
+    '## Product directory',
+    'Names and ids only. Counts are on the stock board in the business state; status, price, SKU, recipe, notes and lead time via open_record.',
+    '- Cleo Tee [p1]',
+    '- Story Dress [p2]',
+    '  colourways: Green (Betsey) [c1]; Red (Wiltshire) [c2]',
+    '  variants: Green (Betsey) / 1 [v1]; Green (Betsey) / 2 [v2]',
+    '',
+    '## Component directory',
+    'Names and ids only. Count, places, supplier, cost and lead time via open_record or list_records components.',
+    '- Main label [k1]',
+    '- Size label [k2]',
+  ].join('\n'))
+  // Nothing that moves day to day: no money, SKU, status or count.
+  assert.ok(!/\$|retail|active|development|sampling|sunsetted|on hand|TP\d/i.test(text.split('\n').filter((l) => l.startsWith('-') || l.startsWith('  ')).join('\n')))
 })
 
 test('the stock board line', () => {
@@ -121,12 +138,13 @@ test('an index, not the dossier: urgent alerts in full, the rest folded, to-dos 
   assert.ok(t.includes('Shipping tape [c1] -8 roll'))
 })
 
-test('the runner rebuilds the state for every request and never keeps it', async () => {
+test('the runner rebuilds the state for every request, never keeps it, and never passes input_tokens off as the state\'s size', async () => {
   const sent: Anthropic.MessageParam[][] = []
   let n = 0
   const prepare = async (msgs: Anthropic.MessageParam[]) => {
     n++
-    return { messages: layoutTransientMessages(msgs, 0, `<business_state>state ${n}</business_state>`), transientChars: 30, trimmed: [] }
+    // Counted on the first request only, to show a missing count stays missing.
+    return { messages: layoutTransientMessages(msgs, 0, `<business_state>state ${n}</business_state>`), transientChars: 30, ...(n === 1 ? { transientTokens: 12 } : {}), trimmed: [] }
   }
   const usage = { input_tokens: 7000, output_tokens: 10, cache_read_input_tokens: 50000, cache_creation_input_tokens: 900 }
   const r = await runLoop({
@@ -143,5 +161,31 @@ test('the runner rebuilds the state for every request and never keeps it', async
   assert.equal(n, 2)
   const states = (msgs: Anthropic.MessageParam[]) => msgs.flatMap((m) => (Array.isArray(m.content) ? m.content : [])).filter((b) => (b as { text?: string }).text?.startsWith('<business_state>'))
   assert.deepEqual(sent.map((m) => states(m).map((b) => (b as { text: string }).text)), [['<business_state>state 1</business_state>'], ['<business_state>state 2</business_state>']])
-  assert.deepEqual(r.usage.requests.map((q) => [q.toolRounds, q.fullRecordFetches, q.transientChars, q.transientTokens]), [[0, 0, 30, 7000], [1, 1, 30, 7000]])
+  // Never the request's input_tokens (7000 here): only a count of the state itself.
+  assert.deepEqual(r.usage.requests.map((q) => [q.toolRounds, q.fullRecordFetches, q.transientChars, q.transientTokens]), [[0, 0, 30, 12], [1, 1, 30, undefined]])
+})
+
+test('list pages are capped by rows and characters, never cut mid-line, and narrowed by query', async () => {
+  const { pageOf, LIST_PAGE_ROWS, LIST_PAGE_CHARS } = await import('../lib/mouse/list-records')
+  const lines = Array.from({ length: 45 }, (_, i) => `[t${i}] TODO: thing ${i}${i % 9 === 0 ? ' tape' : ''}`)
+  const p1 = pageOf(lines, {})
+  assert.deepEqual([p1.total, p1.pages, p1.rows.length], [45, 3, LIST_PAGE_ROWS])
+  assert.equal(pageOf(lines, { page: 3 }).rows.length, 5)
+  assert.equal(pageOf(lines, { page: 99 }).page, 3)
+  assert.deepEqual(pageOf(lines, { query: 'TAPE' }).rows.map((r) => r.split(']')[0]), ['[t0', '[t9', '[t18', '[t27', '[t36'])
+  const long = Array.from({ length: 10 }, (_, i) => `${i} ${'x'.repeat(900)}`)
+  const pl = pageOf(long, {})
+  assert.ok(pl.rows.join('\n').length <= LIST_PAGE_CHARS && pl.rows.length === 3 && pl.pages === 4)
+})
+
+test('list_records is only in the transient layout; every other run keeps its tool list', async () => {
+  const { toolsFor, TRANSIENT_ONLY_TOOLS } = await import('../lib/mouse/agent')
+  assert.ok(TRANSIENT_ONLY_TOOLS.has('list_records'))
+  assert.ok(!toolsFor(undefined, 'thread_1').includes('list_records'))
+  assert.ok(!toolsFor(undefined, 'thread_1', 'read').includes('list_records'))
+  assert.ok(toolsFor(undefined, 'thread_1', undefined, { transient: true }).includes('list_records'))
+  assert.ok(toolsFor(undefined, 'thread_1', 'read', { transient: true }).includes('list_records'))
+  // The order of everything else is unchanged by its being added (it is last).
+  const without = toolsFor(undefined, 'thread_1')
+  assert.deepEqual(toolsFor(undefined, 'thread_1', undefined, { transient: true }).filter((n) => n !== 'list_records'), without)
 })

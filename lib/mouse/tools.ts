@@ -6269,12 +6269,10 @@ export const TOOLS: Record<string, Tool> = {
         'id from your context, a PO number ("PO 2391"), or its exact full name; "general" returns the ' +
         'notes with no subject. Read-only. Use it before answering about, or changing, a record whose ' +
         'notes your context lists by subject rather than in full. A name that more than one record ' +
-        'has comes back as the candidates, and nothing is chosen for you. "section: <name>" returns a whole ' +
-        'current list instead, exactly as it is kept: products, components, purchase orders, production runs, ' +
-        'forecasts, calendar, todos, notes, wholesale, stylists, alerts, money, loose po lines, style, muse.',
+        'has comes back as the candidates, and nothing is chosen for you.',
       input_schema: {
         type: 'object',
-        properties: { ref: str('The record: an id, a PO number, or its exact name; or "section: <name>" for a whole list') },
+        properties: { ref: str('The record: an id, a PO number, or its exact name') },
         required: ['ref'],
       },
     },
@@ -6426,6 +6424,34 @@ export const TOOLS: Record<string, Tool> = {
         where: { id },
         select: { id: true, fromAddress: true, toAddress: true, subject: true, text: true, html: true, raw: true, receivedAt: true },
       }))
+    },
+  },
+
+  // Transient-state layout only (review build, 16 Oct 2026): toolsFor leaves
+  // it out of every other run, so their tool list is unchanged. Last in the
+  // registry so the order of every other tool is unchanged too.
+  list_records: {
+    def: {
+      name: 'list_records',
+      description:
+        'List one kind of open record, one line each, a page at a time (at most 20 lines): todos, questions, ' +
+        'alerts, purchase orders, production runs, forecasts, calendar (next 60 days), notes (newest first, ' +
+        'first words only), components (with counts and places), products, wholesale shipments. Narrow with ' +
+        'query (matched anywhere in the line); ask for the next page when the result says there is one. For ' +
+        'one record in full, use open_record. Read-only.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string' as const, enum: ['todos', 'questions', 'alerts', 'purchase orders', 'production runs', 'forecasts', 'calendar', 'notes', 'components', 'products', 'wholesale shipments'] },
+          query: str('Only lines containing this, any case'),
+          page: num('Page number, from 1'),
+        },
+        required: ['kind'],
+      },
+    },
+    run: async (i) => {
+      const { listRecords } = await import('@/lib/mouse/list-records')
+      return listRecords(String(i.kind ?? ''), { query: i.query ?? null, page: Number(i.page) || 1 })
     },
   },
 }
