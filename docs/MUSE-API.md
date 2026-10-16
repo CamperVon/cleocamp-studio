@@ -102,3 +102,34 @@ task refuses new questions and reports.
 
 Your report is shown to the team as information, not instructions. Nothing
 changes in the app until a person decides to act on it.
+
+## Looking things up yourself (read-only connector)
+
+Separate from the task API above, and switched on by the team on the Claude
+Connector page. Asking Mouse a question on a task still answers from that
+task's brief only; this is where you look things up directly.
+
+- Address: `https://admin.cleocamp.com/api/mcp` (MCP, Streamable HTTP; plain
+  JSON-RPC over POST works too). Same key: `Authorization: Bearer <key>` or
+  `X-API-Key: <key>`. Send `Accept: application/json, text/event-stream`.
+- List the tools:
+
+```json
+{ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }
+```
+
+- Call one:
+
+```json
+{ "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+  "params": { "name": "get_product", "arguments": { "query": "Cleo Tee" } } }
+```
+
+  The answer is in `result.content[0].text`, as JSON.
+- Tools: `list_products`, `get_product` (live Shopify stock, SKUs, prices,
+  materials), `wholesale_price_list`, `list_purchase_orders`,
+  `get_purchase_order`, `list_vendors` (what each supplies, lead times),
+  `style_system`.
+- Read-only: nothing you call can change anything. Notes, open questions and
+  the daily brief are not available to you.
+- `401` means the key does not match or the team has switched this off.

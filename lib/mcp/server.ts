@@ -22,8 +22,9 @@ type Db = PrismaClient
 
 export const INSTRUCTIONS =
   'Studio Mouse is the internal admin app of Cleo Camp, a small apparel brand in Los Angeles. These tools read its records: products, stock, ' +
-  'prices, purchase orders, vendors, open questions, notes and the daily brief. They cannot change anything. Stock comes from the app\'s mirror ' +
-  'of Shopify (null means unknown, not zero). Prices are USD unless a purchase order says otherwise. To change something, ask a person to tell ' +
+  'prices, purchase orders, vendors, open questions, notes and the daily brief. They cannot change anything. Stock is Shopify\'s live count; ' +
+  'if Shopify does not answer, the app\'s copy is used and the answer says so (null means unknown, not zero; below zero is pre-orders). Prices are ' +
+  'USD unless a purchase order says otherwise. To change something, ask a person to tell ' +
   'Studio Mouse in the app.'
 
 /** One tool call: read-only transaction, scrubbed answer, logged outcome. */
