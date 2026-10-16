@@ -111,6 +111,10 @@ export const WHATS_NEW: Update[] = [
     text: 'You can now ask Mouse by email to draft a wholesale or live-sale invoice. It drafts it in Shopify and replies with the link; sending it to the customer is still done in the app chat.',
   },
   {
+    on: '2026-10-16', path: '/style-numbers',
+    text: 'Style numbers are now three letters and three digits: the Cleo Tee is TCO101, so a SKU reads TCO101-BLK-01. Old numbers like TP101 still find the product. Products page, "How style numbers work" explains it all, with the full list of styles.',
+  },
+  {
     on: '2026-10-16', path: '/purchase-orders',
     text: 'Purchase orders now say which pattern each piece is cut from, like "Pattern: TCO101-P2" under the Cleo Tee line. A style with one pattern fills it in by itself; a Cleo Tee order waits until you tell Mouse P1 (pre-washed fabric) or P2 (PFD). Patterns never touch SKUs or Shopify.',
   },

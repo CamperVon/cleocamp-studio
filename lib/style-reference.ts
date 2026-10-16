@@ -57,7 +57,7 @@ export function howToRead(example: string | null): string[] {
   const p = parseStyle(style)
   return [
     `A SKU has three parts: style, colour and size. ${sku} is style ${style}, colour ${colour}, size ${size}.`,
-    `The style number is the pattern and its construction: three letters, then three digits.${p ? ` In ${style}, ${p.category} is the category, ${p.family.slice(1)} the product, ${p.line} the line (${LINES[p.line]}) and ${String(p.version).padStart(2, '0')} the version.` : ''} A new colour or size keeps the same style number; a new pattern or construction gets a new one.`,
+    `The style number is the pattern and its construction: three letters, then three digits.${p ? ` In ${style}, ${p.category} is the category, ${p.family.slice(1)} the product, ${p.line} the line (${LINES[p.line]}) and ${String(p.version).padStart(2, '0')} the version.` : ''} A new colour, size or pattern revision keeps the same style number; a different design or construction gets a new one.`,
     'The colour is a three-letter code and the size a two-character code, both from the lists below. Season and year are never part of the code.',
     'A number is never reused, even when a style is retired.',
     'Please put the style number, and the SKU where there is one, on invoices, packing lists, markers, tech packs and sample tags.',

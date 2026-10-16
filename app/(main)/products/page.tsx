@@ -119,6 +119,7 @@ export default async function Products() {
       <div className="flex flex-wrap items-center gap-2">
         <a href="/styles/pdf" className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-bg">Styles PDF</a>
         <a href="/styles" className="rounded-lg border border-line px-3 py-2 text-sm">Styles page</a>
+        <a href="/style-numbers" className="rounded-lg border border-line px-3 py-2 text-sm">How style numbers work</a>
       </div>
       <SkuModeToggle mode={skuMode} />
       {/* Style numbers still to settle (lib/style-report.ts), folded; the
@@ -132,6 +133,10 @@ export default async function Products() {
           </summary>
           <ul className="flex flex-col gap-1.5 border-t border-line px-4 py-3 text-sm sm:px-5">
             {styleLines.map((l, i) => <li key={i}>{l}</li>)}
+            <li className="flex flex-wrap gap-x-4 pt-1 text-xs">
+              <a href="/style-numbers" className="text-accent underline underline-offset-2">How style numbers work</a>
+              <a href="/style-numbers/crosswalk" className="text-accent underline underline-offset-2">Old numbers → new</a>
+            </li>
           </ul>
         </details>
       </Card>
