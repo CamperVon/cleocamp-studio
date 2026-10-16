@@ -5,9 +5,9 @@
  * same day). The claims and their rules are in
  * scripts/transient-bakeoff-checks.ts, tested in tests/transient-bakeoff.test.ts.
  *
- *   npx tsx scripts/transient-smoke.ts <outDir>       first: the real-API layout check (about $0.10)
+ *   npx tsx scripts/transient-smoke.ts <outDir>       first: the real-API layout check (about $0.20)
  *   npx tsx scripts/transient-bakeoff.ts <outDir>     then: the bake-off (roughly $8–12)
- *   (a person fills <outDir>/review.json: one verdict per pair)
+ *   (the person's verdicts, given on a review page, are copied into <outDir>/review.json)
  *   npx tsx scripts/transient-bakeoff.ts --accept <outDir>   judges again, spends nothing
  *
  * SPENDS REAL MONEY and needs ANTHROPIC_API_KEY; refuses without it, and

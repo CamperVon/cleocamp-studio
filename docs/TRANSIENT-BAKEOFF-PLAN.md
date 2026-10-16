@@ -15,10 +15,16 @@ paid request has been made for this layout. Design: `docs/TRANSIENT-STATE.md`.
 | 5 | A transient failure excused because live-tail also failed; human review on one turn only | Every required check must pass in **both** layouts; a check whose fixture is missing fails, never skips. A person judges **all 13 pairs** in `review.json` (verdict `ok` or `worse` each); acceptance is pending until every verdict is `ok`. `--accept <dir>` re-judges the saved run with the review, spending nothing. |
 | 6 | No proof Anthropic accepts the layout | `scripts/transient-smoke.ts`: three real requests with the exact four-mark shape, built by the same functions chat uses. The bake-off refuses to start without a passed `smoke.json`. |
 
-## Order of work, and what each step costs
+## Order of work, and who does what
+
+Claude runs every script and writes every file. Brandon is asked for three
+things only, none of them code: Codex's approval, a key in the environment
+(after that approval), and a verdict on each of the 13 pairs.
 
 1. **Codex reviews this branch and plan.** Free.
-2. **Smoke check**, about $0.20: `npx tsx scripts/transient-smoke.ts <dir>`.
+2. **API key.** Only after Codex approves: Brandon adds `ANTHROPIC_API_KEY` to
+   the cloud environment's settings (never pasted into chat).
+3. **Smoke check** (Claude runs it), about $0.20: `scripts/transient-smoke.ts`.
    Three short Opus requests over the real rules and the real stable core
    (tools left out to keep it cheap; they sit ahead of the first mark and do
    not change the marks), using `coreSystemBlocks` and
@@ -33,13 +39,15 @@ paid request has been made for this layout. Design: `docs/TRANSIENT-STATE.md`.
    - then, free: the real state for five representative messages, counted.
      Pass: average 8,000 tokens or less. A fail here stops the plan before
      the bake-off's spend.
-   Writes `<dir>/smoke.json`. A refused layout is reported as such.
-3. **Bake-off**, roughly $8–12: `npx tsx scripts/transient-bakeoff.ts <dir>`.
-4. **Human review** of all 13 pairs: fill `<dir>/review.json`, then
-   `npx tsx scripts/transient-bakeoff.ts --accept <dir>`. Free.
-5. **Back to Codex** with the branch, the layouts (`scripts/transient-layout.ts`
-   output), `smoke.json`, `bakeoff.json`, the filled `review.json`, the cost
-   data and every failure.
+   A refused layout is reported as such, and the plan stops there.
+4. **Bake-off** (Claude runs it), roughly $8–12: `scripts/transient-bakeoff.ts`.
+5. **Human review.** Claude publishes the 13 pairs as a private page, each
+   with an "as good or better / worse" choice and a notes box. Brandon reads
+   and taps; Claude copies the verdicts into `review.json` and re-judges the
+   run (`--accept`, free).
+6. **Back to Codex** (Claude): the branch, the layouts
+   (`scripts/transient-layout.ts` output), `smoke.json`, `bakeoff.json`, the
+   verdicts, the cost data and every failure.
 
 ## The bake-off
 
