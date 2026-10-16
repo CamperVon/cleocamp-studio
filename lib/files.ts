@@ -90,13 +90,13 @@ export async function linkTargets() {
 }
 
 /** For each record, the files linked to it: { recordId: [{ id, title }] }. */
-export async function filesFor(kind: LinkKind, recordIds?: string[]): Promise<Map<string, Array<{ id: string; title: string }>>> {
+export async function filesFor(kind: LinkKind, recordIds?: string[]): Promise<Map<string, Array<{ id: string; title: string; url: string | null }>>> {
   const links = await db.storedFileLink.findMany({
     where: { kind, ...(recordIds ? { recordId: { in: recordIds } } : {}) },
-    select: { recordId: true, file: { select: { id: true, title: true } } },
+    select: { recordId: true, file: { select: { id: true, title: true, url: true } } },
     orderBy: { file: { title: 'asc' } },
   })
-  const m = new Map<string, Array<{ id: string; title: string }>>()
+  const m = new Map<string, Array<{ id: string; title: string; url: string | null }>>()
   for (const l of links) m.set(l.recordId, [...(m.get(l.recordId) ?? []), l.file])
   return m
 }
@@ -113,6 +113,38 @@ export async function keepFile(input: {
   if ('error' in links) return { ok: false, error: links.error }
   const f = await db.storedFile.create({
     data: { ...storedFileData({ ...input, sizeBytes }), links: { create: links.ok } },
+    select: { id: true },
+  })
+  return { ok: true, id: f.id }
+}
+
+/** Why a link cannot be kept, or null. Web addresses only (https), nothing local or scripted. Pure. */
+export function linkProblem(url: string): string | null {
+  let u: URL
+  try { u = new URL(url.trim()) } catch { return 'That is not a web address. Paste the whole link, starting https://.' }
+  if (u.protocol !== 'https:') return 'Only https:// links can be kept.'
+  return null
+}
+
+/**
+ * Keep a link (a Google Drive folder, say) instead of a file: it sits in Files
+ * and on the rows it is linked to like any kept file, and opening it goes to
+ * the link. Nothing is downloaded or stored but the address.
+ */
+export async function keepLink(input: { title: string; url: string; notes?: string | null; links?: Array<{ kind: string; recordId: string }> }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  if (!input.title.trim()) return { ok: false, error: 'Give it a title.' }
+  const problem = linkProblem(input.url)
+  if (problem) return { ok: false, error: problem }
+  const links = await checkLinks(input.links ?? [])
+  if ('error' in links) return { ok: false, error: links.error }
+  const url = new URL(input.url.trim()).toString()
+  const same = await db.storedFile.findFirst({ where: { url }, select: { id: true } })
+  if (same) {
+    for (const l of links.ok) await db.storedFileLink.upsert({ where: { fileId_kind_recordId: { fileId: same.id, kind: l.kind, recordId: l.recordId } }, create: { fileId: same.id, ...l }, update: {} })
+    return { ok: true, id: same.id }
+  }
+  const f = await db.storedFile.create({
+    data: { title: input.title.trim(), filename: '', mediaType: 'text/uri-list', sizeBytes: 0, data: '', url, notes: input.notes?.trim() || null, links: { create: links.ok } },
     select: { id: true },
   })
   return { ok: true, id: f.id }

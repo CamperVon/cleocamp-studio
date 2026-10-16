@@ -142,6 +142,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-16',
     text: 'Mouse only logs a delivery or a count when your message says what it is: the item, the number and the PO, like "PO 2360: 510 Cleo Tee White size 1". Otherwise ("PO 2360 arrived in full") it shows each line it would log with a short code. Reply LOG and the code to log exactly that line, or send the real numbers. A plain "yes" logs nothing.',
   },
+  {
+    on: '2026-10-16', path: '/products',
+    text: 'Files can now hold a link as well as a file. The Google Drive folders for the Cleo Tee, Cosmo Stripe Tee and Story Dress (tech packs and pattern files) show under each product; tap to open. Ask Mouse "where are the Story Dress files?" and it gives you the link, or paste a link on the Files page.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

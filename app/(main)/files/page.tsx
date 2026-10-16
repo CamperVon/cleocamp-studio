@@ -14,7 +14,7 @@ export default async function Files() {
   const [files, targets] = await Promise.all([
     db.storedFile.findMany({
       orderBy: { title: 'asc' },
-      select: { id: true, title: true, filename: true, mediaType: true, sizeBytes: true, notes: true, createdAt: true, links: { select: { id: true, kind: true, recordId: true } } },
+      select: { id: true, title: true, filename: true, mediaType: true, sizeBytes: true, url: true, notes: true, createdAt: true, links: { select: { id: true, kind: true, recordId: true } } },
     }),
     linkTargets(),
   ])
@@ -28,7 +28,7 @@ export default async function Files() {
   const name = new Map([...ps, ...cs, ...vs].map((r) => [r.id, r.name]))
 
   return (
-    <Page title="Files" lede="Colour cards, spec sheets and the like, kept for good. Each shows on the rows it is linked to. Tell Mouse to keep a file you send it, or add one here.">
+    <Page title="Files" lede="Colour cards, spec sheets and links (a style's Google Drive folder, say), kept for good. Each shows on the rows it is linked to. Tell Mouse to keep a file you send it or a link, or add one here.">
       <Card>
         <Fold summary={<span className="text-sm font-medium text-accent">+ Keep a file</span>}>
           <UploadFile targets={targets} />
@@ -43,7 +43,7 @@ export default async function Files() {
                   <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                     <span className="font-medium">{f.title}</span>
                     <span className="text-xs text-muted">
-                      {FILE_TYPES[f.mediaType] ?? 'file'} · {sizeLabel(f.sizeBytes)} · {f.links.length ? `${f.links.length} linked` : <span className="text-warn">not linked</span>}
+                      {f.url ? <a href={f.url} target="_blank" rel="noreferrer" className="text-accent underline underline-offset-2">link ↗</a> : `${FILE_TYPES[f.mediaType] ?? 'file'} · ${sizeLabel(f.sizeBytes)}`} · {f.links.length ? `${f.links.length} linked` : <span className="text-warn">not linked</span>}
                     </span>
                   </span>
                 }>

@@ -1,7 +1,7 @@
 'use client'
 import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { deleteFile, linkFile, renameFile, unlinkFile } from './actions'
+import { deleteFile, keepLinkAction, linkFile, renameFile, unlinkFile } from './actions'
 
 const input = 'w-full min-w-0 rounded-lg border border-line bg-bg px-3 py-2 text-sm'
 const small = 'rounded-lg border border-line px-3 py-1.5 text-xs disabled:opacity-40'
@@ -90,6 +90,7 @@ export function UploadFile({ targets }: { targets: Targets }) {
   const router = useRouter()
   const ref = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
+  const [url, setUrl] = useState('')
   const [title, setTitle] = useState('')
   const [notes, setNotes] = useState('')
   const [links, setLinks] = useState<string[]>([])
@@ -99,13 +100,16 @@ export function UploadFile({ targets }: { targets: Targets }) {
   const nameOf = (v: string) => { const { kind, recordId } = split(v); return targets[kind as keyof Targets]?.find((r) => r.id === recordId)?.name ?? v }
 
   const send = async () => {
-    if (!file) return
+    if (!file && !url.trim()) return
     setBusy(true); setMsg(null)
-    const r = await postFile(file, title, notes, links.map(split))
+    // A file uploads; a link (a Google Drive folder) is kept as its address only.
+    const r = file
+      ? await postFile(file, title, notes, links.map(split))
+      : await keepLinkAction(title, url, notes, links.map(split)).then((x) => (x.ok ? { id: '' } : { error: x.error }))
     setBusy(false)
     if ('error' in r) { setMsg({ text: r.error, bad: true }); return }
     setMsg({ text: 'Kept.', bad: false })
-    setFile(null); setTitle(''); setNotes(''); setLinks([]); if (ref.current) ref.current.value = ''
+    setFile(null); setUrl(''); setTitle(''); setNotes(''); setLinks([]); if (ref.current) ref.current.value = ''
     router.refresh()
   }
 
@@ -114,6 +118,9 @@ export function UploadFile({ targets }: { targets: Targets }) {
       <input ref={ref} type="file" accept={ACCEPT}
         onChange={(e) => { const f = e.target.files?.[0] ?? null; setFile(f); if (f && !title) setTitle(f.name.replace(/\.[a-z0-9]+$/i, '')) }}
         className="text-sm file:mr-3 file:rounded-lg file:border file:border-line file:bg-bg file:px-3 file:py-1.5 file:text-sm" />
+      {file ? null : (
+        <input value={url} onChange={(e) => setUrl(e.target.value)} inputMode="url" placeholder="Or paste a link, e.g. a Google Drive folder" className={input} />
+      )}
       <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title, e.g. Calamo colour card" className={input} />
       <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes (optional)" rows={2} className={input} />
       <RecordPicker targets={targets} value={pick} onChange={(v) => { if (v && !links.includes(v)) setLinks([...links, v]); setPick('') }} />
@@ -126,8 +133,8 @@ export function UploadFile({ targets }: { targets: Targets }) {
           ))}
         </div>
       ) : null}
-      <button type="button" disabled={!file || busy || !title.trim()} onClick={send} className="self-start rounded-lg bg-accent px-3 py-2 text-sm font-medium text-bg disabled:opacity-40">
-        {busy ? 'Keeping…' : 'Keep this file'}
+      <button type="button" disabled={(!file && !url.trim()) || busy || !title.trim()} onClick={send} className="self-start rounded-lg bg-accent px-3 py-2 text-sm font-medium text-bg disabled:opacity-40">
+        {busy ? 'Keeping…' : file || !url.trim() ? 'Keep this file' : 'Keep this link'}
       </button>
       {msg ? <p className={`text-xs ${msg.bad ? 'font-medium text-urgent' : 'text-muted'}`}>{msg.text}</p> : null}
     </div>
