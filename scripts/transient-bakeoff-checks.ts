@@ -16,6 +16,8 @@
  *   expensive prompt.
  */
 
+import { MAX_AVG_STATE_TOKENS } from '../lib/mouse/transient-smoke-judge'
+
 export type Layout = 'live-tail' | 'transient'
 export type Req = {
   model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; cacheWrite1hTokens: number
@@ -38,7 +40,7 @@ export type Review = Record<string, { verdict: 'ok' | 'worse' | null; notes?: st
 
 export const TARGET = {
   /** Average counted state size over every transient request, in tokens. */
-  maxAvgTransientTokens: 8_000,
+  maxAvgTransientTokens: MAX_AVG_STATE_TOKENS,
   /** Transient cache writes as a share of live-tail's on the same turns. */
   maxWriteShare: 0.5,
   /** Projected cost per completed chat reply, dollars. */
@@ -169,17 +171,6 @@ export function allClaims(turns: TurnRun[], o: { productionPerReply: number; pro
   return [checkSafety(turns), ...checkRequired(turns), checkHumanReview(turns, o.review), checkSize(turns), checkWrites(turns), checkProjection(turns, o.productionPerReply, o.productionReplies), checkCore(turns)]
 }
 
-/** One smoke-check request's usage (scripts/transient-smoke.ts). */
-export type SmokeUsage = { inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; cacheWrite1hTokens: number }
-
-/** The smoke check's verdicts, pure (tests/transient-bakeoff.test.ts). */
-export function judgeSmoke(r: { cold: SmokeUsage; again: SmokeUsage; next: SmokeUsage; stateTokens: number[]; deltaTokens: number }) {
-  const tol = 64
-  return [
-    { check: 'all three requests accepted with the four-mark layout', ok: true, detail: 'no request refused' },
-    { check: 'cold: the one-hour marks wrote', ok: r.cold.cacheWrite1hTokens > 0, detail: `wrote ${r.cold.cacheWriteTokens}, of which 1h ${r.cold.cacheWrite1hTokens}` },
-    { check: 'same turn, new state: nothing written, everything before the state read back', ok: r.again.cacheWriteTokens === 0 && r.again.cacheReadTokens >= r.cold.cacheReadTokens + r.cold.cacheWriteTokens - tol, detail: `write ${r.again.cacheWriteTokens}; read ${r.again.cacheReadTokens} of ${r.cold.cacheReadTokens + r.cold.cacheWriteTokens} cached` },
-    { check: 'same turn: the uncached input is the state alone (within 64 tokens of its own count)', ok: Math.abs(r.again.inputTokens - r.stateTokens[1]) <= tol, detail: `uncached input ${r.again.inputTokens} vs state counted ${r.stateTokens[1]}` },
-    { check: 'next turn: the earlier prefix read back, only the new messages written', ok: r.next.cacheReadTokens >= r.again.cacheReadTokens - tol && r.next.cacheWriteTokens <= r.deltaTokens + tol && r.next.cacheWrite1hTokens > 0, detail: `read ${r.next.cacheReadTokens} (previous ${r.again.cacheReadTokens}); wrote ${r.next.cacheWriteTokens} (1h ${r.next.cacheWrite1hTokens}) for about ${r.deltaTokens} new tokens` },
-  ]
-}
+// The smoke check's verdicts live with the check itself, which app code now
+// runs too (lib/mouse/transient-smoke-judge.ts).
+export { judgeSmoke, type SmokeUsage } from '../lib/mouse/transient-smoke-judge'
