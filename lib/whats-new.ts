@@ -140,7 +140,7 @@ export const WHATS_NEW: Update[] = [
   },
   {
     on: '2026-10-16',
-    text: 'When you tell Mouse a delivery came in or give it a count without the numbers ("PO 2360 arrived in full"), it no longer fills them in from the order. It shows you the exact lines it would log and waits for your yes, or your real numbers.',
+    text: 'Mouse only logs a delivery or a count when your message says what it is: the item, the number and the PO, like "PO 2360: 510 Cleo Tee White size 1". Otherwise ("PO 2360 arrived in full") it shows each line it would log with a short code. Reply LOG and the code to log exactly that line, or send the real numbers. A plain "yes" logs nothing.',
   },
 ]
 

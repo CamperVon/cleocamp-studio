@@ -21,7 +21,16 @@ type Tool = {
  * products-and-components index (phase 2B), so open_record returns what that
  * index leaves out; every other run reads records exactly as before.
  */
-export type ToolContext = { threadId?: string; catalogIndex?: boolean }
+export type ToolContext = {
+  threadId?: string
+  catalogIndex?: boolean
+  /**
+   * TESTS ONLY: the stock gate's storage and the ledger write, swapped for an
+   * in-memory store so log_inventory_event's real path can be tested without
+   * the production database. Production never passes it.
+   */
+  stock?: { gate: import('@/lib/receipt-gate').GateDeps; write: (i: Record<string, unknown>) => Promise<unknown> }
+}
 
 const str = (description: string) => ({ type: 'string' as const, description })
 
@@ -409,8 +418,36 @@ export function wholesaleLineStock(reduceStock: boolean, shopifyVariantId: strin
   return { noStock: !reduceStock, note: null }
 }
 
+/** A log_inventory_event call as the stock gate reads it. */
+async function stockCall(i: Parameters<Tool['run']>[0]): Promise<import('@/lib/receipt-gate').StockCall> {
+  const { poNumberIn } = await import('@/lib/po-receipts')
+  const po = i.type === 'RECEIVED' ? ((typeof i.purchaseOrderNumber === 'string' && i.purchaseOrderNumber.replace(/\D/g, '')) || poNumberIn(i.note) || null) : null
+  return {
+    type: String(i.type), productVariantId: i.productVariantId ?? null, componentId: i.componentId ?? null,
+    locationId: i.locationId ?? null, atVendorId: i.atVendorId ?? null,
+    qty: Number(i.type === 'COUNTED' ? i.countedQty : i.deltaQty), poNumber: po, note: i.note ?? null,
+  }
+}
+
+/**
+ * A held line the person confirmed with its LOG code: written exactly as held,
+ * by code, with the same duplicate and over-the-PO checks as any entry. Called
+ * from runAgent before the model runs; the model never reaches this.
+ */
+export async function logConfirmedHeld(row: import('@/lib/receipt-gate').HeldRow): Promise<{ eventId?: string | null; error?: string; reason?: string }> {
+  if (!inventoryWritesEnabled()) return { eventId: null, error: 'inventory writing is paused' }
+  const r = (await logEventChecked({
+    type: row.type, productVariantId: row.productVariantId ?? undefined, componentId: row.componentId ?? undefined,
+    locationId: row.locationId ?? undefined, atVendorId: row.atVendorId ?? undefined,
+    ...(row.type === 'COUNTED' ? { countedQty: row.qty } : { deltaQty: row.qty }),
+    purchaseOrderNumber: row.poNumber ?? undefined,
+    note: `${row.note ? `${row.note} ` : ''}(Confirmed by the person with LOG ${row.code}.)`,
+  })) as { eventId?: string | null; error?: string; reason?: string }
+  return r
+}
+
 /** The held line as the person reads it: "PO 2360 · Cleo Tee / White / 1 · 510 received at the studio". */
-async function heldLabel(c: { type: string; productVariantId: string | null; componentId: string | null; locationId: string | null; atVendorId: string | null; deltaQty: number; poNumber: string | null }) {
+async function heldLabel(c: import('@/lib/receipt-gate').StockCall) {
   const [v, comp, loc, vendor] = await Promise.all([
     c.productVariantId ? db.productVariant.findUnique({ where: { id: c.productVariantId }, select: { size: true, product: { select: { name: true } }, colorway: { select: { customerName: true } } } }) : null,
     c.componentId ? db.component.findUnique({ where: { id: c.componentId }, select: { name: true, unitOfMeasure: true } }) : null,
@@ -419,7 +456,7 @@ async function heldLabel(c: { type: string; productVariantId: string | null; com
   ])
   const item = v ? [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ') : comp?.name ?? 'unknown item'
   const unit = comp ? ` ${comp.unitOfMeasure}` : ''
-  const what = c.type === 'COUNTED' ? `counted ${c.deltaQty}${unit}` : c.type === 'RECEIVED' ? `${c.deltaQty}${unit} received` : `${c.deltaQty}${unit} added (adjustment)`
+  const what = c.type === 'COUNTED' ? `counted ${c.qty}${unit}` : c.type === 'RECEIVED' ? `${c.qty}${unit} received` : `${c.qty}${unit} added (adjustment)`
   const where = vendor ? ` at ${vendor.name}` : loc ? ` at ${loc.name}` : comp ? ' at the studio' : ''
   return `${c.poNumber ? `PO ${c.poNumber} · ` : ''}${item} · ${what}${where}`
 }
@@ -530,10 +567,11 @@ export const TOOLS: Record<string, Tool> = {
         'If our own count for a variant is unknown, you do not need to ask the user to sync ' +
         'from Shopify first — this checks Shopify live on its own and uses that as the ' +
         'baseline. Just mention in your reply that it did, so it is not silent.\n\n' +
-        'A receipt, a count or an upward adjustment goes in only when its number is one the person ' +
-        'wrote. Otherwise code holds it, shows them the exact line, and it is logged from their next ' +
-        'message with heldReceiptId. "Arrived in full", "the rest came", "all of it" state no number: ' +
-        'ask what came, never fill it in from what the PO still owes.\n\n' +
+        'A receipt, a count or an upward adjustment goes in only when the person\'s message states it: ' +
+        'the item, its number and (for a receipt on a PO) the PO. Otherwise code holds it and shows them ' +
+        'the line with a code; you cannot log a held line, only they can, by writing LOG and the code. ' +
+        '"Arrived in full", "the rest came", "all of it" state no number: ask what came, never fill it ' +
+        'in from what the PO still owes.\n\n' +
         'Goods arriving on a purchase order: type RECEIVED with purchaseOrderNumber, so the PO ' +
         'shows them received and what is still owed stays true. When asked what a PO still owes, ' +
         'answer from the PO\'s received quantities, and check logged stock before ever saying ' +
@@ -564,11 +602,6 @@ export const TOOLS: Record<string, Tool> = {
           countedQty: num('For COUNTED only: the absolute number stated, AT THE PLACE GIVEN — not a total across every place this component lives.'),
           note: str('Who it went to, why, anything worth keeping.'),
           purchaseOrderNumber: str('For RECEIVED on a purchase order: its number, e.g. "2362". Ticks the delivery off on the PO.'),
-          heldReceiptId: str(
-            'Only when this tool held the entry for a yes in an EARLIER turn (it returned "held") and the person ' +
-            'has now said yes to that exact line: its id, with every other field exactly as held. Code refuses it ' +
-            'in the same turn it was held, for anyone else, or for a different item, place, number or PO.',
-          ),
           separateDelivery: {
             type: 'boolean' as const,
             description:
@@ -587,42 +620,16 @@ export const TOOLS: Record<string, Tool> = {
         required: ['type'],
       },
     },
-    run: async (i) => {
+    run: async (i, ctx) => {
       if (!inventoryWritesEnabled()) return logWhilePaused(i)
-      // Stock added on a number nobody stated is held for a yes (16 Oct
-      // 2026, the shadow bake-off's "PO 2360 arrived in full today").
+      // Stock added on words that do not state it is held for the person's
+      // own LOG code (16 Oct 2026, the shadow bake-off's "PO 2360 arrived in
+      // full today"; lib/receipt-gate.ts).
       const gate = await import('@/lib/receipt-gate')
-      const qty = i.type === 'COUNTED' ? i.countedQty : i.deltaQty
-      let heldId: string | null = null
-      if (gate.HELD_TYPES.has(i.type) && typeof qty === 'number' && (i.type === 'COUNTED' || qty > 0)) {
-        const { poNumberIn } = await import('@/lib/po-receipts')
-        const po = i.type === 'RECEIVED' ? ((typeof i.purchaseOrderNumber === 'string' && i.purchaseOrderNumber.replace(/\D/g, '')) || poNumberIn(i.note) || null) : null
-        const call = { type: i.type, productVariantId: i.productVariantId ?? null, componentId: i.componentId ?? null, locationId: i.locationId ?? null, atVendorId: i.atVendorId ?? null, deltaQty: qty, poNumber: po }
-        if (typeof i.heldReceiptId === 'string' && i.heldReceiptId) {
-          const why = await gate.claimHeld(i.heldReceiptId, call)
-          if (why) return { applied: false, error: `Not logged. ${why}` }
-          heldId = i.heldReceiptId
-        } else if (gate.receiptNeedsYes(qty, gate.currentTurn(), po)) {
-          const label = await heldLabel(call)
-          const id = await gate.holdReceipt(call, label)
-          return {
-            applied: false,
-            held: id,
-            heldLine: label,
-            error:
-              `Not logged: ${qty} is not a number the person gave, so it is held for their yes. Code shows them ` +
-              `"${label}" under your reply. Ask what actually came (or what the count was), and do not put it in ` +
-              `any other way. If their next message says yes to it, call again with the same fields and ` +
-              `heldReceiptId "${id}". If they give numbers, log those.`,
-          }
-        }
-      }
-      const out = await logEventChecked(i)
-      if (heldId) {
-        if ((out as { eventId?: string | null }).eventId) await gate.markHeldLogged(heldId, (out as { eventId: string }).eventId)
-        else await gate.releaseHeld(heldId)
-      }
-      return out
+      const stock = ctx?.stock ?? { gate: (await import('@/lib/receipt-store')).gateDeps(heldLabel), write: logEventChecked }
+      const held = await gate.gateStockWrite(await stockCall(i), gate.currentTurn(), stock.gate)
+      if (held) return held
+      return stock.write(i)
     },
   },
 

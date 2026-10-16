@@ -443,16 +443,18 @@ enum InventoryEventSource {
   SYSTEM
 }
 
-/// Stock held for a person's yes (16 Oct 2026, after the shadow bake-off):
-/// Mouse logged received stock on "PO 2360 arrived in full today" with
-/// quantities nobody had stated. A receipt, count or upward adjustment whose
-/// number is not in the person's own words is held here, shown to them by
-/// code, and logged
-/// only from a later turn that names this row and matches it exactly
-/// (lib/receipt-gate.ts). Never edited after use; usedAt marks it spent.
+/// Stock held for a person's own word (16 Oct 2026, after the shadow
+/// bake-off): Mouse logged received stock on "PO 2360 arrived in full today"
+/// with quantities nobody had stated. A receipt, count or upward adjustment
+/// the person's message did not state is held here and shown to them by code
+/// with its code. Code logs it, exactly as held and once, only when a later
+/// message from the same known person says "LOG <code>" (lib/receipt-gate.ts).
+/// usedAt marks it claimed, usedEventId logged.
 model PendingReceipt {
   id               String    @id @default(cuid())
   createdAt        DateTime  @default(now())
+  /// What the person writes to log it: "LOG K7Q2". Unique among open lines.
+  code             String
   turnId           String
   personId         String?
   productVariantId String?
@@ -464,11 +466,13 @@ model PendingReceipt {
   /// The change for RECEIVED and MANUAL_ADJUST; the number counted for COUNTED.
   deltaQty         Decimal   @db.Decimal(12, 3)
   poNumber         String?
+  note             String?
   label            String
   usedAt           DateTime?
   usedEventId      String?
 
   @@index([turnId])
+  @@index([code])
 }
 
 /// APPEND ONLY. Never edit, never delete. Mistakes are corrected by a new

@@ -157,7 +157,7 @@ async function answerTeamQuestions(mail: Array<{ id: string; fromAddress: string
       instruction: `${p.name} emailed you.\n\nSubject: ${m.subject ?? '(none)'}\n\n${m.body}${fileNote}`,
       // Their own words, above anything quoted: a stock number in them stands
       // (lib/receipt-gate.ts), one in quoted mail or Mouse's last reply does not.
-      personWords: [`${m.subject ?? ''}\n${ownEmailWords(m.body)}`],
+      personWords: ownEmailWords(m.body),
       attachments: att.files,
       extraRules: apply ? APPLY_RULES : facts.toMouse ? ANSWER_RULES : `${ANSWER_RULES}\n${CC_RULES}`,
       allowedTools: apply ? allTools.filter((t) => !NOT_FROM_EMAIL.has(t)) : ANSWER_TOOLS,

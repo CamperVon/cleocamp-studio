@@ -298,21 +298,33 @@ const STOCK_CHECK = (lines: string[]) =>
 
 /**
  * Every run is a turn the tools can see (lib/receipt-gate.ts): an id, who it
- * is for, and the person's own words, so stock added on a number nobody
- * stated is held for their yes whatever context the model saw. The held
- * lines are added to the reply by code, so the person always sees exactly
- * what is waiting; a practice run holds nothing.
+ * is for, and the person's own words in this message. Before the model runs,
+ * code logs any held stock line the person confirmed with its LOG code;
+ * during the run, stock added on words that do not state it is held; after
+ * it, code adds both to the reply, so the person always sees exactly what
+ * went in and what is waiting, whatever the model wrote. The look-up lane
+ * and practice runs confirm and hold nothing.
  */
 export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
-  const { inTurn, heldThisTurn, heldBlock } = await import('@/lib/receipt-gate')
+  const { inTurn, confirmFromWords, replyBlock } = await import('@/lib/receipt-gate')
   const { randomUUID } = await import('node:crypto')
   const { currentActor } = await import('@/lib/mouse/actor')
-  const turn = { id: randomUUID(), personId: currentActor(), words: opts.personWords ?? [] }
-  const result = await inTurn(turn, () => runAgentInTurn(opts))
-  if (opts.practice) return result
-  const held = await heldThisTurn(turn.id).catch(() => [] as string[])
-  if (!held.length) return result
-  const block = heldBlock(held)
+  const turn = { id: randomUUID(), personId: currentActor(), words: opts.personWords ?? '' }
+  const writes = !opts.practice && opts.lane !== 'read'
+  const store = writes ? await import('@/lib/receipt-store') : null
+  const confirmed = store && turn.words
+    ? await confirmFromWords(turn, store.confirmDeps(async (row) => (await import('@/lib/mouse/tools')).logConfirmedHeld(row)))
+    : { logged: [], refused: [] }
+  // The model is told what code already did, so it neither repeats nor denies it.
+  const doneByCode = [...confirmed.logged.map((l) => `logged: ${l}`), ...confirmed.refused].join('\n')
+  const run = doneByCode
+    ? { ...opts, prefetch: [opts.prefetch, `Before you saw this message, the app acted on the person's LOG codes (do not log these again):\n${doneByCode}`].filter(Boolean).join('\n\n') }
+    : opts
+  const result = await inTurn(turn, () => runAgentInTurn(run))
+  if (!store) return result
+  const held = await store.heldThisTurn(turn.id).catch(() => [])
+  const block = replyBlock(held, confirmed)
+  if (!block) return result
   const said = result.text.trim()
   return { ...result, text: !said || /^NO_REPLY\b/.test(said) ? block : `${result.text}\n\n${block}` }
 }
@@ -323,13 +335,13 @@ async function runAgentInTurn(opts: {
   /** What this run is for. Becomes the first user message. */
   instruction: string
   /**
-   * The person's own words this turn and their last few messages, and
-   * nothing else: not Mouse's replies, not quoted mail, not a page's
-   * wrapper text. A stock receipt, count or upward adjustment goes in only
-   * on a number found here (lib/receipt-gate.ts); left out, every one is
-   * held for a yes.
+   * The person's own words in this message, and nothing else: not their
+   * earlier messages, not Mouse's replies, not quoted mail, not a page's
+   * wrapper text. Stock added goes in at once only when these state it, and
+   * a LOG code here confirms a held line (lib/receipt-gate.ts). Left out,
+   * every stock addition is held.
    */
-  personWords?: string[]
+  personWords?: string
   /** Which door this came through, for the usage log — "chat", "nightly-pass", … */
   source: string
   /** Prior turns, for chat. Omit for one-shot runs. */
@@ -1008,9 +1020,8 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
   const prefetch = transientOn ? null : await prefetchForMessage(message, { catalogue: catalogIndex })
   const base: Parameters<typeof runAgent>[0] = {
     instruction: message,
-    // The person's words, this message and their last three: a stock number
-    // they gave stands (lib/receipt-gate.ts); Mouse's own replies never do.
-    personWords: [message, ...before.filter((m) => m.role === 'USER').slice(-3).map((m) => m.content)].map((t) => ownWords(t).text),
+    // The person's own words in this message only (lib/receipt-gate.ts).
+    personWords: ownWords(message).text,
     source,
     attachments,
     notes: 'index',
