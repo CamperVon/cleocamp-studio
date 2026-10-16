@@ -103,6 +103,8 @@ export async function runLoop(opts: {
    * by it, so nothing it adds is carried into the next request or kept.
    */
   prepare?: (messages: Anthropic.MessageParam[]) => Promise<{ messages: Anthropic.MessageParam[]; transientChars: number; transientTokens?: number; trimmed: string[] }>
+  /** false: a request the server refused is never sent again (the shadow bake-off). Default true. */
+  retryProvider?: boolean
 }): Promise<LoopResult> {
   const started = Date.now()
   const maxRequests = Math.max(1, Math.min(12, Math.trunc(opts.maxRequests ?? 6)))
@@ -164,7 +166,7 @@ export async function runLoop(opts: {
       // anything. Once per turn. On 29 Sept 2026 "Add to todo: order more boy
       // belts in size small" came back "The model connection failed" after
       // two seconds, on a single 503, and the to-do was never made.
-      if (!retriedProvider && isTransient(e)) {
+      if (opts.retryProvider !== false && !retriedProvider && isTransient(e)) {
         retriedProvider = true
         await sleep(2000)
         round--

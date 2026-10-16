@@ -360,6 +360,25 @@ export async function runAgent(opts: {
    * prefetch are ignored when this is set.
    */
   transient?: { message: string; access: Omit<TransientAccess, 'practice' | 'lane'> }
+  /**
+   * SHADOW BAKE-OFF ONLY (lib/mouse/shadow-bakeoff.ts); no chat passes it.
+   * Count each request's state with the token-count endpoint (free) and
+   * record it as transientTokens.
+   */
+  countStateTokens?: boolean
+  /**
+   * SHADOW BAKE-OFF ONLY. beforeRequest sees every request before it is sent
+   * and may refuse it by throwing (the spend cap); afterRequest sees what
+   * each one cost; signal ends a request still running at the deadline. With
+   * a guard, a request the API refuses is never sent again (no automatic
+   * retry of any kind) and the server-side fallback is not asked for, so no
+   * request can run, or be billed, on a model the cap did not price.
+   */
+  shadowGuard?: {
+    beforeRequest: (request: Anthropic.MessageCreateParamsNonStreaming) => Promise<void>
+    afterRequest: (request: Anthropic.MessageCreateParamsNonStreaming, usage: Anthropic.Usage | null) => void
+    signal: AbortSignal
+  }
   /** "read": the read lane (lib/mouse/route.ts). Look-up tools only, enforced three times over. */
   lane?: 'read'
   /**
@@ -459,7 +478,8 @@ export async function runAgent(opts: {
           const text = '<business_state>\nThe records could not be read for this request. Fetch anything you need with open_record or query_status before answering, and say so if they fail too.\n</business_state>'
           return { text, chars: text.length, trimmed: ['all (records unreadable)'], sections: [] }
         })
-        return { messages: layoutTransientMessages(msgs, historyLength, st.text), transientChars: st.text.length, trimmed: st.trimmed }
+        const transientTokens = opts.countStateTokens ? await countStateTokens(client, model, st.text) : undefined
+        return { messages: layoutTransientMessages(msgs, historyLength, st.text), transientChars: st.text.length, transientTokens, trimmed: st.trimmed }
       }
     : undefined
 
@@ -476,6 +496,19 @@ export async function runAgent(opts: {
       // the option itself, the request goes again without it: a lost
       // fallback must never cost the whole reply.
       create: async request => {
+        const guard = opts.shadowGuard
+        if (guard) {
+          // Shadow bake-off: priced and reserved first, sent once, as is.
+          const req = request as Anthropic.MessageCreateParamsNonStreaming
+          await guard.beforeRequest(req)
+          let res: Anthropic.Message | null = null
+          try {
+            res = await client.messages.create(req, { signal: guard.signal })
+            return res
+          } finally {
+            guard.afterRequest(req, res?.usage ?? null)
+          }
+        }
         const send = async (req: typeof request) => {
           try {
             return await client.beta.messages.create({
@@ -518,6 +551,7 @@ export async function runAgent(opts: {
       emailOpenBudget,
       cacheDiagnostics,
       prepare,
+      retryProvider: !opts.shadowGuard,
     })
 
   let result = await loop(messages, maxRounds)

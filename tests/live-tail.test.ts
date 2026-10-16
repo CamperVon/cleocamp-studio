@@ -220,5 +220,7 @@ test('first rollout: only interactive chat (chatTurn) turns the tail on; every o
   walk('../lib'); walk('../app')
   // agent.ts: the one `liveTail: liveTailOn()` in chatTurn (counted twice: the call and the key).
   // context.ts: only the definition `export const liveTailOn = () =>`, which this pattern does not match.
-  assert.deepEqual(hits, ['../lib/mouse/agent.ts:2'])
+  // shadow-bakeoff.ts: its live-tail arm sets `liveTail: true` on practice turns that answer
+  // nobody, and records the production flag `liveTailOn()` with the result (16 Oct 2026).
+  assert.deepEqual(hits, ['../lib/mouse/agent.ts:2', '../lib/mouse/shadow-bakeoff.ts:2'])
 })

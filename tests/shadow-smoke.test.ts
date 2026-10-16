@@ -240,8 +240,12 @@ test('the shadow job writes its own lock row and nothing else, and never sets th
 test('the chat route schedules it only after a completed reply is saved, and returns the reply unchanged', () => {
   const s = src('app/api/chat/route.ts')
   const saved = s.indexOf("role: 'ASSISTANT'")
-  const hook = s.indexOf("if (r.usage.stopReason === 'complete') scheduleShadowSmoke(startedAt)")
+  const hook = s.indexOf("if (r.usage.stopReason === 'complete') {\n    scheduleShadowSmoke(startedAt)")
   const reply = s.indexOf('return NextResponse.json({\n    threadId: thread.id,\n    practice,')
   assert.ok(saved > 0 && hook > saved && reply > hook)
   assert.equal(s.match(/scheduleShadowSmoke\(/g)?.length, 1)
+  // The bake-off (lib/mouse/shadow-bakeoff.ts) is scheduled in the same completed-reply block, once.
+  const bake = s.indexOf('scheduleShadowBakeoff(startedAt)')
+  assert.ok(bake > hook && reply > bake)
+  assert.equal(s.match(/scheduleShadowBakeoff\(/g)?.length, 1)
 })

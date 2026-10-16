@@ -6,6 +6,7 @@ import { chatTurn } from '@/lib/mouse/agent'
 import { currentPersonId } from '@/lib/session'
 import { PRACTICE_TITLE } from '@/lib/mouse/practice'
 import { scheduleShadowSmoke } from '@/lib/mouse/shadow-smoke'
+import { scheduleShadowBakeoff } from '@/lib/mouse/shadow-bakeoff'
 
 export const maxDuration = 300
 
@@ -186,7 +187,12 @@ export async function POST(req: NextRequest) {
   // Once ever, in production: the transient-layout smoke check as a shadow
   // job, after this response has gone (lib/mouse/shadow-smoke.ts). It changes
   // nothing about this reply.
-  if (r.usage.stopReason === 'complete') scheduleShadowSmoke(startedAt)
+  if (r.usage.stopReason === 'complete') {
+    scheduleShadowSmoke(startedAt)
+    // The one-time shadow bake-off (lib/mouse/shadow-bakeoff.ts): one scenario
+    // per completed chat, after the reply has gone, until the set is done.
+    scheduleShadowBakeoff(startedAt)
+  }
 
   return NextResponse.json({
     threadId: thread.id,
