@@ -521,7 +521,6 @@ async function actOnCase(id: string, who: { id: string; name: string }, said: st
     const { asPerson } = await import('@/lib/mouse/actor')
     const r = await asPerson(who.id, () => runAgent({
       source: 'support-tell',
-      personWords: said,
       instruction: `${who.name} typed this on a support case:\n\n${said}\n\nThe case (checked by code):\n${facts}`,
       extraRules: ACT_RULES,
       allowedTools: Object.keys(TOOLS).filter((t) => !NOT_FROM_EMAIL.has(t)),

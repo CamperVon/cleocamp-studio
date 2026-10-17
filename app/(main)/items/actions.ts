@@ -15,8 +15,6 @@ export async function answerItem(id: string, answer: string): Promise<string | n
 
   const result = await runAgent({
     source: 'answer-item',
-    // The answer is the person's own words (lib/receipt-gate.ts).
-    personWords: answer,
     instruction:
       `This answers an open item.\n\n` +
       `Item [${item.id}]: ${item.title}\n` +
@@ -54,7 +52,6 @@ export async function tellProductStage(productId: string, text: string): Promise
   if (!p) return null
   const result = await runAgent({
     source: 'product-stage',
-    personWords: text,
     instruction:
       `An update about where the ${p.name} [${p.id}] physically is in production.\n\n` +
       `The update is: ${text.trim()}\n\n` +

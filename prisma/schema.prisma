@@ -443,6 +443,8 @@ enum InventoryEventSource {
   SYSTEM
 }
 
+/// UNUSED since 17 Oct 2026: the receipt gate that wrote it was removed at
+/// Brandon's request (it blocked the team). Kept so the table matches.
 /// Stock held for a person's own word (16 Oct 2026, after the shadow
 /// bake-off): Mouse logged received stock on "PO 2360 arrived in full today"
 /// with quantities nobody had stated. A receipt, count or upward adjustment

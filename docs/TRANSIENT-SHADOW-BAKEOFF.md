@@ -14,7 +14,7 @@ Practice mode stopped it; the attempt is the blocker.
 
 Decided: no canary, `MOUSE_TRANSIENT_STATE` stays off, no further cache
 layout work. The repair is in code, whatever the layout:
-`lib/receipt-gate.ts` holds stock added on a number nobody stated.
+`lib/receipt-gate.ts` holds stock added on a number nobody stated. (Removed 17 Oct 2026 at Brandon's request: it blocked the team in real use.)
 
 Review build, 16 Oct 2026. Branch `claude/transient-shadow-bakeoff`, cut from
 `origin/main` at `30207c4`, the commit production runs. Not merged, not

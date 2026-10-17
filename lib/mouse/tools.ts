@@ -21,16 +21,7 @@ type Tool = {
  * products-and-components index (phase 2B), so open_record returns what that
  * index leaves out; every other run reads records exactly as before.
  */
-export type ToolContext = {
-  threadId?: string
-  catalogIndex?: boolean
-  /**
-   * TESTS ONLY: the stock gate's storage and the ledger write, swapped for an
-   * in-memory store so log_inventory_event's real path can be tested without
-   * the production database. Production never passes it.
-   */
-  stock?: { gate: import('@/lib/receipt-gate').GateDeps; write: (i: Record<string, unknown>) => Promise<unknown> }
-}
+export type ToolContext = { threadId?: string; catalogIndex?: boolean }
 
 const str = (description: string) => ({ type: 'string' as const, description })
 
@@ -418,49 +409,6 @@ export function wholesaleLineStock(reduceStock: boolean, shopifyVariantId: strin
   return { noStock: !reduceStock, note: null }
 }
 
-/** A log_inventory_event call as the stock gate reads it. */
-async function stockCall(i: Parameters<Tool['run']>[0]): Promise<import('@/lib/receipt-gate').StockCall> {
-  const { poNumberIn } = await import('@/lib/po-receipts')
-  const po = i.type === 'RECEIVED' ? ((typeof i.purchaseOrderNumber === 'string' && i.purchaseOrderNumber.replace(/\D/g, '')) || poNumberIn(i.note) || null) : null
-  return {
-    type: String(i.type), productVariantId: i.productVariantId ?? null, componentId: i.componentId ?? null,
-    locationId: i.locationId ?? null, atVendorId: i.atVendorId ?? null,
-    qty: Number(i.type === 'COUNTED' ? i.countedQty : i.deltaQty), poNumber: po, note: i.note ?? null,
-  }
-}
-
-/**
- * A held line the person confirmed with its LOG code: written exactly as held,
- * by code, with the same duplicate and over-the-PO checks as any entry. Called
- * from runAgent before the model runs; the model never reaches this.
- */
-export async function logConfirmedHeld(row: import('@/lib/receipt-gate').HeldRow): Promise<{ eventId?: string | null; error?: string; reason?: string }> {
-  if (!inventoryWritesEnabled()) return { eventId: null, error: 'inventory writing is paused' }
-  const r = (await logEventChecked({
-    type: row.type, productVariantId: row.productVariantId ?? undefined, componentId: row.componentId ?? undefined,
-    locationId: row.locationId ?? undefined, atVendorId: row.atVendorId ?? undefined,
-    ...(row.type === 'COUNTED' ? { countedQty: row.qty } : { deltaQty: row.qty }),
-    purchaseOrderNumber: row.poNumber ?? undefined,
-    note: `${row.note ? `${row.note} ` : ''}(Confirmed by the person with LOG ${row.code}.)`,
-  })) as { eventId?: string | null; error?: string; reason?: string }
-  return r
-}
-
-/** The held line as the person reads it: "PO 2360 · Cleo Tee / White / 1 · 510 received at the studio". */
-async function heldLabel(c: import('@/lib/receipt-gate').StockCall) {
-  const [v, comp, loc, vendor] = await Promise.all([
-    c.productVariantId ? db.productVariant.findUnique({ where: { id: c.productVariantId }, select: { size: true, product: { select: { name: true } }, colorway: { select: { customerName: true } } } }) : null,
-    c.componentId ? db.component.findUnique({ where: { id: c.componentId }, select: { name: true, unitOfMeasure: true } }) : null,
-    c.locationId ? db.location.findUnique({ where: { id: c.locationId }, select: { name: true } }) : null,
-    c.atVendorId ? db.vendor.findUnique({ where: { id: c.atVendorId }, select: { name: true } }) : null,
-  ])
-  const item = v ? [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ') : comp?.name ?? 'unknown item'
-  const unit = comp ? ` ${comp.unitOfMeasure}` : ''
-  const what = c.type === 'COUNTED' ? `counted ${c.qty}${unit}` : c.type === 'RECEIVED' ? `${c.qty}${unit} received` : `${c.qty}${unit} added (adjustment)`
-  const where = vendor ? ` at ${vendor.name}` : loc ? ` at ${loc.name}` : comp ? ' at the studio' : ''
-  return `${c.poNumber ? `PO ${c.poNumber} · ` : ''}${item} · ${what}${where}`
-}
-
 /** Paused inventory: noted as a todo to apply after the count, not applied. */
 async function logWhilePaused(i: Parameters<Tool['run']>[0]) {
   const item = await db.actionItem.create({
@@ -567,11 +515,7 @@ export const TOOLS: Record<string, Tool> = {
         'If our own count for a variant is unknown, you do not need to ask the user to sync ' +
         'from Shopify first — this checks Shopify live on its own and uses that as the ' +
         'baseline. Just mention in your reply that it did, so it is not silent.\n\n' +
-        'A receipt, a count or an upward adjustment goes in only when the person\'s message states it: ' +
-        'the item, its number and (for a receipt on a PO) the PO. Otherwise code holds it and shows them ' +
-        'the line with a code; you cannot log a held line, only they can, by writing LOG and the code. ' +
-        '"Arrived in full", "the rest came", "all of it" state no number: ask what came, never fill it ' +
-        'in from what the PO still owes.\n\n' +
+
         'Goods arriving on a purchase order: type RECEIVED with purchaseOrderNumber, so the PO ' +
         'shows them received and what is still owed stays true. When asked what a PO still owes, ' +
         'answer from the PO\'s received quantities, and check logged stock before ever saying ' +
@@ -620,16 +564,9 @@ export const TOOLS: Record<string, Tool> = {
         required: ['type'],
       },
     },
-    run: async (i, ctx) => {
+    run: async (i) => {
       if (!inventoryWritesEnabled()) return logWhilePaused(i)
-      // Stock added on words that do not state it is held for the person's
-      // own LOG code (16 Oct 2026, the shadow bake-off's "PO 2360 arrived in
-      // full today"; lib/receipt-gate.ts).
-      const gate = await import('@/lib/receipt-gate')
-      const stock = ctx?.stock ?? { gate: (await import('@/lib/receipt-store')).gateDeps(heldLabel), write: logEventChecked }
-      const held = await gate.gateStockWrite(await stockCall(i), gate.currentTurn(), stock.gate)
-      if (held) return held
-      return stock.write(i)
+      return logEventChecked(i)
     },
   },
 
