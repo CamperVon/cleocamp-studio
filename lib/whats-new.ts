@@ -140,6 +140,10 @@ export const WHATS_NEW: Update[] = [
   },
   {
     on: '2026-10-21',
+    text: 'Mouse has a face on WhatsApp: the pink mouse is now the profile photo on the studio WhatsApp number.',
+  },
+  {
+    on: '2026-10-21',
     text: 'Mouse now answers on WhatsApp. Messages to the studio WhatsApp number were reaching the app empty, so Mouse never replied. Text it from your own phone and the answer comes back there, and shows in your app chat too.',
   },
   {

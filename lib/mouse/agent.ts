@@ -37,7 +37,8 @@ export const DEEP_MODEL = 'claude-opus-5-5'
 // The jobs nobody is waiting on: support triage and drafts, the nightly mail
 // pass, the brief, digest, tidy and the customer check (Brandon, 3 Oct 2026,
 // on cost). Code or a person checks all of their work before anything
-// happens. Chat, team email and the AM report stay on CHAT_MODEL/DEEP_MODEL.
+// happens. Team email too since 21 Oct 2026 (Brandon: "Let's try emails on
+// sonnet"). Chat and the AM report stay on CHAT_MODEL/DEEP_MODEL.
 // Sonnet 5.5's safety check declines more kinds of text than Opus 5.5's, so
 // the runs that read outside mail retry on CHAT_MODEL when it does.
 export const BACKGROUND_MODEL = 'claude-sonnet-5-5'

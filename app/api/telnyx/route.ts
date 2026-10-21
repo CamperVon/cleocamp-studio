@@ -32,6 +32,9 @@ export async function POST(req: Request) {
     after(async () => {
       const { answerWhatsApp } = await import('@/lib/whatsapp')
       await answerWhatsApp({ fromNumber: m.fromNumber, text: m.text, media }).catch((e) => console.error('[whatsapp]', e))
+      // Once ever: Mouse's face on the number's profile (lib/whatsapp-profile.ts).
+      const { setWhatsAppPhotoOnce } = await import('@/lib/whatsapp-profile')
+      await setWhatsAppPhotoOnce().catch((e) => console.error('[whatsapp] profile photo', e))
     })
   }
   return NextResponse.json({ ok: true, kept: fresh })

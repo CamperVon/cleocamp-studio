@@ -152,16 +152,20 @@ async function answerTeamQuestions(mail: Array<{ id: string; fromAddress: string
     const fileNote = att.files.length || att.skipped.length
       ? `\n\n(Attached: ${[...att.files.map((f) => `${f.filename}, read below`), ...att.skipped.map((x) => `${x}, NOT read: say so`)].join('; ')}.)`
       : ''
-    const r = await asPerson(who.id, () => asEmailRun(() => runAgent({
+    // Sonnet since 21 Oct 2026 (Brandon, on cost: "Let's try emails on
+    // sonnet, see what happens"); Opus if Sonnet declines before writing.
+    const run = (model: string) => asPerson(who.id, () => asEmailRun(() => runAgent({
       source: apply ? 'email-apply' : 'email-answer',
       instruction: `${p.name} emailed you.\n\nSubject: ${m.subject ?? '(none)'}\n\n${m.body}${fileNote}`,
       attachments: att.files,
       extraRules: apply ? APPLY_RULES : facts.toMouse ? ANSWER_RULES : `${ANSWER_RULES}\n${CC_RULES}`,
       allowedTools: apply ? allTools.filter((t) => !NOT_FROM_EMAIL.has(t)) : ANSWER_TOOLS,
-      model: CHAT_MODEL,
+      model,
       effort: 'medium',
       maxRounds: apply ? 8 : 5,
     })))
+    let r = await run(BACKGROUND_MODEL)
+    if (r.usage.stopReason === 'refusal' && !r.writes.length) r = await run(CHAT_MODEL)
     if (apply && r.usage.stopReason === 'complete') applied.add(m.id)
     const text = (r.text ?? '').trim()
     if (r.usage.stopReason !== 'complete' || !text || /^NO_REPLY\b/.test(text)) continue

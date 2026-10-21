@@ -713,6 +713,19 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/telnyx.ts` (`inboundFrom`, `textOf`), `lib/whatsapp.ts` (`answerWhatsApp`), `tests/telnyx.test.ts`.
 - **Needs:** Telnyx (WhatsApp).
 
+
+### WhatsApp profile photo set once by the app
+- **Problem:** the provider key for WhatsApp lives only in the hosting environment, so setting the number's profile photo meant either copying the key somewhere or finding a portal setting that may not exist.
+- **Change:** the image sits in the app's public folder. After the next WhatsApp message, the app uploads it to Telnyx's profile-photo endpoint once, guarded by a `ShadowRun` row so it can never run twice. A failure is written to the troubleshooting log. To change the photo, replace the image and bump the key.
+- **Files:** `lib/whatsapp-profile.ts`, `app/api/telnyx/route.ts`, `public/mouse/whatsapp-profile.jpg`.
+- **Needs:** Telnyx (WhatsApp).
+
+### Team email handled by the cheaper model, with a fallback
+- **Problem:** team email the assistant acts on ran on the most expensive model, about a sixth of the monthly model bill.
+- **Change:** it runs on the mid-priced model at medium effort. If that model declines before writing anything, the same email is run again on the top model, as the other background jobs already do.
+- **Files:** `lib/mouse/nightly-pass.ts` (`answerTeamMail`), `lib/mouse/agent.ts` (comment).
+- **Needs:** email.
+
 ---
 
 ## Setup notes for a new install
