@@ -139,6 +139,10 @@ export const WHATS_NEW: Update[] = [
     text: 'You can tell Mouse a component goes into no product on purpose, like the gold safety pins and the brass rivets. They stay counted and stop showing up as "on no product" each morning.',
   },
   {
+    on: '2026-10-21', path: '/support',
+    text: 'Support replies now know what is final sale (Cleo Special items, sample sale pieces, custom made-to-order) and say so kindly instead of agreeing to a return. They also mention the 7-day return window whenever a customer asks about returning.',
+  },
+  {
     on: '2026-10-21',
     text: 'Mouse has a face on WhatsApp: the pink mouse is now the profile photo on the studio WhatsApp number.',
   },
