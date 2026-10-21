@@ -70,6 +70,13 @@ export async function answerWhatsApp(m: { fromNumber: string; text: string; medi
   const to = normalizePhone(m.fromNumber)!
   if (!m.text.trim()) {
     if (m.media) await sendWhatsApp(to, 'Photos and files can\'t come through WhatsApp yet. Send them in the app chat, and tell me here what they are for.')
+    else {
+      // Never a silent drop: on 21 Oct 2026 Brandon's messages arrived empty
+      // (the text was read from the wrong field) and nobody knew.
+      const { logIssues } = await import('@/lib/mouse/issues')
+      await logIssues('whatsapp', null, [{ kind: 'TURN_UNFINISHED', detail: `A WhatsApp message from ${person.name} arrived with no words Mouse could read, so it was not answered.` }])
+      await sendWhatsApp(to, 'Your message reached me but I couldn\'t read any words in it. Could you send it again as text, or in the app chat?')
+    }
     return
   }
   const { PRACTICE_TITLE } = await import('@/lib/mouse/practice')

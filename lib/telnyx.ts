@@ -45,8 +45,34 @@ export function inboundFrom(body: unknown): InboundMessage | null {
     providerId: id.slice(0, 100),
     fromNumber: from.slice(0, 40),
     toNumber: typeof to === 'string' ? to.slice(0, 40) : null,
-    text: typeof p.text === 'string' ? p.text.slice(0, 4000) : '',
+    text: textOf(p).slice(0, 4000),
     channel: typeof p.type === 'string' ? p.type.slice(0, 20) : null,
-    media: Array.isArray(p.media) ? p.media.length : 0,
+    media: Array.isArray(p.media) ? p.media.length : WA_MEDIA.has(waBody(p)?.type as string) ? 1 : 0,
   }
+}
+
+// WhatsApp puts the message in payload.body, shaped like Meta's own (body.type,
+// then body.text.body, body.image.caption, ...); SMS puts it in payload.text.
+// Until 21 Oct 2026 only payload.text was read, so every WhatsApp message
+// arrived empty and was dropped without a reply.
+const WA_MEDIA = new Set(['image', 'document', 'audio', 'video', 'sticker'])
+type WaBody = { type?: unknown; [k: string]: unknown }
+const waBody = (p: Record<string, unknown>): WaBody | null => (p.body && typeof p.body === 'object' ? (p.body as WaBody) : null)
+const str = (x: unknown) => (typeof x === 'string' ? x : '')
+
+function textOf(p: Record<string, unknown>): string {
+  if (typeof p.text === 'string' && p.text.trim()) return p.text
+  const b = waBody(p)
+  if (!b) return typeof p.body === 'string' ? p.body : ''
+  const at = (k: string) => (b[k] && typeof b[k] === 'object' ? (b[k] as Record<string, unknown>) : {})
+  const type = str(b.type)
+  if (type === 'text' || !type) return str(at('text').body)
+  if (WA_MEDIA.has(type)) return str(at(type).caption)
+  if (type === 'button') return str(at('button').text)
+  if (type === 'interactive') {
+    const i = at('interactive')
+    const pick = (k: string) => (i[k] && typeof i[k] === 'object' ? str((i[k] as Record<string, unknown>).title) : '')
+    return pick('button_reply') || pick('list_reply')
+  }
+  return ''
 }

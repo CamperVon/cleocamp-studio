@@ -139,6 +139,10 @@ export const WHATS_NEW: Update[] = [
     text: 'You can tell Mouse a component goes into no product on purpose, like the gold safety pins and the brass rivets. They stay counted and stop showing up as "on no product" each morning.',
   },
   {
+    on: '2026-10-21',
+    text: 'Mouse now answers on WhatsApp. Messages to the studio WhatsApp number were reaching the app empty, so Mouse never replied. Text it from your own phone and the answer comes back there, and shows in your app chat too.',
+  },
+  {
     on: '2026-10-17',
     text: 'The LOG codes are gone. Tell Mouse a delivery came in ("log the whites", or send the packing slip) and it logs it, the way it did before. If something does not add up it asks you in plain words.',
   },

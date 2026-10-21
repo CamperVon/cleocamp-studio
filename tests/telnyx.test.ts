@@ -26,3 +26,15 @@ test('a received message is read; other events are not', () => {
   assert.equal(inboundFrom({ nonsense: true }), null)
   assert.equal(inboundFrom(null), null)
 })
+
+test('a WhatsApp message is read from payload.body, where Telnyx puts it', () => {
+  const wa = (b: unknown) => inboundFrom({ data: { event_type: 'message.received', payload: { id: 'w1', from: { phone_number: '+15551234567' }, to: '+12136190002', type: 'WHATSAPP', body: b } } })
+  assert.deepEqual(wa({ type: 'text', text: { body: 'How many White tees are left?' } }), { providerId: 'w1', fromNumber: '+15551234567', toNumber: '+12136190002', text: 'How many White tees are left?', channel: 'WHATSAPP', media: 0 })
+  assert.equal(wa({ text: { body: 'no type given' } })!.text, 'no type given')
+  const photo = wa({ type: 'image', image: { id: 'i1', caption: 'the slip' } })!
+  assert.equal(photo.text, 'the slip')
+  assert.equal(photo.media, 1)
+  assert.equal(wa({ type: 'button', button: { text: 'Yes' } })!.text, 'Yes')
+  assert.equal(wa({ type: 'interactive', interactive: { button_reply: { title: 'Log it' } } })!.text, 'Log it')
+  assert.equal(wa({ type: 'location', location: {} })!.text, '')
+})

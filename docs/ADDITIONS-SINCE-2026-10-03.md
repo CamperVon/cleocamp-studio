@@ -706,6 +706,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/tools.ts` (`send_email`).
 - **Needs:** email.
 
+
+### WhatsApp messages read from where Telnyx puts them
+- **Problem:** the Telnyx webhook read a message's words from `payload.text`, which is where SMS carries them. WhatsApp carries them in `payload.body`, shaped like Meta's own (`body.type`, then `body.text.body`, or `body.image.caption` and so on). Every WhatsApp message from the team therefore arrived empty, and the answer path quietly returned, with no reply and nothing logged.
+- **Change:** the parser reads SMS text, WhatsApp text, a photo or file caption, a button tap and an interactive reply, and counts WhatsApp photos, files, voice notes, videos and stickers as media. If a team member's message still has no readable words and no media, the assistant tells them so on WhatsApp and writes a troubleshooting-log entry instead of dropping it.
+- **Files:** `lib/telnyx.ts` (`inboundFrom`, `textOf`), `lib/whatsapp.ts` (`answerWhatsApp`), `tests/telnyx.test.ts`.
+- **Needs:** Telnyx (WhatsApp).
+
 ---
 
 ## Setup notes for a new install
