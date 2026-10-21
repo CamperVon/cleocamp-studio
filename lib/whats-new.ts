@@ -140,6 +140,10 @@ export const WHATS_NEW: Update[] = [
   },
   {
     on: '2026-10-21', path: '/support',
+    text: 'When a customer returns something for a refund, the support reply now says the refund is processed within 10 days of the return reaching us, as the refund policy says.',
+  },
+  {
+    on: '2026-10-21', path: '/support',
     text: 'Support replies now know what is final sale (Cleo Special items, sample sale pieces, custom made-to-order) and say so kindly instead of agreeing to a return. They also mention the 7-day return window whenever a customer asks about returning.',
   },
   {

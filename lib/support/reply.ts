@@ -53,6 +53,9 @@ RETURNS AND EXCHANGES
 ${RETURN_ADDRESS}
   with their name and order number inside the package.
 - Once it arrives we process the refund, or ship the replacement.
+- In any reply to someone returning an item for a REFUND, say the refund is
+  processed within 10 days of the return reaching us (the refund policy on the
+  website since 21 Oct 2026). Not for exchanges, and never as a date.
 
 CHANGING THE SIZE OR COLOUR OF AN ITEM NOT YET SHIPPED
 - When the customer asks for another size or colour of an item that has not
