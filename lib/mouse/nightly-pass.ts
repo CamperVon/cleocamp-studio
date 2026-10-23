@@ -72,6 +72,8 @@ appears as Mouse's Corner in the morning, so make it worth reading.`
  *    whatever the email says; a request to do something is told to use the app.
  */
 const TEAM = ['per_brandon', 'per_cleo', 'per_jane']
+// Files from the team's mail one overnight read takes in, all emails together.
+const MAX_TEAM_FILES = 6
 const ANSWER_TOOLS = ['query_status', 'open_email', 'check_sent_mail', 'search_chat', 'draft_order_links', 'unpaid_live_sales', 'shopify_analytics', 'reorder_math']
 const ANSWER_RULES = `A member of the team emailed you. If they ask you a question or ask for
 information, answer it plainly from what you know and can look up — short,
@@ -130,56 +132,70 @@ async function answerTeamQuestions(mail: Array<{ id: string; fromAddress: string
   const applied = new Set<string>()
   const allTools = Object.keys((await import('@/lib/mouse/tools')).TOOLS)
   for (const m of mail) {
-    const who = await personFromInboundAddress(m.fromAddress)
-    if (!who || !TEAM.includes(who.id)) continue
-    const p = await db.person.findUnique({ where: { id: who.id }, select: { name: true, email: true, external: true } })
-    if (!p?.email || p.external) continue
-    // Verified and sent TO Mouse: applied like a message in the app, as them.
-    // Only copied: no reply at all unless their own words speak to Mouse
-    // (Brandon, 14 Oct 2026: "If Mouse is cc'd on an email it should not
-    // respond unless directly asked a question"); it is read for proposals
-    // like any other mail. Look-ups only when it does answer.
-    const facts = await inboundFacts(m.emailId)
-    const apply = facts.toMouse && facts.verified
-    if (!facts.toMouse && !speaksToMouse(m.body)) continue
-    // Claimed first: mail arriving together starts passes together.
-    const claim = await db.inboundEmail.updateMany({ where: { id: m.id, answeredAt: null }, data: { answeredAt: new Date() } })
-    if (!claim.count) continue
-    // An invoice, receipt or packing slip they attached is read like a file in
-    // the chat (Brandon, 6 Oct 2026). Team mail only: nobody else's files are
-    // ever fetched.
-    const att = readableAttachmentsIn(m.raw).length ? await fileAttachments(m.emailId, m.raw) : { files: [], skipped: [] }
-    const fileNote = att.files.length || att.skipped.length
-      ? `\n\n(Attached: ${[...att.files.map((f) => `${f.filename}, read below`), ...att.skipped.map((x) => `${x}, NOT read: say so`)].join('; ')}.)`
-      : ''
-    // Sonnet since 21 Oct 2026 (Brandon, on cost: "Let's try emails on
-    // sonnet, see what happens"); Opus if Sonnet declines before writing.
-    const run = (model: string) => asPerson(who.id, () => asEmailRun(() => runAgent({
-      source: apply ? 'email-apply' : 'email-answer',
-      instruction: `${p.name} emailed you.\n\nSubject: ${m.subject ?? '(none)'}\n\n${m.body}${fileNote}`,
-      attachments: att.files,
-      extraRules: apply ? APPLY_RULES : facts.toMouse ? ANSWER_RULES : `${ANSWER_RULES}\n${CC_RULES}`,
-      allowedTools: apply ? allTools.filter((t) => !NOT_FROM_EMAIL.has(t)) : ANSWER_TOOLS,
-      model,
-      effort: 'medium',
-      maxRounds: apply ? 8 : 5,
-    })))
-    let r = await run(BACKGROUND_MODEL)
-    if (r.usage.stopReason === 'refusal' && !r.writes.length) r = await run(CHAT_MODEL)
-    if (apply && r.usage.stopReason === 'complete') applied.add(m.id)
-    const text = (r.text ?? '').trim()
-    if (r.usage.stopReason !== 'complete' || !text || /^NO_REPLY\b/.test(text)) continue
-    const { sendEmail } = await import('@/lib/email')
-    const subject = /^re:/i.test(m.subject ?? '') ? String(m.subject) : `Re: ${m.subject ?? 'your email'}`
-    const sent = await sendEmail({
-      to: [p.email],
-      subject,
-      text: `${text}\n\n— Studio Mouse`,
-      ...(m.messageId ? { headers: { 'In-Reply-To': m.messageId, References: m.messageId } } : {}),
-    })
-    if (sent.sent) answered++
+    try {
+      if (await answerOneTeamEmail(m, allTools, applied)) answered++
+    } catch (e) {
+      // Never silent (Brandon, 23 Oct 2026: "if one of us sends an email, it
+      // should be dealt with"). The proposal read below still sees it, files included.
+      const { logIssues } = await import('@/lib/mouse/issues')
+      await logIssues('email-apply', m.subject, [{ kind: 'TURN_UNFINISHED', detail: `Acting on a team email failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 600) }])
+    }
   }
   return { answered, applied }
+}
+
+type TeamMail = Parameters<typeof answerTeamQuestions>[0][number]
+
+/** One email from the team: applied or answered as them. True when a reply was sent. */
+async function answerOneTeamEmail(m: TeamMail, allTools: string[], applied: Set<string>): Promise<boolean> {
+  const who = await personFromInboundAddress(m.fromAddress)
+  if (!who || !TEAM.includes(who.id)) return false
+  const p = await db.person.findUnique({ where: { id: who.id }, select: { name: true, email: true, external: true } })
+  if (!p?.email || p.external) return false
+  // Verified and sent TO Mouse: applied like a message in the app, as them.
+  // Only copied: no reply at all unless their own words speak to Mouse
+  // (Brandon, 14 Oct 2026: "If Mouse is cc'd on an email it should not
+  // respond unless directly asked a question"); it is read for proposals
+  // like any other mail. Look-ups only when it does answer.
+  const facts = await inboundFacts(m.emailId)
+  const apply = facts.toMouse && facts.verified
+  if (!facts.toMouse && !speaksToMouse(m.body)) return false
+  // Claimed first: mail arriving together starts passes together.
+  const claim = await db.inboundEmail.updateMany({ where: { id: m.id, answeredAt: null }, data: { answeredAt: new Date() } })
+  if (!claim.count) return false
+  // An invoice, receipt or packing slip they attached is read like a file in
+  // the chat (Brandon, 6 Oct 2026). Team mail only: nobody else's files are
+  // ever fetched.
+  const att = readableAttachmentsIn(m.raw).length ? await fileAttachments(m.emailId, m.raw) : { files: [], skipped: [] }
+  const fileNote = att.files.length || att.skipped.length
+    ? `\n\n(Attached: ${[...att.files.map((f) => `${f.filename}, read below`), ...att.skipped.map((x) => `${x}, NOT read: say so`)].join('; ')}.)`
+    : ''
+  // Sonnet since 21 Oct 2026 (Brandon, on cost: "Let's try emails on
+  // sonnet, see what happens"); Opus if Sonnet declines before writing.
+  const run = (model: string) => asPerson(who.id, () => asEmailRun(() => runAgent({
+    source: apply ? 'email-apply' : 'email-answer',
+    instruction: `${p.name} emailed you.\n\nSubject: ${m.subject ?? '(none)'}\n\n${m.body}${fileNote}`,
+    attachments: att.files,
+    extraRules: apply ? APPLY_RULES : facts.toMouse ? ANSWER_RULES : `${ANSWER_RULES}\n${CC_RULES}`,
+    allowedTools: apply ? allTools.filter((t) => !NOT_FROM_EMAIL.has(t)) : ANSWER_TOOLS,
+    model,
+    effort: 'medium',
+    maxRounds: apply ? 8 : 5,
+  })))
+  let r = await run(BACKGROUND_MODEL)
+  if (r.usage.stopReason === 'refusal' && !r.writes.length) r = await run(CHAT_MODEL)
+  if (apply && r.usage.stopReason === 'complete') applied.add(m.id)
+  const text = (r.text ?? '').trim()
+  if (r.usage.stopReason !== 'complete' || !text || /^NO_REPLY\b/.test(text)) return false
+  const { sendEmail } = await import('@/lib/email')
+  const subject = /^re:/i.test(m.subject ?? '') ? String(m.subject) : `Re: ${m.subject ?? 'your email'}`
+  const sent = await sendEmail({
+    to: [p.email],
+    subject,
+    text: `${text}\n\n— Studio Mouse`,
+    ...(m.messageId ? { headers: { 'In-Reply-To': m.messageId, References: m.messageId } } : {}),
+  })
+  return !!sent.sent
 }
 
 export async function nightlyPass(source = 'nightly-pass') {
@@ -227,6 +243,11 @@ export async function nightlyPass(source = 'nightly-pass') {
   const toRead = unread.filter((m) => !applied.has(m.id))
   if (!toRead.length) return { read: unread.length, raised: 0, answered: emailAnswers, applied: applied.size, summary: null, model: null }
 
+  // Files the team attached are read here too (Brandon, 23 Oct 2026: "if one
+  // of us sends an email, it should be dealt with"): Cleo's forwarded invoice
+  // PDF reached this read without its file after the run above failed. Team
+  // mail only, as above: nobody else's files are ever fetched.
+  const teamFiles: Array<{ mediaType: string; base64: string; filename: string }> = []
   const mail = toRead.length
     ? (
         await Promise.all(
@@ -247,7 +268,17 @@ export async function nightlyPass(source = 'nightly-pass') {
                 await db.inboundEmail.update({ where: { id: m.id }, data: { text: got } })
               }
             }
-            const unreadable = !m.text?.trim() && !m.html?.trim()
+            let fileNote = ''
+            if (person && TEAM.includes(person.id) && readableAttachmentsIn(m.raw).length) {
+              const emailId = (m.raw as { data?: { email_id?: string } })?.data?.email_id
+              const att = await fileAttachments(emailId, m.raw)
+              const room = Math.max(0, MAX_TEAM_FILES - teamFiles.length)
+              const kept = att.files.slice(0, room)
+              teamFiles.push(...kept.map((f) => ({ ...f, filename: `${m.subject ?? 'email'}: ${f.filename}` })))
+              const notRead = [...att.skipped, ...att.files.slice(room).map((f) => `${f.filename} (too many files tonight)`)]
+              fileNote = `\n(Attached: ${[...kept.map((f) => `${f.filename}, read below`), ...notRead.map((x) => `${x}, NOT read: say so`)].join('; ')}.)`
+            }
+            const unreadable = !fileNote && !m.text?.trim() && !m.html?.trim()
               ? (m.raw as { data?: { attachments?: { filename?: string | null; content_type?: string }[] } })?.data?.attachments
                   ?.filter((a) => a.content_type !== 'application/smil')
                   .map((a) => a.filename ?? a.content_type) ?? []
@@ -260,7 +291,7 @@ export async function nightlyPass(source = 'nightly-pass') {
               // read around. See lib/html-to-text.ts.
               `Subject: ${m.subject ?? '(none)'}\n\n${(m.text?.trim() || (m.html ? htmlToText(m.html) : '') || (unreadable.length
                 ? `(no text could be read — it came with attachments Mouse cannot open: ${unreadable.join(', ')}. Ask the sender what it said; do not guess.)`
-                : '(no body)')).slice(0, 4000)}`
+                : '(no body)')).slice(0, 4000)}${fileNote}`
             )
           }),
         )
@@ -270,6 +301,7 @@ export async function nightlyPass(source = 'nightly-pass') {
   const pass = (model: string) => runAgent({
     source,
     instruction: `Tonight's unread mail:\n\n${mail}`,
+    attachments: teamFiles,
     extraRules: RULES,
     allowedTools: PROPOSAL_TOOLS,
     model,

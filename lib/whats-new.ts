@@ -139,6 +139,10 @@ export const WHATS_NEW: Update[] = [
     text: 'You can tell Mouse a component goes into no product on purpose, like the gold safety pins and the brass rivets. They stay counted and stop showing up as "on no product" each morning.',
   },
   {
+    on: '2026-10-23',
+    text: 'When you email Mouse a PDF or photo (an invoice, a packing slip), Mouse now reads it every time, even if the first attempt hits a snag. If acting on your email fails, it goes in the troubleshooting log instead of disappearing.',
+  },
+  {
     on: '2026-10-21', path: '/support',
     text: 'When a customer returns something for a refund, the support reply now says the refund is processed within 10 days of the return reaching us, as the refund policy says.',
   },

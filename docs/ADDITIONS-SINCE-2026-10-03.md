@@ -726,6 +726,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/nightly-pass.ts` (`answerTeamMail`), `lib/mouse/agent.ts` (comment).
 - **Needs:** email.
 
+
+### Team email is never dropped, and its files are read on every path
+- **Problem:** an email from the team with an attached invoice reached the overnight mail read without its file, and that read said it could not open the attachment. The team-email step had failed first, and that step's errors were swallowed for the whole batch, so nothing recorded why.
+- **Change:** each team email is handled on its own. A failure is written to the troubleshooting log and the rest carry on. The overnight read now also receives the files team members attached (up to six a night, never anyone else's), so a team email is read in full whichever path reaches it.
+- **Files:** `lib/mouse/nightly-pass.ts` (`answerTeamQuestions`, `answerOneTeamEmail`, `nightlyPass`).
+- **Needs:** email.
+
 ---
 
 ## Setup notes for a new install
