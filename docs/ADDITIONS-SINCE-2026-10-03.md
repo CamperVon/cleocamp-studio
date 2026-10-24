@@ -733,6 +733,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/nightly-pass.ts` (`answerTeamQuestions`, `answerOneTeamEmail`, `nightlyPass`).
 - **Needs:** email.
 
+
+### Wait lists come back when the stock does
+- **Problem:** customers waiting for a size to come back in (a replacement owed, a wait list) could be kept as a to-do, but nothing brought that to-do up when the stock arrived, so remembering them was down to a person.
+- **Change:** logging a receipt or a count for a product variant returns the open to-dos on that variant and its product, and the assistant is told to name anyone this delivery lets the team serve. The to-do tool says how to keep a wait list: one item on the product, colour and size in the title, one line per person with their order number.
+- **Files:** `lib/mouse/tools.ts` (`logEventChecked`, `waitingOnRestock`, `create_todo`).
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

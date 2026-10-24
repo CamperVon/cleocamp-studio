@@ -487,6 +487,8 @@ async function logEventChecked(i: Parameters<Tool['run']>[0]) {
     }
   }
   const r = await writeEvent(i)
+  const arrived = (i.type === 'RECEIVED' || i.type === 'COUNTED') && r.eventId && !!i.productVariantId
+  const waiting = arrived ? await waitingOnRestock(i.productVariantId) : null
   // Tick the delivery off on its PO, from the number given or the one in
   // the note (Mouse nearly always writes "PO 2362" there).
   if (i.type === 'RECEIVED' && r.eventId && typeof i.deltaQty === 'number' && i.deltaQty > 0) {
@@ -494,10 +496,40 @@ async function logEventChecked(i: Parameters<Tool['run']>[0]) {
     const po = (typeof i.purchaseOrderNumber === 'string' && i.purchaseOrderNumber.replace(/\D/g, '')) || poNumberIn(i.note)
     if (po) {
       const t = await receiveOnPo(po, { productVariantId: i.productVariantId, componentId: i.componentId }, i.deltaQty)
-      return { ...r, purchaseOrder: t.message }
+      return { ...r, purchaseOrder: t.message, ...waiting }
     }
   }
-  return r
+  return { ...r, ...waiting }
+}
+
+/**
+ * Open to-dos on the product that just came in (Jane, 24 Oct 2026: a list of
+ * customers waiting for the Shell size 1 tees, "so i dont forget about Aidan
+ * and also Al"). A list kept as a to-do was only seen if someone thought to
+ * look; now logging the stock hands it to Mouse, which names the people
+ * this delivery lets them serve.
+ */
+async function waitingOnRestock(productVariantId: string) {
+  const v = await db.productVariant.findUnique({ where: { id: productVariantId }, select: { productId: true } })
+  const items = await db.actionItem.findMany({
+    where: {
+      resolved: false,
+      OR: [
+        { entityType: 'PRODUCT_VARIANT', entityId: productVariantId },
+        ...(v ? [{ entityType: 'PRODUCT' as const, entityId: v.productId }] : []),
+      ],
+    },
+    orderBy: { createdAt: 'asc' },
+    take: 15,
+    select: { id: true, title: true, detail: true },
+  })
+  if (!items.length) return null
+  return {
+    openItemsOnThisProduct: items,
+    say: 'Before you finish, read these open items on this product. If any is someone waiting for this ' +
+      'colour and size (a customer owed a replacement, a wait list), tell the person now who can be ' +
+      'served from this delivery, by name and order number. Do not resolve them yourself.',
+  }
 }
 
 export const TOOLS: Record<string, Tool> = {
@@ -946,6 +978,11 @@ export const TOOLS: Record<string, Tool> = {
         'entity only ever shows on the general items list, however product-specific its title. ' +
         'Covers several things at once (a product, its bags, another product)? Still tag the ' +
         'one it matters most to be seen on rather than leaving it untagged — GENERAL is the ' +
+        'one place nobody is looking. A WAIT LIST (customers waiting for a colour and size to come ' +
+        'back in, a replacement owed) is a todo tagged PRODUCT with that product\'s id, its title ' +
+        'naming the colour and size and its detail one line per person with their order number; ' +
+        'add to the same item rather than starting a second. Logging that product\'s stock ' +
+        'hands it back to you, so nobody is forgotten. Otherwise GENERAL is the ' +
         'one place nobody is looking. CHECK FOR AN OPEN ITEM ALREADY ON THIS ENTITY FIRST. On ' +
         '22 Sept 2026 an open, urgent "count before the delivery lands" todo sat unresolved on ' +
         'the Story Dress row while a new, untagged "count now that it has arrived" todo went ' +
