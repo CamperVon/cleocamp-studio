@@ -754,6 +754,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/shipments.ts` (`planShipment`, `stillOpen`, `orderToShip`, `markShipped`, `slowWholesaleShipments`), `lib/mouse/tools.ts` (`mark_shipped`, `invoice_wholesale`), `lib/mouse/tool-kinds.ts`, `lib/mouse/daily-cheese.ts`, `app/(main)/manual/page.tsx`, `tests/shipments.test.ts`.
 - **Needs:** Shopify.
 
+
+### Lead times learned from deliveries are set, not asked
+- **Problem:** every delivery whose real lead time differed from the one on file raised a question for a person to confirm, and the owner was answering yes to all of them.
+- **Change:** the observed lead time (order or deposit to delivery, or a production run's start to delivery) is written to the component, vendor or product when it differs enough, with a note on the record saying what it was, what it is and which delivery set it. The same delivery is never applied twice. The assistant mentions the change in one line.
+- **Files:** `lib/lead-time-learning.ts` (`learnLeadTimes`), `lib/production-lead-learning.ts`, `lib/mouse/tools.ts` (`update_purchase_order`, `update_production_run` descriptions).
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

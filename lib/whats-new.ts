@@ -139,6 +139,10 @@ export const WHATS_NEW: Update[] = [
     text: 'You can tell Mouse a component goes into no product on purpose, like the gold safety pins and the brass rivets. They stay counted and stop showing up as "on no product" each morning.',
   },
   {
+    on: '2026-10-25',
+    text: 'Mouse no longer asks whether to update a lead time after a delivery. It sets the new one itself and notes what changed on the record; tell Mouse if a delivery was unusual and it puts it back.',
+  },
+  {
     on: '2026-10-25', path: '/manual',
     text: 'Shipping a wholesale order in parts: tell Mouse what went in each box ("Cosimo\'s box went out with the Shell and Splish tees") and it marks just those as shipped in Shopify, without emailing the customer. The Daily Cheese now flags any paid wholesale order still not marked shipped after a week. See Invoices in the Mouse Manual.',
   },

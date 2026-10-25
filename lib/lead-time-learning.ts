@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { observedLeadDays, worthAsking, questionFor, type LeadTimeCandidate } from '@/lib/lead-time-core'
+import { observedLeadDays, worthAsking, type LeadTimeCandidate } from '@/lib/lead-time-core'
 
 /**
  * Learning an actual lead time from a real delivery.
@@ -13,12 +13,13 @@ import { observedLeadDays, worthAsking, questionFor, type LeadTimeCandidate } fr
  * observed gap between them is real evidence a recorded lead time either
  * never had, or has since drifted from.
  *
- * NEVER WRITES THE NUMBER ITSELF. One delivery is one data point — a
- * vendor's one-off delay or a lucky early truck is not "the lead time
- * changed," and CLAUDE.md's rule holds here same as anywhere else: a wrong
- * number written to a plan is worse than an unanswered question. This
- * raises a QUESTION naming the exact figure and lets a person say yes. The
- * maths and wording are in lib/lead-time-core.ts, tested apart from this.
+ * It SETS the number itself (Brandon, 25 Oct 2026: "in the future, don't
+ * ask, just make the call and change as we need to"). Until then it only
+ * raised a question naming the figure, on the reasoning that one delivery is
+ * one data point; the team was answering yes to every one. Each change is
+ * written down as a note on the record (what it was, what it is, which
+ * delivery), so a one-off can be put back by saying so. The maths and
+ * wording are in lib/lead-time-core.ts, tested apart from this.
  *
  * Shared with lib/production-lead-learning.ts, which asks the same
  * question of a production run's own startedAt/receivedAt against a
@@ -26,22 +27,20 @@ import { observedLeadDays, worthAsking, questionFor, type LeadTimeCandidate } fr
  */
 
 /**
- * `sourceLabel` doubles as the dedupe key — checked against the DETAIL, not
- * the title, because a candidate with a recorded number already on file
- * gets a title of just "X's lead time may have changed" with the source
- * named only in the body. The same source should never ask about the same
- * entity twice; a different source drifting on it is a second, independent
- * data point and gets its own question.
+ * `sourceLabel` doubles as the dedupe key: a delivery already learned from
+ * (a note naming it, or an old question about it) is not applied twice. A
+ * different delivery on the same record is a new data point and is.
  */
-async function alreadyAsked(entityType: LeadTimeCandidate['entityType'], entityId: string, sourceLabel: string) {
-  return db.actionItem.findFirst({
-    where: { entityType, entityId, kind: 'QUESTION', detail: { contains: sourceLabel } },
-    select: { id: true },
-  })
+async function alreadyLearned(entityType: LeadTimeCandidate['entityType'], entityId: string, sourceLabel: string) {
+  const [note, question] = await Promise.all([
+    db.note.findFirst({ where: { entityType, entityId, content: { contains: `from ${sourceLabel}` } }, select: { id: true } }),
+    db.actionItem.findFirst({ where: { entityType, entityId, kind: 'QUESTION', detail: { contains: sourceLabel } }, select: { id: true } }),
+  ])
+  return !!(note || question)
 }
 
-/** Runs every candidate through worthAsking/dedupe and raises what's left. */
-export async function raiseLeadTimeQuestions(
+/** Sets each candidate's lead time from what was observed, when it differs enough, and notes the change. */
+export async function learnLeadTimes(
   candidates: LeadTimeCandidate[],
   observedDays: number,
   sourceLabel: string,
@@ -49,25 +48,30 @@ export async function raiseLeadTimeQuestions(
   start: Date,
   end: Date,
 ): Promise<string[]> {
-  const raised: string[] = []
+  const changed: string[] = []
   for (const c of candidates) {
     if (!worthAsking(c.recorded, observedDays)) continue
-    if (await alreadyAsked(c.entityType, c.entityId, sourceLabel)) continue
-    const { title, detail } = questionFor(c, observedDays, sourceLabel, startLabel, start, end)
-    await db.actionItem.create({
-      data: { kind: 'QUESTION', entityType: c.entityType, entityId: c.entityId, title, detail, source: 'SYSTEM' },
+    if (await alreadyLearned(c.entityType, c.entityId, sourceLabel)) continue
+    if (c.entityType === 'COMPONENT') await db.component.update({ where: { id: c.entityId }, data: { leadTimeDays: observedDays } })
+    else if (c.entityType === 'VENDOR') await db.vendor.update({ where: { id: c.entityId }, data: { leadTimeDays: observedDays } })
+    else await db.product.update({ where: { id: c.entityId }, data: { productionLeadTimeDays: observedDays } })
+    const was = c.recorded === null ? 'none on file' : `${c.recorded} days`
+    await db.note.create({
+      data: {
+        entityType: c.entityType, entityId: c.entityId, source: 'SYSTEM',
+        content: `Lead time set to ${observedDays} days (was ${was}) from ${sourceLabel}: ${startLabel} ${start.toISOString().slice(0, 10)} to delivery ${end.toISOString().slice(0, 10)}. Set automatically; say so if this one was unusual.`,
+      },
     })
-    raised.push(title)
+    changed.push(`${c.name}: lead time set to ${observedDays} days (was ${was}), from ${sourceLabel}`)
   }
-  return raised
+  return changed
 }
 
 /**
  * Called once, right when a PO's receivedAt is first set — see
  * update_purchase_order in lib/mouse/tools.ts. Safe to call on any PO;
  * quietly does nothing when there isn't enough on the order to learn from.
- * Returns what it raised, if anything, so the same turn can mention it
- * rather than it only surfacing later on the Items page.
+ * Returns what it changed, so the same turn can mention it.
  */
 export async function checkLeadTimeDrift(poId: string): Promise<string[]> {
   const po = await db.purchaseOrder.findUnique({
@@ -108,5 +112,5 @@ export async function checkLeadTimeDrift(poId: string): Promise<string[]> {
 
   const start = po.depositPaidAt ?? po.orderedAt!
   const startLabel = po.depositPaidAt ? 'the deposit' : 'the order'
-  return raiseLeadTimeQuestions(candidates, observedDays, `PO ${po.poNumber}`, startLabel, start, po.receivedAt!)
+  return learnLeadTimes(candidates, observedDays, `PO ${po.poNumber}`, startLabel, start, po.receivedAt!)
 }

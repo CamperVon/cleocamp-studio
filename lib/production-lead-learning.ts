@@ -1,11 +1,11 @@
 import { db } from '@/lib/db'
 import { observedLeadDays, type LeadTimeCandidate } from '@/lib/lead-time-core'
-import { raiseLeadTimeQuestions } from '@/lib/lead-time-learning'
+import { learnLeadTimes } from '@/lib/lead-time-learning'
 
 /**
  * The production-run half of lead-time learning — see
- * lib/lead-time-learning.ts for the purchase-order half and the reasoning
- * behind never writing the number itself, which applies here unchanged.
+ * lib/lead-time-learning.ts for the purchase-order half; it sets the number
+ * itself the same way (Brandon, 25 Oct 2026).
  *
  * ProductionRun.startedAt and .receivedAt existed in the schema and were
  * never set anywhere until 23 Sept 2026 — see update_production_run in
@@ -36,7 +36,7 @@ export async function checkProductionLeadDrift(runId: string): Promise<string[]>
     ? `the ${run.product.name} run (${run.vendor?.name ?? 'maker'}, ref ${run.cutRef})`
     : `the ${run.product.name} run (${run.vendor?.name ?? 'maker'})`
 
-  return raiseLeadTimeQuestions(
+  return learnLeadTimes(
     [candidate], observedDays, sourceLabel, 'when work started', run.startedAt!, run.receivedAt!,
   )
 }

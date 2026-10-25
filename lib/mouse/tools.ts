@@ -2912,8 +2912,9 @@ export const TOOLS: Record<string, Tool> = {
         'arrives about 24 September. Then put it on the calendar so it is not only in ' +
         'your head. ' +
         'The first time receivedAt actually lands on an order, this also checks the real ' +
-        'gap against the recorded lead time and may hand back leadTimeQuestions — mention ' +
-        'those in your reply, they are new, not something already open.',
+        'gap against the recorded lead time and, when it differs enough, sets the new lead time itself ' +
+        '(Brandon, 25 Oct 2026: do not ask) and hands back leadTimeQuestions saying what changed. Mention ' +
+        'those in one line; the team can say if a delivery was unusual and it is put back.',
       input_schema: {
         type: 'object',
         properties: {
@@ -3578,8 +3579,8 @@ export const TOOLS: Record<string, Tool> = {
         'Setting status to IN_PRODUCTION or RECEIVED for the first time on a run also ' +
         'records when — this is what teaches the product its real production lead time. ' +
         'The first time a run actually reaches RECEIVED, the real gap gets checked against ' +
-        "the product's recorded lead time and may hand back leadTimeQuestions — mention " +
-        'those in your reply, they are new, not something already open.',
+        "the product's recorded lead time and, when it differs enough, sets it (Brandon, 25 Oct 2026: do not ask), " +
+        'handing back leadTimeQuestions saying what changed. Mention those in one line.',
       input_schema: {
         type: 'object',
         properties: {
