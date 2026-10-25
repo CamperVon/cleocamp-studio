@@ -197,6 +197,20 @@ export async function buildDailyCheeseItems(): Promise<Item[]> {
     out.push({ on, tag: urgentNoDate ? 'URGENT' : tag(on, today), sentence, href: `${APP}/items#rec-${i.id}`, from: { day: isoDay(on), source: 'todo', text: i.title } })
   }
 
+  // Wholesale boxes nobody marked as shipped (Brandon, 25 Oct 2026: Cosimo's
+  // first order went out and sat two weeks unmarked, so stock looked higher
+  // than it was). Paid orders only, a week old; each box is marked as it goes.
+  const { slowWholesaleShipments } = await import('@/lib/shipments')
+  for (const o of await slowWholesaleShipments(7).catch(() => [])) {
+    const when = new Date(o.createdAt).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' })
+    out.push({
+      on: today, tag: 'SHIPPED?',
+      sentence: `Wholesale order ${o.name}${o.customer ? ` (${o.customer})` : ''}, paid ${when}, has ${o.units} item${o.units === 1 ? '' : 's'} not marked shipped in Shopify${o.partly ? ' after part of it went' : ''}. If any went out, tell Mouse what was in the box.`,
+      href: `https://admin.shopify.com/store/cleocamp/orders?query=${encodeURIComponent(o.name)}`,
+      from: { day: isoDay(today), source: 'todo', text: `wholesale ${o.name} shipped` },
+    })
+  }
+
   // One event, one line (Brandon, 16 Oct 2026: "lots of doubled up todos").
   // The White Cleo Tee pickup came as a todo, a calendar entry and PO 2360
   // coming due, all on the same morning. lib/mouse/dupes.ts decides.

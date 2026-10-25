@@ -4611,7 +4611,9 @@ export const TOOLS: Record<string, Tool> = {
         '(Brandon, 25 Oct 2026: always at shipping, in case an invoice is never paid): never use ' +
         'false to wait for shipping, and never log the shipment by hand. false is only for goods ' +
         'that never pass through Shopify stock (e.g. shipped straight from a maker). If the ' +
-        'person has not said, ask before drafting. ' +
+        'person has not said, ask before drafting. Items not in stock yet still go on the same invoice (Shopify ' +
+        'holds them below zero until they come in); each box is then marked with mark_shipped as it goes, with ' +
+        'only what is in it, never the whole order at the end. ' +
         'Leave confirmed out to DRAFT: this saves a real draft order in Shopify (nothing sent, ' +
         'stock untouched) and returns its link, so people can review it there. Always give the ' +
         'link. To revise, draft again passing draftOrderId so the same draft is rewritten. ' +
@@ -6533,6 +6535,90 @@ export const TOOLS: Record<string, Tool> = {
           orders: l.orders.length > 60 ? [...l.orders.slice(0, 60), `and ${l.orders.length - 60} more`] : l.orders,
         })),
         note: 'Counted on the Los Angeles day each label was made. Voided labels, wholesale orders and items that do not ship are not counted. labels counts every package in the range, whatever it held.',
+      }
+    },
+  },
+
+  // Brandon, 25 Oct 2026: Cosimo's first wholesale order went out and sat
+  // two weeks with nothing marked in Shopify. Each box is marked as it goes,
+  // with only what is in it (lib/shipments.ts).
+  mark_shipped: {
+    def: {
+      name: 'mark_shipped',
+      description:
+        'Mark what went out in a box on a Shopify order as shipped, item by item: "Cosimo\'s box went out with the ' +
+        'Shell and Splish tees", "#2749 shipped in full". Only what the person says went in the box; the rest of the ' +
+        'order stays open and held. This is when Shopify takes those items off on-hand stock, so never also log the ' +
+        'shipment as an inventory event. The customer is not emailed. Say each item as a productVariantId (ours) with ' +
+        'its quantity, or a typed-in line by its words (description), or all: true when everything left on the order ' +
+        'went. All or nothing: if any item does not match what is still unshipped, nothing is marked and the reason ' +
+        'comes back; ask, never guess which line. An app-only item on a typed-in line (a colour not on Shopify) is ' +
+        'marked here, but its count in the app moves only when its stock is logged separately; say so. When a person ' +
+        'says only part of an order went, mark that part now: never wait to mark the whole order at the end.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          order: str('The Shopify order number, e.g. "#2749"'),
+          all: { type: 'boolean' as const, description: 'true only when the person said everything still unshipped on the order went out' },
+          items: {
+            type: 'array' as const,
+            items: {
+              type: 'object' as const,
+              properties: {
+                productVariantId: str('Our variant id, for an item that is on Shopify'),
+                description: str('For a typed-in line only: words from its title, e.g. "Red Bean Bag"'),
+                quantity: { type: 'number' as const },
+              },
+              required: ['quantity'],
+            },
+          },
+          trackingNumber: str('Tracking number, if the person gave one'),
+          carrier: str('Carrier, if given: USPS, UPS, FedEx, DHL'),
+        },
+        required: ['order'],
+      },
+    },
+    run: async (i) => {
+      const { orderToShip, planShipment, stillOpen, markShipped } = await import('@/lib/shipments')
+      const o = await orderToShip(String(i.order ?? ''))
+      if (!o) return { marked: false, reason: `No Shopify order ${String(i.order)}. Ask for the number again.` }
+      if (o.cancelled) return { marked: false, reason: `${o.name} is cancelled. Nothing to mark.` }
+      if (!o.open.length) return { marked: false, reason: `Everything on ${o.name} is already marked shipped.` }
+      const items = Array.isArray(i.items) ? (i.items as Array<{ productVariantId?: string; description?: string; quantity: number }>) : []
+      if (i.all !== true && !items.length) return { marked: false, reason: 'Say what went in the box, or all: true if everything left went.', stillUnshipped: stillOpen(o.open, []) }
+      let asks
+      if (i.all === true) {
+        asks = o.open.map((l) => ({ shopifyVariantId: l.shopifyVariantId, description: l.shopifyVariantId ? null : l.title, quantity: l.remaining, label: [l.title, l.variantTitle].filter(Boolean).join(' / ') }))
+      } else {
+        const ids = items.map((x) => x.productVariantId).filter((x): x is string => !!x)
+        const vs = ids.length ? await db.productVariant.findMany({ where: { id: { in: ids } }, select: { id: true, shopifyVariantId: true, size: true, product: { select: { name: true } }, colorway: { select: { customerName: true } } } }) : []
+        asks = []
+        for (const x of items) {
+          if (x.productVariantId) {
+            const v = vs.find((y) => y.id === x.productVariantId)
+            if (!v) return { marked: false, reason: `No variant ${x.productVariantId}. Look it up again; do not guess.` }
+            const label = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
+            if (!v.shopifyVariantId) asks.push({ description: [v.colorway?.customerName, v.product.name].filter(Boolean).join(' '), quantity: x.quantity, label })
+            else asks.push({ shopifyVariantId: v.shopifyVariantId, quantity: x.quantity, label })
+          } else if (x.description) {
+            asks.push({ description: x.description, quantity: x.quantity, label: x.description })
+          } else return { marked: false, reason: 'Each item needs a productVariantId or a description.' }
+        }
+      }
+      const plan = planShipment(o.open, asks)
+      if (plan.problems.length) return { marked: false, order: o.name, problems: plan.problems, stillUnshipped: stillOpen(o.open, []), say: 'Nothing was marked. Ask the person about each problem.' }
+      const r = await markShipped(plan.picks, { number: i.trackingNumber ? String(i.trackingNumber) : null, company: i.carrier ? String(i.carrier) : null })
+      if (!r.ok) return { marked: false, order: o.name, reason: `Shopify refused: ${r.error}. Nothing was marked.` }
+      const left = stillOpen(o.open, plan.picks)
+      const appOnly = o.open.filter((l) => !l.shopifyVariantId && plan.picks.some((p) => p.lineId === l.lineId)).map((l) => l.title)
+      return {
+        marked: true, order: o.name, customer: o.customer,
+        shipped: plan.picks.map((p) => `${p.quantity} × ${p.label}`),
+        stillUnshipped: left,
+        ...(appOnly.length ? { appOnly: `Typed-in lines (${appOnly.join('; ')}) were marked in Shopify, but no stock moved for them anywhere. If they are counted in the app, log them out too.` } : {}),
+        tellTheUser: left.length
+          ? 'Say what was marked shipped and what is still waiting on this order, which stays held until its own box goes.'
+          : 'Say the whole order is now marked shipped.',
       }
     },
   },

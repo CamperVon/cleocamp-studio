@@ -172,15 +172,27 @@ export default function Manual() {
               <li>Shipped wholesale orders get $25 shipping, waived over $2,500.</li>
               <li>
                 <b>A customer&rsquo;s invoice ships</b> unless you say otherwise: she adds her address and pays,
-                then Shopify takes the stock and the order waits for <b>Create shipping label</b>. Say
+                then Shopify holds the stock and the order waits for <b>Create shipping label</b>. Say
                 &ldquo;handed over&rdquo; or &ldquo;live sale&rdquo; when she already has it.
               </li>
               <li>To include something free, say so: it goes on the invoice at $0.</li>
               <li>Friends and Family is 20% off, and Shopify works it out. Just say &ldquo;friends and family&rdquo;.</li>
               <li>Say who else should get a copy and Mouse emails them the PDF.</li>
+              <li>
+                <b>Stock and shipping.</b> Once the invoice is sent, Shopify holds the items. They come off stock
+                when the box is marked shipped (buying the label in Shopify does it, or tell Mouse). If an invoice
+                is never paid, cancelling the order puts them back.
+              </li>
+              <li>
+                <b>Shipping in parts.</b> Put everything they ordered on one invoice, even pieces still being made.
+                Then mark each box as it goes, with only what is in it: &ldquo;Cosimo&rsquo;s box went out with the
+                Shell and Splish tees&rdquo;. Never wait to mark the whole order at the end, or the stock looks
+                higher than it is. The Daily Cheese flags a paid wholesale order still not marked after a week.
+              </li>
             </ul>
             <ul className="flex flex-col gap-2">
               <Try say="Invoice Grandpa LA for 2 Cleo Tee Shell size 1, shipped" />
+              <Try say="Cosimo's box went out today with the Shell and Splish tees, order 2749" />
               <Try say="Which invoices are still unpaid?" />
             </ul>
           </Section>

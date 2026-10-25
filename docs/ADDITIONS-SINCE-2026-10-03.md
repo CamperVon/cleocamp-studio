@@ -747,6 +747,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/tools.ts` (`invoice_wholesale`, `send_wholesale_draft`).
 - **Needs:** Shopify.
 
+
+### Boxes marked as shipped item by item, and a reminder for ones nobody marked
+- **Problem:** a paid wholesale order went out in part and sat for two weeks with nothing marked shipped, so on-hand stock looked higher than it was. The assistant had no way to mark part of an order shipped, and nothing noticed an order left unmarked.
+- **Change:** a `mark_shipped` tool marks exactly what went in a box on a Shopify order (by our variant, by words for a typed-in line, or everything left), in one fulfilment, without emailing the customer. All or nothing: anything that does not match what is still unshipped is refused, with the reason. Typed-in (app-only) lines are marked but flagged, since no stock moves for them. The daily summary lists paid wholesale orders that ship and still have items unmarked after a week. The invoice tool tells the assistant to put not-yet-made items on the same invoice and mark each box as it goes.
+- **Files:** `lib/shipments.ts` (`planShipment`, `stillOpen`, `orderToShip`, `markShipped`, `slowWholesaleShipments`), `lib/mouse/tools.ts` (`mark_shipped`, `invoice_wholesale`), `lib/mouse/tool-kinds.ts`, `lib/mouse/daily-cheese.ts`, `app/(main)/manual/page.tsx`, `tests/shipments.test.ts`.
+- **Needs:** Shopify.
+
 ---
 
 ## Setup notes for a new install

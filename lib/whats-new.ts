@@ -139,6 +139,10 @@ export const WHATS_NEW: Update[] = [
     text: 'You can tell Mouse a component goes into no product on purpose, like the gold safety pins and the brass rivets. They stay counted and stop showing up as "on no product" each morning.',
   },
   {
+    on: '2026-10-25', path: '/manual',
+    text: 'Shipping a wholesale order in parts: tell Mouse what went in each box ("Cosimo\'s box went out with the Shell and Splish tees") and it marks just those as shipped in Shopify, without emailing the customer. The Daily Cheese now flags any paid wholesale order still not marked shipped after a week. See Invoices in the Mouse Manual.',
+  },
+  {
     on: '2026-10-25', path: '/wholesale',
     text: 'Wholesale invoices and stock: when an invoice that ships is sent, Shopify holds the items, and they come off stock when the order is marked fulfilled as the box goes. An unpaid invoice that gets cancelled puts them back. Nothing to log by hand; Mouse now explains it this way.',
   },

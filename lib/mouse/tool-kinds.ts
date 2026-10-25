@@ -73,6 +73,7 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
   import_from_shopify: 'changes',
   invoice_live_sale: 'changes',
   invoice_wholesale: 'changes',
+  mark_shipped: 'changes', // 25 Oct 2026: a box marked shipped in Shopify, item by item
   keep_file: 'changes',
   keep_link: 'changes',
   delete_file: 'changes', // 15 Oct 2026: chat only, see CHAT_ONLY_TOOLS
