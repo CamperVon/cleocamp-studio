@@ -4603,8 +4603,15 @@ export const TOOLS: Record<string, Tool> = {
         'so a shipping label can be made in Shopify; false marks it handed over. A shipped order ' +
         'carries $25 shipping & handling, waived over $2,500 of goods — set by the tool; only pass ' +
         'shippingCharge if the person names a different one for this invoice. reduceStock must be said: ' +
-        'true takes the items off Shopify stock (they left the studio), false leaves stock alone ' +
-        '(e.g. shipped straight from a maker). If the person has not said, ask before drafting. ' +
+        'true puts the real Shopify items on the invoice, so Shopify handles the stock itself: ' +
+        'with ship true it HOLDS them when the invoice is sent (no longer available on the site, ' +
+        'still on hand) and takes them off on hand when the order is marked fulfilled as the box ' +
+        'ships; an invoice never paid is cancelled and they go back. With ship false they come ' +
+        'off when sent, since they are handed over then. This is how stock comes off at shipping ' +
+        '(Brandon, 25 Oct 2026: always at shipping, in case an invoice is never paid): never use ' +
+        'false to wait for shipping, and never log the shipment by hand. false is only for goods ' +
+        'that never pass through Shopify stock (e.g. shipped straight from a maker). If the ' +
+        'person has not said, ask before drafting. ' +
         'Leave confirmed out to DRAFT: this saves a real draft order in Shopify (nothing sent, ' +
         'stock untouched) and returns its link, so people can review it there. Always give the ' +
         'link. To revise, draft again passing draftOrderId so the same draft is rewritten. ' +
@@ -4631,7 +4638,7 @@ export const TOOLS: Record<string, Tool> = {
               required: ['productVariantId', 'quantity'],
             },
           },
-          reduceStock: { type: 'boolean' as const, description: 'true: take these off Shopify stock. false: leave stock alone. Only what the person said.' },
+          reduceStock: { type: 'boolean' as const, description: 'true: real Shopify items, held when sent and off stock when shipped (or when handed over). false: stock never touched (goods that never pass through Shopify stock). Only what the person said.' },
           ship: { type: 'boolean' as const, description: 'true: shipped to the store (label from Shopify). false: handed over or delivered by us. Only what the person said.' },
           shippingCharge: num('Only if the person named a charge for this invoice. Shipped: replaces the standard $25 (waived over $2,500). Handed over: added as a delivery charge.'),
           chargeSalesTax: { type: 'boolean' as const, description: 'true ONLY when the person said to charge sales tax on this invoice ("with sales tax"). Default: no sales tax. Shopify works out the tax for the address. Pass it again on every revision of the same draft, or the revision drops it.' },
@@ -4775,7 +4782,7 @@ export const TOOLS: Record<string, Tool> = {
           shipping: shipTo && sh ? `to ${addressLines(shipTo)}; shipping & handling $${d.shipping.toFixed(2)} (${sh.why}); label made in Shopify after sending` : d.shipping ? `delivery $${d.shipping.toFixed(2)}, as named; marked handed over when sent` : 'none — marked handed over when sent',
           tax: withTax ? `$${d.tax.toFixed(2)} (sales tax, as asked; Shopify works it out for the address)` : `$${d.tax.toFixed(2)} (wholesale, none)`, total: `$${d.total.toFixed(2)}`,
           stock: i.reduceStock
-            ? [lines.some((l) => l.noStock) ? 'The Shopify lines come off Shopify stock when sent; custom lines do not.' : 'Comes off Shopify stock when sent.', ...stockNotes]
+            ? [`${lines.some((l) => l.noStock) ? 'The Shopify lines' : 'These'} ${i.ship ? 'are held in Shopify when sent and come off stock when the order is marked fulfilled as it ships' : 'come off Shopify stock when sent, as handed over'}${lines.some((l) => l.noStock) ? '; custom lines never do.' : '.'}`, ...stockNotes]
             : ['Stock is left alone.', ...stockNotes],
           ...(customerNote ? { customer: customerNote } : {}),
           ...(!storeAddress ? { address: `No full address on file for ${acct.name}, so the draft has none. Ask for it if they want it on the invoice.` } : {}),
@@ -4811,7 +4818,7 @@ export const TOOLS: Record<string, Tool> = {
       return {
         sent: r.invoiceSent, order: r.orderName, total: r.total == null ? null : `$${r.total.toFixed(2)}`,
         handedOver: r.fulfilled, copiedTo: r.copiedTo ?? [], shipping: shipTo ? 'unfulfilled, waiting for a label' : null,
-        stock: i.reduceStock ? 'taken off Shopify stock' : 'left alone', problems: r.problems,
+        stock: !i.reduceStock ? 'left alone' : shipTo ? 'held in Shopify; comes off stock when the order is marked fulfilled as it ships' : 'taken off Shopify stock, as handed over', problems: r.problems,
         tellTheUser: r.problems.length
           ? 'Say what happened and each problem, with what to do in Shopify.'
           : `Say the invoice for ${r.orderName} went to ${acct.name}.${shipTo ? ` To ship it: open ${r.orderName} in Shopify and tap "Create shipping label".` : ''}`,
@@ -4910,9 +4917,10 @@ export const TOOLS: Record<string, Tool> = {
       const acct = await db.wholesaleAccount.findFirst({ where: { email: { equals: d.email, mode: 'insensitive' } } })
       const storeName = acct?.name ?? d.company ?? d.email
       const fromStock = d.lines.filter((l) => l.fromStock).length
+      const when = ship ? 'is held in Shopify when sent and comes off stock when the order is marked fulfilled as it ships' : 'comes off Shopify stock when sent, as handed over'
       const stock = fromStock === 0 ? 'Stock is left alone (no line is linked to a product).'
-        : fromStock === d.lines.length ? 'Every line comes off Shopify stock when sent.'
-        : `${fromStock} of ${d.lines.length} lines come off Shopify stock when sent; the rest leave stock alone.`
+        : fromStock === d.lines.length ? `Every line ${when}.`
+        : `${fromStock} of ${d.lines.length} lines are linked to products: each ${when}. The rest never touch stock.`
       if (i.confirmed !== true) {
         return {
           sent: false, draft: d.name, to: `${storeName} <${d.email}>`,

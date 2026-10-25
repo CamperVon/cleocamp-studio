@@ -740,6 +740,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/tools.ts` (`logEventChecked`, `waitingOnRestock`, `create_todo`).
 - **Needs:** nothing beyond the app.
 
+
+### Wholesale invoice stock described as Shopify really handles it
+- **Problem:** the invoice tool told the assistant that taking stock "takes the items off Shopify stock" when the invoice is sent. Asked for stock to come off only at shipping, the assistant rebuilt an invoice with unlinked text lines and a rule to subtract the stock by hand later, which is what Shopify already does on its own.
+- **Change:** the tool and its results now say what happens: an invoice with real product lines that ships is held by Shopify when sent and comes off on-hand stock when the order is marked fulfilled; a cancelled unpaid order puts it back; a handed-over order comes off when sent. The assistant is told never to leave stock off to wait for shipping, and never to log the shipment by hand.
+- **Files:** `lib/mouse/tools.ts` (`invoice_wholesale`, `send_wholesale_draft`).
+- **Needs:** Shopify.
+
 ---
 
 ## Setup notes for a new install

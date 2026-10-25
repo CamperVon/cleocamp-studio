@@ -139,6 +139,10 @@ export const WHATS_NEW: Update[] = [
     text: 'You can tell Mouse a component goes into no product on purpose, like the gold safety pins and the brass rivets. They stay counted and stop showing up as "on no product" each morning.',
   },
   {
+    on: '2026-10-25', path: '/wholesale',
+    text: 'Wholesale invoices and stock: when an invoice that ships is sent, Shopify holds the items, and they come off stock when the order is marked fulfilled as the box goes. An unpaid invoice that gets cancelled puts them back. Nothing to log by hand; Mouse now explains it this way.',
+  },
+  {
     on: '2026-10-24', path: '/products',
     text: 'Mouse can keep a wait list. Tell it who is waiting for a colour and size (for example the Shell size 1 tees for Aidan and Al), and when that stock is logged in, Mouse tells you by name and order number who can now be sent theirs.',
   },
