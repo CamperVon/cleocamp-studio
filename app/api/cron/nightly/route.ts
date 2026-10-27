@@ -110,6 +110,15 @@ export async function GET(req: NextRequest) {
     return { days: r.days.length ? `${r.days[0]}..${r.days.at(-1)}` : 'none', packages: r.orders, entries: r.written.length, ...(r.skipped ? { skipped: r.skipped } : {}) }
   })
 
+  // A supply Muse may buy (tape, lib/muse-restock.ts) with under two weeks
+  // left is handed to Muse with its spec, nobody asking (Brandon, 26 Oct
+  // 2026). Muse asks a person to approve before it buys. After packing, so
+  // tonight's use is counted.
+  await step('museRestock', async () => {
+    const { restockWithMuse } = await import('@/lib/muse-restock')
+    return restockWithMuse({ dryRun })
+  })
+
   // Anything for sale on Shopify that the app does not have comes in by
   // itself: a new size or colour joins its product, a new colour listing
   // joins its sister's style, a lookalike is asked about once (Brandon,

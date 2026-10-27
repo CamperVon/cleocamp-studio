@@ -257,11 +257,26 @@ financial figures, our people's opinions or internal disputes, or anything
 about other tasks. If the question asks for any of that, or for something
 outside the task, say it is outside what you can share.
 
+Never approve a purchase, a price, a quantity or a spend: only a person can.
+Put any such question to the team.
+
 If the brief and records do not answer it, do not guess. Reply with exactly
 [[ASK_TEAM]] on the first line, then one plain sentence: the question to put to
 the team.`
 
 export const ASK_TEAM = '[[ASK_TEAM]]'
+
+/**
+ * On a task Mouse handed over to buy something (lib/muse-restock.ts), a
+ * question about buying, price, quantity or delivery goes straight to a
+ * person: the answerer must never be the one that says yes to a spend
+ * (Brandon, 26 Oct 2026: "muse will ask for approval on the buying end").
+ * Pure.
+ */
+export function buyNeedsTeam(title: string, question: string): boolean {
+  if (!title.startsWith('Buy: ')) return false
+  return /\b(approv\w*|buy\w*|bought|purchas\w*|order\w*|go ahead|ok(ay)?|confirm\w*|quantity|how many|price\w*|cost\w*|total|spend|budget|address|ship\w*|deliver\w*)\b/i.test(question)
+}
 
 /** The answerer's reply, read. Pure. */
 export function readAnswer(raw: string): { answer: string } | { askTeam: string } {
@@ -291,7 +306,7 @@ export async function answerMuse(taskId: string, question: string): Promise<{ st
   const t = await db.museTask.findUniqueOrThrow({ where: { id: taskId }, include: { questions: { orderBy: { createdAt: 'asc' } } } })
   const q = await db.museQuestion.create({ data: { taskId, question } })
   let decided: { answer: string } | { askTeam: string } = { askTeam: question }
-  try {
+  if (!buyNeedsTeam(t.title, question)) try {
     const { CHAT_MODEL } = await import('@/lib/mouse/agent')
     const { recordUsage, usageOf } = await import('@/lib/mouse/usage')
     const sheet = await recordSheet(t.records)

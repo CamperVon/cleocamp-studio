@@ -186,6 +186,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-16',
     text: 'Mouse can now email a customer or a wholesale store at the address on their record, like asking order #2835 for a phone number for DHL. It still shows you the email in the chat and sends only when you say so.',
   },
+  {
+    on: '2026-10-27', path: '/muse',
+    text: 'When shipping tape gets down to about two weeks\' worth, Mouse now hands it to Muse to buy by itself. Muse asks one of you to approve the item, price and quantity first, and that question shows up in your to-dos. If the tape count looks wrong (below zero), Mouse asks for a count instead.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

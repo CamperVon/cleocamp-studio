@@ -761,6 +761,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/lead-time-learning.ts` (`learnLeadTimes`), `lib/production-lead-learning.ts`, `lib/mouse/tools.ts` (`update_purchase_order`, `update_production_run` descriptions).
 - **Needs:** nothing beyond the app.
 
+
+### Simple supplies handed to the outside buyer by themselves when they run low
+- **Problem:** "when it runs low, have the researcher buy more" lived only as a note. Nothing read it, so a supply could sit at zero (or below, after an unlogged delivery) and no purchase task was ever made.
+- **Change:** a list of supplies the outside researcher may buy, each with a person's spec. Every night, after packing use comes off stock, a listed supply with under two weeks of cover (from its recorded daily use) becomes a purchase task with the spec, the rate of use and the ship-to address. One task at a time per supply. A count below zero, or none ever taken, raises a to-do to count it instead of buying on a wrong number. On a purchase task, any question about buying, price, quantity or delivery goes to a person; the auto-answerer can never approve a spend.
+- **Files:** `lib/muse-restock.ts` (`MUSE_BUYS`, `restockCall`, `restockBrief`, `restockWithMuse`), `lib/muse.ts` (`buyNeedsTeam`, answer rules), `app/api/cron/nightly/route.ts` (`museRestock` step), `lib/mouse/tools.ts` (`hand_to_muse` wording), `tests/muse-restock.test.ts`.
+- **Needs:** the Muse API, and Shopify for the packing use it reads.
+
 ---
 
 ## Setup notes for a new install

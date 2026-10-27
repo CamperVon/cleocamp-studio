@@ -1077,7 +1077,9 @@ export const TOOLS: Record<string, Tool> = {
         'another supplier worldwide, a supplier\'s stock, lead times, minimums, shipping options). Only when ' +
         'a person asks for it. Muse researches and reports. It can also BUY simple supplies when a person asks ' +
         '(Brandon, 25 Oct 2026: "Muse can buy", e.g. shipping tape: cheap, clear packing tape): say plainly in ' +
-        'the brief that it is a purchase, what, how many, and where it ships. Muse never places production ' +
+        'the brief that it is a purchase, what, how many, and where it ships, and start the title with ' +
+        '"Buy: " so Muse\'s approval questions go to a person. Low shipping tape is handed over by itself ' +
+        'every night (lib/muse-restock.ts); do not hand it again. Muse never places production ' +
         'orders, contacts our suppliers or changes anything in the app. ' +
         'WRITE THE BRIEF AS TO AN OUTSIDE CONTRACTOR: it leaves the company. Put in everything an ' +
         'accurate search needs: what the item is (specs, composition, width, weight, colour names and ' +
