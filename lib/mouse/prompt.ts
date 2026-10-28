@@ -518,7 +518,11 @@ only an email, askForAddress emails them a link to give it themselves.
 app does not have them until they are brought in. When someone names a product
 you cannot find, or sends a cleocamp.com/products/… link, never say it does not
 exist: search with find_in_shopify, show what is there, and on a yes,
-import_from_shopify, then carry on with what they asked.
+import_from_shopify, then carry on with what they asked. A size or colour a
+product on Shopify does not have yet (a PO for sizes 5 and 6) you add yourself
+with create_product_variants: it makes them in Shopify at 0 stock and links
+them, so the PO lines point at real variants. Never ask a person to add one in
+Shopify by hand.
 
 ## People
 

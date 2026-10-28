@@ -190,6 +190,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-27', path: '/muse',
     text: 'When shipping tape gets down to about two weeks\' worth, Mouse now hands it to Muse to buy by itself. Muse asks one of you to approve the item, price and quantity first, and that question shows up in your to-dos. If the tape count looks wrong (below zero), Mouse asks for a count instead.',
   },
+  {
+    on: '2026-10-28', path: '/products',
+    text: 'Mouse can now add a new size or colour to a product that is already on Shopify, like sizes 5 and 6 of the Cosmo Tee. It makes them in Shopify at 0 stock, at the same price as the next size down, and ties them to the purchase order. No more adding sizes in Shopify by hand. If a bigger size should cost more, change its price in Shopify.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

@@ -2192,11 +2192,14 @@ export const TOOLS: Record<string, Tool> = {
         'the sizes and colourways given, skipping any that already exist, so running it ' +
         'twice is safe. Use it for a product still in development, before it reaches ' +
         'Shopify: without variants there is nothing to order against. For a product already ' +
-        'listed on Shopify, do NOT use this — the variant has to be made in Shopify first ' +
-        'and pulled in with sync_shopify, or it can never write its count back. The one ' +
-        'exception: a colour a person says is wholesale only, never on Shopify (like the Red ' +
-        'Petite Bean Bag). Then pass wholesaleOnly: true with its colorwayIds, and the variant ' +
-        'lives in the app alone; set its wholesale price after.',
+        'listed on Shopify it makes the new size or colour IN SHOPIFY itself (Brandon, 28 Oct ' +
+        '2026): at 0 stock, priced and set up for shipping like the largest existing size of ' +
+        'that colour, then linked here with its SKU, so a PO line can point at it straight ' +
+        'away. Never ask a person to add a size in Shopify by hand. Say the price it took; a ' +
+        'larger size that should cost more is changed in Shopify. The one exception: a colour ' +
+        'a person says is wholesale only, never on Shopify (like the Red Petite Bean Bag). ' +
+        'Then pass wholesaleOnly: true with its colorwayIds, and the variant lives in the app ' +
+        'alone; set its wholesale price after.',
       input_schema: {
         type: 'object',
         properties: {
@@ -2226,15 +2229,22 @@ export const TOOLS: Record<string, Tool> = {
       const wsProblem = wholesaleOnly ? wholesaleOnlyProblem(product, i.colorwayIds as string[] | undefined) : null
       if (wsProblem) return { created: 0, error: wsProblem }
       if (isListedOnShopify(product) && !wholesaleOnly) {
+        // Made in Shopify first, then linked here (lib/shopify-variants.ts).
+        const sizesIn = (i.sizes as string[] | undefined)?.length ? (i.sizes as string[]) : [null]
+        const ids = (i.colorwayIds as string[] | undefined) ?? []
+        const unknown = ids.filter((id) => !product.colorways.some((c) => c.id === id))
+        if (unknown.length) return { created: 0, error: `No colourway ${unknown.join(', ')} on ${product.name}.` }
+        const colours = ids.length ? ids.map((id) => product.colorways.find((c) => c.id === id)!.customerName) : [null]
+        const { addVariantsInShopify } = await import('@/lib/shopify-variants')
+        const r = await addVariantsInShopify(product.id, colours, sizesIn, currentActor())
+        if (!r.ok) return { created: 0, error: r.error }
         return {
-          created: 0,
-          error:
-            `${product.name} is already listed on Shopify, and a variant made here would have ` +
-            `no Shopify link — its count could never write back, and the two would drift. It ` +
-            `has to be added in Shopify and brought in with import_from_shopify. That is about the ` +
-            `COUNT and nothing else: to order this, write the purchase order line as a ` +
-            `description instead. No variant is needed to place an order, so do not hold up ` +
-            `a document waiting for one.`,
+          created: r.created.length, alreadyInShopify: r.already, names: r.created, skus: r.skus,
+          ...(r.skuProblems.length ? { problems: r.skuProblems } : {}),
+          tellTheUser: r.created.length
+            ? `Added ${r.created.join(', ')} to ${product.name} in Shopify at 0 stock and ${r.price === '' ? '' : `$${r.price}, the same price as the size it was copied from, `}linked here` +
+              (r.skus.length ? ` with ${r.skus.join(', ')}` : '') + '. Point the PO lines at them now (update_purchase_order_lines, setProductVariantId).'
+            : `${product.name} already has ${r.already.join(', ')} in Shopify; nothing was made.`,
         }
       }
 
