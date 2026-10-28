@@ -40,3 +40,9 @@ test('a new colour copies any variant when none of that colour exists', () => {
   assert.equal(p.make.length, 1)
   assert.deepEqual(p.make[0].optionValues, [{ optionName: 'Color', name: 'Navy Stripe' }, { optionName: 'Size', name: '1' }])
 })
+
+test('an access-denied error is recognised so a newly granted permission gets a fresh token', async () => {
+  const { isAccessDenied } = await import('../lib/integrations/shopify')
+  assert.equal(isAccessDenied('Shopify GraphQL: Access denied for productVariantsBulkCreate field. Required access: `write_products` access scope.'), true)
+  assert.equal(isAccessDenied('Shopify GraphQL: Product does not exist'), false)
+})

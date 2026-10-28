@@ -72,11 +72,32 @@ export async function getAccessToken(): Promise<string> {
   return cached.token
 }
 
+/**
+ * An "Access denied … Required access: write_products" error. A permission
+ * granted in the Dev Dashboard only reaches a new token, and a warm instance
+ * keeps its token for up to a day, so the first denial drops the cached token
+ * and tries once more (28 Oct 2026: write_products was added and Mouse still
+ * read the old token). Pure.
+ */
+export function isAccessDenied(message: string): boolean {
+  return /access denied|required access/i.test(message)
+}
+
 /** Admin GraphQL. Throws on GraphQL errors rather than returning a half-result. */
 export async function shopifyGraphQL<T>(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<T> {
+  try {
+    return await graphQLOnce<T>(query, variables)
+  } catch (e) {
+    if (!cached || !isAccessDenied(e instanceof Error ? e.message : String(e))) throw e
+    cached = null
+    return graphQLOnce<T>(query, variables)
+  }
+}
+
+async function graphQLOnce<T>(query: string, variables: Record<string, unknown>): Promise<T> {
   const { shop } = config()
   const token = await getAccessToken()
 

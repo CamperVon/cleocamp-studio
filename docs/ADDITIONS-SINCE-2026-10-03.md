@@ -773,7 +773,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Problem:** for a product already on Shopify, the assistant could only read its variants. A purchase order for a new size stopped at "add it in Shopify by hand, then tell me", and a person had to do it before the PO lines could point at real variants.
 - **Change:** `create_product_variants` on a product listed on Shopify now makes the new size or colour in Shopify itself (`productVariantsBulkCreate`), at 0 stock in the studio location, copying price, stock policy, tax, weight, HS code and country of origin from the largest existing size of the same colour. It then pulls the variant in through the normal Shopify import (linked, so counts write back), assigns its SKU where the style's codes are confirmed, and writes that SKU onto the Shopify variant. A product with more than one non-size option, or with no variant to copy from, is refused rather than guessed. The price is copied, never calculated.
 - **Files:** `lib/shopify-variants.ts` (`planNewVariants`, `variantInput`, `addVariantsInShopify`), `lib/mouse/tools.ts` (`create_product_variants`), `lib/mouse/prompt.ts`, `tests/shopify-variants.test.ts`.
-- **Needs:** Shopify, with write access to products.
+- **Needs:** Shopify, with the `write_products` scope on the app (Dev Dashboard → the app → access scopes → release, then approve in the store's Apps page). A permission granted later is picked up at once: an access-denied error drops the cached token and retries once (`isAccessDenied` in `lib/integrations/shopify.ts`).
 
 ---
 
