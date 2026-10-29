@@ -532,6 +532,54 @@ async function waitingOnRestock(productVariantId: string) {
   }
 }
 
+/**
+ * Undo a stylist-pull return logged by mistake: the pieces show as out again
+ * and the stock the return added comes back off (lib/stylist-stock.ts
+ * undoReturnPlan). Until 28 Oct 2026 nothing could take a return off a pull
+ * line, so a corrected stock count left the pull saying the piece was back.
+ */
+async function undoPullReturn(
+  pull: { id: string; stylist: { name: string }; lines: Array<{ id: string; item: string; returnedQty: number; productVariantId: string | null }> },
+  items: Array<{ lineId: string; qty: number }>,
+) {
+  if (!items.length) return { saved: false, reason: 'Say which lines and how many to undo.' }
+  const asks = items.map((x) => ({ line: pull.lines.find((l) => l.id === String(x.lineId)), qty: Math.round(Number(x.qty)) }))
+  for (const a of asks) {
+    if (!a.line) return { saved: false, reason: 'A line is not on this pull. Look again.' }
+    if (!(a.qty > 0) || a.qty > a.line.returnedQty) return { saved: false, reason: `${a.line.item}: ${a.line.returnedQty} logged as back, so ${a.qty} cannot be undone.` }
+  }
+  const { undoReturnPlan } = await import('@/lib/stylist-stock')
+  const marker = `[pull ${pull.id}]`
+  const done: string[] = []
+  for (const a of asks) {
+    const l = a.line!
+    let fromStock = ''
+    if (l.productVariantId) {
+      const returns = await db.inventoryEvent.findMany({ where: { productVariantId: l.productVariantId, type: 'STYLIST_PULL_RETURN', note: { contains: marker } }, orderBy: { createdAt: 'asc' }, select: { id: true, deltaQty: true } })
+      const fixes = await db.inventoryEvent.groupBy({ by: ['correctsEventId'], where: { correctsEventId: { in: returns.map((r) => r.id) } }, _sum: { deltaQty: true } })
+      const left = returns.map((r) => ({ id: r.id, left: Number(r.deltaQty) + Number(fixes.find((f) => f.correctsEventId === r.id)?._sum.deltaQty ?? 0) }))
+      const intoStylist = await db.stylistStockEvent.aggregate({ where: { productVariantId: l.productVariantId, pullId: pull.id, reason: { in: ['PULL_RETURN', 'CORRECTION'] } }, _sum: { delta: true } })
+      const plan = undoReturnPlan(left, Number(intoStylist._sum.delta ?? 0), a.qty)
+      if (plan.sales.length && !inventoryWritesEnabled()) return { saved: false, reason: 'Inventory writing is paused, so the stock cannot come back off. Nothing changed.' }
+      for (const s of plan.sales) {
+        const w = await writeEvent({ productVariantId: l.productVariantId, deltaQty: -s.qty, type: 'CORRECTION', note: `Return logged by mistake: ${pull.stylist.name} still has it ${marker}` })
+        if (!w.eventId) return { saved: false, reason: `${l.item}: the stock could not come back off (${'error' in w ? w.error : 'unknown'}). The pull line was not changed.` }
+        await db.inventoryEvent.update({ where: { id: w.eventId as string }, data: { correctsEventId: s.id } })
+      }
+      if (plan.stylist) await db.stylistStockEvent.create({ data: { productVariantId: l.productVariantId, delta: -plan.stylist, reason: 'CORRECTION', pullId: pull.id, note: `Return logged by mistake ${marker}` } })
+      fromStock = [
+        plan.sales.length ? `${plan.sales.reduce((n, s) => n + s.qty, 0)} off sales stock` : '',
+        plan.stylist ? `${plan.stylist} off the stylist inventory` : '',
+        plan.alreadyFixed ? `${plan.alreadyFixed} already corrected on stock, left as is` : '',
+      ].filter(Boolean).join('; ')
+    }
+    const now = l.returnedQty - a.qty
+    await db.stylistPullLine.update({ where: { id: l.id }, data: { returnedQty: now, ...(now === 0 ? { returnedAt: null } : {}) } })
+    done.push(`${l.item}: ${a.qty} out again${fromStock ? ` (${fromStock})` : ''}.`)
+  }
+  return { saved: true, pullId: pull.id, undone: done }
+}
+
 export const TOOLS: Record<string, Tool> = {
   log_inventory_event: {
     def: {
@@ -5611,7 +5659,10 @@ export const TOOLS: Record<string, Tool> = {
       description:
         'Pieces back from a stylist pull. What came from sales stock goes back there first (STYLIST_PULL_RETURN), the rest to the stylist inventory. Leave items ' +
         'out when everything still out came back; list them when only some did. Also sets a pull\'s ' +
-        'return date when one is agreed (dueBackAt, nothing returned).',
+        'return date when one is agreed (dueBackAt, nothing returned). A return logged by mistake ' +
+        '(the stylist kept it after all): undo: true with the items and how many. The line shows ' +
+        'them as out again and the stock comes back off, sales stock or stylist inventory, unless ' +
+        'it was already corrected by hand, which is never taken off twice (Jane, 28 Oct 2026).',
       input_schema: {
         type: 'object',
         properties: {
@@ -5621,6 +5672,7 @@ export const TOOLS: Record<string, Tool> = {
             items: { type: 'object' as const, properties: { lineId: str('The pull line'), qty: num('How many came back') }, required: ['lineId', 'qty'] },
           },
           everythingBack: { type: 'boolean' as const, description: 'true when all pieces still out came back.' },
+          undo: { type: 'boolean' as const, description: 'true to undo a return logged by mistake, for the items listed' },
           dueBackAt: str('YYYY-MM-DD, to set or move the return date without returning anything'),
         },
         required: ['pullId'],
@@ -5630,6 +5682,7 @@ export const TOOLS: Record<string, Tool> = {
       const pull = await db.stylistPull.findUnique({ where: { id: String(i.pullId) }, include: { lines: true, stylist: { select: { name: true } } } })
       if (!pull) return { saved: false, reason: 'No such pull.' }
       if (pull.closedAs) return { saved: false, reason: `That pull was closed (${pull.closedAs === 'KEPT' ? 'kept' : 'removed as a mistake'}). Reopen it with close_stylist_pull (as: OPEN) first if pieces really came back.` }
+      if (i.undo === true) return undoPullReturn(pull, (Array.isArray(i.items) ? i.items : []) as Array<{ lineId: string; qty: number }>)
       if (i.dueBackAt) await db.stylistPull.update({ where: { id: pull.id }, data: { dueBackAt: new Date(`${String(i.dueBackAt)}T12:00:00-07:00`) } })
       const { stillOut } = await import('@/lib/stylists')
       const back = i.everythingBack === true

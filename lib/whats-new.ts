@@ -194,6 +194,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-28', path: '/products',
     text: 'Mouse can now add a new size or colour to a product that is already on Shopify, like sizes 5 and 6 of the Cosmo Tee. It makes them in Shopify at 0 stock, at the same price as the next size down, and ties them to the purchase order. No more adding sizes in Shopify by hand. If a bigger size should cost more, change its price in Shopify.',
   },
+  {
+    on: '2026-10-29', path: '/stylists',
+    text: 'Stylists page: if a return was logged by mistake (they kept the piece after all), tell Mouse and it puts the piece back as still out on the pull and takes it back off stock. Natasha Colvin\'s Black Cleo Tee size 1 is out again on the Adriana Lima pull.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

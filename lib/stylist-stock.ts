@@ -112,3 +112,27 @@ export async function variantLabels(ids: string[]): Promise<Map<string, { label:
     image: v.imageUrl,
   }]))
 }
+
+/**
+ * Undoing a return logged by mistake (Jane, 28 Oct 2026: a Black Cleo Tee
+ * marked back from Natasha Colvin's pull that she kept). Which stock to take
+ * back off: the sales-stock return events first, newest first, as far as
+ * they have not already been corrected; then what the return put into the
+ * stylist inventory. Whatever is left was already put right by hand (Mouse
+ * corrected the stock but could not touch the pull line), so it is reported,
+ * never taken off twice. Pure.
+ */
+export function undoReturnPlan(
+  salesReturns: Array<{ id: string; left: number }>,
+  stylistReturned: number,
+  qty: number,
+): { sales: Array<{ id: string; qty: number }>; stylist: number; alreadyFixed: number } {
+  let need = qty
+  const sales: Array<{ id: string; qty: number }> = []
+  for (const e of [...salesReturns].reverse()) {
+    const take = Math.min(need, Math.max(0, e.left))
+    if (take > 0) { sales.push({ id: e.id, qty: take }); need -= take }
+  }
+  const stylist = Math.min(need, Math.max(0, stylistReturned))
+  return { sales, stylist, alreadyFixed: need - stylist }
+}
