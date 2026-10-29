@@ -496,7 +496,13 @@ async function logEventChecked(i: Parameters<Tool['run']>[0]) {
     const po = (typeof i.purchaseOrderNumber === 'string' && i.purchaseOrderNumber.replace(/\D/g, '')) || poNumberIn(i.note)
     if (po) {
       const t = await receiveOnPo(po, { productVariantId: i.productVariantId, componentId: i.componentId }, i.deltaQty)
-      return { ...r, purchaseOrder: t.message, ...waiting }
+      // Finished goods back from a maker that packs them: the trims they
+      // used come off the maker's count (lib/maker-use.ts, 29 Oct 2026).
+      const { takeMakerTrims } = await import('@/lib/maker-use')
+      const trims = t.ok && i.productVariantId
+        ? await takeMakerTrims(po, i.productVariantId, i.deltaQty, String(r.eventId), (a) => writeEvent(a) as Promise<{ eventId?: unknown; error?: string }>).catch((e) => `Trims at the maker were not taken off (${e instanceof Error ? e.message : e}).`)
+        : null
+      return { ...r, purchaseOrder: t.message, ...(trims ? { trimsAtMaker: trims } : {}), ...waiting }
     }
   }
   return { ...r, ...waiting }
@@ -588,7 +594,11 @@ export const TOOLS: Record<string, Tool> = {
         'Record a change in stock. Use for receiving goods, shipping wholesale, gifting, ' +
         'returns, stylist pulls, or a physical count. Exactly one of componentId or ' +
         'productVariantId. For COUNTED give countedQty (the absolute number stated) — ' +
-        'deltaQty is then ignored. For a finished-goods variant this also pushes the same ' +
+        'deltaQty is then ignored. Finished goods RECEIVED on a maker\'s PO also take the trims ' +
+        'they used (labels, hangtags, glassine, buttons, stickers; never fabric) off what that ' +
+        'maker holds, by itself (trimsAtMaker in the result, Brandon 29 Oct 2026): say it in a ' +
+        'line, and never take them off again by hand. ' +
+        'For a finished-goods variant this also pushes the same ' +
         'change to Shopify, which stays master — check the result\'s "shopify" field. If it ' +
         'ever says the local save failed after Shopify had already taken the change, do not ' +
         'call this again for the same movement — say so plainly and get a person to reconcile. ' +

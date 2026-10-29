@@ -782,6 +782,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `app/ui/chat.tsx`.
 - **Needs:** nothing beyond the app.
 
+
+### Trims a maker packs come off its count when the finished goods arrive
+- **Problem:** labels, hangtags, bags, buttons and stickers sent to a factory that sews and packs the finished product only ever went up there. Thousands of finished units came back and the factory's trim count read as if none had been used.
+- **Change:** when finished goods are received against a maker's purchase order, each trim in that product's recipe (scoped by size and colour) comes off the maker's stock, as USED events, for components the maker actually holds a count of. Fabric is never taken off at delivery: it is used at cutting and its leftover counted then. Each delivery is done once (the receipt's event id is in the note). A maker whose stock is kept at a named location is mapped in `MAKER_LOCATIONS`; otherwise the vendor's own stock is used.
+- **Files:** `lib/maker-use.ts` (`trimsUsed`, `takeMakerTrims`), `lib/mouse/tools.ts` (receipt path of `log_inventory_event`), `tests/maker-use.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

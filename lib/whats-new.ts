@@ -202,6 +202,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-29',
     text: 'Mouse\'s chat box: you can now drag a file or photo from your computer anywhere onto the chat to attach it, not just onto the typing box. It says "Drop to attach" while you hold it there.',
   },
+  {
+    on: '2026-10-29', path: '/components',
+    text: 'When finished tees come back from Antonio\'s (or any maker\'s PO), the labels, hangtags, glassine, buttons and stickers they used now come off what that maker holds, by themselves. Everything delivered so far has already been taken off, so Empire\'s trim counts are now what should be left there.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */
