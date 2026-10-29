@@ -775,6 +775,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/shopify-variants.ts` (`planNewVariants`, `variantInput`, `addVariantsInShopify`), `lib/mouse/tools.ts` (`create_product_variants`), `lib/mouse/prompt.ts`, `tests/shopify-variants.test.ts`.
 - **Needs:** Shopify, with the `write_products` scope on the app (Dev Dashboard → the app → access scopes → release, then approve in the store's Apps page). A permission granted later is picked up at once: an access-denied error drops the cached token and retries once (`isAccessDenied` in `lib/integrations/shopify.ts`).
 
+
+### Drop files anywhere on the chat
+- **Problem:** files could be dropped onto the message box only. Dropped anywhere else on the chat, the browser opened the file instead of attaching it.
+- **Change:** the whole chat panel is a drop target, with a "Drop to attach" overlay while files are held over it (a depth count keeps the overlay steady as the pointer crosses child elements). Pasting still works on the message box.
+- **Files:** `app/ui/chat.tsx`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

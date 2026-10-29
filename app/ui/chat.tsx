@@ -385,6 +385,11 @@ export function Chat() {
   const [practice, setPractice] = useState(false)
   const [files, setFiles] = useState<PendingFile[]>([])
   const [fileError, setFileError] = useState<string | null>(null)
+  // Files dragged anywhere over the chat, not only onto the message box
+  // (Brandon, 29 Oct 2026). A depth count, because dragenter and dragleave
+  // fire for every child the pointer crosses on the way.
+  const [dragging, setDragging] = useState(false)
+  const dragDepth = useRef(0)
   // Brandon, 18 Sept 2026: "I need to be able to type in box while it's
   // thinking. Queing the next." The box used to go dead for the whole turn,
   // so a thought that arrived mid-answer had to be held in your head until
@@ -684,8 +689,25 @@ export function Chat() {
     }
   }
 
+  const hasFiles = (e: React.DragEvent) => e.dataTransfer.types.includes('Files')
   return (
-    <div className="flex flex-col">
+    <div
+      className="relative flex flex-col"
+      onDragEnter={(e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth.current += 1; setDragging(true) }}
+      onDragOver={(e) => { if (hasFiles(e)) e.preventDefault() }}
+      onDragLeave={(e) => { if (!hasFiles(e)) return; dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) setDragging(false) }}
+      onDrop={(e) => {
+        dragDepth.current = 0
+        setDragging(false)
+        const dropped = filesFrom(e.dataTransfer)
+        if (dropped.length) { e.preventDefault(); void addFiles(dropped) }
+      }}
+    >
+      {dragging ? (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-bg/85">
+          <p className="text-sm font-medium text-ink">Drop to attach</p>
+        </div>
+      ) : null}
       {practice ? (
         <div className="flex items-center justify-between gap-3 border-b border-warn bg-warn-soft px-4 py-2 sm:px-5">
           <p className="text-xs text-ink">
@@ -834,11 +856,6 @@ export function Chat() {
             onPaste={(e) => {
               const pasted = filesFrom(e.clipboardData)
               if (pasted.length) { e.preventDefault(); void addFiles(pasted) }
-            }}
-            onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }}
-            onDrop={(e) => {
-              const dropped = filesFrom(e.dataTransfer)
-              if (dropped.length) { e.preventDefault(); void addFiles(dropped) }
             }}
             onChange={(e) => {
               setInput(e.target.value)

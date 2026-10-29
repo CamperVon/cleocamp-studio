@@ -198,6 +198,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-29', path: '/stylists',
     text: 'Stylists page: if a return was logged by mistake (they kept the piece after all), tell Mouse and it puts the piece back as still out on the pull and takes it back off stock. Natasha Colvin\'s Black Cleo Tee size 1 is out again on the Adriana Lima pull.',
   },
+  {
+    on: '2026-10-29',
+    text: 'Mouse\'s chat box: you can now drag a file or photo from your computer anywhere onto the chat to attach it, not just onto the typing box. It says "Drop to attach" while you hold it there.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */
