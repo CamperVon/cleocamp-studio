@@ -4,7 +4,48 @@
       "mcp__Intuit_QuickBooks__company_info",
       "mcp__Intuit_QuickBooks__profit_loss_quickbooks_account",
       "mcp__Intuit_QuickBooks__qbo_accounting_get_ar_aging_summary",
-      "Bash(npx tsx scripts/record-quickbooks.ts:*)"
+      "mcp__Intuit_QuickBooks__qbo_accounting_get_ar_aging_detail",
+      "mcp__Intuit_QuickBooks__qbo_accounting_get_ap_aging_summary",
+      "mcp__Intuit_QuickBooks__qbo_accounting_get_balance_sheet",
+      "mcp__Intuit_QuickBooks__qbo_accounting_get_sales_by_customer_summary",
+      "mcp__Intuit_QuickBooks__qbo_accounting_get_sales_by_product_summary",
+      "mcp__Intuit_QuickBooks__qbo_sales_get_invoices",
+      "mcp__Intuit_QuickBooks__cash_flow_quickbooks_account",
+      "Bash(npx tsx scripts/record-quickbooks.ts:*)",
+
+      "mcp__Shopify",
+
+      "mcp__Resend__send-email",
+      "mcp__Resend__get-email",
+      "mcp__Resend__list-emails",
+      "mcp__Resend__list-received-emails",
+      "mcp__Resend__get-received-email",
+      "mcp__Resend__list-received-email-attachments",
+      "mcp__Resend__get-received-email-attachment",
+
+      "mcp__Studio_Mouse__get_latest_snapshot",
+      "mcp__Studio_Mouse__get_product",
+      "mcp__Studio_Mouse__get_purchase_order",
+      "mcp__Studio_Mouse__list_open_questions",
+      "mcp__Studio_Mouse__list_products",
+      "mcp__Studio_Mouse__list_purchase_orders",
+      "mcp__Studio_Mouse__list_vendors",
+      "mcp__Studio_Mouse__search_notes",
+      "mcp__Studio_Mouse__style_system",
+      "mcp__Studio_Mouse__wholesale_price_list",
+
+      "Bash(npx tsx:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npm test:*)",
+      "Bash(node --import tsx --test:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git fetch:*)",
+      "Bash(git push:*)"
     ]
   }
 }
