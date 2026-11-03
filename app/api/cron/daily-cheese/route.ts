@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { laMidnight } from '@/lib/dates'
+import { laHour, laMidnight, MORNING_HOUR } from '@/lib/dates'
 import { sendEmail } from '@/lib/email'
 import { composeDailyCheese } from '@/lib/mouse/daily-cheese'
 
@@ -13,10 +13,9 @@ export const maxDuration = 60
 // the important stuff. But Jane only works her three days a week." and
 // "Jane only gets emails on her days" — so Monday and Friday go to Cleo,
 // Brandon cc'd, Jane NOT cc'd; Tuesday through Thursday go to Jane, Cleo and
-// Brandon cc'd. Same vercel.json hour convention as the old am-report cron —
-// "0 15 * * 1-5" is 8-9am Pacific while LA is on daylight time; move to
-// "0 16 * * 1-5" once DST ends (~1 Nov 2026) if 8am still matters more than
-// a fixed UTC hour.
+// Brandon cc'd. vercel.json runs it at 15:00 and 16:00 UTC on weekdays and the
+// one that is 8am or later in LA sends (2 Nov 2026, after the clocks went back
+// and it started arriving at 7).
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET
   const auth = req.headers.get('authorization')
@@ -24,6 +23,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
   const dryRun = req.nextUrl.searchParams.get('dry') === '1'
+  // Runs at 15:00 and 16:00 UTC (vercel.json); only the run at 8am or later
+  // in LA sends, so it is 8am in summer and winter alike. ?now=1 skips the wait.
+  if (laHour() < MORNING_HOUR && req.nextUrl.searchParams.get('now') !== '1') {
+    return NextResponse.json({ skipped: `before ${MORNING_HOUR}am in Los Angeles; the next hour's run sends` })
+  }
 
   const notify = await db.notificationSettings.findUnique({ where: { id: 'singleton' } })
   if (!notify?.dailyCheeseEnabled) return NextResponse.json({ skipped: 'Daily Cheese switched off' })

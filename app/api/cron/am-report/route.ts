@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { laMidnight } from '@/lib/dates'
+import { laHour, laMidnight, MORNING_HOUR } from '@/lib/dates'
 import { sendEmail } from '@/lib/email'
 import { composeAmReport } from '@/lib/mouse/am-report'
 import { isConfigured as shopifyConfigured } from '@/lib/integrations/shopify'
@@ -14,11 +14,9 @@ export const maxDuration = 300
 // forecasting, alerts, the chip-away drip) because Hobby cron jobs only fire
 // once a day each and this needs its own, later, hour.
 //
-// Vercel's Hobby scheduling is per-hour, not per-minute — "0 15 * * *" fires
-// anywhere in the 15:00–15:59 UTC hour, which is 8–9am while LA is on
-// daylight time. When DST ends (~1 Nov 2026) that becomes 7–8am; move the
-// schedule in vercel.json to "0 16 * * *" then if 8am still matters more
-// than a fixed UTC hour.
+// Vercel's Hobby scheduling is per-hour, not per-minute, and in UTC. It runs
+// at 15:00 and 16:00 UTC and the run that is 8am or later in LA sends, so the
+// clock change never moves it (2 Nov 2026).
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET
   const auth = req.headers.get('authorization')
@@ -26,6 +24,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
   const dryRun = req.nextUrl.searchParams.get('dry') === '1'
+  // Runs at 15:00 and 16:00 UTC (vercel.json); only the run at 8am or later
+  // in LA sends, so it is 8am in summer and winter alike. ?now=1 skips the wait.
+  if (laHour() < MORNING_HOUR && req.nextUrl.searchParams.get('now') !== '1') {
+    return NextResponse.json({ skipped: `before ${MORNING_HOUR}am in Los Angeles; the next hour's run sends` })
+  }
 
   // This had no off switch at all until 4 Sept 2026 — it simply ran, and
   // asking Studio Mouse to stop it got "I can't switch that off myself."

@@ -796,6 +796,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/tools.ts` (`set_order_shipping_address`), `lib/mouse/tool-kinds.ts`, `lib/support/orders.ts` (`mergeShipTo`, `shipToLine`), `tests/order-address.test.ts`.
 - **Needs:** Shopify (write_orders).
 
+
+### Morning emails stay at 8am through daylight-saving changes
+- **Problem:** the hosting's scheduled jobs run on a fixed UTC hour, so a morning email set for 8am in summer arrived at 7am once the clocks went back, and moving the schedule by hand twice a year was easy to forget.
+- **Change:** each morning email runs at two UTC hours an hour apart, and only the run that is 8am or later in the business's time zone sends; the other skips. The existing once-a-day guard stops a second send. `?now=1` skips the wait for a manual run.
+- **Files:** `lib/dates.ts` (`laHour`, `MORNING_HOUR`), `app/api/cron/daily-cheese/route.ts`, `app/api/cron/am-report/route.ts`, `vercel.json`, `tests/la-hour.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

@@ -210,6 +210,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-03',
     text: 'Mouse can now fix a Shopify order\'s shipping address when you ask, like "change the street number on #2962 to 629". It changes only what you name, tells you the old and new address, and won\'t touch an order that has already shipped. The customer isn\'t emailed.',
   },
+  {
+    on: '2026-11-03',
+    text: 'The Daily Cheese is back to arriving around 8am. It came an hour early after the clocks went back, and it now follows Los Angeles time by itself, summer and winter.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

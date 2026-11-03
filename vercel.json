@@ -9,8 +9,16 @@
       "schedule": "0 15 * * *"
     },
     {
+      "path": "/api/cron/am-report?run=late",
+      "schedule": "0 16 * * *"
+    },
+    {
       "path": "/api/cron/daily-cheese",
       "schedule": "0 15 * * 1-5"
+    },
+    {
+      "path": "/api/cron/daily-cheese?run=late",
+      "schedule": "0 16 * * 1-5"
     }
   ]
 }
