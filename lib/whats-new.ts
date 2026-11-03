@@ -206,6 +206,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-10-29', path: '/components',
     text: 'When finished tees come back from Antonio\'s (or any maker\'s PO), the labels, hangtags, glassine, buttons and stickers they used now come off what that maker holds, by themselves. Everything delivered so far has already been taken off, so Empire\'s trim counts are now what should be left there.',
   },
+  {
+    on: '2026-11-03',
+    text: 'Mouse can now fix a Shopify order\'s shipping address when you ask, like "change the street number on #2962 to 629". It changes only what you name, tells you the old and new address, and won\'t touch an order that has already shipped. The customer isn\'t emailed.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

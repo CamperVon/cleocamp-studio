@@ -73,6 +73,7 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
   import_from_shopify: 'changes',
   invoice_live_sale: 'changes',
   invoice_wholesale: 'changes',
+  set_order_shipping_address: 'changes', // 2 Nov 2026: a team member's address fix on a Shopify order
   mark_shipped: 'changes', // 25 Oct 2026: a box marked shipped in Shopify, item by item
   keep_file: 'changes',
   keep_link: 'changes',

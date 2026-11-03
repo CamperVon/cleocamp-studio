@@ -6621,6 +6621,58 @@ export const TOOLS: Record<string, Tool> = {
   // Brandon, 25 Oct 2026: Cosimo's first wholesale order went out and sat
   // two weeks with nothing marked in Shopify. Each box is marked as it goes,
   // with only what is in it (lib/shipments.ts).
+  set_order_shipping_address: {
+    def: {
+      name: 'set_order_shipping_address',
+      description:
+        'Change where a Shopify order ships when a team member asks ("change the street number on #2962 to 629", ' +
+        '"her apartment is 4B"). Give only the parts that change; the rest stays as Shopify has it, re-read fresh. ' +
+        'Refused once the order has shipped (the label is made) or is cancelled. The customer is not emailed. Say the ' +
+        'old and new address in one line. A change a CUSTOMER asks for by email goes through the Support page, ' +
+        'not this (Brandon, 2 Nov 2026).',
+      input_schema: {
+        type: 'object',
+        properties: {
+          order: str('The order number, e.g. "#2962"'),
+          name: str('Recipient name, only if it changes'),
+          address1: str('Street line, only if it changes (the whole line, e.g. "629 Willoughby Ave")'),
+          address2: str('Apartment, suite, floor, only if it changes'),
+          city: str('Only if it changes'),
+          provinceCode: str('State code, e.g. NY, only if it changes'),
+          zip: str('Only if it changes'),
+          countryCode: str('Two letters, e.g. US, only if it changes'),
+        },
+        required: ['order'],
+      },
+    },
+    run: async (i) => {
+      const { shopifyGraphQL } = await import('@/lib/integrations/shopify')
+      const { freshOrder, setShippingAddress, mergeShipTo, shipToLine } = await import('@/lib/support/orders')
+      const name = `#${String(i.order ?? '').replace(/[^0-9]/g, '')}`
+      if (name === '#') return { changed: false, error: 'Say the order number.' }
+      const found = await shopifyGraphQL<{ orders: { nodes: Array<{ id: string; name: string }> } }>(`query($q: String!) { orders(first: 1, query: $q) { nodes { id name } } }`, { q: `name:${name}` })
+      const hit = found.orders.nodes.find((o) => o.name === name)
+      if (!hit) return { changed: false, error: `No Shopify order ${name}.` }
+      const o = await freshOrder(hit.id)
+      if (!o) return { changed: false, error: `Could not read ${name} from Shopify.` }
+      if (o.cancelledAt) return { changed: false, error: `${name} is cancelled; its address cannot change.` }
+      if (o.fulfillmentStatus === 'FULFILLED') return { changed: false, error: `${name} has already shipped, so the label is made. Change it with the carrier instead.` }
+      const keys = ['name', 'address1', 'address2', 'city', 'provinceCode', 'zip', 'countryCode'] as const
+      const change = Object.fromEntries(keys.filter((k) => typeof i[k] === 'string').map((k) => [k, i[k] as string]))
+      if (!Object.keys(change).length) return { changed: false, error: 'Say what part of the address changes.' }
+      const next = mergeShipTo(o.shipTo, change)
+      if (!next.address1 || !next.city || !next.zip) return { changed: false, error: `That would leave ${name} without a street, city or zip. Nothing was changed.` }
+      if (shipToLine(next) === shipToLine(o.shipTo)) return { changed: false, alreadyCorrect: true, address: shipToLine(o.shipTo), tellTheUser: `${name} already ships to ${shipToLine(o.shipTo)}; nothing to change.` }
+      const r = await setShippingAddress(o.id, next)
+      if (!r.ok) return { changed: false, error: `Shopify refused: ${r.error}` }
+      return {
+        changed: true, order: name, was: shipToLine(o.shipTo), now: shipToLine(next),
+        ...(o.fulfillmentStatus === 'PARTIALLY_FULFILLED' ? { note: 'Part of this order already shipped to the old address; only what is left goes to the new one.' } : {}),
+        tellTheUser: `Changed ${name}'s shipping address from ${shipToLine(o.shipTo)} to ${shipToLine(next)}. The customer was not emailed.`,
+      }
+    },
+  },
+
   mark_shipped: {
     def: {
       name: 'mark_shipped',

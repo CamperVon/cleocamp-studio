@@ -789,6 +789,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/maker-use.ts` (`trimsUsed`, `takeMakerTrims`), `lib/mouse/tools.ts` (receipt path of `log_inventory_event`), `tests/maker-use.test.ts`.
 - **Needs:** nothing beyond the app.
 
+
+### The assistant can correct a Shopify order's shipping address for the team
+- **Problem:** a team member asking to fix a street number on an unshipped order got "no tool, do it in Shopify by hand". Only the customer-service tap could change an address.
+- **Change:** `set_order_shipping_address` changes only the parts of the address a team member names, against a fresh read of the order, and reports the old and new address. It refuses a cancelled or fully shipped order and any result missing a street, city or zip, and notes when part of the order already shipped. The customer is not emailed. Customer-requested changes still go through the customer-service checks.
+- **Files:** `lib/mouse/tools.ts` (`set_order_shipping_address`), `lib/mouse/tool-kinds.ts`, `lib/support/orders.ts` (`mergeShipTo`, `shipToLine`), `tests/order-address.test.ts`.
+- **Needs:** Shopify (write_orders).
+
 ---
 
 ## Setup notes for a new install

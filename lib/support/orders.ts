@@ -460,3 +460,20 @@ export async function swapLineVariant(
   if (!after || !landed) return { ok: false, error: 'Shopify accepted the swap but the order does not show it yet. Check it in Shopify before sending anything.' }
   return { ok: true, order: after }
 }
+
+/**
+ * The shipping address after a team member's change: only the parts they
+ * named, the rest as Shopify has it (Brandon, 2 Nov 2026: "change the street
+ * number on #2962 to 629" stopped at "no tool"). Pure.
+ */
+export function mergeShipTo(current: ShipTo | null | undefined, change: Partial<ShipTo>): ShipTo {
+  const base: ShipTo = current ?? { name: null, address1: null, address2: null, city: null, provinceCode: null, zip: null, countryCode: null }
+  const pick = (k: keyof ShipTo) => (typeof change[k] === 'string' ? (change[k] as string).trim() || null : base[k])
+  return { name: pick('name'), address1: pick('address1'), address2: pick('address2'), city: pick('city'), provinceCode: pick('provinceCode'), zip: pick('zip'), countryCode: pick('countryCode') }
+}
+
+/** One line for a person to read. Pure. */
+export function shipToLine(a: ShipTo | null | undefined): string {
+  if (!a) return 'no address'
+  return [a.name, a.address1, a.address2, [a.city, a.provinceCode, a.zip].filter(Boolean).join(' '), a.countryCode].filter(Boolean).join(', ')
+}
