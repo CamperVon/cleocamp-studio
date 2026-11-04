@@ -62,8 +62,10 @@ export type InvoiceOptions = {
    */
   discount?: { percent: number; title: string } | null
   /**
-   * A discount kept as Shopify holds it, by amount (one someone put on the
-   * draft in Shopify by hand). A revision sends it back rather than drop it.
+   * A discount by amount: one someone put on the draft in Shopify by hand
+   * (a revision sends it back rather than drop it), or a flat amount off a
+   * live sale that a person named ("take $14 off"). With `discount` too,
+   * both apply: see draftInput.
    */
   fixedDiscount?: { amount: number; title: string } | null
   /** Take any order discount off the draft (a deposit no longer wanted). */
@@ -146,6 +148,12 @@ const money = (m: Money | null | undefined) => Number(m?.shopMoney.amount ?? 0)
 
 /** The draft order as Shopify takes it. Exported for its tests; pure. */
 export function draftInput(email: string, lines: SaleLine[], note: string, opts: InvoiceOptions = {}) {
+  // Shopify holds one order-level discount. With a percentage AND a flat
+  // amount (Friends and Family, then "$14 off", Cleo 3 Nov 2026), the
+  // percentage goes on each line and the flat amount on the order, so
+  // Shopify still works out both itself.
+  const both = !!(opts.discount && opts.fixedDiscount)
+  const lineDiscount = both && opts.discount ? { value: opts.discount.percent, valueType: 'PERCENTAGE', title: opts.discount.title } : null
   return {
     // A gift can have no email: nobody is invoiced.
     ...(email ? { email } : {}),
@@ -156,8 +164,8 @@ export function draftInput(email: string, lines: SaleLine[], note: string, opts:
     taxExempt: !!opts.taxExempt,
     ...(opts.shipTo ?? opts.billTo ? { shippingAddress: opts.shipTo ?? opts.billTo, billingAddress: opts.billTo ?? opts.shipTo } : {}),
     ...(opts.customerId ? { purchasingEntity: { customerId: opts.customerId } } : {}),
-    ...(opts.discount ? { appliedDiscount: { value: opts.discount.percent, valueType: 'PERCENTAGE', title: opts.discount.title } } : {}),
-    ...(!opts.discount && opts.fixedDiscount ? { appliedDiscount: { value: opts.fixedDiscount.amount, valueType: 'FIXED_AMOUNT', title: opts.fixedDiscount.title } } : {}),
+    ...(opts.discount && !both ? { appliedDiscount: { value: opts.discount.percent, valueType: 'PERCENTAGE', title: opts.discount.title } } : {}),
+    ...(opts.fixedDiscount && (both || !opts.discount) ? { appliedDiscount: { value: opts.fixedDiscount.amount, valueType: 'FIXED_AMOUNT', title: opts.fixedDiscount.title } } : {}),
     ...(opts.clearDiscount && !opts.discount && !opts.fixedDiscount ? { appliedDiscount: null } : {}),
     ...(opts.shippingCharge != null
       ? { shippingLine: { title: opts.shippingTitle ?? 'Shipping', priceWithCurrency: { amount: opts.shippingCharge.toFixed(2), currencyCode: 'USD' } } }
@@ -166,9 +174,9 @@ export function draftInput(email: string, lines: SaleLine[], note: string, opts:
       const price = l.priceOverride != null ? { amount: l.priceOverride.toFixed(2), currencyCode: 'USD' } : null
       if (l.noStock) {
         if (!price) throw new Error(`${l.label} has no price. A line that leaves stock alone needs one.`)
-        return { title: l.label, quantity: l.quantity, originalUnitPriceWithCurrency: price, taxable: !opts.taxExempt, requiresShipping: true }
+        return { title: l.label, quantity: l.quantity, originalUnitPriceWithCurrency: price, taxable: !opts.taxExempt, requiresShipping: true, ...(lineDiscount ? { appliedDiscount: lineDiscount } : {}) }
       }
-      return { variantId: gid(l.shopifyVariantId), quantity: l.quantity, ...(price ? { priceOverride: price } : {}) }
+      return { variantId: gid(l.shopifyVariantId), quantity: l.quantity, ...(price ? { priceOverride: price } : {}), ...(lineDiscount ? { appliedDiscount: lineDiscount } : {}) }
     }),
   }
 }
@@ -177,8 +185,10 @@ export type Quote = {
   /** shopifyPrice: what Shopify itself sells the variant for, to check a named price against. */
   lines: Array<{ label: string; quantity: number; unitPrice: number; priced: 'retail' | 'named'; shopifyPrice: number | null }>
   subtotal: number
-  /** Taken off by an order discount (Friends and Family); subtotal is after it. */
+  /** Taken off by discounts in all (Friends and Family, an amount off); subtotal is after it. */
   discount: number
+  /** Of that, the flat amount off the order, as Shopify applied it. */
+  amountOff: number
   shipping: number
   tax: number
   total: number
@@ -188,10 +198,12 @@ export type Quote = {
 export async function quoteLiveSale(email: string, lines: SaleLine[], opts: InvoiceOptions = {}): Promise<Quote> {
   const d = await shopifyGraphQL<{ draftOrderCalculate: { calculatedDraftOrder: {
     subtotalPriceSet: Money; totalDiscountsSet: Money; totalShippingPriceSet: Money; totalTaxSet: Money; totalPriceSet: Money
+    appliedDiscount: { valueType: string; amountSet: Money } | null
     lineItems: Array<{ quantity: number; originalUnitPriceSet: Money; discountedUnitPriceSet?: Money }>
   } | null; userErrors: Array<{ message: string }> } }>(
     `mutation($input: DraftOrderInput!) { draftOrderCalculate(input: $input) { calculatedDraftOrder {
       subtotalPriceSet { shopMoney { amount } } totalDiscountsSet { shopMoney { amount } } totalShippingPriceSet { shopMoney { amount } } totalTaxSet { shopMoney { amount } } totalPriceSet { shopMoney { amount } }
+      appliedDiscount { valueType amountSet { shopMoney { amount } } }
       lineItems { quantity originalUnitPriceSet { shopMoney { amount } } }
     } userErrors { message } } }`,
     { input: draftInput(email, lines, '', opts) },
@@ -220,6 +232,7 @@ export async function quoteLiveSale(email: string, lines: SaleLine[], opts: Invo
     })),
     subtotal: money(c.subtotalPriceSet),
     discount: money(c.totalDiscountsSet),
+    amountOff: c.appliedDiscount?.valueType === 'FIXED_AMOUNT' ? money(c.appliedDiscount.amountSet) : 0,
     shipping: money(c.totalShippingPriceSet),
     tax: money(c.totalTaxSet),
     total: money(c.totalPriceSet),

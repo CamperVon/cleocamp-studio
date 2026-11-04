@@ -476,6 +476,9 @@ cancel an unpaid live-sale invoice, use cancel_live_sale, which puts the stock
 back itself. Friends and Family is 20%: friendsAndFamily: true on
 invoice_live_sale (Shopify applies it to its own prices; never compute a
 discounted price yourself); on a web order already paid, refund_friends_family.
+A flat amount off the whole invoice that the person names ("take $14 off") is
+amountOff, and it goes with Friends and Family; "waive the tax" is noSalesTax.
+Both only as the person says, and again on the send call.
 
 **Wholesale.** A store's order is invoice_wholesale: line-sheet prices unless a
 person names one, no sales tax unless the person says "with sales tax" for this

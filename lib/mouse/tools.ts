@@ -4283,7 +4283,10 @@ export const TOOLS: Record<string, Tool> = {
         'only be invoiced handed over: they go on as a plain line at the app\'s price and their ' +
         'count in the app comes down when sent. Friends and ' +
         'Family: pass friendsAndFamily: true and NO prices — Shopify takes the 20% off its own ' +
-        'prices and shows it on the invoice. Never work out a discounted price yourself. Leave confirmed ' +
+        'prices and shows it on the invoice. Never work out a discounted price yourself. A flat amount ' +
+        'off the whole invoice that the person names ("take $14 off") is amountOff, and it can go with ' +
+        'Friends and Family. No sales tax on this invoice, only when the person says so ("waive the ' +
+        'tax"), is noSalesTax: true. Leave confirmed ' +
         'out to DRAFT: nothing is created and you get the priced invoice to show. Pass ' +
         'confirmed: true only once a person has seen that invoice and said to send it. Do NOT ' +
         'also log an inventory event — the Shopify order moves the stock, and logging it too ' +
@@ -4307,6 +4310,8 @@ export const TOOLS: Record<string, Tool> = {
             },
           },
           friendsAndFamily: { type: 'boolean' as const, description: 'true when the person says Friends and Family: 20% off, applied by Shopify. Do not also pass prices.' },
+          amountOff: num('Dollars off the whole invoice, ONLY the amount the person named ("take $14 off"). Shopify takes it off after any Friends and Family discount; tax is then on the lower amount. Never work one out yourself, and never to make a total come to a figure: if they name a total, ask what to take off. Pass it again on the send call.'),
+          noSalesTax: { type: 'boolean' as const, description: 'true ONLY when the person said not to charge sales tax on this invoice ("waive the tax", "no tax"). Pass it again on the send call.' },
           handedOver: { type: 'boolean' as const, description: 'true ONLY when the person says the customer already has the goods (in person, live sale). Left out: it ships.' },
           shipTo: str('Shipped only, optional: her US address on one line if the person gave it (street, city, state ZIP). She can add it herself at checkout.'),
           alsoCopy: { type: 'array' as const, items: { type: 'string' as const }, description: 'Anyone else to get a copy of the invoice (our own email, with the PDF), only addresses a person gave. studio@ always gets one.' },
@@ -4374,8 +4379,11 @@ export const TOOLS: Record<string, Tool> = {
       const { FRIENDS_AND_FAMILY } = await import('@/lib/friends-family')
       const ff = i.friendsAndFamily === true
       if (ff && named) {
-        return { sent: false, reason: 'Friends and Family is taken off the retail price by Shopify. Leave the prices out, or ask whether a named price should replace the discount.' }
+        return { sent: false, reason: 'Friends and Family is taken off the retail price by Shopify. Leave the prices out, or ask whether a named price should replace the discount. A flat amount off the whole invoice is amountOff, which works with Friends and Family.' }
       }
+      const amountOff = i.amountOff == null ? null : Math.round(Number(i.amountOff) * 100) / 100
+      if (amountOff != null && !(amountOff > 0)) return { sent: false, reason: `"${i.amountOff}" is not an amount to take off. Ask how much.` }
+      const noTax = i.noSalesTax === true
       const copy = (Array.isArray(i.alsoCopy) ? i.alsoCopy : []).map((x: unknown) => String(x).trim().toLowerCase()).filter(Boolean)
       const badCopy = copy.find((x: string) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x))
       if (badCopy) return { sent: false, reason: `"${badCopy}" is not an email address. Ask again.` }
@@ -4391,7 +4399,12 @@ export const TOOLS: Record<string, Tool> = {
         const [firstName, ...rest] = name.split(/\s+/)
         shipTo = { ...a, firstName, lastName: rest.join(' ') || null }
       }
-      const options = { ...(ff ? { discount: FRIENDS_AND_FAMILY } : {}), bcc: copy, ...(shipTo ? { shipTo } : {}) }
+      const options = {
+        ...(ff ? { discount: FRIENDS_AND_FAMILY } : {}),
+        ...(amountOff != null ? { fixedDiscount: { amount: amountOff, title: `$${amountOff.toFixed(2)} off` } } : {}),
+        ...(noTax ? { taxExempt: true } : {}),
+        bcc: copy, ...(shipTo ? { shipTo } : {}),
+      }
 
       if (i.confirmed !== true) {
         let quote
@@ -4400,6 +4413,11 @@ export const TOOLS: Record<string, Tool> = {
         } catch (e) {
           return { sent: false, reason: `Shopify could not price it: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}` }
         }
+        // Shopify caps an amount off at the goods; one that big is a gift, not a discount.
+        if (amountOff != null && quote.amountOff + 0.005 < amountOff) {
+          return { sent: false, reason: `$${amountOff.toFixed(2)} off is more than the invoice comes to. Ask again; a piece given away is gift_items.` }
+        }
+        const ffOff = Math.round((quote.discount - quote.amountOff) * 100) / 100
         return {
           sent: false,
           draft: true,
@@ -4407,12 +4425,15 @@ export const TOOLS: Record<string, Tool> = {
           copied: ['studio@cleocamp.com (always)', ...copy],
           lines: quote.lines.map((l, n) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}${
             lines[n].noStock && !(items as Array<{ price?: number }>)[n]?.price ? " (the app's price — not in Shopify)" : l.priced === 'named' ? ' (price given in the chat)' : ' (retail)'}`),
-          ...(quote.discount ? { discount: `${FRIENDS_AND_FAMILY.title} ${FRIENDS_AND_FAMILY.percent}%: −$${quote.discount.toFixed(2)}` } : {}),
+          ...(ff && ffOff ? { discount: `${FRIENDS_AND_FAMILY.title} ${FRIENDS_AND_FAMILY.percent}%: −$${ffOff.toFixed(2)}` } : {}),
+          ...(quote.amountOff ? { amountOff: `$${quote.amountOff.toFixed(2)} off the invoice, as named in the chat` } : {}),
           ...(aboveRetail(quote.lines).length ? { check: aboveRetail(quote.lines) } : {}),
           subtotal: `$${quote.subtotal.toFixed(2)}${quote.discount ? ' (after the discount)' : ''}`,
           kind: handed ? 'HANDED OVER (she already has it)' : 'SHIPPED',
           ...(shipTo ? { shipTo: (await import('@/lib/live-sale')).addressLines(shipTo) } : {}),
-          tax: handed || shipTo ? `$${quote.tax.toFixed(2)}` : `about $${quote.tax.toFixed(2)} (Shopify works it out for her address at checkout)`,
+          tax: noTax
+            ? '$0.00, no sales tax on this invoice, as asked. Shopify records the sale as untaxed; California still counts it as taxable, so the studio pays that tax itself.'
+            : handed || shipTo ? `$${quote.tax.toFixed(2)}` : `about $${quote.tax.toFixed(2)} (Shopify works it out for her address at checkout)`,
           ...(handed ? {} : { shipping: 'she picks it at checkout, at the shop\'s rates' }),
           total: handed ? `$${quote.total.toFixed(2)}` : `$${quote.total.toFixed(2)} before shipping`,
           stock: stockNotes,

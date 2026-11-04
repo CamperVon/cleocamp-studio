@@ -803,6 +803,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/dates.ts` (`laHour`, `MORNING_HOUR`), `app/api/cron/daily-cheese/route.ts`, `app/api/cron/am-report/route.ts`, `vercel.json`, `tests/la-hour.test.ts`.
 - **Needs:** nothing beyond the app.
 
+
+### Invoices can waive sales tax or take a named amount off, with a percentage discount too
+- **Problem:** the in-person invoice tool could only charge retail or a named price, with one optional percentage discount. A team member asking to waive the tax on one invoice, or to take a flat $14 off a discounted invoice, was told it couldn't be done, and the invoice went out at the original total.
+- **Change:** `invoice_live_sale` takes `noSalesTax` (only when a person says so) and `amountOff` (a dollar amount the person named). Shopify still does the arithmetic: since a Shopify draft holds one order-level discount, a percentage plus an amount puts the percentage on each line and the amount on the order. The draft shows each discount separately, refuses an amount bigger than the invoice, and notes that waived tax is untaxed in Shopify but may still be owed by the seller.
+- **Files:** `lib/live-sale.ts` (`draftInput`, `quoteLiveSale` `amountOff`), `lib/mouse/tools.ts` (`invoice_live_sale`), `lib/mouse/prompt.ts`, `tests/live-sale-discounts.test.ts`.
+- **Needs:** Shopify (write_draft_orders).
+
 ---
 
 ## Setup notes for a new install

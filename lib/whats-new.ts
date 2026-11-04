@@ -214,6 +214,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-03',
     text: 'The Daily Cheese is back to arriving around 8am. It came an hour early after the clocks went back, and it now follows Los Angeles time by itself, summer and winter.',
   },
+  {
+    on: '2026-11-04',
+    text: 'Invoicing in Mouse chat: you can now say "waive the tax" or "take $14 off" on an invoice, including a Friends and Family one. Mouse shows the new total from Shopify before anything is sent.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */
