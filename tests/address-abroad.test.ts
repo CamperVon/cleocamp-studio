@@ -30,3 +30,15 @@ test('the label line says the country abroad', () => {
   const a = parseAddress("47 King Henry's Walk, London, N1 4NH, UK")!
   assert.equal(addressLines({ ...a, company: 'Turn Shop' }), "Turn Shop / 47 King Henry's Walk / London N1 4NH United Kingdom")
 })
+
+import { draftInput } from '../lib/live-sale'
+test('an untaxed draft abroad carries no address, so Shopify keeps our dollar prices', () => {
+  const london = { ...parseAddress("47 King Henry's Walk, London, N1 4NH, UK")!, company: 'Turn Shop' }
+  const lines = [{ shopifyVariantId: '1', label: 'Sardine', quantity: 20, priceOverride: 44 }]
+  const d = draftInput('iona@example.com', lines, 'n', { taxExempt: true, shipTo: london, billTo: london })
+  assert.ok(!('shippingAddress' in d))
+  // Taxed, or in the US, the address stays: tax is worked out from it.
+  assert.ok('shippingAddress' in draftInput('a@example.com', lines, 'n', { shipTo: london }))
+  const la = parseAddress('2030 Hillhurst Ave, Los Angeles, CA 90027')!
+  assert.ok('shippingAddress' in draftInput('a@example.com', lines, 'n', { taxExempt: true, shipTo: la }))
+})

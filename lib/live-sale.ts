@@ -203,6 +203,9 @@ type Money = { shopMoney: { amount: string } }
 const gid = (id: string) => (id.startsWith('gid://') ? id : `gid://shopify/ProductVariant/${id}`)
 const money = (m: Money | null | undefined) => Number(m?.shopMoney.amount ?? 0)
 
+/** Outside the US. Pure. */
+export const abroad = (a: ShipAddress | null | undefined) => !!a && a.countryCode !== 'US'
+
 /** The draft order as Shopify takes it. Exported for its tests; pure. */
 export function draftInput(email: string, lines: SaleLine[], note: string, opts: InvoiceOptions = {}) {
   // Shopify holds one order-level discount. With a percentage AND a flat
@@ -219,7 +222,14 @@ export function draftInput(email: string, lines: SaleLine[], note: string, opts:
     // Always said, never left out: a revised draft keeps its old setting otherwise,
     // so a wholesale draft redone "with sales tax" would stay tax exempt.
     taxExempt: !!opts.taxExempt,
-    ...(opts.shipTo ?? opts.billTo ? { shippingAddress: opts.shipTo ?? opts.billTo, billingAddress: opts.billTo ?? opts.shipTo } : {}),
+    // An untaxed draft (wholesale, a gift) to an address abroad carries no
+    // address: Shopify prices a draft by the market of its address, and the UK
+    // market put 4% on Turn Shop's wholesale prices ($880 became $914.99,
+    // 6 Nov 2026). Our dollar figures stand; the address goes on the order
+    // once it is made (completeAndInvoice). A taxed one keeps it, since tax
+    // is worked out from it.
+    ...((opts.shipTo ?? opts.billTo) && !(opts.taxExempt && abroad(opts.shipTo ?? opts.billTo))
+      ? { shippingAddress: opts.shipTo ?? opts.billTo, billingAddress: opts.billTo ?? opts.shipTo } : {}),
     ...(opts.customerId ? { purchasingEntity: { customerId: opts.customerId } } : {}),
     ...(opts.discount && !both ? { appliedDiscount: { value: opts.discount.percent, valueType: 'PERCENTAGE', title: opts.discount.title } } : {}),
     ...(opts.fixedDiscount && (both || !opts.discount) ? { appliedDiscount: { value: opts.fixedDiscount.amount, valueType: 'FIXED_AMOUNT', title: opts.fixedDiscount.title } } : {}),
@@ -395,7 +405,15 @@ async function completeAndInvoice(draftId: string, email: string, customerName: 
     if (!fulfillmentOrderIds.length) await new Promise((r) => setTimeout(r, 800))
   }
   if (opts.shipTo) {
-    // Nothing to mark: it goes out with a label.
+    // Nothing to mark: it goes out with a label. An address abroad was kept
+    // off the draft (see draftInput), so it goes on the order now, for the label.
+    if (opts.taxExempt && abroad(opts.shipTo)) {
+      const u = await shopifyGraphQL<{ orderUpdate: { order: { id: string } | null; userErrors: Array<{ message: string }> } }>(
+        `mutation($input: OrderInput!) { orderUpdate(input: $input) { order { id } userErrors { message } } }`,
+        { input: { id: order.id, shippingAddress: opts.shipTo } },
+      ).catch((e: unknown) => ({ orderUpdate: { order: null, userErrors: [{ message: e instanceof Error ? e.message : String(e) }] } }))
+      if (!u.orderUpdate.order) out.problems.push(`${order.name} has no shipping address yet (${u.orderUpdate.userErrors.map((e) => e.message).join('; ') || 'no reason given'}). Add ${addressLines(opts.shipTo)} in Shopify before making the label.`)
+    }
   } else if (fulfillmentOrderIds.length) {
     const f = await shopifyGraphQL<{ fulfillmentCreate: { fulfillment: { id: string } | null; userErrors: Array<{ message: string }> } }>(
       `mutation($f: FulfillmentInput!) { fulfillmentCreate(fulfillment: $f) { fulfillment { id } userErrors { message } } }`,

@@ -5013,11 +5013,20 @@ export const TOOLS: Record<string, Tool> = {
       const tagged = d.tags.includes('ships') ? true : d.tags.includes('handed-over') ? false : null
       const ship = tagged ?? (typeof i.ship === 'boolean' ? i.ship : null)
       if (ship === null) return { sent: false, reason: `${d.name} does not say whether it ships. Ask: shipped to the store, or already handed over?` }
-      if (ship && !d.address) return { sent: false, reason: `${d.name} has no full address to ship to. Ask for it and redraft.` }
+      const acct = await db.wholesaleAccount.findFirst({ where: { email: { equals: d.email, mode: 'insensitive' } } })
+      // A draft to a store abroad carries no address (lib/live-sale.ts draftInput),
+      // so it is the account's, on the order once it is made (Turn Shop, D70, 6 Nov 2026).
+      let shipAddress = d.address
+      if (ship && !shipAddress && acct?.address) {
+        const { parseAddress } = await import('@/lib/live-sale')
+        const a = parseAddress(acct.address)
+        const [fn, ...ln] = (acct.contactName ?? '').trim().split(/\s+/).filter(Boolean)
+        if (a && a.countryCode !== 'US') shipAddress = { ...a, company: acct.name, firstName: fn ?? null, lastName: ln.join(' ') || null }
+      }
+      if (ship && !shipAddress) return { sent: false, reason: `${d.name} has no full address to ship to. Ask for it and redraft.` }
       const copy = (Array.isArray(i.alsoCopy) ? i.alsoCopy : []).map((x: unknown) => String(x).trim().toLowerCase()).filter(Boolean)
       const bad = copy.find((x: string) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x))
       if (bad) return { sent: false, reason: `"${bad}" is not an email address. Ask again.` }
-      const acct = await db.wholesaleAccount.findFirst({ where: { email: { equals: d.email, mode: 'insensitive' } } })
       const storeName = acct?.name ?? d.company ?? d.email
       const fromStock = d.lines.filter((l) => l.fromStock).length
       const when = ship ? 'is held in Shopify when sent and comes off stock when the order is marked fulfilled as it ships' : 'comes off Shopify stock when sent, as handed over'
@@ -5029,7 +5038,7 @@ export const TOOLS: Record<string, Tool> = {
           sent: false, draft: d.name, to: `${storeName} <${d.email}>`,
           copied: ['studio@cleocamp.com (always)', ...copy],
           lines: d.lines.map((l) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}`),
-          subtotal: `$${d.subtotal.toFixed(2)}`, shipping: ship ? `ships to the store, $${d.shipping.toFixed(2)} charged; label made in Shopify after sending` : 'handed over, marked fulfilled when sent',
+          subtotal: `$${d.subtotal.toFixed(2)}`, shipping: ship ? `ships to ${shipAddress ? (await import('@/lib/live-sale')).addressLines(shipAddress) : 'the store'}, $${d.shipping.toFixed(2)} charged; label made in Shopify after sending` : 'handed over, marked fulfilled when sent',
           tax: `$${d.tax.toFixed(2)}`, total: `$${d.total.toFixed(2)}`, stock,
           reviewInShopify: d.adminUrl, pdf: d.pdfPath,
           tellTheUser: 'Show it: the store and email, each line and price, the total, stock, shipped or handed over, and the Shopify and PDF links. Nothing is sent until the person says send.',
@@ -5041,7 +5050,9 @@ export const TOOLS: Record<string, Tool> = {
         r = await sendDraft({
           draftOrderId: d.id, email: d.email, customerName: first, requireTag: 'wholesale',
           options: {
-            shipTo: ship ? d.address ?? undefined : undefined,
+            shipTo: ship ? shipAddress ?? undefined : undefined,
+            // Untaxed, as every wholesale draft is unless it carries sales tax.
+            taxExempt: !d.tags.includes('sales-tax'),
             bcc: copy,
             subject: (n: string) => `Cleo Camp wholesale invoice ${n}`,
             message: () => `Hello ${first}, thank you for your order. Your invoice is below, with a link to pay.\n\nKindly,\nCleo Studio`,
