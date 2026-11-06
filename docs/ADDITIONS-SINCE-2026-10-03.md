@@ -845,6 +845,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/records.ts`, `lib/mouse/context.ts`, `lib/mouse/tools.ts` (`update_purchase_order`).
 - **Needs:** nothing beyond the app.
 
+
+### A maker's stock lands in one place
+- **Problem:** a maker whose stock is kept at a named location (a sewing room) could also be named as a vendor, so the same place built up two separate counts depending on how a transfer or log named it.
+- **Change:** `stockPlace` turns a vendor listed in `MAKER_LOCATIONS` into its location everywhere stock is written: logging and transfers.
+- **Files:** `lib/maker-use.ts` (`stockPlace`), `lib/mouse/tools.ts` (`writeEvent`, `transfer_component_stock`), `tests/maker-use.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

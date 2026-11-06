@@ -24,6 +24,17 @@ export const MAKER_LOCATIONS: Record<string, string> = {
   vnd_empire: 'loc_empire',
 }
 
+/**
+ * A stock place as given, with a maker that keeps its stock at a named
+ * location turned into that location. Transfers "to Antonio's" given as
+ * vendor vnd_empire landed on the vendor while Empire's count lives at
+ * loc_empire, so one place had two counts (Mouse, 6 Nov 2026). Pure.
+ */
+export function stockPlace(p: { locationId: string | null; atVendorId: string | null }): { locationId: string | null; atVendorId: string | null } {
+  const loc = p.atVendorId ? MAKER_LOCATIONS[p.atVendorId] : undefined
+  return loc && !p.locationId ? { locationId: loc, atVendorId: null } : p
+}
+
 export type RecipeLine = { componentId: string; qtyPerUnit: number; size: string | null; colorway: string | null; category: string }
 
 /** What finished units of this variant used from the maker's stock. Pure. */

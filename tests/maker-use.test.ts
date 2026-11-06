@@ -25,3 +25,10 @@ test('fabric is never taken again on delivery, and what the maker does not hold 
   assert.ok(!ids.includes('studioOnly'))
   assert.ok(ids.includes('num2') && !ids.includes('num1'))
 })
+
+import { stockPlace } from '../lib/maker-use'
+test('a maker kept at a named location counts there, not on the vendor', () => {
+  assert.deepEqual(stockPlace({ locationId: null, atVendorId: 'vnd_empire' }), { locationId: 'loc_empire', atVendorId: null })
+  assert.deepEqual(stockPlace({ locationId: null, atVendorId: 'vnd_lorena' }), { locationId: null, atVendorId: 'vnd_lorena' })
+  assert.deepEqual(stockPlace({ locationId: 'loc_studio', atVendorId: null }), { locationId: 'loc_studio', atVendorId: null })
+})

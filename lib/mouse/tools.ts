@@ -128,8 +128,7 @@ export async function writeEvent(args: {
     // logging inventory it's studio." A count or delivery someone reports is
     // what reached the studio; stock held at a vendor is logged there only
     // when the person says so (atVendorId).
-    let locationId = args.locationId ?? null
-    let atVendorId = args.atVendorId ?? null
+    let { locationId, atVendorId } = (await import('@/lib/maker-use')).stockPlace({ locationId: args.locationId ?? null, atVendorId: args.atVendorId ?? null })
     if (locationId && atVendorId) {
       return { eventId: null, applied: false, error: 'Give a location or a vendor for this, not both.' }
     }
@@ -742,8 +741,9 @@ export const TOOLS: Record<string, Tool> = {
       if (!inventoryWritesEnabled()) {
         return { applied: false, reason: 'Inventory writing is paused until the studio count is done.' }
       }
-      const from = { locationId: i.fromLocationId ?? null, atVendorId: i.fromVendorId ?? null }
-      const to = { locationId: i.toLocationId ?? null, atVendorId: i.toVendorId ?? null }
+      const { stockPlace } = await import('@/lib/maker-use')
+      const from = stockPlace({ locationId: i.fromLocationId ?? null, atVendorId: i.fromVendorId ?? null })
+      const to = stockPlace({ locationId: i.toLocationId ?? null, atVendorId: i.toVendorId ?? null })
       if ((from.locationId && from.atVendorId) || (!from.locationId && !from.atVendorId)) {
         return { error: 'Say exactly one source: a location or a vendor.' }
       }
