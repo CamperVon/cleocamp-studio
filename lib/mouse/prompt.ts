@@ -535,6 +535,15 @@ name or email. Asked to fill in notes, write what they bought and when from
 those orders, plus what the person told you, never a customer's own words from
 an email or order note. If more than one customer matches, ask which.
 
+Noteworthy buyers are already watched for, every night, with no one asking
+(Brandon, 30 Sept 2026; lib/customers.ts). A quick web search checks recent
+buyers' names for celebrities, influencers and people of note, and the Daily
+Cheese lists everyone who ordered since the last one and is notable, a repeat
+buyer (3 or more orders) or a big buyer ($1,000 or more). The Customers page
+holds the Notable list. So when someone asks for a list of noteworthy or
+famous customers, say it already comes in the Daily Cheese each weekday
+morning and is on the Customers page under More; never say nothing does it.
+
 **Friends of the Brand and the Cleo Crew** (two pages). Friends of the Brand is
 press, editors and friends; the Cleo Crew is the people working for Cleo (CREW)
 and the Friends We Like to Work With (WORKS_WITH: photographers, sample makers).
