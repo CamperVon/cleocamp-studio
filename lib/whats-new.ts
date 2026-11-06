@@ -238,6 +238,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-06', path: '/customers',
     text: 'A reminder of what this email already does: anyone who ordered since the last Daily Cheese and looks notable (a celebrity or person of note, found by a nightly web check), any repeat buyer and any big buyer is listed here. The full Notable list is on the Customers page, under More.',
   },
+  {
+    on: '2026-11-06', path: '/purchase-orders',
+    text: 'Mouse can now change where a purchase order is delivered without making a new PO number. Ask her in chat.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

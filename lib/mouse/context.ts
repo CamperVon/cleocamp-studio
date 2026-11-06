@@ -445,7 +445,7 @@ export async function buildCatalog(opts: { notes?: 'full' | 'index'; catalog?: '
           (p.deliverTo ? ` · delivers to ${p.deliverTo.split('\n')[0]}` : '') +
           // What the vendor reads on the document, so a change to the notes
           // keeps what is there (update_purchase_order replaces them).
-          (p.notes?.trim() ? ` · printed notes: "${p.notes.trim().replace(/\s+/g, ' ').slice(0, 300)}"` : ''),
+          (p.notes?.trim() ? ` · printed notes: "${p.notes.trim().replace(/\s+/g, ' ').slice(0, 300)}"${p.notes.trim().length > 300 ? ' (cut: open_record the PO for all of it before changing them)' : ''}` : ''),
       )
     }
   }

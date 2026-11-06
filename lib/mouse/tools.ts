@@ -2998,6 +2998,7 @@ export const TOOLS: Record<string, Tool> = {
           receivedAt: str('ISO date it actually arrived'),
           status: { type: 'string', enum: ['DRAFT','SENT','PARTIALLY_RECEIVED','RECEIVED','CANCELLED'] },
           paymentTerms: str('Terms in plain words'),
+          deliverTo: str('Where the goods go, one line per line of the address; replaces what is there. Changes this order only, its number stays (Brandon asked to change PO 2415\'s address on 1 Nov and it was redrafted as 2416 instead). If the order was already sent, say the vendor needs telling.'),
           paymentTermsAlt: str('The same terms in the second language, for a bilingual order.'),
           notesAlt: str('The same notes in the second language, for a bilingual order.'),
           currency: { type: 'string' as const, enum: ['USD', 'EUR', 'GBP'],

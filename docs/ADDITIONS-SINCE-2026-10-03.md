@@ -838,6 +838,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `app/ui/nav-bar.tsx`.
 - **Needs:** nothing beyond the app.
 
+
+### Purchase orders: full printed notes on read, delivery address editable
+- **Problem:** the assistant's context shows a PO's vendor-facing notes cut at 300 characters, and changing them replaces them, so an edit from the cut copy could lose the end. And a delivery address could only change by redrafting the PO under a new number.
+- **Change:** reading a PO returns its printed notes (both languages) and delivery address in full, and the context says when the notes it shows are cut. `update_purchase_order` takes `deliverTo`.
+- **Files:** `lib/mouse/records.ts`, `lib/mouse/context.ts`, `lib/mouse/tools.ts` (`update_purchase_order`).
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

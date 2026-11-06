@@ -113,6 +113,9 @@ async function detailFor(r: RecordRef): Promise<Record<string, unknown>> {
       const p = await db.purchaseOrder.findUnique({ where: { id: r.id }, include: { vendor: true, lines: { orderBy: { id: 'asc' }, include: { component: { select: { name: true } }, productVariant: { include: { product: true, colorway: true } } } } } })
       return p ? {
         vendor: p.vendor.name, status: p.status, ordered: day(p.orderedAt), expected: day(p.expectedAt), received: day(p.receivedAt), paymentTerms: p.paymentTerms,
+        // In full: the context cuts printed notes at 300 characters, and a
+        // change replaces them, so Mouse rewrote PO 2414's notes from a cut copy (4 Nov 2026).
+        printedNotes: p.notes, printedNotesAlt: p.notesAlt, deliverTo: p.deliverTo,
         lines: p.lines.map((l) => ({ item: l.component?.name ?? (l.productVariant ? [l.productVariant.product.name, l.productVariant.colorway?.customerName, l.productVariant.size].filter(Boolean).join(' / ') : l.description), ordered: Number(l.qtyOrdered), unit: l.unit, received: Number(l.qtyReceived), unitCostCents: l.unitCostCents })),
       } : {}
     }
