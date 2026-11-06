@@ -416,3 +416,7 @@ Framework-level conventions from the Next.js scaffold live in `AGENTS.md`.
   as a bug to fix. If that decision is ever reversed, the parsing rules above —
   the expense guard especially — still apply, because they are about the shape
   of the report, not the transport.
+  **Reaffirmed by Brandon, 6 Nov 2026:** do not propose switching to the app's
+  own connection again. Production keys need Intuit's app assessment and
+  approval, which he called "a nightmare of steps". The cost is that Mouse
+  cannot see QuickBooks invoices or payments; a person tells her.
