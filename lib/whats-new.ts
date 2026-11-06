@@ -230,6 +230,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-06', path: '/wholesale',
     text: 'Invoices can now go to addresses outside the US, like Turn Shop in London. Abroad, Mouse asks what to charge for shipping, because the flat $25 is the US rate.',
   },
+  {
+    on: '2026-11-06',
+    text: 'On a phone, the More menu now scrolls. It had grown taller than the screen, so Claude Connector, Cleo Crew, Components and Customers were hidden off the top. Scroll up in More to reach them.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

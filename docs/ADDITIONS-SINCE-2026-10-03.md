@@ -831,6 +831,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/live-sale.ts` (`parseAddress`, `ShipAddress`, `addressLines`, `findDraft`) (`abroad`, `draftInput`, `completeAndInvoice`), `send_wholesale_draft`, `lib/mouse/tools.ts` (`invoice_wholesale`, `invoice_live_sale`, `gift_items`, `update_wholesale_account`), `tests/address-abroad.test.ts`.
 - **Needs:** Shopify.
 
+
+### The phone "More" menu scrolls
+- **Problem:** the bottom sheet listing the less-used pages was pinned to the bottom of the screen with no scrolling. Once it held 18 pages it was taller than a phone, and the first entries sat above the top of the screen where they could not be reached.
+- **Change:** the sheet and the desktop dropdown cap their height and scroll.
+- **Files:** `app/ui/nav-bar.tsx`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

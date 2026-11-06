@@ -155,7 +155,7 @@ export function NavBar({ personName, counts = {} }: { personName: string | null;
               {deskMore ? (
                 <>
                   <div className="fixed inset-0 z-30" onClick={() => setDeskMore(false)} />
-                  <ul className="absolute left-0 top-full z-40 mt-1.5 w-52 divide-y divide-line border border-line bg-surface py-0.5 shadow-sm">
+                  <ul className="absolute left-0 top-full z-40 mt-1.5 max-h-[calc(100vh-5rem)] w-52 divide-y divide-line overflow-y-auto border border-line bg-surface py-0.5 shadow-sm">
                     {DESK_MORE.map((l) => {
                       const here = isHere(pathname, l.href)
                       return (
@@ -241,7 +241,11 @@ export function NavBar({ personName, counts = {} }: { personName: string | null;
         <div className="fixed inset-0 z-20 md:hidden" onClick={() => setMoreOpen(false)}>
           <div className="absolute inset-0 bg-ink/20" />
           <div
-            className="absolute inset-x-0 bottom-0 border-t border-line bg-surface pb-[calc(4.25rem+env(safe-area-inset-bottom))]"
+            // Scrolls. With 18 pages it is taller than a phone, and pinned to the
+            // bottom it pushed the first ones (Claude Connector, Cleo Crew,
+            // Components, Customers) off the top where nothing could reach them;
+            // Cleo could not find Customers (6 Nov 2026).
+            className="absolute inset-x-0 bottom-0 max-h-[calc(100dvh-env(safe-area-inset-top)-1.5rem)] overflow-y-auto overscroll-contain border-t border-line bg-surface pb-[calc(4.25rem+env(safe-area-inset-bottom))]"
             onClick={(e) => e.stopPropagation()}
           >
             <ul className="divide-y divide-line">
