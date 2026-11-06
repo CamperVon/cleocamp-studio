@@ -823,6 +823,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `app/(main)/products/page.tsx`.
 - **Needs:** nothing beyond the app.
 
+
+### Invoices and gifts to addresses outside the US
+- **Problem:** every invoice and gift path read addresses with a US-only parser (street, city, state ZIP), so a wholesale store in London could not be invoiced at all.
+- **Change:** `parseAddress` reads a US address exactly as before, and one ending in a known country name (UK, France, Japan…) as street, city and postcode, the postcode either its own part or beside the city. A missing postcode or street is refused, never guessed. The label line names the country. On a wholesale invoice abroad the flat domestic shipping charge is not applied; the assistant must ask for the charge. Saved drafts read their country back from the store.
+- **Files:** `lib/live-sale.ts` (`parseAddress`, `ShipAddress`, `addressLines`, `findDraft`), `lib/mouse/tools.ts` (`invoice_wholesale`, `invoice_live_sale`, `gift_items`, `update_wholesale_account`), `tests/address-abroad.test.ts`.
+- **Needs:** Shopify.
+
 ---
 
 ## Setup notes for a new install

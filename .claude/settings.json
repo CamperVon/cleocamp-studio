@@ -45,7 +45,24 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git fetch:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(git rev-parse:*)",
+
+      "Edit(/home/user/cleocamp-studio/**)",
+      "Edit(/tmp/claude-0/**)",
+      "Bash(python3:*)",
+      "Bash(cat:*)",
+      "Bash(rm zz-*)",
+      "Bash(grep:*)",
+      "Bash(sed -n:*)",
+      "Bash(awk:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(find:*)",
+      "Bash(curl -s https://api.github.com/repos/CamperVon/cleocamp-studio/*)",
+      "mcp__Claude_Code_Remote__get_session",
+      "mcp__Claude_Code_Remote__list_triggers",
+      "mcp__Claude_Code_Remote__get_trigger"
     ]
   }
 }

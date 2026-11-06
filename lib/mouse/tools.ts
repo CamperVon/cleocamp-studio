@@ -4313,7 +4313,7 @@ export const TOOLS: Record<string, Tool> = {
           amountOff: num('Dollars off the whole invoice, ONLY the amount the person named ("take $14 off"). Shopify takes it off after any Friends and Family discount; tax is then on the lower amount. Never work one out yourself, and never to make a total come to a figure: if they name a total, ask what to take off. Pass it again on the send call.'),
           noSalesTax: { type: 'boolean' as const, description: 'true ONLY when the person said not to charge sales tax on this invoice ("waive the tax", "no tax"). Pass it again on the send call.' },
           handedOver: { type: 'boolean' as const, description: 'true ONLY when the person says the customer already has the goods (in person, live sale). Left out: it ships.' },
-          shipTo: str('Shipped only, optional: her US address on one line if the person gave it (street, city, state ZIP). She can add it herself at checkout.'),
+          shipTo: str('Shipped only, optional: her address on one line if the person gave it (US: street, city, state ZIP; abroad: street, city, postcode, country). She can add it herself at checkout.'),
           alsoCopy: { type: 'array' as const, items: { type: 'string' as const }, description: 'Anyone else to get a copy of the invoice (our own email, with the PDF), only addresses a person gave. studio@ always gets one.' },
           confirmed: {
             type: 'boolean' as const,
@@ -4393,9 +4393,9 @@ export const TOOLS: Record<string, Tool> = {
       }
       let shipTo: import('@/lib/live-sale').ShipAddress | undefined
       if (!handed && typeof i.shipTo === 'string' && i.shipTo.trim()) {
-        const { parseUsAddress } = await import('@/lib/live-sale')
-        const a = parseUsAddress(i.shipTo)
-        if (!a) return { sent: false, reason: `Could not read "${i.shipTo}" as a full US address (street, city, state ZIP). Ask for it, or leave it out and she adds it at checkout.` }
+        const { parseAddress } = await import('@/lib/live-sale')
+        const a = parseAddress(i.shipTo)
+        if (!a) return { sent: false, reason: `Could not read "${i.shipTo}" as a full address (US: street, city, state ZIP; abroad: street, city, postcode, country). Ask for it, or leave it out and she adds it at checkout.` }
         const [firstName, ...rest] = name.split(/\s+/)
         shipTo = { ...a, firstName, lastName: rest.join(' ') || null }
       }
@@ -4538,7 +4538,7 @@ export const TOOLS: Record<string, Tool> = {
               required: ['productVariantId'],
             },
           },
-          shipTo: str('Full US shipping address on one line: street, city, state ZIP'),
+          shipTo: str('Full shipping address on one line. US: street, city, state ZIP. Abroad: street, city, postcode, country.'),
           handedOver: { type: 'boolean' as const, description: 'true when it was given in person, so nothing ships' },
           askForAddress: { type: 'boolean' as const, description: 'true when we have their email but not their address: they are emailed a link to give it' },
           message: str('Optional line from the person to go in the gift email, in their words'),
@@ -4558,17 +4558,17 @@ export const TOOLS: Record<string, Tool> = {
       const handedOver = i.handedOver === true
       const ask = i.askForAddress === true && !handedOver
       if (ask && !email) return { sent: false, reason: `To ask ${name} for their address, I need their email. Ask for it.` }
-      const { parseUsAddress, addressLines, giftOrder, giftInvite, giftInviteText, quoteLiveSale, GIFT_DISCOUNT } = await import('@/lib/live-sale')
+      const { parseAddress, addressLines, giftOrder, giftInvite, giftInviteText, quoteLiveSale, GIFT_DISCOUNT } = await import('@/lib/live-sale')
       const [first, ...rest] = name.split(/\s+/)
       const who = { firstName: first, lastName: rest.join(' ') || null }
       let shipTo: import('@/lib/live-sale').ShipAddress | undefined
       if (!handedOver && !ask) {
-        const parsed = parseUsAddress(typeof i.shipTo === 'string' ? i.shipTo : null)
+        const parsed = parseAddress(typeof i.shipTo === 'string' ? i.shipTo : null)
         if (!parsed) {
           return {
             sent: false,
             reason: i.shipTo
-              ? `"${String(i.shipTo)}" is not a full street, city, state and ZIP. Ask for the full address.`
+              ? `"${String(i.shipTo)}" is not a full address (US: street, city, state ZIP; abroad: street, city, postcode, country). Ask for the full address.`
               : `No shipping address for ${name}. Ask for it, or whether it was handed over in person.`,
           }
         }
@@ -4769,14 +4769,20 @@ export const TOOLS: Record<string, Tool> = {
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
         return { sent: false, reason: `${acct.name} has no email on file. Ask for it, save it with update_wholesale_account, then draft again.` }
       }
-      const { saveDraft, sendDraft, parseUsAddress, addressLines } = await import('@/lib/live-sale')
+      const { saveDraft, sendDraft, parseAddress, addressLines } = await import('@/lib/live-sale')
       let shipTo: import('@/lib/live-sale').ShipAddress | undefined
-      const parsed = parseUsAddress(acct.address)
+      // Overseas too: Turn Shop's London address was refused as "not US" (5 Nov 2026).
+      const parsed = parseAddress(acct.address)
       const [first, ...rest] = (acct.contactName ?? '').trim().split(/\s+/).filter(Boolean)
       const storeAddress = parsed ? { ...parsed, company: acct.name, firstName: first ?? null, lastName: rest.join(' ') || null } : undefined
       if (i.ship) {
-        if (!storeAddress) return { sent: false, reason: `${acct.name}'s address on file (${acct.address ?? 'none'}) is not a full street, city, state and ZIP. Ask for the full shipping address, save it with update_wholesale_account, then draft again.` }
+        if (!storeAddress) return { sent: false, reason: `${acct.name}'s address on file (${acct.address ?? 'none'}) is not a full address: a US one needs street, city, state and ZIP; one abroad needs street, city, postcode and the country at the end ("47 King Henry's Walk, London, N1 4NH, UK"). Ask for it, save it with update_wholesale_account, then draft again.` }
         shipTo = storeAddress
+      }
+      // The flat $25 is the US rate (Brandon's terms: "domestic orders under $2500").
+      // Abroad, postage is far more, so a person names the charge.
+      if (shipTo && shipTo.countryCode !== 'US' && i.shippingCharge == null) {
+        return { sent: false, reason: `${acct.name} is abroad (${addressLines(shipTo)}). The flat $25 shipping is for US orders only, so ask what to charge for shipping to them and pass it as shippingCharge. Say a real quote for the parcel is the way to set it.` }
       }
       const copy = (Array.isArray(i.alsoCopy) ? i.alsoCopy : []).map((x: unknown) => String(x).trim().toLowerCase()).filter(Boolean)
       const badCopy = copy.find((x: string) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x))
@@ -6340,7 +6346,7 @@ export const TOOLS: Record<string, Tool> = {
           storeName: str('The store\'s name as the person said it. Always pass it: the tool finds the store by it when there is no id.'),
           contactName: str('Who you deal with'),
           email: str('A real email, as given'),
-          address: str('Street, city, state ZIP — e.g. "2030 Hillhurst Ave, Los Angeles, CA 90027"'),
+          address: str('One line. US: street, city, state ZIP, e.g. "2030 Hillhurst Ave, Los Angeles, CA 90027". Abroad: street, city, postcode, country, e.g. "47 King Henry\'s Walk, London, N1 4NH, UK".'),
           notes: str('Replaces the account notes. Only when someone asks to rewrite them; to add a thought use addToNotes'),
           addToNotes: str('A thought or fact to add under the notes already there, dated. Nothing already written is lost'),
         },

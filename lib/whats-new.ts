@@ -226,6 +226,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-06', path: '/products',
     text: 'Products page: "on order" now counts only what is still owed. The Cleo Bags all showed PO 2405 as on order, when only 2 Olive bags are left on it.',
   },
+  {
+    on: '2026-11-06', path: '/wholesale',
+    text: 'Invoices can now go to addresses outside the US, like Turn Shop in London. Abroad, Mouse asks what to charge for shipping, because the flat $25 is the US rate.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

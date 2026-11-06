@@ -95,9 +95,11 @@ export type ShipAddress = {
   address1: string
   address2?: string | null
   city: string
-  provinceCode: string
-  zip: string
-  countryCode: 'US'
+  /** A US state; abroad, null unless the country uses one on its labels. */
+  provinceCode: string | null
+  zip: string | null
+  /** Two letters: US, GB, FR… */
+  countryCode: string
 }
 
 const STATES: Record<string, string> = {
@@ -133,10 +135,65 @@ export function parseUsAddress(line: string | null | undefined): Omit<ShipAddres
   return { address1: street[0], address2: street.slice(1).join(', ') || null, city, provinceCode, zip: m[2], countryCode: 'US' }
 }
 
+/**
+ * Countries an address may end with, by the names people write. Turn Shop's
+ * London address was refused as "not a full US address" on 5 Nov 2026, so the
+ * wholesale invoice to a London store could not be drafted at all.
+ */
+const COUNTRIES: Record<string, string> = {
+  uk: 'GB', 'united kingdom': 'GB', 'great britain': 'GB', england: 'GB', scotland: 'GB', wales: 'GB', 'northern ireland': 'GB', gb: 'GB',
+  ireland: 'IE', france: 'FR', italy: 'IT', italia: 'IT', germany: 'DE', deutschland: 'DE', spain: 'ES', españa: 'ES', portugal: 'PT',
+  netherlands: 'NL', 'the netherlands': 'NL', holland: 'NL', belgium: 'BE', switzerland: 'CH', austria: 'AT', denmark: 'DK',
+  sweden: 'SE', norway: 'NO', finland: 'FI', greece: 'GR', poland: 'PL', canada: 'CA', mexico: 'MX', australia: 'AU',
+  'new zealand': 'NZ', japan: 'JP', 'south korea': 'KR', korea: 'KR', singapore: 'SG', 'hong kong': 'HK', taiwan: 'TW',
+  china: 'CN', 'united arab emirates': 'AE', uae: 'AE', israel: 'IL',
+}
+/** Places with no postcode on a label. */
+const NO_POSTCODE = new Set(['HK', 'AE'])
+const UK_POSTCODE = /^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$/i
+const looksLikePostcode = (p: string, cc: string) => (cc === 'GB' ? UK_POSTCODE.test(p) : /\d/.test(p) && /^[A-Z0-9][A-Z0-9 -]{1,9}$/i.test(p))
+
+/**
+ * Any address written on one line. A US one is read exactly as before
+ * (parseUsAddress). One that ends with another country — "47 King Henry's
+ * Walk, London, N1 4NH, UK" — needs a street, a city and, where the country
+ * uses one, a postcode, either as its own part or beside the city ("London
+ * N1 4NH", "75003 Paris"). Anything less is null and the person is asked,
+ * as for a US address: a label to a guessed address is a parcel lost. Pure.
+ */
+export function parseAddress(line: string | null | undefined): Omit<ShipAddress, 'company' | 'firstName' | 'lastName'> | null {
+  const parts = (line ?? '').replace(/\s*\n\s*/g, ', ').split(',').map((p) => p.trim()).filter(Boolean)
+  const last = parts[parts.length - 1]?.toLowerCase().replace(/\.$/, '') ?? ''
+  const cc = COUNTRIES[last]
+  if (!cc) return parseUsAddress(line)
+  const rest = parts.slice(0, -1)
+  let zip: string | null = null
+  // The postcode as its own part, or at the end or start of the city part.
+  const own = rest.findIndex((p, i) => i > 0 && looksLikePostcode(p, cc))
+  if (own > 0) zip = rest.splice(own, 1)[0].toUpperCase()
+  if (rest.length < 2) return null
+  let city = rest[rest.length - 1]
+  if (!zip) {
+    const words = city.split(/\s+/)
+    for (const n of [2, 1]) {
+      const tail = words.slice(-n).join(' '), head = words.slice(0, n).join(' ')
+      if (words.length > n && looksLikePostcode(tail, cc)) { zip = tail.toUpperCase(); city = words.slice(0, -n).join(' '); break }
+      if (words.length > n && looksLikePostcode(head, cc)) { zip = head.toUpperCase(); city = words.slice(n).join(' '); break }
+    }
+  }
+  if (!zip && !NO_POSTCODE.has(cc)) return null
+  const street = rest.slice(0, -1)
+  if (!street[0] || !city || /^\d+$/.test(city)) return null
+  return { address1: street[0], address2: street.slice(1).join(', ') || null, city, provinceCode: null, zip, countryCode: cc }
+}
+
 /** The address as it will print on the label, for a person to check. Pure. */
 export function addressLines(a: ShipAddress): string {
   const who = [a.company, [a.firstName, a.lastName].filter(Boolean).join(' ')].filter(Boolean).join(', ')
-  return [who, a.address1, a.address2, `${a.city}, ${a.provinceCode} ${a.zip}`].filter(Boolean).join(' / ')
+  const place = a.countryCode === 'US'
+    ? `${a.city}, ${a.provinceCode} ${a.zip}`
+    : [[a.city, a.provinceCode].filter(Boolean).join(', '), a.zip, a.countryCode === 'GB' ? 'United Kingdom' : a.countryCode].filter(Boolean).join(' ')
+  return [who, a.address1, a.address2, place].filter(Boolean).join(' / ')
 }
 
 /** The shop's own email in Shopify: what invoices come from and copy to. */
@@ -623,7 +680,7 @@ export async function findDraft(nameIn: string): Promise<DraftSummary | null> {
   )
   const hit = list.draftOrders.nodes.find((n) => n.name.toUpperCase() === want)
   if (!hit) return null
-  type A = { company: string | null; firstName: string | null; lastName: string | null; address1: string | null; address2: string | null; city: string | null; provinceCode: string | null; zip: string | null } | null
+  type A = { company: string | null; firstName: string | null; lastName: string | null; address1: string | null; address2: string | null; city: string | null; provinceCode: string | null; zip: string | null; countryCodeV2: string | null } | null
   const d = await shopifyGraphQL<{ draftOrder: {
     id: string; name: string; status: string; legacyResourceId: string; tags: string[]; email: string | null
     shippingAddress: A; billingAddress: A
@@ -631,8 +688,8 @@ export async function findDraft(nameIn: string): Promise<DraftSummary | null> {
     subtotalPriceSet: Money; totalShippingPriceSet: Money; totalTaxSet: Money; totalPriceSet: Money
   } | null }>(
     `query($id: ID!) { draftOrder(id: $id) { id name status legacyResourceId tags email
-      shippingAddress { company firstName lastName address1 address2 city provinceCode zip }
-      billingAddress { company firstName lastName address1 address2 city provinceCode zip }
+      shippingAddress { company firstName lastName address1 address2 city provinceCode zip countryCodeV2 }
+      billingAddress { company firstName lastName address1 address2 city provinceCode zip countryCodeV2 }
       lineItems(first: 250) { nodes { title variantTitle quantity variant { id } originalUnitPriceSet { shopMoney { amount } } } }
       subtotalPriceSet { shopMoney { amount } } totalShippingPriceSet { shopMoney { amount } } totalTaxSet { shopMoney { amount } } totalPriceSet { shopMoney { amount } } } }`,
     { id: hit.id },
@@ -643,8 +700,8 @@ export async function findDraft(nameIn: string): Promise<DraftSummary | null> {
   return {
     id: o.id, name: o.name, open: o.status !== 'COMPLETED', tags: o.tags, email: o.email,
     company: a?.company ?? null,
-    address: a?.address1 && a.city && a.provinceCode && a.zip
-      ? { company: a.company, firstName: a.firstName, lastName: a.lastName, address1: a.address1, address2: a.address2, city: a.city, provinceCode: a.provinceCode, zip: a.zip, countryCode: 'US' }
+    address: a?.address1 && a.city && (a.countryCodeV2 && a.countryCodeV2 !== 'US' ? true : a.provinceCode && a.zip)
+      ? { company: a.company, firstName: a.firstName, lastName: a.lastName, address1: a.address1, address2: a.address2, city: a.city, provinceCode: a.provinceCode, zip: a.zip, countryCode: a.countryCodeV2 ?? 'US' }
       : null,
     lines: o.lineItems.nodes.map((l) => ({ label: `${l.title}${l.variantTitle ? ` — ${l.variantTitle}` : ''}`, quantity: l.quantity, unitPrice: money(l.originalUnitPriceSet), fromStock: !!l.variant })),
     subtotal: money(o.subtotalPriceSet), shipping: money(o.totalShippingPriceSet), tax: money(o.totalTaxSet), total: money(o.totalPriceSet),
