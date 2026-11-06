@@ -11,6 +11,7 @@ import { poLineLabel } from '@/lib/po'
 import { Page, Card, Chip, Value, Money, Thumb } from '@/app/ui/primitives'
 import { laDay, laMidnight } from '@/lib/dates'
 import { PageChat } from '@/app/ui/page-chat'
+import { productCosts, costSummary, type VariantCost } from '@/lib/product-cost'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,8 +22,50 @@ const STATUS_TONE = {
 /** Stock in pink; none (or oversold) in bold red. Brandon, 2 Oct 2026. */
 const stockTone = (n: number) => (n <= 0 ? 'font-bold text-urgent' : 'text-accent')
 
+const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`
+const money = (cents: number, currency: string) => `${currency === 'EUR' ? '\u20ac' : currency === 'USD' ? '$' : `${currency} `}${(cents / 100).toFixed(2)}`
+
+/** "$167.55", "$12.10–$12.40", "at least $81.40"; plus a maker billing in another currency. */
+function costText(costs: VariantCost[]): string | null {
+  const s = costSummary(costs)
+  if (!s) return null
+  // Nothing priced at all reads "not known yet", never "at least $0.00".
+  const parts = [
+    ...(s.highCents > 0 ? [s.lowCents === s.highCents ? usd(s.lowCents) : `${usd(s.lowCents)}–${usd(s.highCents)}`] : []),
+    ...(s.foreignMaker ? [money(s.foreignMaker.cents, s.foreignMaker.currency)] : []),
+  ]
+  if (!parts.length) return null
+  return `${s.complete ? '' : 'at least '}${parts.join(' + ')}`
+}
+
+/** One variant's cost, line by line. */
+function CostBreakdown({ c }: { c: VariantCost }) {
+  return (
+    <ul className="flex flex-col gap-1">
+      {c.maker ? (
+        <li className="flex justify-between gap-3 text-sm">
+          <span>Made by {c.maker.vendor}<span className="text-faint"> · PO {c.maker.poNumber}</span></span>
+          <span className="tnum">{money(c.maker.cents, c.maker.currency)}</span>
+        </li>
+      ) : (
+        <li className="text-sm text-warn">What the maker charges is not on file: no sent purchase order with a price for it.</li>
+      )}
+      {c.lines.map((l, i) => (
+        <li key={i} className="flex justify-between gap-3 text-sm">
+          <span>{l.name}<span className="text-faint"> · {l.qty > 0 ? `${l.qty} ${l.unit}` : 'quantity unknown'}{l.unitCents != null ? ` at ${usd(l.unitCents)}` : ''}</span></span>
+          {l.cents != null ? <span className="tnum text-muted">{usd(l.cents)}</span> : <span className="italic text-warn">no price</span>}
+        </li>
+      ))}
+      <li className="flex justify-between gap-3 border-t border-line pt-1 text-sm font-medium">
+        <span>{c.complete ? 'Total' : 'Total so far'}</span>
+        <span className="tnum">{usd(c.totalCents)}{c.maker && c.maker.currency !== 'USD' ? ` + ${money(c.maker.cents, c.maker.currency)}` : ''}</span>
+      </li>
+    </ul>
+  )
+}
+
 export default async function Products() {
-  const [productFiles, kits, styleLines] = await Promise.all([filesFor('product'), kitsByProduct(), styleReport()])
+  const [productFiles, kits, styleLines, costs] = await Promise.all([filesFor('product'), kitsByProduct(), styleReport(), productCosts()])
   const stylesClear = styleLines[0]?.startsWith('Style system: nothing')
   const [products, pos, runs, sales, defaults] = await Promise.all([
     db.product.findMany({
@@ -62,8 +105,11 @@ export default async function Products() {
     const relatedPos = pos
       .map((po) => ({
         po,
+        // Only what is still owed: PO 2405 stayed open for 2 Olive bags and
+        // showed under every Cleo Bag colour as "on order" (Brandon, 5 Nov 2026).
         lines: po.lines.filter((l) =>
-          (l.componentId && componentIds.has(l.componentId)) || l.productVariant?.productId === p.id),
+          Number(l.qtyReceived) < Number(l.qtyOrdered) &&
+          ((l.componentId && componentIds.has(l.componentId)) || l.productVariant?.productId === p.id)),
       }))
       .filter((x) => x.lines.length)
     const relatedRuns = runs.filter((r) => r.productId === p.id)
@@ -96,7 +142,8 @@ export default async function Products() {
       flags.push({ tone: 'warn', text: 'A bill-of-materials quantity is still unknown.' })
     }
 
-    return { p, relatedPos, relatedRuns, soldTotal, onHand, weeks, flags }
+    const cost = costs.get(p.id) ?? []
+    return { p, relatedPos, relatedRuns, soldTotal, onHand, weeks, flags, cost, costLine: costText(cost) }
   })
 
   // A to Z within each group (Brandon, 4 Oct 2026). Anything urgent still
@@ -143,7 +190,8 @@ export default async function Products() {
       {groups.map((g) => (
         <Card key={g.title} title={`${g.title} (${g.items.length})`}>
           <ul className="divide-y divide-line">
-            {g.items.map(({ p, relatedPos, relatedRuns, soldTotal, onHand, weeks, flags }) => {
+            {g.items.map(({ p, relatedPos, relatedRuns, soldTotal, onHand, weeks, flags, cost, costLine }) => {
+              const sameEverywhere = cost.length > 0 && cost.every((c) => c.totalCents === cost[0].totalCents && c.lines.length === cost[0].lines.length)
               const urgent = flags.filter((f) => f.tone === 'urgent').length
               return (
                 <li key={p.id} data-rec={p.id}>
@@ -160,6 +208,7 @@ export default async function Products() {
                         <span className="block text-xs text-muted">
                           <span className={`tnum ${stockTone(onHand)}`}>{onHand} on hand</span> · <span className="tnum">{soldTotal}</span> sold in 8 wks
                           {relatedPos.length || relatedRuns.length ? ` · ${relatedPos.length + relatedRuns.length} on order` : ''}
+                          {costLine ? <> · costs <span className="tnum">{costLine}</span> to make</> : ''}
                           {productFiles.get(p.id)?.length ? ` · ${productFiles.get(p.id)!.length} file${productFiles.get(p.id)!.length === 1 ? '' : 's'}` : ''}
                         </span>
                         {/* Oversold shows on the closed line (Brandon, 2 Oct 2026: "visible w/o having to click"). */}
@@ -217,8 +266,9 @@ export default async function Products() {
                         </div>
                       ) : null}
 
-                      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-b border-line px-4 py-3 text-sm sm:grid-cols-5 sm:px-5">
+                      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-b border-line px-4 py-3 text-sm sm:grid-cols-6 sm:px-5">
                         <div><dt className="text-xs text-faint">Retail</dt><dd><Money cents={p.retailPriceCents} /></dd></div>
+                        <div><dt className="text-xs text-faint">Cost to make</dt><dd>{costLine ? <span className="tnum">{costLine}</span> : <Value value={null} />}</dd></div>
                         <div><dt className="text-xs text-faint">On hand</dt><dd className={`tnum ${stockTone(onHand)}`}>{onHand}</dd></div>
                         <div><dt className="text-xs text-faint">Sold 8wk</dt><dd className="tnum">{soldTotal}</dd></div>
                         <div>
@@ -230,6 +280,27 @@ export default async function Products() {
                           <dd><Value value={p.productionLeadTimeDays} unit="days" /></dd>
                         </div>
                       </dl>
+
+                      {cost.length ? (
+                        // What one unit costs to make: the maker's price plus the recipe (lib/product-cost.ts).
+                        <details className="group/cost border-b border-line">
+                          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-xs text-faint sm:px-5 [&::-webkit-details-marker]:hidden">
+                            <span aria-hidden className="transition-transform group-open/cost:rotate-90">▸</span>
+                            Cost to make: {costLine ?? 'not known yet'}
+                            {cost.some((c) => !c.complete) ? <span className="text-warn"> · {cost.some((c) => !c.maker) ? "maker's price missing" : 'a price is missing'}</span> : null}
+                          </summary>
+                          <div className="flex flex-col gap-3 px-4 pb-3 sm:px-5">
+                            {sameEverywhere ? <CostBreakdown c={cost[0]} /> : cost.map((c, i) => (
+                              <details key={i} className="group/v">
+                                <summary className="flex cursor-pointer list-none justify-between gap-3 text-sm [&::-webkit-details-marker]:hidden">
+                                  <span>{c.label}</span><span className="tnum">{c.complete ? '' : 'at least '}{usd(c.totalCents)}</span>
+                                </summary>
+                                <div className="pt-1.5 pl-3"><CostBreakdown c={c} /></div>
+                              </details>
+                            ))}
+                          </div>
+                        </details>
+                      ) : null}
 
                       {kits.get(p.id) ? (
                         // A kit (KitPart): sold as its parts together. It can be made up

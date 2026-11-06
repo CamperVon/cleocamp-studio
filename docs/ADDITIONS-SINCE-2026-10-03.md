@@ -810,6 +810,19 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/live-sale.ts` (`draftInput`, `quoteLiveSale` `amountOff`), `lib/mouse/tools.ts` (`invoice_live_sale`), `lib/mouse/prompt.ts`, `tests/live-sale-discounts.test.ts`.
 - **Needs:** Shopify (write_draft_orders).
 
+
+### Cost to make on the products page
+- **Problem:** there was no single place to see what one unit of a product costs to make. The recipe listed quantities but no prices, and the maker's price sat on purchase orders.
+- **Change:** each product shows its cost to make on its closed line and a breakdown inside: the maker's per-unit price from the latest sent purchase order for that variant (or the product), plus every recipe line for that variant (quantity × the component's price; a sub-assembly with no price is priced from its parts). Variants that differ show a range. Anything without a price or quantity is named and the total reads "at least"; a maker billing in another currency is shown beside the dollar figure, never added to it.
+- **Files:** `lib/product-cost.ts` (`variantCost`, `costSummary`, `componentPrice`, `productCosts`), `app/(main)/products/page.tsx`, `tests/product-cost.test.ts`.
+- **Needs:** nothing beyond the app.
+
+### "On order" on the products page counts only what is still owed
+- **Problem:** a purchase order kept open for one item showed as "on order" under every product on it, including ones fully delivered.
+- **Change:** only lines with less received than ordered count.
+- **Files:** `app/(main)/products/page.tsx`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

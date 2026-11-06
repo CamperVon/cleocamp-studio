@@ -218,6 +218,14 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-04',
     text: 'Invoicing in Mouse chat: you can now say "waive the tax" or "take $14 off" on an invoice, including a Friends and Family one. Mouse shows the new total from Shopify before anything is sent.',
   },
+  {
+    on: '2026-11-06', path: '/products',
+    text: 'Products page: each product now shows what it costs to make, the maker\'s price plus every material and trim, with the breakdown inside. Anything without a price is named, and the total then says "at least".',
+  },
+  {
+    on: '2026-11-06', path: '/products',
+    text: 'Products page: "on order" now counts only what is still owed. The Cleo Bags all showed PO 2405 as on order, when only 2 Olive bags are left on it.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */
