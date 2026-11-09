@@ -85,6 +85,28 @@ async function recordBalances(
 const MACHINE_REPORTERS = [/^quickbooks@(send\.)?cleocamp\.com$/i]
 
 /**
+ * "QuickBooks figures" emails are retired. Since 23 Sept 2026 the nightly
+ * routine records the figures straight into the app (scripts/record-quickbooks.ts,
+ * CLAUDE.md §6), but an old scheduled task nobody can find still emails Mouse
+ * on Monday mornings. On 9 Nov 2026 its run had no QuickBooks connector and
+ * its "pull FAILED" email made Mouse flag a missing night that was not
+ * missing. These are kept and marked read, never reasoned about. Intuit's own
+ * notices from the same address (payments scheduled, bank details) still go
+ * through. Pure.
+ */
+export function isRetiredFiguresEmail(m: { fromAddress: string; subject: string | null }): boolean {
+  return MACHINE_REPORTERS.some((re) => re.test(m.fromAddress)) && /^quickbooks figures\b/i.test(m.subject ?? '')
+}
+
+/** Mark the retired figures emails read before anything reads the mail. */
+export async function retireFiguresEmails(): Promise<number> {
+  const unread = await db.inboundEmail.findMany({ where: { processedAt: null, fromAddress: { contains: 'quickbooks@', mode: 'insensitive' } }, select: { id: true, fromAddress: true, subject: true } })
+  const ids = unread.filter(isRetiredFiguresEmail).map((m) => m.id)
+  if (ids.length) await db.inboundEmail.updateMany({ where: { id: { in: ids } }, data: { processedAt: new Date() } })
+  return ids.length
+}
+
+/**
  * On 15 Sept 2026 two QuickBooks pulls arrived twelve hours apart, both titled
  * "QuickBooks figures — 15 September 2026". Both were correct; the books had
  * moved between them. But the nightly pass reads all unread mail at once, so it
@@ -136,7 +158,9 @@ async function supersedeRepeatReports(): Promise<number> {
 }
 
 export async function processInbox(limit = 20) {
-  // Before anything reads the mail: collapse repeat reports to the newest.
+  // Before anything reads the mail: drop the retired figures emails, then
+  // collapse repeat reports to the newest.
+  await retireFiguresEmails()
   const supersededReports = await supersedeRepeatReports()
 
   const unread = await db.inboundEmail.findMany({

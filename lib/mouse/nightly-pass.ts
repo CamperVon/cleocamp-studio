@@ -199,6 +199,7 @@ async function answerOneTeamEmail(m: TeamMail, allTools: string[], applied: Set<
 }
 
 export async function nightlyPass(source = 'nightly-pass') {
+  await (await import('@/lib/mouse/inbox')).retireFiguresEmails()
   const unread = await db.inboundEmail.findMany({
     // Customer mail to support@ is read by lib/support/pass.ts instead — a
     // Mouse with no tools. This one can write, so a stranger's email must
