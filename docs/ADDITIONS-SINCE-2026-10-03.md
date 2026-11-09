@@ -852,6 +852,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/maker-use.ts` (`stockPlace`), `lib/mouse/tools.ts` (`writeEvent`, `transfer_component_stock`), `tests/maker-use.test.ts`.
 - **Needs:** nothing beyond the app.
 
+
+### A returned exchange can become a refund
+- **Problem:** a return booked in as an exchange had no refund button, so when the customer later chose a refund (the size they wanted never came back) staff refunded it by hand in the store admin, where it was easy to restock the item and refund nothing.
+- **Change:** a support case with an exchange return shows "They want a refund instead", which turns it into a refund waiting for approval; the refund itself is still its own tap, less the restocking fee.
+- **Files:** `app/(main)/support/actions.ts` (`switchReturnToRefund`), `app/ui/support-case.tsx`.
+- **Needs:** Shopify and email.
+
 ---
 
 ## Setup notes for a new install

@@ -828,6 +828,29 @@ async function studioLocation(): Promise<string | null> {
   return l?.shopifyLocationId ?? null
 }
 
+/**
+ * The customer changed their mind: a return booked in as an exchange becomes
+ * a refund. Kate's #2507 was checked in as an exchange on 14 Oct 2026, the
+ * size she wanted never came back, she chose the refund, and the case had no
+ * refund button, so Jane refunded it in Shopify by hand (9 Nov 2026). Moves
+ * no money: the refund is still its own tap after this.
+ */
+export async function switchReturnToRefund(caseId: string): Promise<Result> {
+  const who = await approver()
+  if (!who) return { ok: false, error: 'Sign in again — only the team can do this.' }
+  const c = await db.supportCase.findUnique({ where: { id: caseId } })
+  const info = c?.returnInfo as import('@/lib/returns').ReturnInfo | null
+  if (!c || !info) return { ok: false, error: 'No return on this case.' }
+  if (info.kind !== 'EXCHANGE') return { ok: false, error: 'This return is already a refund.' }
+  if (info.refundedAt) return { ok: false, error: `Already refunded on ${info.refundedAt.slice(0, 10)}.` }
+  await db.$transaction([
+    db.supportCase.update({ where: { id: caseId }, data: { returnInfo: { ...info, kind: 'REFUND' } as unknown as Prisma.InputJsonValue, status: 'OPEN', resolvedAt: null } }),
+    db.supportMessage.create({ data: { caseId, direction: 'NOTE', fromAddress: who.name, body: 'Changed from an exchange to a refund: the customer chose the refund. Refund waiting for approval.' } }),
+  ])
+  revalidatePath('/support')
+  return { ok: true }
+}
+
 /** What approving the refund on this case would pay back. Changes nothing. */
 export async function quoteCaseRefund(caseId: string, ourMistake = false): Promise<{ ok: true; refund: number; fee: number } | { ok: false; error: string }> {
   if (!(await approver())) return { ok: false, error: 'Sign in again — only the team can do this.' }

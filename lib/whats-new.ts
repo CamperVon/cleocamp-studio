@@ -242,6 +242,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-06', path: '/purchase-orders',
     text: 'Mouse can now change where a purchase order is delivered without making a new PO number. Ask her in chat.',
   },
+  {
+    on: '2026-11-10', path: '/support',
+    text: 'Support: a return checked in as an exchange can now become a refund when the customer changes their mind. Tap "They want a refund instead" on the case, then refund less the 10% fee as usual.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

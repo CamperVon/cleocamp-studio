@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import type { Reviewer } from '@/app/(main)/support/actions'
-import { addCaseNote, applyAddressAndReply, invoiceAndReply, swapVariantAndReply, approveReturnRefund, cancelOrderAndReply, flagForReview, markReviewed, quoteCaseRefund, quoteOrderRefund, redraftReply, refundOrderAndReply, removeUnshippedItem, sendReply, setCaseStatus, tellMouse } from '@/app/(main)/support/actions'
+import { addCaseNote, applyAddressAndReply, invoiceAndReply, swapVariantAndReply, approveReturnRefund, switchReturnToRefund, cancelOrderAndReply, flagForReview, markReviewed, quoteCaseRefund, quoteOrderRefund, redraftReply, refundOrderAndReply, removeUnshippedItem, sendReply, setCaseStatus, tellMouse } from '@/app/(main)/support/actions'
 import { swapClaims, claimsInvoice, claimsCancelled, claimsNotYetDone, claimsRefunded, mentionsDiscount, mentionsRefundToCustomer, teamInstructions, partlyShipped, refundIssued, unfilled, unshippedLines } from '@/lib/support/reply'
 import { trimQuoted } from '@/lib/support/core'
 import { ReturnIntake } from '@/app/ui/return-intake'
@@ -639,6 +639,15 @@ function ReturnBox({ c }: { c: CaseView }) {
         <span className="font-medium">Return received</span> {r.receivedAt.slice(0, 10)} by {r.receivedBy}: {what}.{' '}
         {r.kind === 'EXCHANGE' ? 'Exchange.' : r.refundedAt ? `Refunded $${r.refunded?.toFixed(2)} (${r.fee ? `fee $${r.fee.toFixed(2)} kept` : 'no restocking fee'}) on ${r.refundedAt.slice(0, 10)}.` : 'Refund waiting for approval.'}
       </p>
+      {r.kind === 'EXCHANGE' && !r.refundedAt ? (
+        <button
+          type="button" disabled={pending}
+          onClick={() => start(async () => { const x = await switchReturnToRefund(c.id); setMsg(x.ok ? { text: 'Now a refund: check it and work out the refund below.', bad: false } : { text: x.error, bad: true }) })}
+          className="self-start rounded border border-line px-2.5 py-1.5 font-medium"
+        >
+          {pending ? 'Changing…' : 'They want a refund instead'}
+        </button>
+      ) : null}
       {r.kind === 'REFUND' && !r.refundedAt ? (
         quote ? (
           <div className="flex flex-wrap items-center gap-2">
