@@ -43,6 +43,20 @@ export class BomRefusal extends Error {}
 type ExistingLine = { id: string; qtyPerUnit: unknown; size: string | null; colorway: string | null }
 
 /**
+ * Whether lines set by size, between them, cover every size the product
+ * comes in. Then an all-variants line beside them is being replaced, not
+ * doubled: "12 yards, but 17 on the L/XL" for the Tutu (10 Nov 2026) is one
+ * change, and Mouse was refused and had to remove the old line first. Pure.
+ */
+export function coversEverySize(setSizes: string[], variantSizes: Array<string | null>): boolean {
+  const norm = (s: string) => s.trim().toLowerCase()
+  const want = new Set(variantSizes.filter((s): s is string => !!s && !!s.trim()).map(norm))
+  if (!want.size || variantSizes.some((s) => !s || !s.trim())) return false
+  const got = new Set(setSizes.map(norm))
+  return [...want].every((s) => got.has(s))
+}
+
+/**
  * Which existing recipe line a change means, or that it is a new one. A line
  * is one component for one scope (a size, a colour, both, or every variant).
  * Pure.

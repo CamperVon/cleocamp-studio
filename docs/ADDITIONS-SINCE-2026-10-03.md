@@ -859,6 +859,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `app/(main)/support/actions.ts` (`switchReturnToRefund`), `app/ui/support-case.tsx`.
 - **Needs:** Shopify and email.
 
+
+### Recipe: lines by size can replace an every-variant line in one change
+- **Problem:** turning one every-variant recipe line into lines by size ("12 yards, but 17 on the larger size") was refused as double counting until the old line was removed in a separate step.
+- **Change:** when the lines set by size in one change cover every size the product comes in, the every-variant line for that component is replaced in the same transaction and the change says so. Anything short of every size is still refused.
+- **Files:** `lib/bom.ts` (`coversEverySize`), `lib/mouse/tools.ts` (`update_product_bom`), `tests/bom-every-size.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

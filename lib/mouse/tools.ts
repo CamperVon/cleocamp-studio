@@ -1,4 +1,4 @@
-import { BomRefusal, lineScopeLabel, matchColorway, pickBomLine } from '@/lib/bom'
+import { BomRefusal, coversEverySize, lineScopeLabel, matchColorway, pickBomLine } from '@/lib/bom'
 import { currentActor } from '@/lib/mouse/actor'
 import type Anthropic from '@anthropic-ai/sdk'
 import { db } from '@/lib/db'
@@ -1686,9 +1686,21 @@ export const TOOLS: Record<string, Tool> = {
       const missing = [...set.map((l) => l.componentId), ...remove].filter((id) => !byId.has(id))
       if (missing.length) return { error: `No component ${missing.join(', ')}` }
 
+      const variantSizes = (await db.productVariant.findMany({ where: { productId }, select: { size: true } })).map((v) => v.size)
       return db.$transaction(async (tx) => {
         const added: string[] = []
         const changed: string[] = []
+        // Size lines that between them cover every size replace an
+        // all-variants line for the same component, in the same change.
+        for (const componentId of new Set(set.map((l) => l.componentId))) {
+          const sizes = set.filter((l) => l.componentId === componentId && typeof l.size === 'string' && l.size.trim() && !l.colorway).map((l) => (l.size as string).trim())
+          if (!coversEverySize(sizes, variantSizes)) continue
+          const all = await tx.bomLine.findMany({ where: { parentProductId: productId, componentId, size: null, colorway: null }, select: { id: true, qtyPerUnit: true } })
+          for (const a of all) {
+            await tx.bomLine.delete({ where: { id: a.id } })
+            changed.push(`${byId.get(componentId)!.name}: the every-variant line of ${Number(a.qtyPerUnit) || 'unknown'} replaced by the lines by size`)
+          }
+        }
         for (const [n, line] of set.entries()) {
           // A component can have one line per size and colour (Brandon,
           // 7 Oct 2026: the Bean Bag takes 3.44 sq ft of leather Petite and
