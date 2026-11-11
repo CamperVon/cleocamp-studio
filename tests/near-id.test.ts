@@ -22,3 +22,9 @@ test('an exact id, or a short scrap, is not a near miss', () => {
   assert.equal(nearestId('cmwcec0dr000708l08w63atuu', ids), null)
   assert.equal(nearestId('cmw', ids), null)
 })
+
+test('the right start with a made-up tail finds the item (Wilde\'s samples todo, 11 Nov 2026)', () => {
+  const real = ['cmw9urp7o000k08l3dtixw1bj', 'cmw9urp7o000m08l3qqqqqqqq']
+  assert.equal(nearestId('cmw9urp7o000k08l3ln5o0jx4', real), 'cmw9urp7o000k08l3dtixw1bj')
+  assert.equal(nearestId('cmw9urp7o000k08l3ln5o0jx4', [...real, 'cmw9urp7o000k08l3zzzzzzzz']), null)
+})

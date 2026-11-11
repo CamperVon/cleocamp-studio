@@ -869,7 +869,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 
 ### A mistyped item id names the item it was almost certainly meant to be
 - **Problem:** the assistant copies long random ids to change or close a todo, and a one-character slip was refused with a list of 30 open ids to re-copy from. It made the same slip again from that list, so the change never landed.
-- **Change:** when the given id is within two characters of exactly one real item, the refusal names that item and its exact id (or says it is already closed). No guess is made when nothing, or more than one item, is that close, and nothing is changed until the assistant calls again with the real id.
+- **Change:** when the given id is within two characters of exactly one real item, or has the right start (the first 17 characters of a cuid) with a made-up tail, the refusal names that item and its exact id (or says it is already closed). No guess is made when nothing, or more than one item, is that close, and nothing is changed until the assistant calls again with the real id.
 - **Files:** `lib/near-id.ts` (`nearestId`), `lib/mouse/tools.ts` (`nearItem`, used by `resolve_item` and `update_todo`), `tests/near-id.test.ts`.
 - **Needs:** nothing beyond the app.
 

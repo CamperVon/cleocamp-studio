@@ -10,14 +10,25 @@
  * Ids here are random cuids, so two real ones are never within a couple of
  * characters of each other: a near miss with exactly one candidate is a copy
  * slip, not doubt. Returns that candidate only when it is the single id within
- * `max` edits; none or several, null. Pure.
+ * `max` edits, or failing that the single id with the same first 17
+ * characters; none or several, null. Pure.
  */
 export function nearestId(given: string, ids: readonly string[], max = 2): string | null {
   const g = String(given ?? '').trim()
   if (g.length < 10) return null
   const hits = ids.filter((id) => id !== g && Math.abs(id.length - g.length) <= max && distance(g, id, max) <= max)
-  return hits.length === 1 ? hits[0] : null
+  if (hits.length === 1) return hits[0]
+  if (hits.length > 1) return null
+  // 11 Nov 2026: "cmw9urp7o000k08l3ln5o0jx4" for "cmw9urp7o000k08l3dtixw1bj",
+  // the time, counter and machine parts right and the random tail made up. A
+  // cuid's first 17 characters already single out one item, so an id that
+  // shares them with exactly one is that item.
+  if (g.length < PREFIX) return null
+  const same = ids.filter((id) => id !== g && id.slice(0, PREFIX) === g.slice(0, PREFIX))
+  return same.length === 1 ? same[0] : null
 }
+
+const PREFIX = 17
 
 /** Levenshtein distance, giving up (returning max + 1) once it exceeds max. */
 function distance(a: string, b: string, max: number): number {
