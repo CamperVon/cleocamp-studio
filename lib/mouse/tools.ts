@@ -8,6 +8,7 @@ import { laMidnight } from '@/lib/dates'
 import { planVariantPush, isStaleCountRefusal, localNextCount } from '@/lib/stock-push'
 import { poLineLabel } from '@/lib/po'
 import { asDocLanguage } from '@/lib/po-strings'
+import { nearestId } from '@/lib/near-id'
 
 /** A tool definition paired with the code that runs it. */
 type Tool = {
@@ -31,6 +32,26 @@ const str = (description: string) => ({ type: 'string' as const, description })
  * can mouse self-clean better?"). The instructions said to check first and
  * copies still went up, so code checks. lib/mouse/dupes.ts decides.
  */
+/**
+ * When an item id is one or two characters off a real one, name that item
+ * outright (lib/near-id.ts, 11 Nov 2026): a list of 30 ids to re-copy from
+ * is where the slip happened, and Mouse repeated it. Null when no single
+ * item is that close.
+ */
+async function nearItem(given: unknown): Promise<string | null> {
+  const since = new Date(Date.now() - 60 * 86400_000)
+  const items = await db.actionItem.findMany({
+    where: { OR: [{ resolved: false }, { createdAt: { gte: since } }] },
+    select: { id: true, title: true, resolved: true },
+  })
+  const id = nearestId(String(given ?? ''), items.map((x) => x.id))
+  const hit = id ? items.find((x) => x.id === id) : undefined
+  if (!hit) return null
+  return hit.resolved
+    ? `No item has the id "${String(given)}". It is one or two characters off [${hit.id}] "${hit.title}", which is already closed. If that is the one you meant, say it is closed rather than changing it.`
+    : `No item has the id "${String(given)}". It is one or two characters off [${hit.id}] "${hit.title}". If that is the one you meant, call again with exactly ${hit.id}.`
+}
+
 async function alreadyOpen(i: Record<string, unknown>) {
   if (i.separate === true) return null
   const { findSame } = await import('@/lib/mouse/dupes')
@@ -965,6 +986,8 @@ export const TOOLS: Record<string, Tool> = {
         select: { id: true, resolved: true, title: true, createdAt: true },
       })
       if (!found) {
+        const near = await nearItem(i.id)
+        if (near) return { resolved: false, error: near }
         const open = await db.actionItem.findMany({
           where: { resolved: false },
           orderBy: { createdAt: 'desc' },
@@ -1114,6 +1137,8 @@ export const TOOLS: Record<string, Tool> = {
       if ('error' in data) return { updated: false, error: data.error }
       const found = await db.actionItem.findUnique({ where: { id: String(i.id) }, select: { id: true, resolved: true } })
       if (!found) {
+        const near = await nearItem(String(i.id))
+        if (near) return { updated: false, error: near }
         const open = await db.actionItem.findMany({ where: { resolved: false }, orderBy: { createdAt: 'desc' }, take: 30, select: { id: true, title: true } })
         return {
           updated: false,
