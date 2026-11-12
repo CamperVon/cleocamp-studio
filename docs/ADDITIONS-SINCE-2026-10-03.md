@@ -873,6 +873,13 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/near-id.ts` (`nearestId`), `lib/mouse/tools.ts` (`nearItem`, used by `resolve_item` and `update_todo`), `tests/near-id.test.ts`.
 - **Needs:** nothing beyond the app.
 
+
+### Discount codes on an invoice, checked and applied by Shopify
+- **Problem:** the assistant could take a percentage or a named amount off an invoice, but not a store discount code, so a code someone named was turned into a hand-worked amount instead (and the amount was slightly wrong).
+- **Change:** `invoice_live_sale` takes `discountCode`. The code is looked up in Shopify first; one that does not exist is refused with the codes whose names are close. It goes on the draft as a real discount code, and because Shopify silently skips a code an order is not eligible for, the draft is priced by Shopify and refused unless the code actually appears among the applied discounts. A code goes on alone, not with a percentage or amount off.
+- **Files:** `lib/live-sale.ts` (`InvoiceOptions.discountCode`, `draftInput`, `quoteLiveSale` `codeOff`, `codeApplied`, `checkDiscountCode`), `lib/mouse/tools.ts` (`invoice_live_sale`), `tests/live-sale-discounts.test.ts`.
+- **Needs:** Shopify.
+
 ---
 
 ## Setup notes for a new install

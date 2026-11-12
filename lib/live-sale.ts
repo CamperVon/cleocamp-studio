@@ -70,6 +70,14 @@ export type InvoiceOptions = {
   fixedDiscount?: { amount: number; title: string } | null
   /** Take any order discount off the draft (a deposit no longer wanted). */
   clearDiscount?: boolean
+  /**
+   * A Shopify discount code a person named ("put CLEOFRIEND on it"), applied
+   * by Shopify by its own rules (12 Nov 2026: Mouse could not, and Daphne's
+   * code was taken off by hand as a flat amount instead). Shopify skips a code
+   * the order is not eligible for without saying so, so quoteLiveSale reports
+   * whether it actually applied.
+   */
+  discountCode?: string | null
   /** Extra people to copy (blind) on the invoice email, beyond the studio. */
   bcc?: string[]
 }
@@ -234,6 +242,7 @@ export function draftInput(email: string, lines: SaleLine[], note: string, opts:
     ...(opts.discount && !both ? { appliedDiscount: { value: opts.discount.percent, valueType: 'PERCENTAGE', title: opts.discount.title } } : {}),
     ...(opts.fixedDiscount && (both || !opts.discount) ? { appliedDiscount: { value: opts.fixedDiscount.amount, valueType: 'FIXED_AMOUNT', title: opts.fixedDiscount.title } } : {}),
     ...(opts.clearDiscount && !opts.discount && !opts.fixedDiscount ? { appliedDiscount: null } : {}),
+    ...(opts.discountCode ? { discountCodes: [opts.discountCode] } : opts.clearDiscount ? { discountCodes: [] } : {}),
     ...(opts.shippingCharge != null
       ? { shippingLine: { title: opts.shippingTitle ?? 'Shipping', priceWithCurrency: { amount: opts.shippingCharge.toFixed(2), currencyCode: 'USD' } } }
       : {}),
@@ -256,6 +265,8 @@ export type Quote = {
   discount: number
   /** Of that, the flat amount off the order, as Shopify applied it. */
   amountOff: number
+  /** Of that, what the discount code took off; null when no code was asked for or Shopify did not apply it. */
+  codeOff: number | null
   shipping: number
   tax: number
   total: number
@@ -266,11 +277,13 @@ export async function quoteLiveSale(email: string, lines: SaleLine[], opts: Invo
   const d = await shopifyGraphQL<{ draftOrderCalculate: { calculatedDraftOrder: {
     subtotalPriceSet: Money; totalDiscountsSet: Money; totalShippingPriceSet: Money; totalTaxSet: Money; totalPriceSet: Money
     appliedDiscount: { valueType: string; amountSet: Money } | null
+    platformDiscounts: Array<{ code: string | null; totalAmount: { amount: string } }>
     lineItems: Array<{ quantity: number; originalUnitPriceSet: Money; discountedUnitPriceSet?: Money }>
   } | null; userErrors: Array<{ message: string }> } }>(
     `mutation($input: DraftOrderInput!) { draftOrderCalculate(input: $input) { calculatedDraftOrder {
       subtotalPriceSet { shopMoney { amount } } totalDiscountsSet { shopMoney { amount } } totalShippingPriceSet { shopMoney { amount } } totalTaxSet { shopMoney { amount } } totalPriceSet { shopMoney { amount } }
       appliedDiscount { valueType amountSet { shopMoney { amount } } }
+      platformDiscounts { code totalAmount { amount } }
       lineItems { quantity originalUnitPriceSet { shopMoney { amount } } }
     } userErrors { message } } }`,
     { input: draftInput(email, lines, '', opts) },
@@ -300,9 +313,60 @@ export async function quoteLiveSale(email: string, lines: SaleLine[], opts: Invo
     subtotal: money(c.subtotalPriceSet),
     discount: money(c.totalDiscountsSet),
     amountOff: c.appliedDiscount?.valueType === 'FIXED_AMOUNT' ? money(c.appliedDiscount.amountSet) : 0,
+    codeOff: codeApplied(opts.discountCode, c.platformDiscounts ?? []),
     shipping: money(c.totalShippingPriceSet),
     tax: money(c.totalTaxSet),
     total: money(c.totalPriceSet),
+  }
+}
+
+/** What a named discount code took off, as Shopify applied it, or null when it did not. Pure. */
+export function codeApplied(code: string | null | undefined, applied: Array<{ code: string | null; totalAmount: { amount: string } }>): number | null {
+  if (!code) return null
+  const hit = applied.find((d) => d.code && d.code.toLowerCase() === code.trim().toLowerCase())
+  return hit ? Math.round(Number(hit.totalAmount.amount) * 100) / 100 : null
+}
+
+export type DiscountCodeCheck =
+  | { ok: true; code: string; summary: string }
+  | { ok: false; reason: string }
+
+/**
+ * Is this a live Shopify discount code? 12 Nov 2026: the team asked for
+ * CLEOFRIEND10, which does not exist; the real one is CLEOFRIEND. A code that
+ * is not there is said so, with the codes whose names are close.
+ */
+export async function checkDiscountCode(codeIn: string): Promise<DiscountCodeCheck> {
+  const code = codeIn.trim()
+  if (!code) return { ok: false, reason: 'No discount code given.' }
+  type Node = { codeDiscount: { __typename: string; status?: string; summary?: string; title?: string } | null } | null
+  const d = await shopifyGraphQL<{ codeDiscountNodeByCode: Node }>(
+    `query($code: String!) { codeDiscountNodeByCode(code: $code) { codeDiscount { __typename
+      ... on DiscountCodeBasic { status summary } ... on DiscountCodeBxgy { status summary }
+      ... on DiscountCodeFreeShipping { status summary } ... on DiscountCodeApp { status title } } } }`,
+    { code },
+  )
+  const found = d.codeDiscountNodeByCode?.codeDiscount
+  if (found) {
+    if (found.status && found.status !== 'ACTIVE') return { ok: false, reason: `${code} is a Shopify code but it is ${found.status.toLowerCase()}, so it would not apply. Ask whether to use another.` }
+    return { ok: true, code, summary: found.summary ?? found.title ?? '' }
+  }
+  // Codes whose names are close: the letters without a trailing number.
+  const stem = code.replace(/[\d_-]+$/, '').toLowerCase()
+  let near: string[] = []
+  if (stem.length >= 4) {
+    const n = await shopifyGraphQL<{ discountNodes: { nodes: Array<{ discount: { __typename: string; status?: string; summary?: string; codes?: { nodes: Array<{ code: string }> } } }> } }>(
+      `query($q: String!) { discountNodes(first: 10, query: $q) { nodes { discount { __typename
+        ... on DiscountCodeBasic { status summary codes(first: 3) { nodes { code } } } } } } }`,
+      { q: `title:*${stem}*` },
+    ).catch(() => null)
+    near = (n?.discountNodes.nodes ?? [])
+      .filter((x) => x.discount.status === 'ACTIVE' && x.discount.codes?.nodes.length)
+      .map((x) => `${x.discount.codes!.nodes[0].code} (${x.discount.summary})`)
+  }
+  return {
+    ok: false,
+    reason: `There is no Shopify discount code ${code}.` + (near.length ? ` Close ones that exist: ${near.join('; ')}. Ask which one they meant.` : ' Ask for the exact code.'),
   }
 }
 

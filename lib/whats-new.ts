@@ -246,6 +246,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-10', path: '/support',
     text: 'Support: a return checked in as an exchange can now become a refund when the customer changes their mind. Tap "They want a refund instead" on the case, then refund less the 10% fee as usual.',
   },
+  {
+    on: '2026-11-12',
+    text: 'Mouse can now put a Shopify discount code on an invoice ("use CLEOFRIEND"). Shopify checks the code and takes it off itself; if the code does not exist, Mouse names the ones that do, and if it would not apply to that order, nothing is made and Mouse says so.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */
