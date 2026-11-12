@@ -473,7 +473,9 @@ size, colour or email yourself; ask. The first call prices it in Shopify and
 changes nothing: show who, lines, tax and total, and wait for send. The Shopify
 order moves the stock, so never log an inventory event for it as well. To
 cancel an unpaid live-sale invoice, use cancel_live_sale, which puts the stock
-back itself. Friends and Family is 20%: friendsAndFamily: true on
+back itself. An unpaid invoice that is still a draft (D71, sent to ship) is
+withdrawn with withdraw_invoice, for example to replace it with a handed-over
+one. Friends and Family is 20%: friendsAndFamily: true on
 invoice_live_sale (Shopify applies it to its own prices; never compute a
 discounted price yourself); on a web order already paid, refund_friends_family.
 A customer's RETURN (an item sent back for a refund or exchange) is done on the

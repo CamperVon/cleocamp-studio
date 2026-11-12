@@ -869,7 +869,7 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 
 ### A mistyped item id names the item it was almost certainly meant to be
 - **Problem:** the assistant copies long random ids to change or close a todo, and a one-character slip was refused with a list of 30 open ids to re-copy from. It made the same slip again from that list, so the change never landed.
-- **Change:** when the given id is within two characters of exactly one real item, or has the right start (the first 17 characters of a cuid) with a made-up tail, the refusal names that item and its exact id (or says it is already closed). No guess is made when nothing, or more than one item, is that close, and nothing is changed until the assistant calls again with the real id.
+- **Change:** when the given id is within two characters of exactly one real item, or has the right start (the first 13 characters of a cuid: its time and counter) with a made-up tail, the refusal names that item and its exact id (or says it is already closed). No guess is made when nothing, or more than one item, is that close, and nothing is changed until the assistant calls again with the real id.
 - **Files:** `lib/near-id.ts` (`nearestId`), `lib/mouse/tools.ts` (`nearItem`, used by `resolve_item` and `update_todo`), `tests/near-id.test.ts`.
 - **Needs:** nothing beyond the app.
 
@@ -879,6 +879,19 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Change:** `invoice_live_sale` takes `discountCode`. The code is looked up in Shopify first; one that does not exist is refused with the codes whose names are close. It goes on the draft as a real discount code, and because Shopify silently skips a code an order is not eligible for, the draft is priced by Shopify and refused unless the code actually appears among the applied discounts. A code goes on alone, not with a percentage or amount off.
 - **Files:** `lib/live-sale.ts` (`InvoiceOptions.discountCode`, `draftInput`, `quoteLiveSale` `codeOff`, `codeApplied`, `checkDiscountCode`), `lib/mouse/tools.ts` (`invoice_live_sale`), `tests/live-sale-discounts.test.ts`.
 - **Needs:** Shopify.
+
+
+### Withdraw an unpaid invoice
+- **Problem:** an invoice sent to ship that turned out to be wrong (the sale was in person after all) could not be taken back by the assistant; the draft had to be deleted by hand in the store admin before a correct one went out.
+- **Change:** `withdraw_invoice` deletes an unpaid draft invoice by its number after a person confirms, so the customer's payment link stops working. A paid one is refused, since it is an order by then. Never from an email run.
+- **Files:** `lib/live-sale.ts` (`withdrawDraft`), `lib/mouse/tools.ts` (`withdraw_invoice`), `lib/mouse/team-mail.ts`, `lib/mouse/tool-kinds.ts`, `lib/mouse/prompt.ts`.
+- **Needs:** Shopify.
+
+### Same to-do words about a different product are not a copy
+- **Problem:** the duplicate guard on new to-dos matched on wording alone, so "size chart" for one product was refused as a copy of "size chart" for another.
+- **Change:** an open item tied to a different product, vendor or order is left out of the duplicate check; untagged items still count.
+- **Files:** `lib/mouse/tools.ts` (`otherThing`, `alreadyOpen`), `tests/todo-other-thing.test.ts`.
+- **Needs:** nothing beyond the app.
 
 ---
 

@@ -52,11 +52,22 @@ async function nearItem(given: unknown): Promise<string | null> {
     : `No item has the id "${String(given)}". It is one or two characters off [${hit.id}] "${hit.title}". If that is the one you meant, call again with exactly ${hit.id}.`
 }
 
+/** Both items are tied to something, and not the same thing. Pure. */
+export function otherThing(o: { entityType: string | null; entityId: string | null }, i: Record<string, unknown>): boolean {
+  const type = typeof i.entityType === 'string' && i.entityType !== 'GENERAL' ? i.entityType : null
+  const id = typeof i.entityId === 'string' && i.entityId.trim() ? i.entityId.trim() : null
+  if (!type || !id || !o.entityType || o.entityType === 'GENERAL' || !o.entityId) return false
+  return o.entityType !== type || o.entityId !== id
+}
+
 async function alreadyOpen(i: Record<string, unknown>) {
   if (i.separate === true) return null
   const { findSame } = await import('@/lib/mouse/dupes')
-  const open = await db.actionItem.findMany({ where: { resolved: false, kind: { in: ['TODO', 'QUESTION'] } }, select: { id: true, kind: true, title: true, dueDate: true } })
-  const same = findSame(String(i.title ?? ''), open)
+  const open = await db.actionItem.findMany({ where: { resolved: false, kind: { in: ['TODO', 'QUESTION'] } }, select: { id: true, kind: true, title: true, dueDate: true, entityType: true, entityId: true } })
+  // 12 Nov 2026: "size chart" for the Holiday Tee was refused as a copy of
+  // "size chart" for the Cleo Tee. The same words about a different product
+  // are a different task.
+  const same = findSame(String(i.title ?? ''), open.filter((o) => !otherThing(o, i)))
   if (!same) return null
   return {
     created: false, alreadyOpen: { id: same.id, kind: same.kind.toLowerCase(), title: same.title, due: same.dueDate?.toISOString().slice(0, 10) ?? null },
@@ -6155,6 +6166,49 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  withdraw_invoice: {
+    def: {
+      name: 'withdraw_invoice',
+      description:
+        'Withdraw an invoice that has NOT been paid and is still a draft, by its D number ("D71"): the ' +
+        'draft is deleted in Shopify, so the link the customer has stops working. Nothing was charged and ' +
+        'no stock moved, so nothing else changes. Use it when a person says an invoice was wrong and is to be ' +
+        'replaced (sold in person after all, the wrong item) or is not wanted. Leave confirmed out to SHOW ' +
+        'it; confirmed: true only once a person has said withdraw it. A paid one is an order and is refused.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          draft: str('The draft number, e.g. "D71"'),
+          confirmed: { type: 'boolean' as const, description: 'Leave out to check. true only after a person has seen it and said withdraw.' },
+        },
+        required: ['draft'],
+      },
+    },
+    run: async (i) => {
+      if (i.confirmed === true && (await import('@/lib/mouse/team-mail')).inEmailRun()) {
+        return { done: false, reason: 'From email an invoice is never withdrawn. Say it can be done from the app chat once someone has looked at it.' }
+      }
+      const { findDraft, withdrawDraft } = await import('@/lib/live-sale')
+      const name = String(i.draft ?? '').trim()
+      const d = await findDraft(name)
+      if (!d) return { done: false, reason: `No Shopify draft ${name}. Ask for the number on the invoice (it starts with D).` }
+      if (!d.open) return { done: false, reason: `${d.name} has been paid or completed, so it is an order now. A paid order is cancelled or refunded in Shopify, not withdrawn.` }
+      const lines = d.lines.map((l) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}`)
+      if (i.confirmed !== true) {
+        return {
+          done: false, check: true, draft: d.name, to: d.email, lines, total: `$${d.total.toFixed(2)} (unpaid)`,
+          tellTheUser: `Show it: withdrawing ${d.name} deletes it in Shopify and the payment link ${d.email ? `${d.email} has ` : ''}stops working. Shopify does not email the customer. Nothing was charged and no stock moved. Wait for a yes.`,
+        }
+      }
+      const r = await withdrawDraft(d.id)
+      if (!r.ok) return { done: false, reason: `Shopify refused: ${r.error}` }
+      return {
+        done: true, draft: d.name, lines,
+        tellTheUser: `Say ${d.name} is withdrawn: the link no longer works, and Shopify did not tell the customer. If it is being replaced, draft the new invoice now.`,
+      }
+    },
+  },
+
   cancel_live_sale: {
     def: {
       name: 'cancel_live_sale',
@@ -6163,7 +6217,8 @@ export const TOOLS: Record<string, Tool> = {
         'it in Shopify with the items put back on stock, and puts back the app\'s count for items only ' +
         'the app holds. Never log a RETURNED or other stock event for it yourself — that would count it ' +
         'twice. Leave confirmed out to SHOW what will happen; confirmed: true only once a person says ' +
-        'cancel. A paid invoice is refused: money going back is done in Shopify.',
+        'cancel. A paid invoice is refused: money going back is done in Shopify. An invoice that is ' +
+        'still a draft (a "D" number like D71, sent to ship and not paid) is withdraw_invoice, not this.',
       input_schema: {
         type: 'object',
         properties: {

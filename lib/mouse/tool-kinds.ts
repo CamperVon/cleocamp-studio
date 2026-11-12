@@ -50,6 +50,7 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
 
   add_note: 'changes',
   cancel_live_sale: 'changes',
+  withdraw_invoice: 'changes',
   close_muse_task: 'changes',
   close_purchase_order: 'changes',
   close_stylist_pull: 'changes',

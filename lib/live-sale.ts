@@ -792,6 +792,23 @@ export async function findDraft(nameIn: string): Promise<DraftSummary | null> {
   }
 }
 
+/**
+ * Take back an invoice that has not been paid: the draft is deleted in
+ * Shopify, so the link the customer has stops working and nothing was ever
+ * charged or taken off stock. 12 Nov 2026: Cleo said Daphne's skirt was sold
+ * in person, so shipped invoice D71 had to give way to a handed-over one, and
+ * Mouse had no way to withdraw it. A paid draft has become an order and is
+ * never touched here.
+ */
+export async function withdrawDraft(draftId: string): Promise<{ ok: boolean; error?: string }> {
+  const d = await shopifyGraphQL<{ draftOrderDelete: { deletedId: string | null; userErrors: Array<{ message: string }> } }>(
+    `mutation($input: DraftOrderDeleteInput!) { draftOrderDelete(input: $input) { deletedId userErrors { message } } }`,
+    { input: { id: draftId } },
+  )
+  if (d.draftOrderDelete.deletedId) return { ok: true }
+  return { ok: false, error: d.draftOrderDelete.userErrors.map((e) => e.message).join('; ') || 'Shopify did not delete it.' }
+}
+
 /** The draft an order was invoiced from ("2644" → its draft id and email). */
 export async function draftForOrder(orderNameIn: string): Promise<{ draftId: string; orderName: string; email: string | null } | null> {
   const want = `#${orderNameIn.replace(/^#/, '').trim()}`

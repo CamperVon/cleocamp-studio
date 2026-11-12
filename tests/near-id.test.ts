@@ -28,3 +28,8 @@ test('the right start with a made-up tail finds the item (Wilde\'s samples todo,
   assert.equal(nearestId('cmw9urp7o000k08l3ln5o0jx4', real), 'cmw9urp7o000k08l3dtixw1bj')
   assert.equal(nearestId('cmw9urp7o000k08l3ln5o0jx4', [...real, 'cmw9urp7o000k08l3zzzzzzzz']), null)
 })
+
+test('wrong from the 17th character still finds it (Knit Collab deposit todo, 12 Nov 2026)', () => {
+  assert.equal(nearestId('cmwcmyp73006s08jessd0fe0', ['cmwcmyp73006s08jq5ys9ryji', 'cmwcmyp73007a08jqzzzzzzzz']), 'cmwcmyp73006s08jq5ys9ryji')
+  assert.equal(nearestId('cmwcmyp73006s08jqs0', ['cmwcmyp73006s08jq5ys9ryji']), 'cmwcmyp73006s08jq5ys9ryji')
+})

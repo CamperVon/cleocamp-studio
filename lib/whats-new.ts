@@ -250,6 +250,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-12',
     text: 'Mouse can now put a Shopify discount code on an invoice ("use CLEOFRIEND"). Shopify checks the code and takes it off itself; if the code does not exist, Mouse names the ones that do, and if it would not apply to that order, nothing is made and Mouse says so.',
   },
+  {
+    on: '2026-11-12',
+    text: 'Mouse can now withdraw an invoice that has not been paid yet (a D number, like D71), for example when it should have been a handed-over sale. Say "withdraw D71"; Mouse shows it first and waits for your yes. The customer\'s payment link stops working.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

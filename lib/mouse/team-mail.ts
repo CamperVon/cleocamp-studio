@@ -45,7 +45,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 export const NOT_FROM_EMAIL = new Set([
   'send_purchase_order', 'send_context_snapshot', 'send_wholesale_draft', 'send_line_sheet',
   'email_invoice_copy', 'refund_friends_family',
-  'cancel_live_sale', 'update_person_email', 'update_notification_settings', 'record_financials',
+  'cancel_live_sale', 'withdraw_invoice', 'update_person_email', 'update_notification_settings', 'record_financials',
   // Takes the newest chat attachment: from an email it would keep the wrong file.
   'keep_file', 'set_colour_photo',
   // Sends our information outside the company.
