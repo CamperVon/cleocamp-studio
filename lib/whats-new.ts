@@ -254,6 +254,18 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-12',
     text: 'Mouse can now withdraw an invoice that has not been paid yet (a D number, like D71), for example when it should have been a handed-over sale. Say "withdraw D71"; Mouse shows it first and waits for your yes. The customer\'s payment link stops working.',
   },
+  {
+    on: '2026-11-15',
+    text: 'You can now send Mouse an Excel or CSV file in chat (like the stylist line sheet draft), and keep one in Files. Mouse reads it row by row.',
+  },
+  {
+    on: '2026-11-15', path: '/stylists',
+    text: 'There is now a stylist line sheet: the same pieces as the wholesale sheet with bigger photos and no prices, minimums or terms. The link is at the top of Stylists and next to the wholesale sheet on Wholesale.',
+  },
+  {
+    on: '2026-11-15', path: '/items',
+    text: 'A stylist pull request, or an email titled "Cleo Camp x …", that reaches Mouse now puts an urgent to-do at the top of To-dos straight away. Tick it off once the stylist has an answer.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

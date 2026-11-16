@@ -6727,6 +6727,12 @@ export const TOOLS: Record<string, Tool> = {
       const f = await db.storedFile.findUnique({ where: { id: String(i.id ?? '') }, select: { title: true, filename: true, mediaType: true, data: true, notes: true, url: true } })
       if (!f) return { ok: false, found: false, reason: `No kept file ${i.id}.` }
       if (f.url) return { found: true, title: f.title, url: f.url, notes: f.notes, note: 'This is a link, not a stored file: you cannot read what is behind it. Give the person the link.' }
+      const { isSheet, sheetText } = await import('@/lib/sheet-text')
+      if (isSheet(f.mediaType)) {
+        const rows = await sheetText(f.mediaType, f.data).catch(() => null)
+        return rows == null ? { found: true, title: f.title, filename: f.filename, notes: f.notes, reason: 'The spreadsheet could not be opened.' }
+          : { found: true, title: f.title, filename: f.filename, notes: f.notes, spreadsheet: rows }
+      }
       return { found: true, title: f.title, filename: f.filename, notes: f.notes, fileForModel: { mediaType: f.mediaType, base64: f.data } }
     },
   },

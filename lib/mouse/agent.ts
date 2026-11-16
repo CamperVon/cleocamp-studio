@@ -1,3 +1,4 @@
+import { isSheet, CSV_TYPE, SHEET_TEXT_LIMIT } from '@/lib/sheet-text'
 import { runLoop, type AgentUsage, type TurnRoute } from '@/lib/mouse/runner'
 import { classifyResult } from '@/lib/mouse/outcomes'
 import Anthropic from '@anthropic-ai/sdk'
@@ -43,10 +44,20 @@ export const DEEP_MODEL = 'claude-opus-5-5'
 // the runs that read outside mail retry on CHAT_MODEL when it does.
 export const BACKGROUND_MODEL = 'claude-sonnet-5-5'
 
-/** A file attached to the current turn — an invoice, an old PO, a packing slip. */
-export type AgentAttachment = { mediaType: string; base64: string; filename?: string }
+/**
+ * A file attached to the current turn — an invoice, an old PO, a packing slip.
+ * A spreadsheet carries `text`, its rows read out (lib/sheet-text.ts).
+ */
+export type AgentAttachment = { mediaType: string; base64: string; filename?: string; text?: string }
 
 function attachmentBlock(a: AgentAttachment): Anthropic.ImageBlockParam | Anthropic.DocumentBlockParam {
+  if (isSheet(a.mediaType)) {
+    // Read out when it was sent; an Excel file replayed from an earlier turn
+    // is not opened again, and says so rather than going quiet.
+    const text = a.text ?? (a.mediaType === CSV_TYPE ? Buffer.from(a.base64, 'base64').toString('utf8').slice(0, SHEET_TEXT_LIMIT)
+      : `(The spreadsheet ${a.filename ?? ''} was sent earlier in this chat and read then. Ask for it again if you need its rows.)`)
+    return { type: 'document', source: { type: 'text', media_type: 'text/plain', data: text }, title: a.filename || 'Spreadsheet' }
+  }
   if (a.mediaType === 'application/pdf') {
     return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: a.base64 } }
   }
@@ -1009,7 +1020,7 @@ export async function chatTurn(threadId: string, message: string, attachments?: 
         role: 'user',
         content: withFiles.has(m.id)
           ? [
-              ...m.attachments.filter((a) => a.data).map((a) => attachmentBlock({ mediaType: a.mediaType, base64: a.data! })),
+              ...m.attachments.filter((a) => a.data).map((a) => attachmentBlock({ mediaType: a.mediaType, base64: a.data!, filename: a.filename })),
               { type: 'text', text: m.content },
             ]
           : m.content,

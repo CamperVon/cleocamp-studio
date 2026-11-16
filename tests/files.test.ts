@@ -4,10 +4,10 @@ import { fileProblem, MAX_FILE_BYTES, recordHref, sizeLabel } from '../lib/files
 import { toolResultContent } from '../lib/mouse/runner'
 import { diagnosticValue } from '../lib/mouse/outcomes'
 
-test('only PDFs and photos up to 4 MB, with a title, can be kept', () => {
+test('only PDFs, photos and spreadsheets up to 4 MB, with a title, can be kept', () => {
   assert.equal(fileProblem({ mediaType: 'application/pdf', sizeBytes: 400_000, title: 'Calamo colour card' }), null)
   assert.match(fileProblem({ mediaType: 'application/pdf', sizeBytes: MAX_FILE_BYTES + 1 })!, /limit is 4 MB/)
-  assert.match(fileProblem({ mediaType: 'application/zip', sizeBytes: 10 })!, /Only PDFs and photos/)
+  assert.match(fileProblem({ mediaType: 'application/zip', sizeBytes: 10 })!, /Only PDFs, photos .* and spreadsheets/)
   assert.match(fileProblem({ mediaType: 'image/png', sizeBytes: 10, title: '  ' })!, /title/)
   assert.equal(sizeLabel(386_312), '377 KB')
   assert.equal(recordHref('component', 'c1'), '/components#rec-c1')

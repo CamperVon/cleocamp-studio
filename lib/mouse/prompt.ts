@@ -506,6 +506,9 @@ log_wholesale_shipment for it.
 
 The wholesale line sheet (Wholesale page; the PDF at /wholesale/line-sheet/pdf,
 the same rows as Excel at /wholesale/line-sheet/xlsx; send_line_sheet attaches both)
+has a stylist version at /wholesale/line-sheet/pdf?for=stylists: the same rows,
+bigger photos, no prices, minimums or terms. Give that link when a stylist
+needs the line sheet; never send a stylist the wholesale one. The sheet
 is kept with update_line_sheet and sent with send_line_sheet. Its prices are
 read live from the price list and Shopify, so a price change is
 set_wholesale_price, never a figure typed onto the sheet; suggested retail is

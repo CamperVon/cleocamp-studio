@@ -171,6 +171,14 @@ export async function POST(req: NextRequest) {
         await supportPass()
         return
       }
+      // Stylist mail raises an urgent to-do first, by a fixed rule in code
+      // (lib/stylist-mail.ts, 15 Nov 2026), so it never waits on the model.
+      try {
+        const { raiseStylistMail } = await import('@/lib/stylist-mail')
+        await raiseStylistMail(stored.id)
+      } catch (err) {
+        console.error('[inbound] stylist check failed', err)
+      }
       const { nightlyPass } = await import('@/lib/mouse/nightly-pass')
       await nightlyPass('mail-on-arrival')
     } catch (err) {

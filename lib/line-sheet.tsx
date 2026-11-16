@@ -411,16 +411,36 @@ export function onThePdf(l: Pick<LineSheetLine, 'wholesaleCents' | 'hidden' | 'd
   return !l.hidden && l.wholesaleCents != null && !!l.description.trim()
 }
 
+/**
+ * Who a line sheet is for. The stylist sheet (Cleo, 15 Nov 2026) is the same
+ * rows in the same order, so a new product reaches both without being added
+ * twice, with no wholesale price, suggested retail, minimum order or trade
+ * terms, and photos about twice the size.
+ */
+export type SheetFor = 'wholesale' | 'stylists'
+export const sheetForOf = (v: unknown): SheetFor => (v === 'stylists' ? 'stylists' : 'wholesale')
+
+/** A stylist row needs only its description: there is no price on that sheet. Pure. */
+export function onTheStylistPdf(l: Pick<LineSheetLine, 'hidden' | 'description'>): boolean {
+  return !l.hidden && !!l.description.trim()
+}
+
+/** The sheet's title for stylists: the collection name without "Wholesale". Pure. */
+export function stylistTitle(title: string): string {
+  const t = title.replace(/\s*[–-]?\s*wholesale\s+line\s+sheet\s*$/i, '').trim()
+  return `${t || 'Cleo Camp'} – Stylist Line Sheet`
+}
+
 /** Why a row is held off the PDF, for the Wholesale page. Pure. */
 export function heldBackFor(l: Pick<LineSheetLine, 'wholesaleCents' | 'description'>): string[] {
   return [l.wholesaleCents == null && 'a wholesale price', !l.description.trim() && 'a description'].filter((x): x is string => !!x)
 }
 
 /** Shopify's CDN sends WebP to a browser; the PDF needs a JPEG, a bit larger than an invoice thumb. Pure. */
-export function sheetPhoto(url: string | null): string | null {
+export function sheetPhoto(url: string | null, width = 240): string | null {
   if (!url) return null
   if (!/^https:\/\/cdn\.shopify\.com\//.test(url)) return url
-  return `${url}${url.includes('?') ? '&' : '?'}width=240&format=jpg`
+  return `${url}${url.includes('?') ? '&' : '?'}width=${width}&format=jpg`
 }
 
 export async function loadLineSheet(opts: { includeHidden?: boolean } = {}): Promise<{ meta: LineSheetMetaText | null; lines: LineSheetLine[] }> {
@@ -468,6 +488,8 @@ const styles = StyleSheet.create({
   td: { paddingRight: 5 },
   photo: { width: 48, height: 60, objectFit: 'cover', borderRadius: 2 },
   noPhoto: { width: 48, height: 60, backgroundColor: '#F0F0EC', borderRadius: 2 },
+  bigPhoto: { width: 104, height: 130, objectFit: 'cover', borderRadius: 2 },
+  bigNoPhoto: { width: 104, height: 130, backgroundColor: '#F0F0EC', borderRadius: 2 },
   bold: { fontWeight: 'bold' },
   foot: { marginTop: 14, paddingTop: 8, borderTopWidth: 1, borderTopColor: INK },
   footHead: { fontSize: 9, fontStyle: 'italic', fontWeight: 'bold', marginBottom: 4 },
@@ -487,26 +509,41 @@ const COLS: Array<{ key: string; label: string; w: number }> = [
   { key: 'moq', label: 'MIN. ORDER', w: 64 },
   { key: 'avail', label: 'AVAILABILITY', w: 68 },
 ]
-const w = (key: string) => ({ width: COLS.find((c) => c.key === key)!.w })
+// The stylist sheet: no money columns, a photo twice the size, room given to the words.
+const STYLIST_COLS: Array<{ key: string; label: string; w: number }> = [
+  { key: 'photo', label: 'IMAGE', w: 112 },
+  { key: 'item', label: 'ITEM', w: 90 },
+  { key: 'color', label: 'COLOR / VARIANT', w: 80 },
+  { key: 'desc', label: 'DESCRIPTION', w: 300 },
+  { key: 'size', label: 'SIZING', w: 70 },
+  { key: 'avail', label: 'AVAILABILITY', w: 80 },
+]
+const colsFor = (f: SheetFor) => (f === 'stylists' ? STYLIST_COLS : COLS)
 
 /** The row above says the same thing: print a ditto mark, as the January sheet did. Pure. */
 export function ditto(prev: string | undefined, cur: string): string {
   return prev !== undefined && prev.trim() && prev.trim() === cur.trim() ? '"' : cur
 }
 
-export function LineSheetDoc({ meta, lines, asOf }: { meta: LineSheetMetaText; lines: LineSheetLine[]; asOf: Date }) {
+export function LineSheetDoc({ meta, lines, asOf, for: sheetFor = 'wholesale' }: { meta: LineSheetMetaText; lines: LineSheetLine[]; asOf: Date; for?: SheetFor }) {
   const date = asOf.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'long', day: 'numeric', year: 'numeric' })
+  const stylists = sheetFor === 'stylists'
+  const cols = colsFor(sheetFor)
+  const w = (key: string) => ({ width: cols.find((c) => c.key === key)!.w })
+  const title = stylists ? stylistTitle(meta.title) : meta.title
+  const photoStyle = stylists ? styles.bigPhoto : styles.photo
+  const noPhotoStyle = stylists ? styles.bigNoPhoto : styles.noPhoto
   return (
-    <Document title={meta.title} author="Cleo Camp">
+    <Document title={title} author="Cleo Camp">
       <Page size="LETTER" orientation="landscape" style={styles.page}>
         {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf's Image takes no alt */}
         <Image src={wordmark()} style={styles.logo} />
-        <Text style={styles.title}>{meta.title}</Text>
+        <Text style={styles.title}>{title}</Text>
         <Text style={styles.tagline}>{meta.tagline}</Text>
         <Text style={styles.materials}>{meta.materials}</Text>
 
         <View style={styles.thead} fixed>
-          {COLS.map((c) => <Text key={c.key} style={[styles.th, { width: c.w }]}>{c.label}</Text>)}
+          {cols.map((c) => <Text key={c.key} style={[styles.th, { width: c.w }]}>{c.label}</Text>)}
         </View>
         {lines.map((l, i) => (
           <View key={l.id} style={styles.tr} wrap={false}>
@@ -514,9 +551,9 @@ export function LineSheetDoc({ meta, lines, asOf }: { meta: LineSheetMetaText; l
               {/* react-pdf's Image takes no alt. */}
               {l.photoData
                 // eslint-disable-next-line jsx-a11y/alt-text
-                ? <Image src={{ data: l.photoData, format: 'jpg' }} style={styles.photo} />
+                ? <Image src={{ data: l.photoData, format: 'jpg' }} style={photoStyle} />
                 // eslint-disable-next-line jsx-a11y/alt-text
-                : l.photo ? <Image src={sheetPhoto(l.photo)!} style={styles.photo} /> : <View style={styles.noPhoto} />}
+                : l.photo ? <Image src={sheetPhoto(l.photo, stylists ? 480 : 240)!} style={photoStyle} /> : <View style={noPhotoStyle} />}
             </View>
             <View style={[styles.td, w('item')]}>
               <Text style={styles.bold}>{l.item}</Text>
@@ -524,17 +561,17 @@ export function LineSheetDoc({ meta, lines, asOf }: { meta: LineSheetMetaText; l
             </View>
             <Text style={[styles.td, w('color')]}>{l.colorLabel}</Text>
             <Text style={[styles.td, w('desc')]}>{ditto(lines[i - 1]?.description, l.description)}</Text>
-            <Text style={[styles.td, w('ws'), styles.bold]}>{wholesaleText(l) ?? '—'}</Text>
-            <Text style={[styles.td, w('msrp')]}>{l.retail ?? '—'}</Text>
+            {stylists ? null : <Text style={[styles.td, w('ws'), styles.bold]}>{wholesaleText(l) ?? '—'}</Text>}
+            {stylists ? null : <Text style={[styles.td, w('msrp')]}>{l.retail ?? '—'}</Text>}
             <Text style={[styles.td, w('size')]}>{l.sizing || '—'}</Text>
-            <Text style={[styles.td, w('moq')]}>{ditto(lines[i - 1]?.minOrder, l.minOrder) || '—'}</Text>
+            {stylists ? null : <Text style={[styles.td, w('moq')]}>{ditto(lines[i - 1]?.minOrder, l.minOrder) || '—'}</Text>}
             <Text style={[styles.td, w('avail')]}>{l.availability || '—'}</Text>
           </View>
         ))}
 
         {/* Terms first, right under the table: the MOQ asterisk and the
             shipping fees, before press (Brandon, 6 Oct 2026). */}
-        <Text style={[styles.footText, { color: MUTED, marginTop: 8 }]} wrap={false}>{meta.footnote}</Text>
+        {stylists ? null : <Text style={[styles.footText, { color: MUTED, marginTop: 8 }]} wrap={false}>{meta.footnote}</Text>}
 
         <View style={styles.foot} wrap={false}>
           <Text style={styles.footHead}>Press &amp; Collaborations</Text>
@@ -543,7 +580,7 @@ export function LineSheetDoc({ meta, lines, asOf }: { meta: LineSheetMetaText; l
         </View>
 
         <View style={styles.pageNo} fixed>
-          <Text>Cleo Camp · Wholesale line sheet · Prices as of {date}</Text>
+          <Text>{stylists ? `Cleo Camp · Stylist line sheet · As of ${date}` : `Cleo Camp · Wholesale line sheet · Prices as of ${date}`}</Text>
           <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
         </View>
       </Page>
@@ -551,17 +588,18 @@ export function LineSheetDoc({ meta, lines, asOf }: { meta: LineSheetMetaText; l
   )
 }
 
-export async function renderLineSheetPdf(asOf = new Date()): Promise<Buffer | null> {
+export async function renderLineSheetPdf(asOf = new Date(), sheetFor: SheetFor = 'wholesale'): Promise<Buffer | null> {
   const { meta, lines: all } = await loadLineSheet()
   // Nothing goes to a store without a price and a description. The Wholesale
-  // page lists what is held back and why.
-  const lines = all.filter(onThePdf)
+  // page lists what is held back and why. A stylist sees no price, so only
+  // the description is needed there.
+  const lines = all.filter(sheetFor === 'stylists' ? onTheStylistPdf : onThePdf)
   if (!meta || !lines.length) return null
-  return renderToBuffer(<LineSheetDoc meta={meta} lines={lines} asOf={asOf} />)
+  return renderToBuffer(<LineSheetDoc meta={meta} lines={lines} asOf={asOf} for={sheetFor} />)
 }
 
-/** "Cleo-Camp-Line-Sheet-2026-09-30.pdf" (or .xlsx), dated in Los Angeles. Pure. */
-export function lineSheetFileName(asOf = new Date(), ext: 'pdf' | 'xlsx' = 'pdf'): string {
+/** "Cleo-Camp-Line-Sheet-2026-09-30.pdf" (or .xlsx; "Stylist-Line-Sheet" for stylists), dated in Los Angeles. Pure. */
+export function lineSheetFileName(asOf = new Date(), ext: 'pdf' | 'xlsx' = 'pdf', sheetFor: SheetFor = 'wholesale'): string {
   const d = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(asOf)
-  return `Cleo-Camp-Line-Sheet-${d}.${ext}`
+  return `Cleo-Camp-${sheetFor === 'stylists' ? 'Stylist-' : ''}Line-Sheet-${d}.${ext}`
 }

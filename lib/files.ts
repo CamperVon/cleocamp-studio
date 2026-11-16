@@ -15,6 +15,9 @@ export const FILE_TYPES: Record<string, string> = {
   'image/png': 'picture',
   'image/webp': 'picture',
   'image/gif': 'picture',
+  // A spreadsheet sent in chat (15 Nov 2026); read_file reads it out as rows.
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel',
+  'text/csv': 'CSV',
 }
 
 export const LINK_KINDS = ['product', 'component', 'vendor'] as const
@@ -22,7 +25,7 @@ export type LinkKind = (typeof LINK_KINDS)[number]
 
 /** Why a file cannot be kept, or null if it can. Pure. */
 export function fileProblem(f: { mediaType: string; sizeBytes: number; title?: string }): string | null {
-  if (!FILE_TYPES[f.mediaType]) return 'Only PDFs and photos (JPEG, PNG, WebP, GIF) can be kept here.'
+  if (!FILE_TYPES[f.mediaType]) return 'Only PDFs, photos (JPEG, PNG, WebP, GIF) and spreadsheets (Excel .xlsx, CSV) can be kept here.'
   if (f.sizeBytes <= 0) return 'That file is empty.'
   if (f.sizeBytes > MAX_FILE_BYTES) return `That file is ${(f.sizeBytes / 1048576).toFixed(1)} MB; the limit is 4 MB. Scan or export it at a lower resolution and try again.`
   if (f.title !== undefined && !f.title.trim()) return 'Give it a title.'

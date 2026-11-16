@@ -893,6 +893,24 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/tools.ts` (`otherThing`, `alreadyOpen`), `tests/todo-other-thing.test.ts`.
 - **Needs:** nothing beyond the app.
 
+### Spreadsheets in chat and in Files
+- **Problem:** the chat and Files took only PDFs and images, so an Excel or CSV someone sent the assistant never arrived and nothing could be done with it.
+- **Change:** chat and Files accept .xlsx and .csv (known by file name when a phone gives a vague type). Claude cannot read a workbook, so each sheet goes to the model as its name and then its rows as CSV, capped at 60,000 characters with a note saying so when cut. The original file is kept as sent. A spreadsheet kept in Files is read the same way by `read_file`.
+- **Files:** `lib/sheet-type.ts`, `lib/sheet-text.ts`, `lib/mouse/agent.ts` (`attachmentBlock`), `app/api/chat/route.ts`, `app/ui/chat.tsx`, `lib/files.ts`, `app/(main)/files/file-controls.tsx`, `lib/mouse/tools.ts` (`read_file`), `tests/sheet-text.test.ts`.
+- **Needs:** nothing beyond the app (ExcelJS, already a dependency).
+
+### A line sheet without prices, for stylists and press
+- **Problem:** the only line sheet was the wholesale one, with wholesale, retail and minimum-order columns and trade terms, which must not go to a stylist; a second sheet kept by hand would drift from the first.
+- **Change:** `/wholesale/line-sheet/pdf?for=stylists` draws the same rows in the same order with no money columns or terms footnote, photos about twice the size (fetched at 480px), "Wholesale" dropped from the title, and its own file name. A row needs only a description to print there, since no price is shown.
+- **Files:** `lib/line-sheet.tsx` (`SheetFor`, `sheetForOf`, `onTheStylistPdf`, `stylistTitle`, `STYLIST_COLS`, `LineSheetDoc` `for`, `renderLineSheetPdf`, `lineSheetFileName`), `app/wholesale/line-sheet/pdf/route.ts`, `app/(main)/wholesale/page.tsx`, `lib/mouse/prompt.ts`, `tests/line-sheet-stylist.test.ts`.
+- **Needs:** Shopify for the photos and descriptions, as the wholesale sheet does.
+
+### Urgent to-do for stylist mail on arrival
+- **Problem:** stylist pull requests and collaboration emails ("Brand x Magazine") went unanswered for days, because nothing marked them as needing an answer when they landed.
+- **Change:** a fixed rule in code (subject "Brand x …", "pull" in the subject, or a pull request in the first 1,500 characters) raises an urgent to-do the moment such mail is stored, with fixed wording and the subject quoted. Machines and the team's own replies are skipped; a team forward counts. One open to-do per conversation (subject with Re:/Fwd: stripped); once ticked off, the next message in the thread raises a new one. No model is involved and nothing else is written.
+- **Files:** `lib/stylist-mail.ts`, `app/api/inbound/email/route.ts`, `tests/stylist-mail.test.ts`. The brand name in the subject pattern is this business's and needs changing for another.
+- **Needs:** email (inbound).
+
 ---
 
 ## Setup notes for a new install

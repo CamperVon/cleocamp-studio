@@ -170,6 +170,10 @@ export default async function Stylists() {
   return (
     <Page title="Stylists" lede="Who has pieces out on a pull, and what stylists have asked for. Tell Mouse and it keeps this up to date.">
       <PageChat page="Stylists" placeholder="A note for Mouse…" />
+      <p className="-mt-2 text-xs text-muted">
+        <a href="/wholesale/line-sheet/pdf?for=stylists" target="_blank" rel="noreferrer" className="text-accent underline">Stylist line sheet</a>
+        {' '}· the wholesale sheet&rsquo;s pieces with bigger photos and no prices.
+      </p>
       {/* Requests first (Brandon, 5 Oct 2026: "We should have a REQUESTS section
           at the top"): what came in by email and waits for a yes, then what any
           stylist has asked for that is still open. */}

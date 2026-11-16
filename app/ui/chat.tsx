@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { MouseFace } from './mouse-face'
+import { sheetTypeFor } from '@/lib/sheet-type'
 
 type Msg = {
   /// The persisted ChatMessage id, once the turn has been saved. Absent on
@@ -106,7 +107,7 @@ const LABEL: Record<string, string> = {
 }
 
 // Claude reads images natively and PDFs as documents — nothing else.
-const ACCEPTED_TYPES = 'application/pdf,image/jpeg,image/png,image/webp'
+const ACCEPTED_TYPES = 'application/pdf,image/jpeg,image/png,image/webp,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 const MAX_FILES = 3
 const MAX_BYTES = 4 * 1024 * 1024
 /** Vercel rejects the whole request over 4.5MB, and base64 is a third bigger
@@ -537,8 +538,8 @@ export function Chat() {
       return
     }
     for (const f of chosen) {
-      if (!ACCEPTED_TYPES.split(',').includes(f.type)) {
-        setFileError(`${f.name}: send a PDF, JPG, PNG or WEBP.`)
+      if (!ACCEPTED_TYPES.split(',').includes(sheetTypeFor(f.name, f.type))) {
+        setFileError(`${f.name}: send a PDF, JPG, PNG, WEBP, Excel (.xlsx) or CSV.`)
         return
       }
       if (f.size > MAX_BYTES) {
@@ -552,7 +553,7 @@ export function Chat() {
         const reader = new FileReader()
         reader.onload = () => {
           const result = reader.result as string
-          resolve({ filename: f.name, mediaType: f.type, base64: result.split(',')[1] ?? '' })
+          resolve({ filename: f.name, mediaType: sheetTypeFor(f.name, f.type), base64: result.split(',')[1] ?? '' })
         }
         reader.onerror = () => reject(reader.error)
         reader.readAsDataURL(f)

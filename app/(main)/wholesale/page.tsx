@@ -258,6 +258,7 @@ export default async function Wholesale() {
             <a href="/wholesale/line-sheet/pdf" target="_blank" rel="noreferrer" className="font-medium text-accent underline">Open the PDF</a>
             <a href="/wholesale/line-sheet/pdf?download=1" className="text-accent underline">Download</a>
             <a href="/wholesale/line-sheet/xlsx" className="text-accent underline">Excel</a>
+            <a href="/wholesale/line-sheet/pdf?for=stylists" target="_blank" rel="noreferrer" className="text-accent underline">Stylist version (no prices)</a>
             <span>Wholesale from the price list, suggested retail from Shopify, both read live. New products and colours on Shopify join by themselves. Tap a piece to change its words or remove it; tell Mouse to change a price or send the sheet to a store.</span>
           </div>
           {alerts ? (

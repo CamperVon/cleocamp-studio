@@ -3,6 +3,7 @@ import { completedWrites } from '@/lib/mouse/outcomes'
 import { NextResponse, type NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { chatTurn } from '@/lib/mouse/agent'
+import { isSheet, sheetText } from '@/lib/sheet-text'
 import { currentPersonId } from '@/lib/session'
 import { PRACTICE_TITLE } from '@/lib/mouse/practice'
 import { scheduleShadowSmoke } from '@/lib/mouse/shadow-smoke'
@@ -12,11 +13,12 @@ export const maxDuration = 300
 
 type InAttachment = { filename: string; mediaType: string; base64: string }
 
-// Claude reads images natively and PDFs as documents — nothing else. Vercel's
+// Claude reads images natively and PDFs as documents; spreadsheets (Excel,
+// CSV) are read out as text first (lib/sheet-text.ts, 15 Nov 2026). Vercel's
 // own function payload limit (4.5MB, fixed on Hobby) would reject anything
 // much bigger than this before it even reached us, but that lands as an
 // opaque 413. Checking here first means a message the person can act on.
-const ALLOWED_TYPES = /^(application\/pdf|image\/(jpeg|png|webp))$/
+const ALLOWED_TYPES = /^(application\/pdf|image\/(jpeg|png|webp)|text\/csv|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/
 const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024
 const MAX_ATTACHMENTS = 3
 const PAGES = new Set(['Products', 'Components', 'ToDo', 'Stylists', 'Wholesale'])
@@ -91,7 +93,7 @@ export async function POST(req: NextRequest) {
   for (const a of attachments) {
     if (!ALLOWED_TYPES.test(a.mediaType)) {
       return NextResponse.json(
-        { error: `can't read ${a.filename || 'that file'} — send a PDF, JPG, PNG or WEBP` },
+        { error: `can't read ${a.filename || 'that file'} — send a PDF, JPG, PNG, WEBP, Excel (.xlsx) or CSV` },
         { status: 400 },
       )
     }
@@ -166,10 +168,16 @@ export async function POST(req: NextRequest) {
     ? `[${person.name}${person.role ? `, ${person.role}` : ''}] ${said}`
     : said
 
+  // A spreadsheet goes to Mouse as its rows; one that will not open says so.
+  const forMouse = await Promise.all(attachments.map(async (a) => ({
+    mediaType: a.mediaType, base64: a.base64, filename: a.filename,
+    ...(isSheet(a.mediaType) ? { text: await sheetText(a.mediaType, a.base64).catch(() => `(${a.filename || 'This spreadsheet'} could not be opened. Ask for it saved again as .xlsx or .csv.)`) } : {}),
+  })))
+
   const r = await asPerson(personId, () => chatTurn(
     thread.id,
     authored,
-    attachments.map((a) => ({ mediaType: a.mediaType, base64: a.base64, filename: a.filename })),
+    forMouse,
     practice ? 'chat-practice' : 'chat',
     practice,
   ))

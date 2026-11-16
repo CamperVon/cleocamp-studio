@@ -37,7 +37,7 @@ async function postFile(file: File, title: string, notes: string, links: Array<{
   return fetch('/api/files', { method: 'POST', body: form }).then((x) => x.json()).catch(() => ({ error: 'The upload did not go through. Try again.' }))
 }
 
-const ACCEPT = 'application/pdf,image/jpeg,image/png,image/webp,image/gif'
+const ACCEPT = 'application/pdf,image/jpeg,image/png,image/webp,image/gif,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,.csv'
 
 /**
  * Add a file from a product's own row, already linked to it (Brandon, 8 Oct
