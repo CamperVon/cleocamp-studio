@@ -266,6 +266,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-15', path: '/items',
     text: 'A stylist pull request, or an email titled "Cleo Camp x …", that reaches Mouse now puts an urgent to-do at the top of To-dos straight away. Tick it off once the stylist has an answer.',
   },
+  {
+    on: '2026-11-16',
+    text: 'Mouse can now email anyone saved in Cleo Crew or Friends of the Brand. Until now it refused their addresses as not on file, which is why Mia\'s gift confirmation never went.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

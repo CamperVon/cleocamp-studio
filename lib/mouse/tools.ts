@@ -4186,22 +4186,23 @@ export const TOOLS: Record<string, Tool> = {
       // Jacky Cheng to Customers with the address Brandon confirmed for order
       // #2835 (DHL needed a phone number), and the send was still refused,
       // because this check never read those records.
-      const [vendors, people, stylist, customer, store] = await Promise.all([
+      // Contacts (Cleo Crew, Friends of the Brand) count too since 16 Nov 2026.
+      const [vendors, people, stylist, customer, store, contact] = await Promise.all([
         db.vendor.findMany({ select: { name: true, contactInfo: true, email: true, ccEmails: true } }),
         db.person.findMany({ select: { name: true, email: true } }),
-        db.stylist.findFirst({ where: { email: { equals: to, mode: 'insensitive' } }, select: { id: true } }),
-        db.customer.findFirst({ where: { email: { equals: to, mode: 'insensitive' } }, select: { id: true } }),
-        db.wholesaleAccount.findFirst({ where: { email: { equals: to, mode: 'insensitive' } }, select: { id: true } }),
+        db.stylist.findFirst({ where: { email: { equals: to, mode: 'insensitive' } }, select: { email: true } }),
+        db.customer.findFirst({ where: { email: { equals: to, mode: 'insensitive' } }, select: { email: true } }),
+        db.wholesaleAccount.findFirst({ where: { email: { equals: to, mode: 'insensitive' } }, select: { email: true } }),
+        db.contact.findFirst({ where: { email: { equals: to, mode: 'insensitive' }, removedAt: null }, select: { email: true } }),
       ])
       // The vendor's email and cc fields count, not only the free-text contact
       // line: until 16 Oct 2026 only contactInfo was read, so Lorena's address,
-      // held in her record's email field, was refused as "not on file". Whole
-      // addresses only, so x@gmail.com is not passed by max@gmail.com.
-      const known =
-        vendors.some((v) => [v.contactInfo, v.email, v.ccEmails].some((f) => (f ?? '').toLowerCase().split(/[\s,;<>()]+/).includes(to.toLowerCase()))) ||
-        people.some((p) => (p.email ?? '').toLowerCase() === to.toLowerCase()) ||
-        !!stylist || !!customer || !!store ||
-        /@(send\.)?cleocamp\.com$/i.test(to)
+      // held in her record's email field, was refused as "not on file".
+      const { isHeldAddress } = await import('@/lib/held-address')
+      const known = isHeldAddress(to, {
+        freeText: vendors.flatMap((v) => [v.contactInfo, v.email, v.ccEmails]),
+        single: [...people.map((p) => p.email), stylist?.email, customer?.email, store?.email, contact?.email],
+      })
 
       const cc = [...new Set(['brandon@cleocamp.com', ...extraCc])]
 
@@ -4233,7 +4234,7 @@ export const TOOLS: Record<string, Tool> = {
             `"${to}" is not an address held for any vendor or person on file, so nothing was sent. ` +
             `Do not retry with a guess. Say whose address you were reaching for and ask for the ` +
             `right one — or, if the person in the chat gives it to you now, record it on their ` +
-            `record first (update_person / update_vendor / save_stylist / the customer or wholesale ` +
+            `record first (update_person / update_vendor / save_stylist / save_contact / the customer or wholesale ` +
             `store record) and then send.`,
         }
       }

@@ -911,6 +911,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/stylist-mail.ts`, `app/api/inbound/email/route.ts`, `tests/stylist-mail.test.ts`. The brand name in the subject pattern is this business's and needs changing for another.
 - **Needs:** email (inbound).
 
+### Contacts count as known addresses for sending
+- **Problem:** the send guard that refuses addresses held nowhere read vendors, people, stylists, customers and stores, but not the Contacts lists, so the assistant saved a friend of the brand with her address and was still refused when it emailed her.
+- **Change:** the check is a pure function over every record's address fields, and a contact's email (not removed) counts. The refusal now names `save_contact` among the ways to record an address first.
+- **Files:** `lib/held-address.ts` (`isHeldAddress`), `lib/mouse/tools.ts` (`send_email`), `tests/held-address.test.ts`.
+- **Needs:** email.
+
 ---
 
 ## Setup notes for a new install
