@@ -11,7 +11,9 @@ import { AsyncLocalStorage } from 'node:async_hooks'
  * the three of them, two conditions, both checked in code:
  *  - it really came from them. The From line can be typed by anyone, so the
  *    receiving server's DMARC result must be "pass": the sending domain's own
- *    mail server signed it. A forged "brandon@cleocamp.com" fails that;
+ *    mail server signed it. A forged "brandon@cleocamp.com" fails that. A
+ *    domain with no DMARC record passes on its own DKIM signature instead
+ *    (signedForFromDomain, 17 Nov 2026);
  *  - it is addressed TO Mouse. A reply (or reply-all) to Mouse's own email
  *    has mouse@ in To. A thread with a vendor that merely copies Mouse does
  *    not, so talk among people is never taken as an instruction; it stays a
@@ -91,6 +93,50 @@ export function dmarcFromHeaders(rawMessage: string): 'pass' | 'fail' | 'unknown
   return !m ? 'unknown' : m[1].toLowerCase() === 'pass' ? 'pass' : 'fail'
 }
 
+/** The top Authentication-Results header, unfolded: the one the receiving server added. Pure. */
+function topAuthResults(rawMessage: string): string | null {
+  const unfolded = (rawMessage.split(/\r?\n\r?\n/)[0] ?? '').replace(/\r?\n[ \t]+/g, ' ')
+  return unfolded.split(/\r?\n/).find((l) => /^authentication-results:/i.test(l)) ?? null
+}
+
+/** The domain of the From line in a raw message's own headers, lower case. Pure. */
+export function fromDomainFromHeaders(rawMessage: string): string | null {
+  const head = (rawMessage.split(/\r?\n\r?\n/)[0] ?? '').replace(/\r?\n[ \t]+/g, ' ')
+  const line = head.split(/\r?\n/).find((l) => /^from:/i.test(l))
+  const m = line ? /@([a-z0-9.-]+)/i.exec(line.replace(/^[^<]*</, '')) : null
+  return m ? m[1].toLowerCase().replace(/\.$/, '') : null
+}
+
+/**
+ * Is the message signed for the From line's own domain, when that domain
+ * publishes no DMARC record? Pure.
+ *
+ * 17 Nov 2026: Brandon wrote from bc@thecampbrand.com (on file as his) and
+ * nothing he asked was done, because thecampbrand.com has no DMARC record,
+ * so the receiving server can only say dmarc=none. "She needs to be able to
+ * change things over email as well." The mail was still signed: Google signs
+ * for a Workspace domain without its own DKIM key as
+ * d=<domain-with-dashes>.<n>.gappssmtp.com, a key only that Workspace can
+ * use. A passing signature for the From domain itself (or a subdomain of it),
+ * or that Google key for it, proves what DMARC would: a typed From line is
+ * not enough. An explicit dmarc=fail is never overridden.
+ */
+export function signedForFromDomain(rawMessage: string): boolean {
+  const ar = topAuthResults(rawMessage)
+  const from = fromDomainFromHeaders(rawMessage)
+  if (!ar || !from) return false
+  const dmarc = /\bdmarc=(\w+)/i.exec(ar)?.[1]?.toLowerCase()
+  if (dmarc && dmarc !== 'none') return dmarc === 'pass'
+  const googleKey = `${from.replace(/\./g, '-')}.`
+  for (const m of ar.matchAll(/\bdkim=pass\b([^;]*)/gi)) {
+    const d = /header\.(?:d|i)=@?([a-z0-9.-]+)/i.exec(m[1])?.[1]?.toLowerCase()
+    if (!d) continue
+    if (d === from || d.endsWith(`.${from}`)) return true
+    if (d.startsWith(googleKey) && /^\d+\.gappssmtp\.com$/.test(d.slice(googleKey.length))) return true
+  }
+  return false
+}
+
 /**
  * The To line from a raw message's own headers, unfolded. Pure.
  *
@@ -142,7 +188,9 @@ export async function inboundFacts(emailId: string | undefined): Promise<{ verif
     const text = raw?.ok ? await raw.text() : ''
     const dmarc = full.authentication?.dmarc ? (full.authentication.dmarc.toLowerCase() === 'pass' ? 'pass' : 'fail') : dmarcFromHeaders(text)
     const to = text ? toLineFromHeaders(text) : null
-    return { verified: dmarc === 'pass', toMouse: !!to && addressedToMouse(to) }
+    // No DMARC record at the sender's domain: its own signature is the proof.
+    const verified = dmarc === 'pass' || (!!text && signedForFromDomain(text))
+    return { verified, toMouse: !!to && addressedToMouse(to) }
   } catch {
     return none
   }

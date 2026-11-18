@@ -270,6 +270,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-16',
     text: 'Mouse can now email anyone saved in Cleo Crew or Friends of the Brand. Until now it refused their addresses as not on file, which is why Mia\'s gift confirmation never went.',
   },
+  {
+    on: '2026-11-17',
+    text: 'Mouse now acts on email Brandon sends from his thecampbrand.com address, the same as from cleocamp.com. Until now she could only answer it, because that domain is not set up to prove its mail is real. If she ever can\'t act on an email, her reply now says why.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

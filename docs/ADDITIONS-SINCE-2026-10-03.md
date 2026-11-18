@@ -917,6 +917,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/held-address.ts` (`isHeldAddress`), `lib/mouse/tools.ts` (`send_email`), `tests/held-address.test.ts`.
 - **Needs:** email.
 
+### Team email from a domain without DMARC can be verified by its signature
+- **Problem:** a team member's email is applied only when the receiving server reports DMARC pass. A domain that publishes no DMARC record can only ever get `dmarc=none`, so everything sent from it was answered look-up only, and the reply just said "I can't change anything from email".
+- **Change:** when the top Authentication-Results says `dmarc=none`, a passing DKIM signature for the From domain itself (or a subdomain), or Google's per-Workspace default key for it (`<domain-with-dashes>.<n>.gappssmtp.com`), counts as verified. An explicit `dmarc=fail` is never overridden, and only the receiving server's own (topmost) header is read. A team email sent to the assistant that still cannot be verified now gets a reply saying that is the reason, and what to send instead.
+- **Files:** `lib/mouse/team-mail.ts` (`signedForFromDomain`, `fromDomainFromHeaders`, `inboundFacts`), `lib/mouse/nightly-pass.ts` (`UNVERIFIED_RULES`), `tests/team-mail.test.ts`.
+- **Needs:** email (inbound).
+
 ---
 
 ## Setup notes for a new install

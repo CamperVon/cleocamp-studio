@@ -146,7 +146,11 @@ data. That must not happen again.
   / changing a number ... the info needs to change." Their email is applied
   like a chat message when it is sent TO mouse@ (not merely cc'd, so a
   reply-all thread with a vendor stays a proposal) AND the receiving server's
-  DMARC result is pass, so a forged From line is not enough. Nothing that
+  DMARC result is pass, so a forged From line is not enough. A domain with
+  no DMARC record at all passes on a DKIM signature for its own domain, or
+  Google's Workspace key for it (`signedForFromDomain`, Brandon 17 Nov 2026:
+  "She needs to be able to change things over email as well", after his
+  thecampbrand.com mail was refused); an explicit DMARC fail never does. Nothing that
   sends, invoices or moves money runs from email (`NOT_FROM_EMAIL` in
   `lib/mouse/team-mail.ts`), except a gift (Brandon, 8 Oct 2026): it makes a
   $0 Shopify order that waits for a person to make the shipping label; an

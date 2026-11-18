@@ -83,6 +83,15 @@ email and ask them to tell you in the app, where you can. If the email asks you
 nothing — a forward for your records, a thank-you, an FYI — reply with exactly
 NO_REPLY and nothing else. Plain text, no markdown headings. Do not sign it.`
 
+// Sent to Mouse but not verified as theirs (17 Nov 2026: Mouse told Brandon
+// only "I can't change anything from email", when the reason was the address
+// he wrote from). Say which, so the fix is obvious.
+const UNVERIFIED_RULES = `This email was sent to you but could not be verified as really coming from
+them: the address it came from is not signed by its own domain. That is why you
+can only look things up for it. If they asked you to change something, say so in
+those words, and that the same email from their cleocamp.com address, or in the
+app, will be done.`
+
 const CC_RULES = `You were only copied on this email; it was written to someone else. Answer
 only a question they put to you by name. Questions to the other people on it are
 not yours: if nothing is asked of you, reply with exactly NO_REPLY.`
@@ -176,7 +185,7 @@ async function answerOneTeamEmail(m: TeamMail, allTools: string[], applied: Set<
     source: apply ? 'email-apply' : 'email-answer',
     instruction: `${p.name} emailed you.\n\nSubject: ${m.subject ?? '(none)'}\n\n${m.body}${fileNote}`,
     attachments: att.files,
-    extraRules: apply ? APPLY_RULES : facts.toMouse ? ANSWER_RULES : `${ANSWER_RULES}\n${CC_RULES}`,
+    extraRules: apply ? APPLY_RULES : facts.toMouse ? `${ANSWER_RULES}\n${UNVERIFIED_RULES}` : `${ANSWER_RULES}\n${CC_RULES}`,
     allowedTools: apply ? allTools.filter((t) => !NOT_FROM_EMAIL.has(t)) : ANSWER_TOOLS,
     model,
     effort: 'medium',
