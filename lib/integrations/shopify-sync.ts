@@ -9,7 +9,7 @@
  * materials rather than guess.
  */
 import type { PrismaClient } from '@/generated/prisma/client'
-import { fetchAllVariants, fetchLocations, fetchSoldLines } from './shopify'
+import { fetchAllVariants, fetchLocations, fetchSoldLines, keptOutOfApp } from './shopify'
 
 /**
  * Shopify variant ids that sold before a listing was rebuilt, and the id that
@@ -104,6 +104,8 @@ export async function syncShopify(db: PrismaClient, sinceISO: string): Promise<S
       // 4 Oct 2026: "i don't understand this").
       const why = v.product.status === 'DRAFT' ? ' [draft — ignored]'
         : v.product.status === 'ARCHIVED' ? ' [archived — ignored]' : ''
+      // A sample-sale piece is sold on its own and never comes in (KEPT_OUT_TAG).
+      if (keptOutOfApp(v.product.tags)) { variantsUnknown.push(`${v.product.title} / ${v.title} [sample sale — kept out]`); continue }
       variantsUnknown.push(`${v.product.title} / ${v.title}${why}`)
       const pid = v.product.id.split('/').pop()!
       if (!unknownListings.has(pid)) unknownListings.set(pid, { shopifyProductId: pid, title: v.product.title, status: v.product.status })

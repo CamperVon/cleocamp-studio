@@ -929,6 +929,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/forecast.ts` (`thinVariants`, `thinText`, `recomputeForecasts`, `refreshForecastsAndAlerts`), `tests/forecast-thin.test.ts`.
 - **Needs:** sales data per variant (Shopify sync here).
 
+### Keep one-off listings out of the app with a Shopify tag
+- **Problem:** the nightly sync brings every new for-sale Shopify listing into the app (or asks whether it is a lookalike of something already there). One-off pieces sold on their own, such as blemished samples at a sale, would arrive as products, count as stock against the real item, or raise a question per piece.
+- **Change:** a listing tagged `sample-sale` in Shopify is never brought in: the sync lists it as kept out and moves on. Its sales are not counted against any app variant, so the forecast ignores them too.
+- **Files:** `lib/integrations/shopify.ts` (`KEPT_OUT_TAG`, `keptOutOfApp`, `fetchAllVariants` reads product tags), `lib/integrations/shopify-sync.ts`, `tests/kept-out.test.ts`.
+- **Needs:** Shopify.
+
 ---
 
 ## Setup notes for a new install

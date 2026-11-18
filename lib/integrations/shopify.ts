@@ -148,8 +148,18 @@ export type ShopifyVariant = {
   image: { url: string } | null
   inventoryItem: { id: string }
   selectedOptions: Array<{ name: string; value: string }>
-  product: { id: string; title: string; handle: string; status: string; description: string | null; featuredImage: { url: string } | null }
+  product: { id: string; title: string; handle: string; status: string; description: string | null; featuredImage: { url: string } | null; tags?: string[] }
 }
+
+/**
+ * Listings tagged this in Shopify are one-off pieces sold on their own (the
+ * Black Friday sample sale, 18 Nov 2026: blemished tees and bags, one of each,
+ * final sale). They are never brought into the app: not stock against the real
+ * product, not a lookalike question, not a line sheet row. Brandon: "These
+ * should not really be counted as stock against any real Cleo teas."
+ */
+export const KEPT_OUT_TAG = 'sample-sale'
+export const keptOutOfApp = (tags: string[] | null | undefined) => (tags ?? []).some((t) => t.trim().toLowerCase() === KEPT_OUT_TAG)
 
 /** Every variant in the store, paged. */
 export async function fetchAllVariants(): Promise<ShopifyVariant[]> {
@@ -165,7 +175,7 @@ export async function fetchAllVariants(): Promise<ShopifyVariant[]> {
             image { url }
             inventoryItem { id }
             selectedOptions { name value }
-            product { id title handle status description featuredImage { url } }
+            product { id title handle status description featuredImage { url } tags }
           }
         }
       }`,
