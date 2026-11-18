@@ -274,6 +274,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-17',
     text: 'Mouse now acts on email Brandon sends from his thecampbrand.com address, the same as from cleocamp.com. Until now she could only answer it, because that domain is not set up to prove its mail is real. If she ever can\'t act on an email, her reply now says why.',
   },
+  {
+    on: '2026-11-18',
+    text: 'The nightly forecast now checks each size and colour, not just the product as a whole. When one will sell out before a new run could arrive (like You Dress Black / 2 now), you get an alert naming it, how many are left and roughly when it runs out.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

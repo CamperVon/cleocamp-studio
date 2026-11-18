@@ -923,6 +923,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/mouse/team-mail.ts` (`signedForFromDomain`, `fromDomainFromHeaders`, `inboundFacts`), `lib/mouse/nightly-pass.ts` (`UNVERIFIED_RULES`), `tests/team-mail.test.ts`.
 - **Needs:** email (inbound).
 
+### Size-by-size stock check in the forecast
+- **Problem:** the reorder forecast judged each product as one pool of stock, so a size or colour about to sell out hid behind plenty of the others; a product could show months of cover and an order date far off while one popular size had a few days left.
+- **Change:** for every product with a lead time, each variant selling at least about three a month in the shop is checked on its own stock plus what is on order for it. Any that will run out before a new run could land (the product's full lead time, or 30 days without one) is named in the forecast note and raises one alert per product (urgent when the first runs out within two weeks), cleared automatically once it no longer holds. Shop sales only: a one-off wholesale shipment is not a steady rate.
+- **Files:** `lib/forecast.ts` (`thinVariants`, `thinText`, `recomputeForecasts`, `refreshForecastsAndAlerts`), `tests/forecast-thin.test.ts`.
+- **Needs:** sales data per variant (Shopify sync here).
+
 ---
 
 ## Setup notes for a new install

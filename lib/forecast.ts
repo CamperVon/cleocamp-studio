@@ -25,6 +25,39 @@ const DAY = 864e5
 
 export type Blocked = { reason: string }
 
+/**
+ * Sizes and colours that will run out before more could arrive, while the
+ * product as a whole looks fine. Pure.
+ *
+ * The forecast judges a product as one pool, so a thin size hides behind
+ * plenty of the others: Cleo Tee Black 2 and 3 (1 Nov 2026) and You Dress
+ * Black 2 and 3 (17 Nov 2026, 4 left of each, selling about 9 a month, out
+ * in weeks while the dress "had" 103 and an order date in January). Jane
+ * spotted the second by eye. A variant counts when it sells at least about
+ * three a month in the shop (slower ones, retired sizes and one-off wholesale
+ * colours are noise) and its own stock
+ * plus what is on order for it will not last the product's whole lead time
+ * (or 30 days, when there is no lead time). Thinnest first.
+ */
+export const THIN_MIN_RATE = 0.1
+export function thinVariants(
+  variants: Array<{ id: string; label: string; onHand: number | null; ratePerDay: number; incoming: number }>,
+  leadDays: number | null,
+): Array<{ id: string; label: string; onHand: number; daysLeft: number; perMonth: number }> {
+  const window = leadDays && leadDays > 0 ? leadDays : 30
+  return variants
+    .filter((v) => v.onHand !== null && v.ratePerDay >= THIN_MIN_RATE)
+    .map((v) => ({ id: v.id, label: v.label, onHand: v.onHand as number, daysLeft: Math.max(0, ((v.onHand as number) + v.incoming) / v.ratePerDay), perMonth: Math.round(v.ratePerDay * 30) }))
+    .filter((v) => v.daysLeft < window)
+    .sort((a, b) => a.daysLeft - b.daysLeft)
+}
+
+/** One line for a note or alert: "Black / 2: 4 left, about 9 a month, out in about 2 weeks". Pure. */
+export function thinText(v: { label: string; onHand: number; daysLeft: number; perMonth: number }): string {
+  const when = v.daysLeft < 1 ? 'out now' : v.daysLeft < 14 ? `out in about ${Math.round(v.daysLeft)} days` : `out in about ${Math.round(v.daysLeft / 7)} weeks`
+  return `${v.label}: ${v.onHand} left, about ${v.perMonth} a month, ${when}`
+}
+
 /** Weighted mean units per day. Last two weeks count triple, weeks three and four double. */
 export function ratePerDay(rows: Array<{ date: Date; unitsSold: number }>): number {
   const now = Date.now()
@@ -135,6 +168,10 @@ export async function recomputeForecasts() {
     list.push({ date: s.date, unitsSold: s.unitsSold })
     salesByVariant.set(s.productVariantId, list)
   }
+  // The size-by-size check reads shop sales only: one wholesale shipment of a
+  // made-to-order colour (Cannellini, Espresso) is not a steady rate of sale.
+  const shopRate = new Map<string, number>()
+  for (const [id, rows] of salesByVariant) shopRate.set(id, ratePerDay(rows))
   // Wholesale and gifts are demand too.
   for (const m of movements) {
     if (!m.productVariantId) continue
@@ -158,6 +195,8 @@ export async function recomputeForecasts() {
   // component line is the cloth to make the thing, never the thing. "1 lot" of
   // hair ties is a yield nobody has counted yet, not one hair tie.
   const incoming = new Map<string, { qty: number; due: Date | null }>()
+  // The same, per variant, for the size-by-size check (thinVariants).
+  const incomingByVariant = new Map<string, number>()
   for (const po of openPos) {
     for (const l of po.lines) {
       const isFinishedGoods =
@@ -168,6 +207,7 @@ export async function recomputeForecasts() {
       if (!pid) continue
       const outstanding = Number(l.qtyOrdered) - Number(l.qtyReceived)
       if (outstanding <= 0) continue
+      if (l.productVariantId) incomingByVariant.set(l.productVariantId, (incomingByVariant.get(l.productVariantId) ?? 0) + outstanding)
       const cur = incoming.get(pid) ?? { qty: 0, due: null }
       cur.qty += outstanding
       if (po.expectedAt && (!cur.due || po.expectedAt < cur.due)) cur.due = po.expectedAt
@@ -176,7 +216,7 @@ export async function recomputeForecasts() {
   }
 
   await db.forecastResult.deleteMany({})
-  const results: Array<{ kind: 'product' | 'component'; id: string; name: string; note: string; blocked?: string; stockout?: Date; orderBy?: Date }> = []
+  const results: Array<{ kind: 'product' | 'component'; id: string; name: string; note: string; blocked?: string; stockout?: Date; orderBy?: Date; thin?: ReturnType<typeof thinVariants> }> = []
 
   // ── Products ──────────────────────────────────────────────
   const productDemand = new Map<string, number>() // units/day needing production
@@ -228,8 +268,15 @@ export async function recomputeForecasts() {
     }
     const totalLead = compLead + p.productionLeadTimeDays + dye
     const orderBy = new Date(stockout.getTime() - totalLead * DAY)
+    const thin = thinVariants(p.variants.map((v) => ({
+      id: v.id,
+      label: [v.colorway?.customerName, v.size].filter(Boolean).join(' / ') || 'One size',
+      onHand: v.onHandQty === null ? null : Number(v.onHandQty),
+      ratePerDay: shopRate.get(v.id) ?? 0,
+      incoming: incomingByVariant.get(v.id) ?? 0,
+    })), totalLead)
     results.push({
-      kind: 'product', id: p.id, name: p.name, stockout, orderBy,
+      kind: 'product', id: p.id, name: p.name, stockout, orderBy, thin,
       note:
         `Selling ${rate.toFixed(1)} a day, ${onHand} on hand` +
         (reserve ? ` (${reserve} of them kept for stylist pulls, so ${sellable} to sell)` : '') +
@@ -241,7 +288,8 @@ export async function recomputeForecasts() {
         (needsDyeing ? ` plus ${dye}d dyeing` : '') +
         `, so start by then.` +
         (missingLead ? ' One component has no lead time, so this may be optimistic.' : '') +
-        (needsDyeing && dyeHouseMissingLead ? ' The dye house has no lead time on file, so this may be optimistic.' : ''),
+        (needsDyeing && dyeHouseMissingLead ? ' The dye house has no lead time on file, so this may be optimistic.' : '') +
+        (thin.length ? ` But by size, these run out before a new run could land (${totalLead}d): ${thin.slice(0, 4).map(thinText).join('; ')}.` : ''),
     })
   }
 
@@ -388,6 +436,14 @@ export async function refreshForecastsAndAlerts(): Promise<{
     }
   }
 
+  // A size or colour running out while the product as a whole looks fine.
+  for (const r of results) {
+    if (r.kind !== 'product' || !r.thin?.length) continue
+    const soonest = r.thin[0].daysLeft
+    await raise(`thin:${r.id}`, soonest <= 14 ? 'URGENT' : 'WARNING',
+      `${r.name} is running out by size: ${r.thin.slice(0, 4).map(thinText).join('; ')}. A new run takes longer than that.`)
+  }
+
   for (const f of forecasts) {
     const name = f.product?.name ?? f.component?.name ?? 'something'
     if (f.blockedReason) {
@@ -416,6 +472,7 @@ export async function refreshForecastsAndAlerts(): Promise<{
         { dedupeKey: { startsWith: 'blocked:' } },
         { dedupeKey: { startsWith: 'order:' } },
         { dedupeKey: { startsWith: 'negative:' } },
+        { dedupeKey: { startsWith: 'thin:' } },
       ],
     },
     data: { resolved: true, resolvedAt: new Date() },
