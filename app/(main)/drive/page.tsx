@@ -1,5 +1,6 @@
 import { Card, Fold, Page } from '@/app/ui/primitives'
-import { driveSections, STYLE_FOLDERS } from '@/lib/drive'
+import { db } from '@/lib/db'
+import { driveKind, driveSections, editedAt, STYLE_FOLDERS } from '@/lib/drive'
 import { AddDriveLink, DriveSearch, Unpin } from './drive-controls'
 
 export const dynamic = 'force-dynamic'
@@ -10,7 +11,7 @@ export const dynamic = 'force-dynamic'
  * count on the closed line.
  */
 export default async function Drive() {
-  const sections = await driveSections()
+  const [sections, recent] = await Promise.all([driveSections(), db.driveRecent.findMany({ orderBy: { position: 'asc' } })])
   return (
     <Page title="Drive" lede="Google Drive pages one tap away, by section. Search opens Google Drive in a new tab, signed in as you. Add a link here, or tell Mouse to put one on the Drive page.">
       <Card>
@@ -18,6 +19,26 @@ export default async function Drive() {
         <div className="border-t border-line px-4 py-2.5 text-xs sm:px-5">
           <a href="https://drive.google.com/drive/my-drive" target="_blank" rel="noreferrer" className="text-accent underline underline-offset-2">Open Google Drive ↗</a>
         </div>
+      </Card>
+      {/* The five Cleo Camp files edited most recently (Brandon, 19 Nov 2026),
+          refreshed through the day by a scheduled run (scripts/drive-recent.ts).
+          Shown open: it is the first thing he asked to see. */}
+      <Card title="Recently edited">
+        {recent.length ? (
+          <>
+            <ul className="flex flex-col gap-2 px-4 py-3 sm:px-5">
+              {recent.map((r) => (
+                <li key={r.id} className="flex flex-col">
+                  <a href={r.url} target="_blank" rel="noreferrer" className="text-sm text-accent underline underline-offset-2">
+                    {r.title} <span className="text-xs text-muted no-underline">· {driveKind(r.url)} ↗</span>
+                  </a>
+                  <span className="text-xs text-muted">Edited {editedAt(r.modifiedAt)}{r.modifiedBy ? ` by ${r.modifiedBy}` : ''}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="border-t border-line px-4 py-2 text-xs text-faint sm:px-5">Updated {editedAt(recent[0].refreshedAt)} · Cleo folder and cleocamp.com files only</p>
+          </>
+        ) : <p className="px-4 py-3 text-sm text-muted sm:px-5">Not filled in yet. It updates every two hours through the day.</p>}
       </Card>
       <Card title="Pages">
         {sections.length ? (

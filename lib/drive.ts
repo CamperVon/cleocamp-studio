@@ -94,3 +94,49 @@ export async function keepDriveLink(input: { title: string; url: string; section
   })
   return { ok: true, id: r.id, section }
 }
+
+// ── Recently edited (19 Nov 2026) ────────────────────────────────────────────
+
+/** The Google Drive folder whose files (at any depth) count as Cleo Camp's. */
+export const CLEO_DRIVE_FOLDER = '1K2Vuq__gzqlx0n91BHaqPm2nonIeJjKg'
+/** Files owned by these count too, wherever they sit (the newsletter doc is studio@'s). */
+export const CLEO_OWNERS = ['studio@cleocamp.com', 'jane@cleocamp.com', 'cleo@cleocamp.com', 'brandon@cleocamp.com']
+export const RECENT_COUNT = 5
+
+/** The Drive search that finds only Cleo Camp's files, newest edit first. Pure. */
+export function recentQuery(): string {
+  const owners = CLEO_OWNERS.map((o) => `owner = '${o}'`).join(' or ')
+  return `('${CLEO_DRIVE_FOLDER}' in ancestors or ${owners}) and mimeType != 'application/vnd.google-apps.folder'`
+}
+
+type ConnectorFile = { id?: string; title?: string; viewUrl?: string; mimeType?: string; modifiedTime?: string; lastModifyingUserName?: string; trashed?: boolean }
+
+/** A Drive link without the connector's tracking parameters. Pure. */
+export function cleanDriveUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    u.searchParams.delete('usp'); u.searchParams.delete('ouid')
+    return u.toString().replace(/\?$/, '')
+  } catch { return url }
+}
+
+/** The newest five from the connector's search result, ready to store. Pure. */
+export function pickRecent(files: ConnectorFile[], n = RECENT_COUNT): Array<{ fileId: string; title: string; url: string; modifiedAt: Date; modifiedBy: string | null; position: number }> {
+  return files
+    .filter((f) => f.id && f.title && f.viewUrl && f.modifiedTime && !f.trashed && f.mimeType !== 'application/vnd.google-apps.folder' && isDriveUrl(f.viewUrl))
+    .sort((a, b) => Date.parse(b.modifiedTime!) - Date.parse(a.modifiedTime!))
+    .slice(0, n)
+    .map((f, i) => ({ fileId: f.id!, title: f.title!.trim(), url: cleanDriveUrl(f.viewUrl!), modifiedAt: new Date(f.modifiedTime!), modifiedBy: f.lastModifyingUserName?.trim() || null, position: i }))
+}
+
+/** Replace the stored list in one go, so the page never shows half of two lists. */
+export async function replaceRecent(items: ReturnType<typeof pickRecent>): Promise<number> {
+  if (!items.length) return 0
+  await db.$transaction([db.driveRecent.deleteMany({}), db.driveRecent.createMany({ data: items })])
+  return items.length
+}
+
+/** "19 Nov, 2:32 PM", in Los Angeles. Pure. */
+export function editedAt(d: Date): string {
+  return d.toLocaleString('en-US', { timeZone: 'America/Los_Angeles', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+}

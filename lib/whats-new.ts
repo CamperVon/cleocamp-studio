@@ -280,7 +280,7 @@ export const WHATS_NEW: Update[] = [
   },
   {
     on: '2026-11-19', path: '/drive',
-    text: 'New Drive page (in the menu): your Google Drive pages one tap away, in sections, plus a search box that opens Google Drive. Add a link there, or tell Mouse "put this on Drive under Newsletter".',
+    text: 'New Drive page (in the menu): your Google Drive pages one tap away, in sections, plus a search box that opens Google Drive. Add a link there, or tell Mouse "put this on Drive under Newsletter". The five Cleo Camp files edited most recently show at the top, updated every two hours through the day.',
   },
 ]
 

@@ -2122,3 +2122,21 @@ model RetiredStyleNumber {
   note       String?
   retiredAt  DateTime @default(now())
 }
+
+/// The five Cleo Camp Google Drive files edited most recently, for the top of
+/// the Drive page (Brandon, 19 Nov 2026: "have the five most recent files that
+/// have been edited show up"). The app holds no Google key: a scheduled Claude
+/// run reads Drive through the team's Google Drive connector and replaces these
+/// rows (scripts/drive-recent.ts). Only the Cleo folder and cleocamp.com-owned
+/// files count, so nothing else in a personal Drive shows. A cache, rebuilt
+/// whole each time; never edited by hand.
+model DriveRecent {
+  id          String   @id @default(cuid())
+  fileId      String   @unique
+  title       String
+  url         String
+  modifiedAt  DateTime
+  modifiedBy  String?
+  position    Int
+  refreshedAt DateTime @default(now())
+}

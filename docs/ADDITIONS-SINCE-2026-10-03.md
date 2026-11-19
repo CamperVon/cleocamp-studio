@@ -938,8 +938,9 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 ### A Drive page: Google Drive links by section, and a Drive search
 - **Problem:** the team's working documents live in Google Drive, and getting to the right one meant digging through Drive or old messages.
 - **Change:** a Drive page lists kept Google Drive, Docs and Sheets links by section (folded closed, count on the closed line), each one tap to open and labelled Folder, Doc, Sheet and so on. Links already kept on products show under "Style folders". A search box opens Google Drive's own search in the person's signed-in browser, so no Google key or OAuth is needed and nothing in Drive is read. Links are kept files with a url, pinned to a section through the existing file-link table (kind "drive"), so no schema change. Add from the page, or the assistant's `keep_link` with `driveSection`.
-- **Files:** `lib/drive.ts`, `app/(main)/drive/` (page, controls, actions), `app/ui/nav-bar.tsx`, `lib/files.ts` (`recordHref`), `app/(main)/files/page.tsx`, `lib/mouse/tools.ts` (`keep_link`), `tests/drive.test.ts`.
-- **Needs:** nothing beyond the app.
+- **Recently edited (added the same day):** the five files edited most recently show at the top of the page. The app still holds no Google key: a scheduled Claude run calls the Google Drive connector's search with `recentQuery()` (one company folder at any depth, plus files owned by company addresses, so nothing else in a personal Drive shows) and runs `scripts/drive-recent.ts`, which keeps the newest five (`pickRecent`) and replaces the stored list in one transaction (`replaceRecent`, table `DriveRecent`, migration `20261119230000_drive_recent`). The folder id and owner addresses in `lib/drive.ts` are this business's and need changing for another.
+- **Files:** `lib/drive.ts`, `app/(main)/drive/` (page, controls, actions), `app/ui/nav-bar.tsx`, `lib/files.ts` (`recordHref`), `app/(main)/files/page.tsx`, `lib/mouse/tools.ts` (`keep_link`), `tests/drive.test.ts`, `prisma/schema.prisma` (`DriveRecent`), `scripts/drive-recent.ts`.
+- **Needs:** nothing beyond the app for the links; the recent list needs the Google Drive connector in a scheduled run.
 
 ---
 
