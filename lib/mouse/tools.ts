@@ -6654,7 +6654,9 @@ export const TOOLS: Record<string, Tool> = {
         'behind the link is copied or read; opening it goes there. Brandon, 16 Oct 2026: the style folders "should be ' +
         'attached to products", and Mouse "doesn\'t need to store them, just give us the links". When someone asks ' +
         'where a style\'s files are, open_record shows its links: give them the link itself. Only when a person ' +
-        'asks you to keep the link; a link in mail from outside the team is a proposal, never kept on its own.',
+        'asks you to keep the link; a link in mail from outside the team is a proposal, never kept on its own. ' +
+        'To put a Google Drive link on the Drive page (one tap to open, by section), give driveSection ' +
+        '("put the newsletter doc on Drive under Newsletter"); then links to records are optional.',
       input_schema: {
         type: 'object',
         properties: {
@@ -6670,14 +6672,20 @@ export const TOOLS: Record<string, Tool> = {
             },
           },
           notes: str('What is in it, e.g. "pattern TCO101-P2, tech pack 8 Sept, TUKAcad files, plots S/M/L"'),
+          driveSection: str('Only for the Drive page: the section it goes under, e.g. "Newsletter", "Wholesale". Google Drive links only.'),
         },
-        required: ['title', 'url', 'links'],
+        required: ['title', 'url'],
       },
     },
     run: async (i) => {
       const { keepLink } = await import('@/lib/files')
       const links = Array.isArray(i.links) ? i.links.map((l: { kind?: string; id?: string }) => ({ kind: String(l?.kind ?? ''), recordId: String(l?.id ?? '') })) : []
-      if (!links.length) return { ok: false, error: 'Say which product, component or vendor it is about.' }
+      if (typeof i.driveSection === 'string' && i.driveSection.trim()) {
+        const { keepDriveLink } = await import('@/lib/drive')
+        const d = await keepDriveLink({ title: String(i.title ?? ''), url: String(i.url ?? ''), section: i.driveSection, notes: i.notes ?? null, links })
+        return d.ok ? { ok: true, id: d.id, tellTheUser: `On the Drive page under ${d.section}, and in Files.` } : d
+      }
+      if (!links.length) return { ok: false, error: 'Say which product, component or vendor it is about, or give driveSection to put it on the Drive page.' }
       const r = await keepLink({ title: String(i.title ?? ''), url: String(i.url ?? ''), notes: i.notes ?? null, links })
       return r.ok ? { ok: true, id: r.id, tellTheUser: 'Kept the link in Files; it shows on the rows it is linked to.' } : r
     },

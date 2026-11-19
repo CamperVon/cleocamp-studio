@@ -49,7 +49,7 @@ export default async function Files() {
                 }>
                   <FileDetails
                     file={{ id: f.id, title: f.title, notes: f.notes }}
-                    links={f.links.map((l) => ({ id: l.id, name: name.get(l.recordId) ?? l.recordId, href: recordHref(l.kind, l.recordId) }))}
+                    links={f.links.map((l) => ({ id: l.id, name: l.kind === 'drive' ? `Drive page: ${l.recordId}` : name.get(l.recordId) ?? l.recordId, href: recordHref(l.kind, l.recordId) }))}
                     targets={targets}
                   />
                 </Fold>

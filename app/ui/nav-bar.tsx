@@ -46,6 +46,7 @@ const OCCASIONAL: Item[] = [
   { href: '/connector', label: 'Claude Connector' },
   { href: '/components', label: 'Components' },
   { href: '/customers', label: 'Customers' },
+  { href: '/drive', label: 'Drive' },
   { href: '/files', label: 'Files' },
   { href: '/finances', label: 'Finances' },
   { href: '/friends', label: 'Friends of the Brand' },

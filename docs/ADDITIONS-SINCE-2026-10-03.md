@@ -935,6 +935,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/integrations/shopify.ts` (`KEPT_OUT_TAG`, `keptOutOfApp`, `fetchAllVariants` reads product tags), `lib/integrations/shopify-sync.ts`, `tests/kept-out.test.ts`.
 - **Needs:** Shopify.
 
+### A Drive page: Google Drive links by section, and a Drive search
+- **Problem:** the team's working documents live in Google Drive, and getting to the right one meant digging through Drive or old messages.
+- **Change:** a Drive page lists kept Google Drive, Docs and Sheets links by section (folded closed, count on the closed line), each one tap to open and labelled Folder, Doc, Sheet and so on. Links already kept on products show under "Style folders". A search box opens Google Drive's own search in the person's signed-in browser, so no Google key or OAuth is needed and nothing in Drive is read. Links are kept files with a url, pinned to a section through the existing file-link table (kind "drive"), so no schema change. Add from the page, or the assistant's `keep_link` with `driveSection`.
+- **Files:** `lib/drive.ts`, `app/(main)/drive/` (page, controls, actions), `app/ui/nav-bar.tsx`, `lib/files.ts` (`recordHref`), `app/(main)/files/page.tsx`, `lib/mouse/tools.ts` (`keep_link`), `tests/drive.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install

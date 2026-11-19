@@ -38,6 +38,8 @@ export function sizeLabel(bytes: number): string {
 
 /** The page a linked record lives on, opened at its row (app/ui/jump.tsx). Pure. */
 export function recordHref(kind: string, id: string): string {
+  // A link pinned to the Drive page under a section (lib/drive.ts).
+  if (kind === 'drive') return '/drive'
   return `/${kind === 'product' ? 'products' : kind === 'component' ? 'components' : 'vendors'}#rec-${id}`
 }
 

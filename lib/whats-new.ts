@@ -278,6 +278,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-18',
     text: 'The nightly forecast now checks each size and colour, not just the product as a whole. When one will sell out before a new run could arrive (like You Dress Black / 2 now), you get an alert naming it, how many are left and roughly when it runs out.',
   },
+  {
+    on: '2026-11-19', path: '/drive',
+    text: 'New Drive page (in the menu): your Google Drive pages one tap away, in sections, plus a search box that opens Google Drive. Add a link there, or tell Mouse "put this on Drive under Newsletter".',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */
