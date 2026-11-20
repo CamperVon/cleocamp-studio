@@ -282,6 +282,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-19', path: '/drive',
     text: 'New Drive page (in the menu): your Google Drive pages one tap away, in sections, plus a search box that opens Google Drive. Add a link there, or tell Mouse "put this on Drive under Newsletter". The five Cleo Camp files edited most recently show at the top, updated every two hours through the day.',
   },
+  {
+    on: '2026-11-20',
+    text: 'You should not have to open your link or type the password again. Signing in used to run out every 30 days; now it renews each time you use the app, so you stay signed in unless you go six months without opening it.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

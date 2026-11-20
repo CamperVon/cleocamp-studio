@@ -1,11 +1,11 @@
 import 'server-only'
 import { cookies } from 'next/headers'
-import { SignJWT, jwtVerify } from 'jose'
+import { jwtVerify } from 'jose'
+import { COOKIE, cookieOptions, sessionSecret as secret, signSession } from '@/lib/session-core'
 
-const COOKIE = 'cleo_session'
-const MAX_AGE = 60 * 60 * 24 * 30 // 30 days — Cleo shouldn't be logged out weekly
-
-const secret = () => new TextEncoder().encode(process.env.SESSION_SECRET)
+// The cookie lasts 180 days and renews on every visit (lib/session-core.ts,
+// 20 Nov 2026). It used to be a fixed 30 days, so Cleo and Jane were signed
+// out every month however much they used the app.
 
 /**
  * Start a session, optionally as a named person.
@@ -20,20 +20,9 @@ const secret = () => new TextEncoder().encode(process.env.SESSION_SECRET)
  * friction, not the security.
  */
 export async function createSession(personId?: string) {
-  const token = await new SignJWT(personId ? { ok: true, sub: personId } : { ok: true })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime(`${MAX_AGE}s`)
-    .sign(secret())
-
+  const token = await signSession(personId)
   const jar = await cookies()
-  jar.set(COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: MAX_AGE,
-  })
+  jar.set(COOKIE, token, cookieOptions())
 }
 
 export async function destroySession() {

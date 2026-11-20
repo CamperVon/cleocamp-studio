@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { jwtVerify } from 'jose'
-
-const COOKIE = 'cleo_session'
+import { COOKIE, cookieOptions, sessionSecret, shouldRenew, signSession } from '@/lib/session-core'
 
 /**
  * Everything is protected except /login and the cron route.
@@ -63,8 +62,17 @@ export async function proxy(req: NextRequest) {
   const token = req.cookies.get(COOKIE)?.value
   if (token) {
     try {
-      const { payload } = await jwtVerify(token, new TextEncoder().encode(process.env.SESSION_SECRET))
-      if (!key || payload.sub) return NextResponse.next()
+      const { payload } = await jwtVerify(token, sessionSecret())
+      if (!key || payload.sub) {
+        // Sliding session (20 Nov 2026): a visit renews it, at most once a
+        // day, with the same person on it, so nobody in regular use is ever
+        // sent back to their link or the password.
+        const res = NextResponse.next()
+        if (shouldRenew(payload)) {
+          res.cookies.set(COOKIE, await signSession(typeof payload.sub === 'string' && payload.sub ? payload.sub : undefined), cookieOptions())
+        }
+        return res
+      }
     } catch {
       // fall through
     }

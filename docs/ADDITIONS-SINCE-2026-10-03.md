@@ -942,6 +942,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/drive.ts`, `app/(main)/drive/` (page, controls, actions), `app/ui/nav-bar.tsx`, `lib/files.ts` (`recordHref`), `app/(main)/files/page.tsx`, `lib/mouse/tools.ts` (`keep_link`), `tests/drive.test.ts`, `prisma/schema.prisma` (`DriveRecent`), `scripts/drive-recent.ts`.
 - **Needs:** nothing beyond the app for the links; the recent list needs the Google Drive connector in a scheduled run.
 
+### Sliding sign-in: stay signed in while you use the app
+- **Problem:** the session cookie lasted a fixed 30 days from sign-in, so people who used the app every day were still sent back to the login page each month to find their personal link or the password.
+- **Change:** the session lasts 180 days and the proxy renews it on any visit more than a day after it was issued, keeping the same person on it. Only six months without opening the app signs someone out. Sign-in itself and the personal links are unchanged.
+- **Files:** `lib/session-core.ts` (new, edge-safe: `signSession`, `shouldRenew`, `cookieOptions`), `lib/session.ts`, `proxy.ts`, `tests/session-sliding.test.ts`.
+- **Needs:** nothing beyond the app.
+
 ---
 
 ## Setup notes for a new install
