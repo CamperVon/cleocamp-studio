@@ -29,7 +29,17 @@ import { shopifyGraphQL } from '@/lib/integrations/shopify'
  * come out of the studio's stock (shipped from a maker, or already counted
  * out). A line without stock must carry its price.
  */
-export type SaleLine = { shopifyVariantId: string; label: string; quantity: number; priceOverride?: number | null; noStock?: boolean }
+/**
+ * One line of a sale. `note` prints under the item on the invoice, the order
+ * and the packing slip ("* extra holes punched in", Cleo, 20 Nov 2026).
+ */
+export type SaleLine = { shopifyVariantId: string; label: string; quantity: number; priceOverride?: number | null; noStock?: boolean; note?: string | null }
+
+/** A line's note as Shopify carries it: a line item property. Pure. */
+export function lineNoteAttributes(note: string | null | undefined): Array<{ key: string; value: string }> {
+  const v = (note ?? '').replace(/\s+/g, ' ').trim().slice(0, 250)
+  return v ? [{ key: 'Note', value: v }] : []
+}
 
 /** How the invoice is made: the retail live sale is the default. */
 export type InvoiceOptions = {
@@ -222,6 +232,7 @@ export function draftInput(email: string, lines: SaleLine[], note: string, opts:
   // Shopify still works out both itself.
   const both = !!(opts.discount && opts.fixedDiscount)
   const lineDiscount = both && opts.discount ? { value: opts.discount.percent, valueType: 'PERCENTAGE', title: opts.discount.title } : null
+  const attrs = (l: SaleLine) => { const a = lineNoteAttributes(l.note); return a.length ? a : null }
   return {
     // A gift can have no email: nobody is invoiced.
     ...(email ? { email } : {}),
@@ -250,9 +261,9 @@ export function draftInput(email: string, lines: SaleLine[], note: string, opts:
       const price = l.priceOverride != null ? { amount: l.priceOverride.toFixed(2), currencyCode: 'USD' } : null
       if (l.noStock) {
         if (!price) throw new Error(`${l.label} has no price. A line that leaves stock alone needs one.`)
-        return { title: l.label, quantity: l.quantity, originalUnitPriceWithCurrency: price, taxable: !opts.taxExempt, requiresShipping: true, ...(lineDiscount ? { appliedDiscount: lineDiscount } : {}) }
+        return { title: l.label, quantity: l.quantity, originalUnitPriceWithCurrency: price, taxable: !opts.taxExempt, requiresShipping: true, ...(lineDiscount ? { appliedDiscount: lineDiscount } : {}), ...(attrs(l) ? { customAttributes: attrs(l) } : {}) }
       }
-      return { variantId: gid(l.shopifyVariantId), quantity: l.quantity, ...(price ? { priceOverride: price } : {}), ...(lineDiscount ? { appliedDiscount: lineDiscount } : {}) }
+      return { variantId: gid(l.shopifyVariantId), quantity: l.quantity, ...(price ? { priceOverride: price } : {}), ...(lineDiscount ? { appliedDiscount: lineDiscount } : {}), ...(attrs(l) ? { customAttributes: attrs(l) } : {}) }
     }),
   }
 }

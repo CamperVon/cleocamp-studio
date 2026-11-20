@@ -4357,10 +4357,12 @@ export const TOOLS: Record<string, Tool> = {
                 productVariantId: str('Our variant id. Ask which size or colour if it is not clear — never pick one.'),
                 quantity: num('How many. Default 1.'),
                 price: num('Unit price in dollars, ONLY if the person named a price for this sale ("$60, event price"). Leave out for the retail price. Never set one yourself.'),
+                note: str('A note about this item, printed under it on the invoice, order and packing slip, only words the person gave ("* extra holes punched in"). Pass it again on the send call.'),
               },
               required: ['productVariantId'],
             },
           },
+          freeShipping: { type: 'boolean' as const, description: 'Shipped only: true ONLY when the person says no shipping charge ("free shipping", "no shipping"). The invoice carries free shipping, so she pays nothing for it at checkout. Pass it again on the send call.' },
           friendsAndFamily: { type: 'boolean' as const, description: 'true when the person says Friends and Family: 20% off, applied by Shopify. Do not also pass prices.' },
           amountOff: num('Dollars off the whole invoice, ONLY the amount the person named ("take $14 off"). Shopify takes it off after any Friends and Family discount; tax is then on the lower amount. Never work one out yourself, and never to make a total come to a figure: if they name a total, ask what to take off. Pass it again on the send call.'),
           discountCode: str('A Shopify discount code exactly as the person named it ("CLEOFRIEND"). Shopify checks it and takes it off; if it does not exist or does not apply, you are told and nothing is made. Not with friendsAndFamily or amountOff. Pass it again on the send call.'),
@@ -4406,7 +4408,8 @@ export const TOOLS: Record<string, Tool> = {
       // which lives only in the app, comes down here when the invoice is sent.
       const appOnly: Array<{ variantId: string; label: string; qty: number }> = []
       const named = (items as Array<{ price?: number }>).some((x) => x.price != null)
-      for (const it of items as Array<{ productVariantId: string; quantity?: number; price?: number }>) {
+      for (const it of items as Array<{ productVariantId: string; quantity?: number; price?: number; note?: string }>) {
+        const lineNote = typeof it.note === 'string' && it.note.trim() ? it.note.trim() : null
         const v = variants.find((x) => x.id === String(it.productVariantId))
         if (!v) return { sent: false, reason: `No variant ${it.productVariantId}. Look it up again; do not guess. If the person says it is on Shopify, search there with find_in_shopify.` }
         const qty = Math.max(1, Math.round(Number(it.quantity ?? 1)))
@@ -4417,14 +4420,14 @@ export const TOOLS: Record<string, Tool> = {
           const appCents = v.retailPriceCents ?? v.product.retailPriceCents
           const p = price ?? (appCents == null ? null : appCents / 100)
           if (p == null) return { sent: false, reason: `${label} is not in Shopify and has no price in the app. Ask what to charge.` }
-          lines.push({ shopifyVariantId: '', label, quantity: qty, priceOverride: p, noStock: true })
+          lines.push({ shopifyVariantId: '', label, quantity: qty, priceOverride: p, noStock: true, note: lineNote })
           appOnly.push({ variantId: v.id, label, qty })
           const onHand = v.onHandQty === null ? null : Number(v.onHandQty)
           stockNotes.push(`${label} is not in Shopify: priced at ${price != null ? 'the price given' : `the app's $${p.toFixed(2)} — check it is right`}; its count in the app (${onHand ?? 'unknown'}) comes down by ${qty} when sent.`)
           if (onHand !== null && onHand < qty) stockNotes.push(`${label}: the app shows ${onHand}, fewer than ${qty} — say so before sending.`)
           continue
         }
-        lines.push({ shopifyVariantId: v.shopifyVariantId, label, quantity: qty, priceOverride: price })
+        lines.push({ shopifyVariantId: v.shopifyVariantId, label, quantity: qty, priceOverride: price, note: lineNote })
         const onHand = v.onHandQty === null ? null : Number(v.onHandQty)
         if (onHand !== null && onHand < qty) stockNotes.push(`${label}: Shopify last showed ${onHand} in stock, fewer than ${qty} — say so before sending.`)
       }
@@ -4452,6 +4455,11 @@ export const TOOLS: Record<string, Tool> = {
       const badCopy = copy.find((x: string) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x))
       if (badCopy) return { sent: false, reason: `"${badCopy}" is not an email address. Ask again.` }
       const handed = i.handedOver === true
+      // No shipping charge on a shipped invoice (Cleo, 20 Nov 2026: Mouse
+      // could not, and the draft for Abby Sage stopped). A $0 shipping line
+      // on the draft is what checkout charges, so she pays nothing for it.
+      const freeShip = i.freeShipping === true
+      if (freeShip && handed) return { sent: false, reason: 'Free shipping is for a shipped invoice; a handed-over one has no shipping. Ask which it is.' }
       if (!handed && appOnly.length) {
         return { sent: false, reason: `${appOnly.map((a) => a.label).join(', ')} is not in Shopify, so Shopify cannot ship it or take it off stock when she pays. Ask: was it handed over in person (handedOver: true), or should it be listed in Shopify first?` }
       }
@@ -4468,6 +4476,7 @@ export const TOOLS: Record<string, Tool> = {
         ...(amountOff != null ? { fixedDiscount: { amount: amountOff, title: `$${amountOff.toFixed(2)} off` } } : {}),
         ...(noTax ? { taxExempt: true } : {}),
         ...(code ? { discountCode: code } : {}),
+        ...(freeShip ? { shippingCharge: 0, shippingTitle: 'Free shipping' } : {}),
         bcc: copy, ...(shipTo ? { shipTo } : {}),
       }
       // Shopify skips a code the order is not eligible for and says nothing,
@@ -4498,7 +4507,7 @@ export const TOOLS: Record<string, Tool> = {
           to: `${name} <${email}>`,
           copied: ['studio@cleocamp.com (always)', ...copy],
           lines: quote.lines.map((l, n) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}${
-            lines[n].noStock && !(items as Array<{ price?: number }>)[n]?.price ? " (the app's price — not in Shopify)" : l.priced === 'named' ? ' (price given in the chat)' : ' (retail)'}`),
+            lines[n].noStock && !(items as Array<{ price?: number }>)[n]?.price ? " (the app's price — not in Shopify)" : l.priced === 'named' ? ' (price given in the chat)' : ' (retail)'}${lines[n].note ? `; note under it: "${lines[n].note}"` : ''}`),
           ...(ff && ffOff ? { discount: `${FRIENDS_AND_FAMILY.title} ${FRIENDS_AND_FAMILY.percent}%: −$${ffOff.toFixed(2)}` } : {}),
           ...(quote.amountOff ? { amountOff: `$${quote.amountOff.toFixed(2)} off the invoice, as named in the chat` } : {}),
           ...(code && quote.codeOff != null ? { discountCode: `${code}${codeSummary ? ` (${codeSummary})` : ''}: −$${quote.codeOff.toFixed(2)}, applied by Shopify` } : {}),
@@ -4509,8 +4518,8 @@ export const TOOLS: Record<string, Tool> = {
           tax: noTax
             ? '$0.00, no sales tax on this invoice, as asked. Shopify records the sale as untaxed; California still counts it as taxable, so the studio pays that tax itself.'
             : handed || shipTo ? `$${quote.tax.toFixed(2)}` : `about $${quote.tax.toFixed(2)} (Shopify works it out for her address at checkout)`,
-          ...(handed ? {} : { shipping: 'she picks it at checkout, at the shop\'s rates' }),
-          total: handed ? `$${quote.total.toFixed(2)}` : `$${quote.total.toFixed(2)} before shipping`,
+          ...(handed ? {} : { shipping: freeShip ? 'free: no shipping charge, as asked' : 'she picks it at checkout, at the shop\'s rates' }),
+          total: handed || freeShip ? `$${quote.total.toFixed(2)}${freeShip && !shipTo ? ' (tax is settled for her address at checkout)' : ''}` : `$${quote.total.toFixed(2)} before shipping`,
           stock: stockNotes,
           tellTheUser:
             (aboveRetail(quote.lines).length ? 'FIRST say plainly that a named price is above what Shopify charges, with both figures, and ask whether it is right. ' : '') +

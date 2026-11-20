@@ -286,6 +286,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-20',
     text: 'You should not have to open your link or type the password again. Signing in used to run out every 30 days; now it renews each time you use the app, so you stay signed in unless you go six months without opening it.',
   },
+  {
+    on: '2026-11-20',
+    text: 'Mouse can now send a shipped invoice with free shipping, and put a note under an item that shows on the invoice, the order and the packing slip (like "* extra holes punched in"). Just say it when you ask for the invoice.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

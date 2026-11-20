@@ -948,6 +948,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/session-core.ts` (new, edge-safe: `signSession`, `shouldRenew`, `cookieOptions`), `lib/session.ts`, `proxy.ts`, `tests/session-sliding.test.ts`.
 - **Needs:** nothing beyond the app.
 
+### Free shipping and per-item notes on customer invoices
+- **Problem:** a shipped customer invoice could not waive shipping (the customer always picked a paid rate at checkout) or carry a note about an item, so a request like "no shipping charge, note: extra holes punched in" stopped the assistant entirely.
+- **Change:** `invoice_live_sale` takes `freeShipping` (shipped only: a $0 shipping line on the draft, which checkout honours) and a per-item `note`, stored as a Shopify line item property so it prints under the item on the invoice, the order and the packing slip. Checked with Shopify's draft calculation before release.
+- **Files:** `lib/live-sale.ts` (`SaleLine.note`, `lineNoteAttributes`, `draftInput`), `lib/mouse/tools.ts` (`invoice_live_sale`), `tests/invoice-free-ship-note.test.ts`.
+- **Needs:** Shopify.
+
 ---
 
 ## Setup notes for a new install
