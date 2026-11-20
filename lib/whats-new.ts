@@ -290,6 +290,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-20',
     text: 'Mouse can now send a shipped invoice with free shipping, and put a note under an item that shows on the invoice, the order and the packing slip (like "* extra holes punched in"). Just say it when you ask for the invoice.',
   },
+  {
+    on: '2026-11-20', path: '/stylists',
+    text: 'When a piece for a stylist came from sales stock rather than the stylist inventory, tell Mouse "from sales stock" and she logs it that way, leaving the stylist inventory as it is.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

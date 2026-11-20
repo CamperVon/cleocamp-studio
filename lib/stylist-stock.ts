@@ -27,8 +27,14 @@ export function piecesOf(json: unknown): Piece[] {
 /**
  * Where `qty` pieces would come from: the stylist inventory first, then sales
  * stock up to what a person agreed. `short` is what neither covers. Pure.
+ *
+ * `fromSalesOnly`: a person said the pieces came from sales stock, so the
+ * stylist inventory is left alone (19 Nov 2026: Jane sent Karolyn Pho a White
+ * Boy Belt Small from sales stock while the stylist inventory held one, and
+ * Mouse could only take the stylist one, so the belt was left off the pull).
  */
-export function splitPull(qty: number, inStylist: number, agreedFromSales = 0) {
+export function splitPull(qty: number, inStylist: number, agreedFromSales = 0, fromSalesOnly = false) {
+  if (fromSalesOnly) return { fromStylist: 0, fromSales: qty, short: 0 }
   const fromStylist = Math.min(qty, Math.max(0, inStylist))
   const need = qty - fromStylist
   const fromSales = Math.min(need, Math.max(0, agreedFromSales))

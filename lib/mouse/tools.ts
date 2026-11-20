@@ -5640,7 +5640,8 @@ export const TOOLS: Record<string, Tool> = {
       description:
         'Pieces lent to a stylist for a shoot. Takes them from the stylist inventory first; any piece it ' +
         'is short of comes from sales stock (STYLIST_PULL_OUT, a loan, never demand) ONLY up to the ' +
-        'fromSales a person agreed for that piece. If anything is short, nothing is saved and the result ' +
+        'fromSales a person agreed for that piece. When a person says a piece came from sales stock, pass ' +
+        'fromSalesOnly: true on it and the stylist inventory is left alone. If anything is short, nothing is saved and the result ' +
         'says what: ask whether to take it from sales stock. Records who has them and when they are due back. Only what a person in the chat ' +
         'says went out. dueBackAt is ONLY the date the pieces come back: a fitting, a shoot or "check in ' +
         'the day after" is not it. Put a fitting or shoot date in notes, and anything to do on a date ' +
@@ -5652,7 +5653,7 @@ export const TOOLS: Record<string, Tool> = {
           stylistName: str('The stylist\'s name as the person said it. Always pass it: the tool checks it matches the id.'),
           items: {
             type: 'array' as const,
-            items: { type: 'object' as const, properties: { productVariantId: str('Our variant. Ask about size or colour rather than picking.'), qty: num('How many'), fromSales: num('How many of these a person agreed may come from sales stock if the stylist inventory is short. Default 0') }, required: ['productVariantId', 'qty'] },
+            items: { type: 'object' as const, properties: { productVariantId: str('Our variant. Ask about size or colour rather than picking.'), qty: num('How many'), fromSales: num('How many of these a person agreed may come from sales stock if the stylist inventory is short. Default 0'), fromSalesOnly: { type: 'boolean' as const, description: 'true when a person says this piece came from sales stock, not the stylist inventory ("sent from sales stock"): all of it comes off sales stock and the stylist inventory is left alone, even if it holds one.' } }, required: ['productVariantId', 'qty'] },
           },
           sentAt: str('YYYY-MM-DD it went out. Default today.'),
           dueBackAt: str('YYYY-MM-DD it is due back, if agreed'),
@@ -5669,7 +5670,7 @@ export const TOOLS: Record<string, Tool> = {
       const picked = pickStylist(await db.stylist.findMany({ select: { id: true, name: true } }), i.stylistId ? String(i.stylistId) : null, i.stylistName ? String(i.stylistName) : null)
       if ('reason' in picked) return { saved: false, reason: picked.reason }
       const s = picked.stylist
-      const items = (Array.isArray(i.items) ? i.items : []) as Array<{ productVariantId: string; qty: number; fromSales?: number }>
+      const items = (Array.isArray(i.items) ? i.items : []) as Array<{ productVariantId: string; qty: number; fromSales?: number; fromSalesOnly?: boolean }>
       if (!items.length) return { saved: false, reason: 'Nothing listed. Ask what went out.' }
       const vs = await db.productVariant.findMany({ where: { id: { in: items.map((x) => String(x.productVariantId)) } }, include: { product: { select: { name: true } }, colorway: { select: { customerName: true } } } })
       const { stylistStock, splitPull } = await import('@/lib/stylist-stock')
@@ -5683,7 +5684,7 @@ export const TOOLS: Record<string, Tool> = {
         if (!(qty > 0)) return { saved: false, reason: `"${it.qty}" is not a quantity.` }
         const item = [v.product.name, v.colorway?.customerName, v.size].filter(Boolean).join(' / ')
         // The same piece listed twice draws on one count, not two.
-        const split = splitPull(qty, have.get(v.id) ?? 0, Number(it.fromSales ?? 0))
+        const split = splitPull(qty, have.get(v.id) ?? 0, Number(it.fromSales ?? 0), it.fromSalesOnly === true)
         have.set(v.id, (have.get(v.id) ?? 0) - split.fromStylist)
         if (split.short) short.push(`${item}: ${split.short} short (stylist inventory has ${split.fromStylist}${split.fromSales ? `, ${split.fromSales} agreed from sales` : ''}; sales stock has ${v.onHandQty == null ? 'an unknown number' : Number(v.onHandQty)})`)
         lines.push({ productVariantId: v.id, item, qty, fromStylistQty: split.fromStylist, fromSales: split.fromSales })

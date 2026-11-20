@@ -45,3 +45,11 @@ test('a request folds to a short name: the shoot in quotes, else its first phras
   assert.equal(requestTitle('Story Dress, You Dress (black/white), and Cleo bags'), 'Story Dress, You Dress')
   assert.ok(requestTitle('A very long request with no quotes and no break in it anywhere at all for a while').length <= 49)
 })
+
+// 19 Nov 2026: a piece sent from sales stock while the stylist inventory held one.
+test('a piece a person says came from sales stock leaves the stylist inventory alone', () => {
+  assert.deepEqual(splitPull(1, 1, 0, true), { fromStylist: 0, fromSales: 1, short: 0 })
+  assert.deepEqual(splitPull(1, 1), { fromStylist: 1, fromSales: 0, short: 0 })
+  // Back again, it refills sales stock, which is where it came from.
+  assert.deepEqual(returnSplit({ qty: 1, fromStylistQty: 0, returnedQty: 0 }, 1), { toSales: 1, toStylist: 0 })
+})
