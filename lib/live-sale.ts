@@ -1059,3 +1059,81 @@ export async function giftCustomer(email: string | null, name: { firstName: stri
     return { id: null, problem: `No Shopify customer was attached (${e instanceof Error ? e.message.slice(0, 120) : String(e)}); the name is on the address.` }
   }
 }
+
+/**
+ * Switch an invoice to "handed over" once it turns out the customer already
+ * has the goods. 21 Nov 2026: D71 went to Daphne Harrington as an invoice
+ * that ships, though her 5to7 Skirt was sold in person. The plan was a todo
+ * to "mark it handed over once she pays", but nothing acts on a payment, and
+ * Shopify had a label on #3097 six minutes after she paid, so a second skirt
+ * went out. The switch has to happen when someone says so, not on payment.
+ *
+ * An unpaid draft (D71): any shipping charge comes off, then it is made an
+ * unpaid order the way a live sale is (stock comes off, marked handed over)
+ * and she is emailed a link to pay. The draft's own link stops working.
+ * An order (#3097) not yet fulfilled: marked handed over, nobody emailed.
+ */
+export type HandOverOrder = {
+  id: string; name: string; email: string | null; tags: string[]
+  cancelledAt: string | null; displayFulfillmentStatus: string | null
+  fulfillments: Array<{ status: string; tracking: string[] }>
+}
+
+/** Why an order cannot be marked handed over, in words for the person; null when it can. Pure. */
+export function handOverBlocked(o: HandOverOrder): string | null {
+  if (o.cancelledAt) return `${o.name} is cancelled.`
+  if (!o.tags.some((t) => ['invoice', 'live-sale', 'studio-mouse', 'wholesale', 'gift'].includes(t))) {
+    return `${o.name} is a web order, not one of our invoices. If the customer really has it already, mark it fulfilled in Shopify.`
+  }
+  const shipped = o.fulfillments.filter((f) => f.status === 'SUCCESS')
+  if (shipped.some((f) => f.tracking.length)) {
+    return `${o.name} has already shipped (tracking ${shipped.flatMap((f) => f.tracking).join(', ')}). If she had it in person too, a second one went out: ask what to do about it, and check the stock count.`
+  }
+  if (o.displayFulfillmentStatus === 'FULFILLED' || shipped.length) return `${o.name} is already marked fulfilled. Nothing to do.`
+  return null
+}
+
+export async function readOrderForHandOver(orderNameIn: string): Promise<HandOverOrder | null> {
+  const name = `#${orderNameIn.replace(/^#/, '').trim()}`
+  const d = await shopifyGraphQL<{ orders: { nodes: Array<{
+    id: string; name: string; email: string | null; tags: string[]; cancelledAt: string | null; displayFulfillmentStatus: string | null
+    fulfillments: Array<{ status: string; trackingInfo: Array<{ number: string | null }> }>
+  }> } }>(
+    `query($q: String!) { orders(first: 5, query: $q) { nodes { id name email tags cancelledAt displayFulfillmentStatus fulfillments { status trackingInfo { number } } } } }`,
+    { q: `name:${name}` },
+  )
+  const o = d.orders.nodes.find((n) => n.name === name)
+  if (!o) return null
+  return { ...o, fulfillments: o.fulfillments.map((f) => ({ status: f.status, tracking: f.trackingInfo.map((t) => t.number).filter((n): n is string => !!n) })) }
+}
+
+/** Mark an order's open items handed over (fulfilled, no label, nobody emailed). */
+export async function markOrderHandedOver(orderId: string): Promise<{ ok: boolean; error?: string }> {
+  const fo = await shopifyGraphQL<{ order: { fulfillmentOrders: { nodes: Array<{ id: string; status: string }> } } | null }>(
+    `query($id: ID!) { order(id: $id) { fulfillmentOrders(first: 10) { nodes { id status } } } }`,
+    { id: orderId },
+  )
+  const open = (fo.order?.fulfillmentOrders.nodes ?? []).filter((n) => n.status === 'OPEN' || n.status === 'IN_PROGRESS').map((n) => n.id)
+  if (!open.length) return { ok: false, error: 'Shopify has nothing open to fulfil on it.' }
+  const f = await shopifyGraphQL<{ fulfillmentCreate: { fulfillment: { id: string } | null; userErrors: Array<{ message: string }> } }>(
+    `mutation($f: FulfillmentInput!) { fulfillmentCreate(fulfillment: $f) { fulfillment { id } userErrors { message } } }`,
+    { f: { notifyCustomer: false, lineItemsByFulfillmentOrder: open.map((id) => ({ fulfillmentOrderId: id })) } },
+  )
+  return f.fulfillmentCreate.fulfillment ? { ok: true } : { ok: false, error: f.fulfillmentCreate.userErrors.map((e) => e.message).join('; ') || 'no reason given' }
+}
+
+/** An unpaid draft that ships, switched to handed over: see above. */
+export async function handOverDraft(draftId: string, email: string, customerName: string, shipping: number, bcc: string[] = []): Promise<InvoiceResult> {
+  if (shipping > 0) {
+    const u = await shopifyGraphQL<{ draftOrderUpdate: { draftOrder: { id: string } | null; userErrors: Array<{ message: string }> } }>(
+      `mutation($id: ID!, $input: DraftOrderInput!) { draftOrderUpdate(id: $id, input: $input) { draftOrder { id } userErrors { message } } }`,
+      { id: draftId, input: { shippingLine: { title: 'Handed over, no shipping', priceWithCurrency: { amount: '0.00', currencyCode: 'USD' } } } },
+    )
+    if (!u.draftOrderUpdate.draftOrder) {
+      return { orderName: null, orderId: null, total: null, fulfilled: false, invoiceSent: false, problems: [
+        `Shopify would not take the shipping charge off (${u.draftOrderUpdate.userErrors.map((e) => e.message).join('; ') || 'no reason given'}). Nothing else changed; the draft is as it was.`,
+      ] }
+    }
+  }
+  return completeAndInvoice(draftId, email, customerName, { bcc })
+}

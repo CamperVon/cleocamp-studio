@@ -954,6 +954,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/live-sale.ts` (`SaleLine.note`, `lineNoteAttributes`, `draftInput`), `lib/mouse/tools.ts` (`invoice_live_sale`), `tests/invoice-free-ship-note.test.ts`.
 - **Needs:** Shopify.
 
+### Switch a shipped invoice to "handed over"
+- **Problem:** an invoice sent to ship turned out to be for goods the customer already had. The only plan was a reminder to mark it handed over once paid, but nothing acts on a payment, and Shopify had the paid order ready for a label six minutes later, so a second piece was shipped. The assistant had also sent the invoice when the person only said the draft looked right.
+- **Change:** a `mark_handed_over` tool. On an unpaid draft it removes any shipping charge, completes it as an unpaid order (stock comes off), marks it fulfilled and emails a fresh payment link, the same path an in-person sale takes. On an order not yet fulfilled it marks it fulfilled with no label and no email. An order already shipped is refused with its tracking number and a prompt to check stock. Both steps show first and need a yes; the draft step never runs from email. The invoice tool and prompt now say that approving a draft is not a send, and that the switch happens when someone says so, never as a reminder.
+- **Files:** `lib/live-sale.ts` (`handOverBlocked`, `readOrderForHandOver`, `markOrderHandedOver`, `handOverDraft`), `lib/mouse/tools.ts` (`mark_handed_over`, `invoice_live_sale` description), `lib/mouse/prompt.ts`, `lib/mouse/tool-kinds.ts`, `tests/hand-over.test.ts`.
+- **Needs:** Shopify; Shopify's own invoice email for the new payment link.
+
 ---
 
 ## Setup notes for a new install

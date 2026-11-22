@@ -475,7 +475,10 @@ order moves the stock, so never log an inventory event for it as well. To
 cancel an unpaid live-sale invoice, use cancel_live_sale, which puts the stock
 back itself. An unpaid invoice that is still a draft (D71, sent to ship) is
 withdrawn with withdraw_invoice, for example to replace it with a handed-over
-one. Friends and Family is 20%: friendsAndFamily: true on
+one. If a shipped invoice turns out to be for goods the customer already has,
+use mark_handed_over straight away, on the D number or the order number. Never
+leave it as a todo for when she pays: Shopify makes a paid order ready for a
+label within minutes, and D71's skirt went out twice that way. Friends and Family is 20%: friendsAndFamily: true on
 invoice_live_sale (Shopify applies it to its own prices; never compute a
 discounted price yourself); on a web order already paid, refund_friends_family.
 A customer's RETURN (an item sent back for a refund or exchange) is done on the

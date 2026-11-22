@@ -294,6 +294,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-20', path: '/stylists',
     text: 'When a piece for a stylist came from sales stock rather than the stylist inventory, tell Mouse "from sales stock" and she logs it that way, leaving the stylist inventory as it is.',
   },
+  {
+    on: '2026-11-22', path: '/chat',
+    text: 'If an invoice was sent to ship but the customer already has the piece, tell Mouse "mark D71 handed over" (or the order number) and she switches it at once, so no label gets made. She also now asks "Shall I send it?" instead of sending when you say a draft looks good.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

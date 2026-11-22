@@ -4340,7 +4340,10 @@ export const TOOLS: Record<string, Tool> = {
         'and Family or amountOff. Never turn a code into an amountOff yourself. No sales tax on this invoice, only when the person says so ("waive the ' +
         'tax"), is noSalesTax: true. Leave confirmed ' +
         'out to DRAFT: nothing is created and you get the priced invoice to show. Pass ' +
-        'confirmed: true only once a person has seen that invoice and said to send it. Do NOT ' +
+        'confirmed: true only once a person has seen that invoice and said to send it. Liking the draft ' +
+        '("that\'s perfect", "looks good") is not a send, and neither is it one while a question about it ' +
+        'is open (shipped or handed over?): ask "Shall I send it?" (D71, 12 Nov 2026). If it later turns out she ' +
+        'already has the goods, that is mark_handed_over, at once. Do NOT ' +
         'also log an inventory event — the Shopify order moves the stock, and logging it too ' +
         'would count the sale twice. A whole order given away (all at $0) is gift_items, not this; one free piece alongside paid ones is a 0 price here.',
       input_schema: {
@@ -6217,6 +6220,74 @@ export const TOOLS: Record<string, Tool> = {
         done: true, draft: d.name, lines,
         tellTheUser: `Say ${d.name} is withdrawn: the link no longer works, and Shopify did not tell the customer. If it is being replaced, draft the new invoice now.`,
       }
+    },
+  },
+
+  mark_handed_over: {
+    def: {
+      name: 'mark_handed_over',
+      description:
+        'The customer already has the goods, but the invoice was made to ship. Use it the moment a person ' +
+        'says so ("she took it with her", "it was sold in person"), never a todo to do it once she pays: ' +
+        'Shopify makes a paid order ready for a label within minutes (D71/#3097, 17 Nov 2026: a second skirt ' +
+        'went out). By the D number of an unpaid draft ("D71"): any shipping charge comes off, it becomes an ' +
+        'unpaid order at once, comes off stock, is marked handed over and the customer is emailed a new link ' +
+        'to pay (the old one stops working). By the order number ("3097"): an order not yet fulfilled is ' +
+        'marked handed over, nobody emailed. Leave confirmed out to SHOW it; confirmed: true only once a ' +
+        'person has said do it.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          invoice: str('The draft number ("D71") or the order number ("3097")'),
+          confirmed: { type: 'boolean' as const, description: 'Leave out to check. true only after a person has seen it and said yes.' },
+        },
+        required: ['invoice'],
+      },
+    },
+    run: async (i) => {
+      const raw = String(i.invoice ?? '').trim().replace(/^#/, '')
+      const lib = await import('@/lib/live-sale')
+      if (/^d\d+$/i.test(raw)) {
+        if (i.confirmed === true && (await import('@/lib/mouse/team-mail')).inEmailRun()) {
+          return { done: false, reason: 'From email this is never done, since it emails the customer. Say it can be done from the app chat.' }
+        }
+        const d = await lib.findDraft(raw)
+        if (!d) return { done: false, reason: `No Shopify draft ${raw.toUpperCase()}. Ask for the number on the invoice.` }
+        if (!d.open) return { done: false, reason: `${d.name} has been paid, so it is an order now. Ask for the order number and call again with it.` }
+        if (!d.email) return { done: false, reason: `${d.name} has no customer email, so no link to pay can go. Add the email in Shopify first.` }
+        const lines = d.lines.map((l) => `${l.quantity} × ${l.label} at $${l.unitPrice.toFixed(2)}`)
+        if (i.confirmed !== true) {
+          return {
+            done: false, check: true, draft: d.name, to: d.email, lines,
+            ...(d.shipping > 0 ? { shipping: `$${d.shipping.toFixed(2)} shipping comes off` } : {}),
+            tellTheUser: `Show it: ${d.name} becomes an unpaid order now, the items come off stock and are marked handed over, so nothing ships, and ${d.email} is emailed a new link to pay (the one she has stops working). Wait for a yes.`,
+          }
+        }
+        const name = [d.address?.firstName, d.address?.lastName].filter(Boolean).join(' ') || d.email
+        let r
+        try {
+          r = await lib.handOverDraft(d.id, d.email, name, d.shipping)
+        } catch (e) {
+          return { done: false, reason: `Shopify refused: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}. Check ${d.name} in Shopify before trying again.` }
+        }
+        return {
+          done: !!r.orderId, order: r.orderName, handedOver: r.fulfilled, invoiceSent: r.invoiceSent, copiedTo: r.copiedTo ?? [], problems: r.problems,
+          tellTheUser: r.problems.length
+            ? 'Say plainly what happened and each problem, with what to do in Shopify.'
+            : `Say ${d.name} is now ${r.orderName}: off stock, marked handed over so it will not be shipped, and ${d.email} has a new link to pay.`,
+        }
+      }
+      const o = await lib.readOrderForHandOver(raw)
+      if (!o) return { done: false, reason: `No Shopify order #${raw}. Ask for the number.` }
+      const blocked = lib.handOverBlocked(o)
+      if (blocked) return { done: false, reason: blocked }
+      if (i.confirmed !== true) {
+        return { done: false, check: true, order: o.name, tellTheUser: `Show it: ${o.name} is marked handed over, so it never gets a shipping label. Nobody is emailed and stock does not change. Wait for a yes.` }
+      }
+      const r = await lib.markOrderHandedOver(o.id)
+      return r.ok
+        ? { done: true, order: o.name, tellTheUser: `Say ${o.name} is marked handed over and will not be shipped.` }
+        : { done: false, reason: `Shopify would not mark ${o.name} handed over: ${r.error}. Mark it fulfilled in Shopify before a label is made.` }
     },
   },
 
