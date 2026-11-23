@@ -3887,7 +3887,7 @@ export const TOOLS: Record<string, Tool> = {
     def: {
       name: 'find_in_shopify',
       description:
-        'Search Shopify\'s products by name, or by a product link (cleocamp.com/products/…). ' +
+        'Search Shopify\'s products by name (matched to the title, the web address and the SKU), or by a product link (cleocamp.com/products/…). Shopify\'s title can differ from the app\'s name. ' +
         'Read-only. Use it whenever a person names a product you do not have ("Sardine", "the new ' +
         'hair tie"), before saying it does not exist: Cleo adds products in Shopify first. Says for ' +
         'each whether it is in the app; if not, offer to bring it in with import_from_shopify.',

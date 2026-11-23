@@ -960,6 +960,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/live-sale.ts` (`handOverBlocked`, `readOrderForHandOver`, `markOrderHandedOver`, `handOverDraft`), `lib/mouse/tools.ts` (`mark_handed_over`, `invoice_live_sale` description), `lib/mouse/prompt.ts`, `lib/mouse/tool-kinds.ts`, `tests/hand-over.test.ts`.
 - **Needs:** Shopify; Shopify's own invoice email for the new payment link.
 
+### Shopify product search also matches the web address and SKU
+- **Problem:** the assistant's Shopify search matched product titles only. A product named differently in the app than in Shopify (the handle still carrying the app's word) came back as "not found", so the assistant doubted a link that was in fact live.
+- **Change:** `find_in_shopify` searches the title, the handle and the SKU together; a product link still searches by its handle.
+- **Files:** `lib/shopify-import.ts` (`shopifySearchQuery`), `lib/mouse/tools.ts` (`find_in_shopify` description), `tests/shopify-import.test.ts`.
+- **Needs:** Shopify.
+
 ---
 
 ## Setup notes for a new install

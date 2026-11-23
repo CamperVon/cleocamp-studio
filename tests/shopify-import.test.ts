@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { handleFromUrl, lookalikes, readOptions } from '../lib/shopify-import'
+import { handleFromUrl, lookalikes, readOptions, shopifySearchQuery } from '../lib/shopify-import'
 
 test('colour and size read from Shopify options', () => {
   assert.deepEqual(readOptions([{ name: 'Color', value: 'Red Stripe' }, { name: 'Size', value: '1' }]), { colour: 'Red Stripe', size: '1' })
@@ -29,4 +29,11 @@ test('the gift email asks for an address and says there is nothing to pay', asyn
   assert.match(t, /nothing to pay/)
   assert.match(t, /Kindly,\nCleo Studio$/)
   assert.match(giftInviteText('Carol', 'Loved your piece on us.'), /^Hi Carol, Loved your piece on us\.\n\nCleo would like/)
+})
+
+test('a name is searched in the title, the handle and the SKU', () => {
+  assert.equal(shopifySearchQuery('flower'), 'title:*flower* OR handle:*flower* OR sku:*flower*')
+  assert.equal(shopifySearchQuery('flower pin'), 'title:*flower pin* OR handle:*flower-pin* OR sku:*flower pin*')
+  assert.equal(shopifySearchQuery('cleocamp.com/products/flower-hairtie'), 'handle:flower-hairtie')
+  assert.ok(!shopifySearchQuery('a "b" (c)').includes('"'))
 })

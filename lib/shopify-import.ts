@@ -71,10 +71,23 @@ export function lookalikes<P extends { name: string }>(title: string, products: 
   })
 }
 
-/** Search Shopify by name, handle or product link. Read-only. */
-export async function findInShopify(query: string) {
+/**
+ * The Shopify search for a name, handle or link. Pure. A name is matched
+ * against the title, the handle and the SKU: the app's "Flower Hair Tie" is
+ * Shopify's "Peony Hair Tie" (handle flower-hairtie), and a title-only search
+ * for "flower" found nothing, so Mouse took a live listing for one that was
+ * never put on Shopify (23 Nov 2026).
+ */
+export function shopifySearchQuery(query: string): string {
   const handle = handleFromUrl(query)
-  const q = handle ? `handle:${handle}` : `title:*${query.replace(/["\\]/g, '').trim()}*`
+  if (handle) return `handle:${handle}`
+  const t = query.replace(/["\\()]/g, '').trim()
+  return `title:*${t}* OR handle:*${t.replace(/\s+/g, '-')}* OR sku:*${t}*`
+}
+
+/** Search Shopify by name, handle, SKU or product link. Read-only. */
+export async function findInShopify(query: string) {
+  const q = shopifySearchQuery(query)
   const d = await shopifyGraphQL<{ products: { nodes: ShopifyProductData[] } }>(
     `query($q: String!) { products(first: 10, query: $q) { nodes { ${PRODUCT_FIELDS} } } }`, { q },
   )
