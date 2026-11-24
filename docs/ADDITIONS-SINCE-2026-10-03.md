@@ -966,6 +966,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/shopify-import.ts` (`shopifySearchQuery`), `lib/mouse/tools.ts` (`find_in_shopify` description), `tests/shopify-import.test.ts`.
 - **Needs:** Shopify.
 
+### Find an unpaid draft by customer, without its number
+- **Problem:** asked to "send the Cosimo invoice", the assistant searched chat history and email, found nothing (the draft had been made from an email in a separate run), told the owner there was no such invoice, then found it only by trying draft numbers one at a time.
+- **Change:** an `open_drafts` look-up lists Shopify drafts not yet paid (unsent, or sent and waiting), newest first, filtered by a store, person or email. The prompt and tool text say to look there first whenever an invoice is named without its D number.
+- **Files:** `lib/live-sale.ts` (`openDrafts`, `draftMatches`), `lib/mouse/tools.ts` (`open_drafts`), `lib/mouse/tool-kinds.ts`, `lib/mouse/prompt.ts`, `tests/open-drafts.test.ts`, `tests/tool-kinds.test.ts`.
+- **Needs:** Shopify.
+
 ---
 
 ## Setup notes for a new install

@@ -24,7 +24,7 @@ test('every tool Mouse has is given a kind, and every kind names a real tool', (
 test('the look-ups are pinned: making a tool one runs it in practice and stops it counting as a write', () => {
   // Read the tool before adding it to either list: it must change nothing.
   assert.deepEqual(of('read-lane').sort(), ['check_sent_mail', 'find_contacts', 'find_customer', 'find_in_shopify', 'list_records', 'open_record', 'query_status', 'reorder_math', 'search_chat', 'shipped_orders', 'shopify_analytics', 'unpaid_live_sales', 'unshipped_orders'])
-  assert.deepEqual(of('look-up, Opus').sort(), ['draft_order_links', 'open_email', 'read_file'])
+  assert.deepEqual(of('look-up, Opus').sort(), ['draft_order_links', 'open_drafts', 'open_email', 'read_file'])
 })
 
 test('the read lane holds exactly the read-lane look-ups, and is offered nothing else', () => {
@@ -68,6 +68,11 @@ const NEEDS: Record<string, string[]> = {
     'Where is the draft order for Natasha?',
     'Is there a payment link for the wholesale invoice?',
     'What is the checkout link for the gift?',
+  ],
+  open_drafts: [
+    'Is there an unsent invoice for Cosimo?',
+    'Which drafts are still open?',
+    'Did you already make the Cosimo invoice?',
   ],
   muse_tasks: [
     'What did Muse find on zipper suppliers?',

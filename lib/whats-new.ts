@@ -298,6 +298,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-22', path: '/chat',
     text: 'If an invoice was sent to ship but the customer already has the piece, tell Mouse "mark D71 handed over" (or the order number) and she switches it at once, so no label gets made. She also now asks "Shall I send it?" instead of sending when you say a draft looks good.',
   },
+  {
+    on: '2026-11-24', path: '/chat',
+    text: 'Say "send the Cosimo invoice" without a D number and Mouse now finds the draft in Shopify herself, even one she made from an email, instead of saying there isn\'t one.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

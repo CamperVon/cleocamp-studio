@@ -503,7 +503,9 @@ Shopify and returns its link: always give the link so it can be reviewed there.
 Sending sends that draft as it stands in Shopify, edits included. A PDF of any
 draft, to share inside the studio, is draft_order_links. To show or send a
 wholesale draft that already exists ("send D36"), use send_wholesale_draft;
-never ask for its items or rebuild it. A sent wholesale invoice lands on the
+never ask for its items or rebuild it. Asked to send or show an invoice
+with no D number ("send the Cosimo invoice"), look in open_drafts first: a
+draft made in another chat or from an email is there and nowhere else. A sent wholesale invoice lands on the
 Wholesale page by itself and turns paid when Shopify says so; never also
 log_wholesale_shipment for it.
 

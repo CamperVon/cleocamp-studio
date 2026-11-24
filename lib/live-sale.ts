@@ -1137,3 +1137,29 @@ export async function handOverDraft(draftId: string, email: string, customerName
   }
   return completeAndInvoice(draftId, email, customerName, { bcc })
 }
+
+/**
+ * Drafts not yet sent or paid, newest first. 23 Nov 2026: a wholesale draft
+ * for Cosimo (D82) was made from Brandon's forwarded email in an email run;
+ * that evening he said "send the Cosimo invoice" in chat and Mouse searched
+ * mail and old chats, said there was no such invoice, then found it by
+ * trying D77 to D84 one at a time. Shopify's open drafts are the place to look.
+ */
+export type OpenDraft = { name: string; email: string | null; customer: string | null; total: number; tags: string[]; createdAt: string; sent?: boolean }
+
+/** Whether an open draft is the one meant by a name or email ("Cosimo", "hello@shopcosimo.com"). Pure. */
+export function draftMatches(d: OpenDraft, query: string): boolean {
+  const hay = [d.name, d.email ?? '', d.customer ?? '', ...d.tags].join(' ').toLowerCase()
+  const words = query.toLowerCase().replace(/[^a-z0-9@.#\s-]/g, ' ').split(/\s+/).filter((w) => w.length > 1)
+  return words.every((w) => hay.includes(w))
+}
+
+export async function openDrafts(query = ''): Promise<OpenDraft[]> {
+  // Sent but unpaid drafts too: "send it again" means one of those.
+  const d = await shopifyGraphQL<{ draftOrders: { nodes: Array<{ name: string; status: string; email: string | null; createdAt: string; tags: string[]; totalPriceSet: Money; customer: { displayName: string } | null }> } }>(
+    `{ draftOrders(first: 100, reverse: true, sortKey: UPDATED_AT, query: "status:open OR status:invoice_sent") { nodes { name status email createdAt tags totalPriceSet { shopMoney { amount } } customer { displayName } } } }`,
+  )
+  return d.draftOrders.nodes
+    .map((n) => ({ name: n.name, email: n.email, customer: n.customer?.displayName ?? null, total: money(n.totalPriceSet), tags: n.tags, createdAt: n.createdAt, sent: n.status === 'INVOICE_SENT' }))
+    .filter((x) => draftMatches(x, query))
+}

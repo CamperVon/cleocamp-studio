@@ -37,6 +37,7 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
   // Look-ups kept with Opus.
   read_file: 'look-up, Opus', // reading a PDF or photo stays with Opus (7 Oct 2026)
   draft_order_links: 'look-up, Opus', // kept with Opus since the lane was approved
+  open_drafts: 'look-up, Opus', // 24 Nov 2026: unsent drafts, so "send the Cosimo invoice" finds D82
   // One email in full, by id (9 Oct 2026). With Opus so the turn's one full read is
   // Opus's own: an email Sonnet opened would not travel with the hand-over, and the
   // turn's budget would then keep Opus from opening it. The lane keeps the compact search.

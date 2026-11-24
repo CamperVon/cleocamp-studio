@@ -6180,6 +6180,38 @@ export const TOOLS: Record<string, Tool> = {
     },
   },
 
+  open_drafts: {
+    def: {
+      name: 'open_drafts',
+      description:
+        'Shopify drafts not yet paid (not sent yet, or sent and waiting), newest first, optionally only those matching a name or email ' +
+        '("Cosimo", "hello@shopcosimo.com"). Read-only. Use it FIRST when someone says to send, show or ' +
+        'change an invoice without giving its D number: a draft made in another conversation or from an ' +
+        'email is only here, not in chat or mail. Then show or send it by its number with ' +
+        'send_wholesale_draft (wholesale) or draft_order_links. Never guess D numbers one by one.',
+      input_schema: { type: 'object', properties: { query: str('Optional: a store, person or email to narrow it down') } },
+    },
+    run: async (i) => {
+      const { openDrafts } = await import('@/lib/live-sale')
+      const q = String(i.query ?? '').trim()
+      const found = await openDrafts(q)
+      return {
+        count: found.length,
+        drafts: found.slice(0, 15).map((d) => ({
+          draft: d.name,
+          to: d.customer ? `${d.customer}${d.email ? ` <${d.email}>` : ''}` : d.email ?? 'no customer',
+          total: `$${d.total.toFixed(2)}`,
+          kind: d.tags.includes('wholesale') ? 'wholesale' : d.tags.includes('invoice') ? 'invoice to ship' : d.tags.join(', ') || 'made by hand',
+          made: d.createdAt.slice(0, 10),
+          status: d.sent ? 'sent, not paid' : 'not sent yet',
+        })),
+        ...(found.length === 0
+          ? { reason: q ? `No open draft matches "${q}". It may already be an order: check unpaid_live_sales or the Wholesale page.` : 'No open drafts.' }
+          : {}),
+      }
+    },
+  },
+
   withdraw_invoice: {
     def: {
       name: 'withdraw_invoice',
