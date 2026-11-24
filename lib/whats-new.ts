@@ -302,6 +302,10 @@ export const WHATS_NEW: Update[] = [
     on: '2026-11-24', path: '/chat',
     text: 'Say "send the Cosimo invoice" without a D number and Mouse now finds the draft in Shopify herself, even one she made from an email, instead of saying there isn\'t one.',
   },
+  {
+    on: '2026-11-24', path: '/stylists',
+    text: 'Mouse can now book back a single piece from a stylist pull ("Karolyn\'s Splish tee came back"), leaving the rest of the pull out. Before, she could only take back the whole pull.',
+  },
 ]
 
 /** The updates no earlier edition carried, oldest first. `earlier` is the text of past editions. Pure. */

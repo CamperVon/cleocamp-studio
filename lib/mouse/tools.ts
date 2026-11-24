@@ -576,13 +576,18 @@ async function waitingOnRestock(productVariantId: string) {
  * line, so a corrected stock count left the pull saying the piece was back.
  */
 async function undoPullReturn(
-  pull: { id: string; stylist: { name: string }; lines: Array<{ id: string; item: string; returnedQty: number; productVariantId: string | null }> },
-  items: Array<{ lineId: string; qty: number }>,
+  pull: { id: string; stylist: { name: string }; lines: Array<{ id: string; item: string; qty: number; returnedQty: number; productVariantId: string | null }> },
+  items: Array<{ lineId?: string; productVariantId?: string; qty: number }>,
 ) {
-  if (!items.length) return { saved: false, reason: 'Say which lines and how many to undo.' }
-  const asks = items.map((x) => ({ line: pull.lines.find((l) => l.id === String(x.lineId)), qty: Math.round(Number(x.qty)) }))
+  if (!items.length) return { saved: false, reason: 'Say which pieces and how many to undo.' }
+  const { findPullLine } = await import('@/lib/stylist-stock')
+  const asks: Array<{ line: (typeof pull.lines)[number]; qty: number }> = []
+  for (const x of items) {
+    const f = findPullLine(pull.lines, x, 'back')
+    if (!f.line) return { saved: false, reason: (f as { reason: string }).reason }
+    asks.push({ line: f.line, qty: Math.round(Number(x.qty)) })
+  }
   for (const a of asks) {
-    if (!a.line) return { saved: false, reason: 'A line is not on this pull. Look again.' }
     if (!(a.qty > 0) || a.qty > a.line.returnedQty) return { saved: false, reason: `${a.line.item}: ${a.line.returnedQty} logged as back, so ${a.qty} cannot be undone.` }
   }
   const { undoReturnPlan } = await import('@/lib/stylist-stock')
@@ -5805,7 +5810,7 @@ export const TOOLS: Record<string, Tool> = {
           pullId: str('The pull'),
           items: {
             type: 'array' as const,
-            items: { type: 'object' as const, properties: { lineId: str('The pull line'), qty: num('How many came back') }, required: ['lineId', 'qty'] },
+            items: { type: 'object' as const, properties: { productVariantId: str('The piece that came back. Use this; the pull line is found from it.'), lineId: str('Only if the same piece is on the pull twice: the pull line, as an error lists it'), qty: num('How many came back') }, required: ['qty'] },
           },
           everythingBack: { type: 'boolean' as const, description: 'true when all pieces still out came back.' },
           undo: { type: 'boolean' as const, description: 'true to undo a return logged by mistake, for the items listed' },
@@ -5818,16 +5823,24 @@ export const TOOLS: Record<string, Tool> = {
       const pull = await db.stylistPull.findUnique({ where: { id: String(i.pullId) }, include: { lines: true, stylist: { select: { name: true } } } })
       if (!pull) return { saved: false, reason: 'No such pull.' }
       if (pull.closedAs) return { saved: false, reason: `That pull was closed (${pull.closedAs === 'KEPT' ? 'kept' : 'removed as a mistake'}). Reopen it with close_stylist_pull (as: OPEN) first if pieces really came back.` }
-      if (i.undo === true) return undoPullReturn(pull, (Array.isArray(i.items) ? i.items : []) as Array<{ lineId: string; qty: number }>)
+      if (i.undo === true) return undoPullReturn(pull, (Array.isArray(i.items) ? i.items : []) as Array<{ lineId?: string; productVariantId?: string; qty: number }>)
       if (i.dueBackAt) await db.stylistPull.update({ where: { id: pull.id }, data: { dueBackAt: new Date(`${String(i.dueBackAt)}T12:00:00-07:00`) } })
       const { stillOut } = await import('@/lib/stylists')
-      const back = i.everythingBack === true
-        ? pull.lines.map((l) => ({ line: l, qty: stillOut(l) })).filter((x) => x.qty > 0)
-        : ((Array.isArray(i.items) ? i.items : []) as Array<{ lineId: string; qty: number }>).map((x) => ({ line: pull.lines.find((l) => l.id === String(x.lineId)), qty: Math.round(Number(x.qty)) }))
+      const { findPullLine } = await import('@/lib/stylist-stock')
+      const asked = (Array.isArray(i.items) ? i.items : []) as Array<{ lineId?: string; productVariantId?: string; qty: number }>
+      const back: Array<{ line: (typeof pull.lines)[number]; qty: number }> = []
+      if (i.everythingBack === true) {
+        back.push(...pull.lines.map((l) => ({ line: l, qty: stillOut(l) })).filter((x) => x.qty > 0))
+      } else {
+        for (const x of asked) {
+          const f = findPullLine(pull.lines, x, 'out')
+          if (!f.line) return { saved: false, reason: (f as { reason: string }).reason }
+          back.push({ line: f.line, qty: Math.round(Number(x.qty)) })
+        }
+      }
       if (!back.length) return { saved: true, pullId: pull.id, returned: [], note: i.dueBackAt ? 'Return date set.' : 'Nothing returned. Say what came back, or everythingBack.' }
       const done: string[] = []
       for (const b of back) {
-        if (!b.line) return { saved: false, reason: 'A line is not on this pull. Look again.' }
         if (!(b.qty > 0) || b.qty > stillOut(b.line)) return { saved: false, reason: `${b.line.item}: ${stillOut(b.line)} still out, so ${b.qty} cannot come back.` }
       }
       const { returnSplit } = await import('@/lib/stylist-stock')

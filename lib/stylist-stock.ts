@@ -142,3 +142,32 @@ export function undoReturnPlan(
   const stylist = Math.min(need, Math.max(0, stylistReturned))
   return { sales, stylist, alreadyFixed: need - stylist }
 }
+
+type PullLineRef = { id: string; item: string; productVariantId: string | null; qty: number; returnedQty: number }
+
+/**
+ * Which line of a pull a returned piece is, from its line id or from the item
+ * itself (productVariantId). Pure. 24 Nov 2026: Mouse could not book Karolyn
+ * Pho's Splish tee back because returns took only a line id and nothing shows
+ * one; returning the whole pull would have put five pieces she still has back
+ * on stock. `want` is 'out' for a return (a line with pieces still out) and
+ * 'back' for an undo (a line with pieces logged as back).
+ */
+export function findPullLine<L extends PullLineRef>(
+  lines: L[],
+  ref: { lineId?: string | null; productVariantId?: string | null },
+  want: 'out' | 'back' = 'out',
+): { line: L } | { line: null; reason: string } {
+  const list = () => lines.map((l) => `${l.item} (lineId ${l.id}, ${Math.max(0, l.qty - l.returnedQty)} out, ${l.returnedQty} back)`).join('; ')
+  if (ref.lineId) {
+    const l = lines.find((x) => x.id === String(ref.lineId))
+    return l ? { line: l } : { line: null, reason: `No line ${ref.lineId} on this pull. Its lines: ${list()}.` }
+  }
+  if (!ref.productVariantId) return { line: null, reason: `Say which piece: its productVariantId or lineId. Lines: ${list()}.` }
+  const same = lines.filter((x) => x.productVariantId === ref.productVariantId)
+  if (!same.length) return { line: null, reason: `That item is not on this pull. Its lines: ${list()}.` }
+  const fits = same.filter((x) => (want === 'out' ? x.qty - x.returnedQty > 0 : x.returnedQty > 0))
+  if (fits.length === 1 || (fits.length === 0 && same.length === 1)) return { line: fits[0] ?? same[0] }
+  if (fits.length === 0) return { line: null, reason: `${same[0].item}: nothing ${want === 'out' ? 'still out' : 'logged as back'} on this pull.` }
+  return { line: null, reason: `${same[0].item} is on this pull more than once. Say which by lineId: ${list()}.` }
+}
