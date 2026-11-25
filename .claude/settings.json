@@ -62,7 +62,21 @@
       "Bash(curl -s https://api.github.com/repos/CamperVon/cleocamp-studio/*)",
       "mcp__Claude_Code_Remote__get_session",
       "mcp__Claude_Code_Remote__list_triggers",
-      "mcp__Claude_Code_Remote__get_trigger"
+      "mcp__Claude_Code_Remote__get_trigger",
+
+      "Agent",
+      "ToolSearch",
+      "Bash(jq:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(sort:*)",
+      "Bash(md5sum:*)",
+      "Bash(node:*)",
+      "mcp__Google_Drive__search_files",
+      "mcp__Google_Drive__get_file_metadata",
+      "mcp__Google_Drive__read_file_content",
+      "mcp__Google_Drive__download_file_content",
+      "mcp__Google_Docs__read_doc"
     ]
   }
 }
