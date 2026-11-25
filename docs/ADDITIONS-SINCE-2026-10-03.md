@@ -972,6 +972,12 @@ It holds code changes only: no customer, order or stock data, and nothing that o
 - **Files:** `lib/live-sale.ts` (`openDrafts`, `draftMatches`), `lib/mouse/tools.ts` (`open_drafts`), `lib/mouse/tool-kinds.ts`, `lib/mouse/prompt.ts`, `tests/open-drafts.test.ts`, `tests/tool-kinds.test.ts`.
 - **Needs:** Shopify.
 
+### Troubleshooting log rows show the latest occurrence
+- **Problem:** a repeated failure only raised its count, so the row kept the question, door and input from the first time it happened. A turn that ran out of budget weeks later was listed under a message from a month before, and whoever read the log went looking at the wrong conversation.
+- **Change:** a repeat also updates the row's question, source and tool input to the latest occurrence (the question only when the run had one).
+- **Files:** `lib/mouse/issues.ts` (`repeatUpdate`), `tests/mouse-issues.test.ts`.
+- **Needs:** nothing.
+
 ---
 
 ## Setup notes for a new install

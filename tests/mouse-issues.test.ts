@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { failureText, issuesFrom } from '../lib/mouse/issues'
+import { failureText, issuesFrom, repeatUpdate } from '../lib/mouse/issues'
 
 test('failed and refused calls and an unfinished turn become log entries', () => {
   const out = issuesFrom({
@@ -30,4 +30,17 @@ test('running out of Anthropic credit is logged as that, plainly', async () => {
   assert.equal(isOutOfCredit('529 overloaded'), false)
   assert.deepEqual(issuesFrom({ stopReason: 'provider_error', providerError: err, toolCalls: [] }).map((o) => o.detail), [OUT_OF_CREDIT_LOG])
   assert.deepEqual(issuesFrom({ stopReason: 'provider_error', providerError: '529 overloaded', toolCalls: [] }).map((o) => o.detail), ['The run stopped before finishing (provider_error).'])
+})
+
+test('a repeat shows its latest question, door and input, not the first one', () => {
+  const now = new Date('2026-11-25T14:52:07Z')
+  const d = { kind: 'TURN_UNFINISHED' as const, detail: 'The run stopped before finishing (budget).' }
+  const u = repeatUpdate('chat', 'actually i found it, order #3100', d, now)
+  assert.deepEqual(u, { times: { increment: 1 }, lastSeenAt: now, source: 'chat', asked: 'actually i found it, order #3100' })
+  // No question to hand (a nightly pass): keep the one on file rather than blank it.
+  assert.equal('asked' in repeatUpdate('nightly-pass', null, d, now), false)
+  // A failed tool's input is the latest one's.
+  const t = repeatUpdate('chat', 'log it', { kind: 'TOOL_FAILED', tool: 'x', detail: 'no', input: { qty: 3 } }, now)
+  assert.deepEqual(t.input, { qty: 3 })
+  assert.equal(repeatUpdate('chat', 'x'.repeat(600), d, now).asked?.length, 500)
 })
